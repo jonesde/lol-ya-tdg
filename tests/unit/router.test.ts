@@ -1,0 +1,206 @@
+// @ts-nocheck
+import { createPinia, setActivePinia } from "pinia";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createRouter, createWebHistory } from "vue-router";
+import { GameState } from "@/game/Constants.js";
+import { getGameEngine } from "@/game/GameEngine.js";
+import type { GeneratedMap } from "@/grid/Map.js";
+import { useGameStore } from "@/stores/game.js";
+import { usePersistStore } from "@/stores/persist.js";
+
+vi.mock("@/game/GameEngine", () => ({ getGameEngine: vi.fn() }));
+
+function createTestGameStore() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  return useGameStore();
+}
+
+function createTestPersistStore() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const store = usePersistStore();
+  store.$reset();
+  return store;
+}
+
+function createRouterWithGuards(
+  gameStore: ReturnType<typeof createTestGameStore>,
+  persistStore: ReturnType<typeof createTestPersistStore>,
+) {
+  const router = createRouter({
+    history: createWebHistory(),
+    routes: [
+      { path: "/", name: "main-menu", component: {} },
+      { path: "/map-select", name: "map-select", component: {} },
+      { path: "/skill-tree", name: "skill-tree", component: {} },
+      { path: "/game", name: "game", component: {} },
+      { path: "/game-over", name: "game-over", component: {} },
+      { path: "/victory", name: "victory", component: {} },
+    ],
+  });
+
+  router.beforeEach((to, from) => {
+    // Block direct access to /game without a loaded map
+    // Check `gameStore.map` instead of `mapIndex` — random maps use mapIndex=-1 but still have a valid map
+    if (to.name === "game" && !gameStore.map) {
+      return "/map-select";
+    }
+
+    // Auto-redirect from game state to end screen
+    // Capture terminal state BEFORE dispose() overwrites it with MENU
+    const prevState = gameStore.state;
+
+    // Leaving /game — stop engine and save progress
+    if (from.name === "game" && to.name !== "game") {
+      getGameEngine()?.dispose();
+      persistStore.save();
+    }
+
+    if (prevState === GameState.GAME_OVER && to.name !== "game-over" && to.name !== "victory") {
+      return "/game-over";
+    }
+    if (prevState === GameState.VICTORY && to.name !== "game-over" && to.name !== "victory") {
+      return "/victory";
+    }
+  });
+
+  return router;
+}
+
+describe("Router — navigation guards", () => {
+  let router: ReturnType<typeof createRouterWithGuards>;
+  let gameStore: ReturnType<typeof createTestGameStore>;
+  let persistStore: ReturnType<typeof createTestPersistStore>;
+
+  beforeEach(() => {
+    gameStore = createTestGameStore();
+    persistStore = createTestPersistStore();
+    router = createRouterWithGuards(gameStore, persistStore);
+  });
+
+  describe("blocking direct /game access", () => {
+    it("redirects to /map-select when no map is loaded", async () => {
+      gameStore.map = null;
+      gameStore.mapIndex = -1;
+      await router.push("/game");
+      expect(router.currentRoute.value.path).toBe("/map-select");
+    });
+
+    it("allows /game when a map is loaded", async () => {
+      gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
+      gameStore.mapIndex = 0;
+      await router.push("/game");
+      expect(router.currentRoute.value.path).toBe("/game");
+    });
+
+    it("allows /game for random maps (mapIndex=-1 but map is set)", async () => {
+      gameStore.map = { name: "Random Map", regionId: 0 } as unknown as GeneratedMap;
+      gameStore.mapIndex = -1;
+      await router.push("/game");
+      expect(router.currentRoute.value.path).toBe("/game");
+    });
+  });
+
+  describe("leaving /game", () => {
+    it("calls engine.dispose() when leaving game route", async () => {
+      const disposeMock = vi.fn();
+      vi.mocked(getGameEngine).mockReturnValue({ dispose: disposeMock } as never);
+      gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
+      gameStore.mapIndex = 0;
+      await router.push("/game");
+      await router.push("/map-select");
+      expect(disposeMock).toHaveBeenCalled();
+    });
+
+    it("calls persistStore.save() when leaving game route", async () => {
+      const saveMock = vi.spyOn(persistStore, "save");
+      vi.mocked(getGameEngine).mockReturnValue({ dispose: vi.fn() } as never);
+      gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
+      gameStore.mapIndex = 0;
+      await router.push("/game");
+      await router.push("/map-select");
+      expect(saveMock).toHaveBeenCalled();
+    });
+
+    it("does not dispose/save when navigating game->game", async () => {
+      const disposeMock = vi.fn();
+      const saveMock = vi.spyOn(persistStore, "save");
+      vi.mocked(getGameEngine).mockReturnValue({ dispose: disposeMock } as never);
+      gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
+      gameStore.mapIndex = 0;
+      await router.push("/game");
+      await router.push("/game");
+      expect(disposeMock).not.toHaveBeenCalled();
+      expect(saveMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("auto-redirect on GAME_OVER", () => {
+    it("redirects to /game-over from any non-end-screen route", async () => {
+      gameStore.state = GameState.GAME_OVER;
+      await router.push("/map-select");
+      expect(router.currentRoute.value.path).toBe("/game-over");
+    });
+
+    it("redirects to /game-over even when dispose resets state to MENU", async () => {
+      // Start in PLAYING so we can navigate to /game first
+      gameStore.state = GameState.PLAYING;
+      gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
+      gameStore.mapIndex = 0;
+      const disposeMock = vi.fn(() => {
+        gameStore.setState(GameState.MENU);
+      });
+      vi.mocked(getGameEngine).mockReturnValue({ dispose: disposeMock } as never);
+      await router.push("/game");
+      // Now set terminal state and navigate away
+      gameStore.state = GameState.GAME_OVER;
+      await router.push("/map-select");
+      expect(disposeMock).toHaveBeenCalled();
+      expect(router.currentRoute.value.path).toBe("/game-over");
+    });
+
+    it("does not redirect when already on /game-over", async () => {
+      gameStore.state = GameState.GAME_OVER;
+      await router.push("/game-over");
+      expect(router.currentRoute.value.path).toBe("/game-over");
+    });
+
+    it("does not redirect when already on /victory", async () => {
+      gameStore.state = GameState.GAME_OVER;
+      await router.push("/victory");
+      expect(router.currentRoute.value.path).toBe("/victory");
+    });
+  });
+
+  describe("auto-redirect on VICTORY", () => {
+    it("redirects to /victory from any non-end-screen route", async () => {
+      gameStore.state = GameState.VICTORY;
+      await router.push("/map-select");
+      expect(router.currentRoute.value.path).toBe("/victory");
+    });
+
+    it("redirects to /victory even when dispose resets state to MENU", async () => {
+      // Start in PLAYING so we can navigate to /game first
+      gameStore.state = GameState.PLAYING;
+      gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
+      gameStore.mapIndex = 0;
+      const disposeMock = vi.fn(() => {
+        gameStore.setState(GameState.MENU);
+      });
+      vi.mocked(getGameEngine).mockReturnValue({ dispose: disposeMock } as never);
+      await router.push("/game");
+      // Now set terminal state and navigate away
+      gameStore.state = GameState.VICTORY;
+      await router.push("/map-select");
+      expect(disposeMock).toHaveBeenCalled();
+      expect(router.currentRoute.value.path).toBe("/victory");
+    });
+
+    it("does not redirect when already on /victory", async () => {
+      gameStore.state = GameState.VICTORY;
+      await router.push("/victory");
+      expect(router.currentRoute.value.path).toBe("/victory");
+    });
+  });
+});

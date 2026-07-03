@@ -1,0 +1,110 @@
+<script setup lang="ts">
+import { onMounted, onUnmounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
+import { GameState } from "@/game/Constants.js";
+import { getGameEngine } from "@/game/GameEngine.js";
+import { useGameStore } from "@/stores/game.js";
+import { useUiStore } from "@/stores/ui.js";
+import DebugPanel from "./DebugPanel.vue";
+import GameHud from "./GameHud.vue";
+import GameShop from "./GameShop.vue";
+import HelpDialog from "./HelpDialog.vue";
+import MainMenu from "./MainMenu.vue";
+import SkillTree from "./SkillTree.vue";
+import StatsPanel from "./StatsPanel.vue";
+import SvgGameRoot from "./SvgGameRoot.vue";
+import TowerPanel from "./TowerPanel.vue";
+import WaveCountdown from "./WaveCountdown.vue";
+
+const router = useRouter();
+const gameStore = useGameStore();
+const uiStore = useUiStore();
+
+let popstateHandler: ((event: PopStateEvent) => void) | null = null;
+let awaitingConfirm = false;
+const disposed = ref(false);
+
+watch(
+  () => gameStore.state,
+  (state: GameState) => {
+    if (state === GameState.GAME_OVER) router.push("/game-over");
+    else if (state === GameState.VICTORY) router.push("/victory");
+  },
+  { immediate: true },
+);
+
+function onPopState() {
+  if (awaitingConfirm) {
+    awaitingConfirm = false;
+    return;
+  }
+  awaitingConfirm = true;
+  uiStore.showConfirm({
+    title: "End Game",
+    message: "Are you sure you want to leave? Your progress in this run will be lost.",
+    confirmLabel: "End Game",
+    cancelLabel: "Stay",
+    onConfirm() {
+      disposed.value = true;
+      getGameEngine()?.dispose();
+      router.push("/map-select");
+    },
+    onCancel() {
+      awaitingConfirm = false;
+    },
+  });
+  // Restore history entry so the next back press can be caught again.
+  history.pushState(history.state, "", location.href);
+}
+
+onMounted(() => {
+  history.pushState(history.state, "", location.href);
+  popstateHandler = onPopState;
+  window.addEventListener("popstate", popstateHandler);
+});
+
+onUnmounted(() => {
+  if (popstateHandler) {
+    window.removeEventListener("popstate", popstateHandler);
+    popstateHandler = null;
+  }
+  if (getGameEngine() && !disposed.value) {
+    getGameEngine()?.dispose();
+  }
+});
+</script>
+
+<template>
+  <div class="game-screen">
+    <SvgGameRoot />
+    <GameHud />
+    <GameShop />
+    <TowerPanel />
+    <DebugPanel />
+
+    <!-- Wave countdown overlay -->
+    <WaveCountdown v-if="gameStore.waveCountdown" />
+
+    <!-- MainMenu overlay -->
+    <MainMenu v-if="uiStore.showMainMenu" />
+
+    <!-- SkillTree overlay -->
+    <SkillTree v-if="uiStore.showSkillTree" />
+
+    <!-- StatsPanel overlay -->
+    <StatsPanel v-if="uiStore.showStatsPanel" />
+
+    <!-- HelpDialog overlay -->
+    <HelpDialog v-if="uiStore.showHelpDialog" />
+  </div>
+</template>
+
+<style scoped>
+.game-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+
+</style>

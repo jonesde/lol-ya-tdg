@@ -1,0 +1,423 @@
+<script setup lang="ts">
+import { computed, onUnmounted, ref, watch, watchEffect } from "vue";
+import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
+import { TOWER_META } from "@/game/ConstantsTower.js";
+import { getGameEngine } from "@/game/GameEngine.js";
+import { useGameStore } from "@/stores/game.js";
+import { usePersistStore } from "@/stores/persist.js";
+import { VARIANT_INFO } from "@/towers/SkillTree.js";
+
+const gameStore = useGameStore();
+const persistStore = usePersistStore();
+
+const tower = computed(() => gameStore.selectedTower);
+const upgradeCheck = computed(() => tower.value?.canUpgrade(persistStore.$state));
+const sellValue = computed(() => tower.value?.sellValue() || 0);
+
+// Reactive damage tracking (Phase 2)
+// Tower properties are plain JS fields, not Vue-reactive, so a periodic tick
+// forces recomputation of the computed properties that depend on them.
+const tick = ref(0);
+
+watch(
+  tower,
+  (newTower, _oldValue, onCleanup) => {
+    if (!newTower) return;
+    const intervalId = setInterval(() => {
+      tick.value++;
+    }, 1000);
+    onCleanup(() => clearInterval(intervalId));
+  },
+  { immediate: true },
+);
+
+const damageStats = computed(() => {
+  const selectedTower = tower.value;
+  if (!selectedTower) return null;
+  void tick.value;
+  return { total: Math.round(selectedTower.totalDamageDealt), wave: Math.round(selectedTower.waveDamage) };
+});
+
+// Specialization name display (Phase 2)
+const specName = computed(() => {
+  const selectedTower = tower.value;
+  if (!selectedTower?.variant) return null;
+  const info = VARIANT_INFO[selectedTower.type];
+  if (!info) {
+    console.warn(`[TowerPanel] No VARIANT_INFO for tower type "${selectedTower.type}"`);
+    return null;
+  }
+  return info[selectedTower.variant]?.name || null;
+});
+
+let dragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let panelStartX = 0;
+let panelStartY = 0;
+let currentOnMove: ((event: MouseEvent) => void) | null = null;
+let currentOnUp: (() => void) | null = null;
+
+function onHeaderMouseDown(event: MouseEvent) {
+  if (event.button !== 0) return;
+  dragging = true;
+  dragStartX = event.clientX;
+  dragStartY = event.clientY;
+  panelStartX = gameStore.towerPanelPos.x;
+  panelStartY = gameStore.towerPanelPos.y;
+
+  currentOnMove = (event: MouseEvent) => {
+    if (!dragging) return;
+    gameStore.towerPanelPos = {
+      x: panelStartX + (event.clientX - dragStartX),
+      y: panelStartY + (event.clientY - dragStartY),
+    };
+  };
+  currentOnUp = () => {
+    dragging = false;
+    cleanupDragListeners();
+  };
+  document.addEventListener("mousemove", currentOnMove);
+  document.addEventListener("mouseup", currentOnUp);
+  event.preventDefault();
+}
+
+function cleanupDragListeners() {
+  if (currentOnMove) document.removeEventListener("mousemove", currentOnMove);
+  if (currentOnUp) document.removeEventListener("mouseup", currentOnUp);
+  currentOnMove = null;
+  currentOnUp = null;
+}
+
+onUnmounted(() => {
+  cleanupDragListeners();
+});
+
+const milestoneTier = computed(() => persistStore.generalAddons?.damageMilestoneBonus);
+const milestoneBonus = computed(() => {
+  if (milestoneTier.value !== null && milestoneTier.value !== undefined && tower.value) {
+    return tower.value.currentMilestoneBonus();
+  }
+  return null;
+});
+
+const targetingMode = ref(tower.value?.targeting || "first");
+
+watch(tower, (newTower) => {
+  if (newTower) {
+    targetingMode.value = newTower.targeting || "first";
+  }
+});
+
+function handleTargetingChange(event: Event) {
+  const target = event.target as HTMLSelectElement;
+  targetingMode.value = target.value;
+  getGameEngine()?.setTargeting(target.value);
+}
+
+function handleUpgrade() {
+  getGameEngine()?.upgradeSelected();
+}
+
+function handleSell() {
+  getGameEngine()?.sellSelected();
+}
+
+function handleSpecialize(variant: string) {
+  getGameEngine()?.specializeSelected(variant);
+}
+
+function handleCancelBuild() {
+  getGameEngine()?.cancelSelected();
+}
+
+function getUpgradeCost() {
+  if (!tower.value) return 0;
+  return getGameEngine()?.getUpgradeCost(tower.value) || 0;
+}
+
+const canAffordUpgrade = computed(() => {
+  return upgradeCheck.value?.ok && gameStore.gold >= getUpgradeCost();
+});
+
+const sellDisabled = computed(() => persistStore.generalAddons && persistStore.generalAddons.sellActive === "discount");
+
+const variantInfo = computed(() => {
+  if (tower.value) return VARIANT_INFO[tower.value.type];
+  return null;
+});
+
+const variantAUnlocked = computed(() => {
+  const unlocked = persistStore.unlocked[tower.value?.type];
+  return unlocked?.variantA?.[0] || false;
+});
+
+const variantBUnlocked = computed(() => {
+  const unlocked = persistStore.unlocked[tower.value?.type];
+  return unlocked?.variantB?.[0] || false;
+});
+
+// Phase 3: level 5 cost for specialization
+const lv5Cost = computed(() => {
+  if (!tower.value) return 0;
+  const cost = tower.value.upgradeCost(5);
+  const ucrTier = persistStore.generalAddons?.upgradeCostReduction;
+  if (ucrTier !== null && ucrTier !== undefined) {
+    const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
+    return Math.floor(cost * (1 - reduction));
+  }
+  return cost;
+});
+
+const canAffordSpecialize = computed(() => {
+  return gameStore.gold >= lv5Cost.value;
+});
+
+// Phase 4: cancel build
+const canCancel = computed(() => {
+  return tower.value?.canCancel() || false;
+});
+
+const cancelRemaining = computed(() => {
+  if (!tower.value) return 0;
+  void tick.value;
+  return Math.ceil(tower.value.cancelRemainingMs() / 1000);
+});
+
+// Phase 6: Fixed aim for railgun
+const hasFixedAim = computed(() => tower.value?.base?.fixedAim || false);
+const fixedAimDir = computed(() => tower.value?.fixedAimDir);
+
+function handleFixedAim(dir: string | null) {
+  getGameEngine()?.setFixedAimDir(dir);
+}
+</script>
+
+<template>
+  <div v-if="tower" class="tower-panel" :style="{ top: gameStore.towerPanelPos.y + 'px', left: gameStore.towerPanelPos.x + 'px' }">
+    <div class="panel-header" :style="{ color: tower.color }" @mousedown="onHeaderMouseDown">
+      {{ TOWER_META[tower.type].name }} Lv {{ tower.level }}
+      <span v-if="specName" class="spec-badge">{{ specName }}</span>
+    </div>
+
+    <div class="stat-row"><span>Damage</span><span>{{ Math.round(tower.stats.damage) }}</span></div>
+    <div class="stat-row"><span>Range</span><span>{{ tower.stats.range.toFixed(1) }}</span></div>
+    <div class="stat-row"><span>Fire Rate</span><span>{{ tower.stats.fireRate < 1 ? (1 / tower.stats.fireRate).toFixed(2) + ' s/shot' : tower.stats.fireRate.toFixed(2) + '/s' }}</span></div>
+    <div v-if="tower.stats.splash" class="stat-row"><span>Splash</span><span>{{ tower.stats.splash.toFixed(1) }}</span></div>
+    <div v-if="tower.stats.chain" class="stat-row"><span>Chain</span><span>{{ tower.stats.chain }}</span></div>
+    <div class="stat-row"><span>Total Damage</span><span>{{ damageStats?.total?.toLocaleString() ?? 0 }}</span></div>
+    <div class="stat-row"><span>Wave Damage</span><span>{{ damageStats?.wave?.toLocaleString() ?? 0 }}</span></div>
+
+    <div v-if="milestoneBonus && milestoneBonus.tiers > 0" class="milestone-bonus">
+      Milestone Bonus: +{{ Math.round(milestoneBonus.damagePct) }}% dmg, +{{ Math.round(milestoneBonus.speedPct) }}% speed ({{ milestoneBonus.tiers }}×1M total)
+    </div>
+
+    <div class="stat-row"><span>Targeting</span></div>
+    <select class="target-select" :value="targetingMode" @change="handleTargetingChange">
+      <option value="first">First</option>
+      <option value="last">Last</option>
+      <option value="closest">Closest</option>
+      <option value="strong">Strongest</option>
+      <option value="furthest">Furthest</option>
+    </select>
+
+    <div v-if="hasFixedAim" class="fixed-aim-section">
+      <div class="fixed-aim-title">Aim Direction:</div>
+      <div class="fixed-aim-grid">
+        <button class="aim-dot" :class="{ active: fixedAimDir === 'N' }" @click="handleFixedAim('N')">N</button>
+      </div>
+      <div class="fixed-aim-grid-h">
+        <button class="aim-dot" :class="{ active: fixedAimDir === 'W' }" @click="handleFixedAim('W')">W</button>
+        <button class="aim-dot auto-dot" :class="{ active: !fixedAimDir }" @click="handleFixedAim(null)">Auto</button>
+        <button class="aim-dot" :class="{ active: fixedAimDir === 'E' }" @click="handleFixedAim('E')">E</button>
+      </div>
+      <div class="fixed-aim-grid">
+        <button class="aim-dot" :class="{ active: fixedAimDir === 'S' }" @click="handleFixedAim('S')">S</button>
+      </div>
+    </div>
+
+    <div v-if="upgradeCheck?.needVariant" class="variant-section">
+      <div class="variant-title">Choose Specialization:</div>
+      <button class="action-btn" :disabled="!variantAUnlocked || !canAffordSpecialize" @click="handleSpecialize('A')">
+        {{ variantInfo?.A?.name }} ({{ lv5Cost }}g)
+      </button>
+      <button class="action-btn" :disabled="!variantBUnlocked || !canAffordSpecialize" @click="handleSpecialize('B')">
+        {{ variantInfo?.B?.name }} ({{ lv5Cost }}g)
+      </button>
+    </div>
+    <div v-else-if="upgradeCheck?.ok">
+      <button class="action-btn" :disabled="!canAffordUpgrade" @click="handleUpgrade">
+        Upgrade ({{ getUpgradeCost() }}g) → Lv {{ upgradeCheck.nextLevel }}
+      </button>
+    </div>
+    <div v-else>
+      <button class="action-btn" disabled>{{ upgradeCheck?.reason || 'Max' }}</button>
+    </div>
+
+    <button v-if="canCancel" class="action-btn cancel-btn" @click="handleCancelBuild">
+      Cancel Build — {{ tower.totalInvested }}g ({{ cancelRemaining }}s)
+    </button>
+
+    <button class="action-btn sell-btn" :disabled="sellDisabled" @click="handleSell">
+      {{ sellDisabled ? 'Selling disabled (discount mode)' : `Sell (+${sellValue}g)` }}
+    </button>
+  </div>
+</template>
+
+<style scoped>
+.tower-panel {
+  position: absolute;
+  width: 220px;
+  padding: 10px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  z-index: 10;
+  font-size: 12px;
+}
+
+.panel-header {
+  font-weight: bold;
+  font-size: 14px;
+  margin-bottom: 8px;
+  cursor: grab;
+  user-select: none;
+}
+
+.panel-header:active {
+  cursor: grabbing;
+}
+
+.spec-badge {
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--color-accent);
+  margin-left: 6px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  color: var(--color-text-dim);
+}
+
+.stat-row span:last-child {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.milestone-bonus {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-success);
+  padding: 4px;
+  background: rgba(68, 255, 68, 0.08);
+  border-radius: 4px;
+}
+
+.target-select {
+  width: 100%;
+  padding: 4px;
+  margin: 4px 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--color-text);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.variant-section {
+  margin-top: 8px;
+}
+
+.variant-title {
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.action-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--color-text);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s;
+}
+
+.action-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sell-btn {
+  color: var(--color-danger);
+  border-color: rgba(255, 68, 68, 0.3);
+}
+
+.cancel-btn {
+  color: var(--color-success);
+  border-color: rgba(68, 255, 68, 0.3);
+}
+
+.fixed-aim-section {
+  margin-top: 8px;
+  text-align: center;
+}
+
+.fixed-aim-title {
+  font-size: 11px;
+  color: var(--color-text-dim);
+  margin-bottom: 4px;
+}
+
+.fixed-aim-grid {
+  display: flex;
+  justify-content: center;
+}
+
+.fixed-aim-grid-h {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.aim-dot {
+  width: 32px;
+  height: 24px;
+  margin: 2px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--color-text);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: bold;
+  transition: background 0.15s;
+}
+
+.aim-dot:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.aim-dot.active {
+  background: rgba(95, 208, 255, 0.3);
+  border-color: rgba(95, 208, 255, 0.6);
+  color: #5fd0ff;
+}
+
+.auto-dot {
+  width: auto;
+  padding: 0 6px;
+  font-size: 10px;
+}
+</style>
