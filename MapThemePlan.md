@@ -191,7 +191,7 @@ State:
 - `loading: boolean`, `error: string | null`.
 
 Actions:
-- `async preloadDefault()` — called once from `main.ts` before `app.mount` (or in `App.vue` `onMounted` with a loading gate). Sets `defaultTheme` and, if `activeThemeId === "default"`, also `activeTheme`.
+- `async preloadDefault()` — called once from `main.ts` before `app.mount`. Uses a synchronous JSON import (`import("./data/default-map-theme.json")`) so `defaultTheme` is available immediately with no race condition — no loading gate needed. Sets `defaultTheme` and, if `activeThemeId === "default"`, also `activeTheme`.
 - `async loadActive(id)` — sets `activeThemeId`, resolves the theme via `getThemeLoader(id)`, normalizes external image refs to inline SVG, sets `activeTheme`. Returns the resolved data.
 - `getTowerVisual(typeId): TowerVisualMeta | null` — reads `activeTheme ?? defaultTheme`. Used by `Tower` constructor and `/game` UI components.
 - `getEnemyVisual(typeId): EnemyVisualMeta | null` — same.
@@ -217,7 +217,7 @@ Getters:
 ### Modified files
 
 #### `src/game/ConstantsTower.ts`
-- **Keep**: `TowerIds`, `TowerId`, `TOWER_BASE`, `TOWER_VARIANTS`, `TowerVariantConfig`, all numeric constants, `UPRADE_*`, etc.
+- **Keep**: `TowerIds`, `TowerId`, `TOWER_BASE`, `TOWER_VARIANTS`, `TowerVariantConfig`, all numeric constants, `UPGRADE_*`, etc.
 - **Remove** from `TOWER_META`: `name`, `color`, `icon`, `animation`, `walking` (these now live in theme JSON). Keep `cost` (gameplay) — `TOWER_META` becomes `{ cost: number }` only. (Or rename to `TOWER_COST` and drop `TOWER_META` entirely; pick whichever is less churn. Recommendation: keep `TOWER_META = { basic: { cost: 20 }, ... }` to minimize import churn, just slimmer.)
 - Remove the now-unused interfaces `TowerAnimationConfig`, `TowerWalkingConfig`, `TowerMeta` visual fields, or repurpose `TowerMeta` to `{ cost: number }`.
 
@@ -344,7 +344,7 @@ Theme is immutable for the run; `activeTheme` does not change while on `/game`.
 - IDs: `tower-${type}-f${i}`, `enemy-${type}-f${i}`, `enemy-${type}-hit-f${i}` — unchanged contract.
 - `buildSymbolsFromTheme` emits exactly as many symbols as the theme's `frames.length` for each animation. The render managers' `computeEnemyFrame`/`computeTowerFrame` use `refImages?.length || 1` and modulo, so a 4-frame theme and an 8-frame theme both animate correctly without code changes.
 - Hit-reaction indexing in `EnemyManager` uses `hitReaction.referenceImages.length` — variable, works.
-- `EnemyRenderProxy`/`TowerRenderProxy` read `enemy.walking`/`tower.meta.animation` (now populated from theme) — field shape unchanged (`{ duration, referenceImages: { image }[] }` or we keep the name `referenceImages` for zero-touch). **Recommendation: keep the field name `referenceImages` and frame field `{ svg|svgText }` in the runtime `MapThemeData` (post-normalization) to avoid touching render managers.** I.e. the theme loader maps JSON `frames[].image` → runtime `referenceImages[].svg`/`svgText` to match existing render-manager expectations. This makes the render managers truly zero-change.
+- `EnemyRenderProxy`/`TowerRenderProxy` read `enemy.walking`/`tower.meta.animation` (now populated from theme) — field shape unchanged (`{ duration, referenceImages: { image }[] }` or we keep the name `referenceImages` for zero-touch). **Recommendation: keep the field name `referenceImages` and frame field `{ svg }` in the runtime `MapThemeData` (post-normalization) to avoid touching render managers.** The `normalizeThemeImages` function maps each JSON `frames[].image` → runtime `referenceImages[].svg` (one entry per frame, preserving the original `duration` on the parent animation config). This makes the render managers truly zero-change.
 
 ## Testing
 
