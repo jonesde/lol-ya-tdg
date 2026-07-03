@@ -48,7 +48,7 @@ Defend your base against 100 waves of enemies across 36 procedurally-generated m
 | Library | Version | Purpose |
 |---|---|---|
 | **Vue 3** | ^3.5.0 | Reactive components, `<script setup>` syntax |
-| **Vue Router** | ^4.5.0 | Screen navigation (`/`, `/map-select`, `/game`, `/skill-tree`, `/game-over`, `/victory`) |
+| **Vue Router** | ^4.5.0 | Screen navigation (`/`, `/map-select`, `/game`, `/skill-tree`, `/game-over`, `/victory`, `/history`) |
 | **Pinia** | ^3.0.0 | State management (3 stores: `game`, `persist`, `ui`) |
 | **Vite** | ^6.0.0 | Build tool with HMR, code splitting, and tree-shaking |
 
@@ -66,13 +66,17 @@ src/
 ├── stores/
 │   ├── game.ts                  # Volatile per-run state: lives, gold, wave, game state, selection, camera
 │   ├── persist.ts               # Persistent meta-progression: gems, unlocks, difficulty, map progress (localStorage)
-│   └── ui.ts                    # UI overlay state: confirm dialogs, menu context, debug panel visibility
+│   └── ui.ts                    # UI overlay state: confirm dialogs, menu/skill-tree/stats/help context, debug panel
+├── composables/
+│   └── cameraUtils.ts           # Vue composable: reactive camera CTM transform + world/screen coordinate conversion
 ├── components/
-│   ├── GameScreen.vue           # Root game layout: SvgGameRoot + HUD + shop + tower panel + debug
+│   ├── GameScreen.vue           # Root game layout: SvgGameRoot + HUD + shop + tower panel + wave countdown + debug
 │   ├── SvgGameRoot.vue          # Single SVG root: owns RAF loop, GameEngine, imperative DOM rendering
 │   ├── GameHud.vue              # Top HUD bar: lives, gold, gems, wave, speed/pause/menu buttons
 │   ├── GameShop.vue             # Tower shop bar: build selection with cost display and discount support
 │   ├── TowerPanel.vue           # Tower detail panel: stats, targeting, upgrade/sell, specialization
+│   ├── WaveCountdown.vue        # Inter-wave countdown overlay shown before each wave spawns
+│   ├── HelpDialog.vue           # Help/controls overlay (toggled from in-game menu)
 │   ├── MainMenu.vue             # Main menu: new game, resume, skill tree, difficulty slider, profile reset
 │   ├── MapSelect.vue            # Map selection grid: unlock status, best waves, region info
 │   ├── SkillTree.vue            # Skill tree: tower levels, specializations, add-ons, general upgrades
@@ -81,13 +85,15 @@ src/
 │   ├── DebugPanel.vue           # Debug buttons: gold/gems/lives injection, wave skip, map unlock, time scale
 │   ├── StatsPanel.vue           # Wave composition, enemy list, and run statistics
 │   └── HistoryScreen.vue        # Run history entries with gem breakdown formatting
-├── services/
-│   └── CameraService.ts         # Reactive camera state shared between Vue UI and SVG rendering
 ├── game/
 │   ├── GameEngine.ts            # Core game loop: RAF driver, update/render, state transitions, rewards
-│   ├── Constants.ts             # Game constants: tower stats, enemy types, wave config, map levels, variants
-│   ├── Input.ts                 # Keyboard input composable (dispatches to Pinia stores)
-│   └── EnemyWalk.ts             # Base shape vertex generation and path-d string conversion
+│   ├── Constants.ts             # Shared game constants: wave config, map levels, regions, boss cadence
+│   ├── ConstantsTower.ts        # Tower constants: TowerIds, tower stats, variants, milestone/splash/crit config
+│   ├── ConstantsEnemy.ts        # Enemy constants: EnemyType union, ENEMY_TYPES metadata, status effect tuning
+│   ├── Input.ts                 # Keyboard input composable (dispatches to Pinia stores + engine)
+│   ├── EnemyWalk.ts             # Base shape vertex generation and path-d string conversion
+│   ├── ProjectileManager.ts     # Game-side projectile simulation: travel, hits, splash, chain, burn, knockback
+│   └── ParticleSystem.ts        # Game-side particle simulation: spawn, motion, life/expiry
 ├── grid/
 │   ├── Grid.ts                  # Grid data structure: path, base, spawn queries, build validation
 │   ├── Map.ts                   # Procedural map generation: 36 maps, 3 regions, 6 layout styles
@@ -110,7 +116,7 @@ src/
 │       ├── EffectManager.ts     # Lightning, stun aura, build preview, range circle, upgrade button
 │       ├── UiOverlayManager.ts  # HP bars, shield bars, boss HP text rendering
 │       ├── useSvgStaticContent.ts # Composable: generates <defs> symbols/filters and grid layer SVG strings
-│       ├── cameraUtils.ts       # fitToGrid() function for initial camera setup
+│       ├── cameraUtils.ts       # fitToGrid() and screenToWorld()/worldToScreen() helpers (pixel space)
 │       └── types.ts             # Shared types for render proxies and managers
 └── sound/
     └── SoundManager.ts          # Lightweight WebAudio synth for game sounds
@@ -149,7 +155,7 @@ The SVG structure is:
 `GameScreen.vue` renders `<SvgGameRoot>` as a sibling with HUD/shop/tower panel overlays. Vue does **not** touch per-frame rendering. The component initializes `GameEngine` on mount, reads reactive state from Pinia stores, and cleans up on unmount. The SVG mounts/unmounts with the `/game` route.
 
 ### Three Pinia Stores
-- **`gameStore`** — volatile per-run state (lives, gold, wave, game state, selected tower, hover tile, time scale). Reset when starting a new map.
+- **`gameStore`** — volatile per-run state (lives, gold, wave, game state, selected tower, hover tile, time scale, camera). Reset when starting a new map.
 - **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons). Auto-saved to `localStorage` via manual `save()` calls.
 - **`uiStore`** — UI overlay visibility and confirm dialog state.
 
@@ -180,18 +186,20 @@ The SVG structure is:
 ### State Management
 | File | Description |
 |---|---|
-| `src/stores/game.ts` | Volatile game state: lives, gold, wave, selection, time scale, end screen data |
+| `src/stores/game.ts` | Volatile game state: lives, gold, wave, selection, time scale, camera, end screen data |
 | `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, localStorage I/O |
-| `src/stores/ui.ts` | UI state: confirm dialog, menu context, debug panel visibility |
+| `src/stores/ui.ts` | UI state: confirm dialog, main menu / skill tree / stats / help overlay flags, debug panel visibility |
 
 ### Vue Components
 | File | Description |
 |---|---|
-| `src/components/GameScreen.vue` | Game layout container: SvgGameRoot, HUD, shop, tower panel, debug panel |
+| `src/components/GameScreen.vue` | Game layout container: SvgGameRoot, HUD, shop, tower panel, wave countdown, debug panel |
 | `src/components/SvgGameRoot.vue` | Single SVG root: RAF loop, GameEngine lifecycle, imperative DOM rendering, CTM-based input |
 | `src/components/GameHud.vue` | Top bar: lives, gold, gems, wave counter, speed/pause/menu controls |
 | `src/components/GameShop.vue` | Bottom bar: tower build selection with cost and discount display |
 | `src/components/TowerPanel.vue` | Right panel: tower stats, targeting mode, upgrade/sell, specialization choices |
+| `src/components/WaveCountdown.vue` | Inter-wave countdown overlay shown before each wave spawns |
+| `src/components/HelpDialog.vue` | Help/controls overlay (toggled from the in-game pause menu) |
 | `src/components/MainMenu.vue` | Main menu: new game, resume, skill tree, difficulty slider, profile reset |
 | `src/components/MapSelect.vue` | Map grid: 36 maps with unlock status, best waves, region info |
 | `src/components/SkillTree.vue` | Skill tree: tower level unlocks, specializations, add-ons, general upgrades |
@@ -205,9 +213,13 @@ The SVG structure is:
 | File | Description |
 |---|---|
 | `src/game/GameEngine.ts` | Core loop: RAF driver, update/render, wave/enemy/tower management, rewards, end game |
-| `src/game/Constants.ts` | All game constants: tower stats, enemy types, wave config, map levels, variants, gem costs |
-| `src/game/Input.ts` | Keyboard input composable (1-8 keys for speed, Esc for pause, Tab to deselect) |
+| `src/game/Constants.ts` | Shared game constants: wave config, map levels, regions, boss cadence, gem rewards |
+| `src/game/ConstantsTower.ts` | Tower constants: TowerIds, tower stats, specialization variants, milestone/splash/crit config |
+| `src/game/ConstantsEnemy.ts` | Enemy constants: EnemyType union, ENEMY_TYPES metadata, status effect tuning |
+| `src/game/Input.ts` | Keyboard input composable (1-9 build, Arrow L/R speed, Esc dialogs/cancel, Tab cycle, u/s upgrade/sell) |
 | `src/game/EnemyWalk.ts` | Base shape vertex generation and path-d string conversion |
+| `src/game/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback |
+| `src/game/ParticleSystem.ts` | Game-side particle simulation: spawn, motion, life/expiry |
 
 ### Grid & Maps
 | File | Description |
@@ -239,22 +251,19 @@ The SVG structure is:
 | `src/render/svg/ParticleManager.ts` | Particle rendering pool: `<circle>` elements with fade/expansion |
 | `src/render/svg/EffectManager.ts` | Lightning paths, stun aura paths, build preview rect, range circle, upgrade button SVG elements |
 | `src/render/svg/UiOverlayManager.ts` | HP bars, shield bars, boss HP text as pooled `<rect>` and `<text>` elements |
-| `src/render/svg/useSvgStaticContent.ts` | Composable: generates `<defs>` (symbols from Constants.ts, filters) and grid layer SVG strings |
-| `src/render/svg/cameraUtils.ts` | `fitToGrid()` function for initial camera setup |
+| `src/render/svg/useSvgStaticContent.ts` | Composable: generates `<defs>` (symbols from ConstantsTower/ConstantsEnemy, region gradients, filters) and grid layer SVG strings |
+| `src/render/svg/cameraUtils.ts` | `fitToGrid()` plus pixel-space `screenToWorld()`/`worldToScreen()` helpers for the SVG camera |
 | `src/render/svg/types.ts` | Shared types for render proxies and managers |
-| `src/render/EnemyWalk.ts` | Base shape vertex generation and `vertsToPathD` conversion for lightning/stun paths |
 | `src/components/SvgGameRoot.vue` | Single SVG root: RAF loop, imperative DOM writes, CTM-based mouse coordinate conversion, centralized click routing |
-| `src/composables/useSvgStaticContent.ts` | Re-export of `src/render/svg/useSvgStaticContent.ts` for Vue composable usage |
+| `src/composables/cameraUtils.ts` | Vue composable: reactive camera CTM transform (`useCameraCTM`) and world/screen coordinate conversion backed by `gameStore.camera` |
 
 ### Audio
 | File | Description |
 |---|---|
 | `src/sound/SoundManager.ts` | WebAudio synth: shoot, hit, boss death, base hit, upgrade sounds |
 
-### Services
-| File | Description |
-|---|---|
-| `src/services/CameraService.ts` | Reactive camera state (x, y, zoom) shared between Vue UI and SVG rendering |
+### Camera
+Camera state (`x`, `y`, `zoom`) lives on `gameStore.camera` and is shared between the Vue UI and SVG rendering. Vue-side reactive transforms/conversions are provided by `src/composables/cameraUtils.ts` (`useCameraCTM`), while pixel-space helpers (`fitToGrid`, `screenToWorld`) live in `src/render/svg/cameraUtils.ts`. There is no longer a separate `services/` directory.
 
 ## Build & Run
 
@@ -280,12 +289,6 @@ Outputs optimized, code-split assets to `dist/`.
 npm run preview
 ```
 Serves the `dist/` directory locally.
-### Alternative Serve
-
-```bash
-bash serve-python.sh
-```
-Uses Python's built-in HTTP server on port 8423.
 
 ### Linting & Formatting
 
@@ -328,6 +331,7 @@ Game progress (gems, unlocks, difficulty, map progress) is saved to `localStorag
 | `/game` | `GameScreen.vue` | Active gameplay with single SVG root + UI overlays |
 | `/game-over` | `EndScreen.vue` | Game over screen (`won: false`) |
 | `/victory` | `EndScreen.vue` | Victory screen (`won: true`) |
+| `/history` | `HistoryScreen.vue` | Run history with gem breakdown |
 
 ## CSS Theming
 
@@ -381,13 +385,13 @@ npm run test -- --coverage
 
 | Directory | Description |
 |---|---|
-| `tests/unit/` | 33 unit test files covering all source modules |
-| `tests/unit/components/` | Vue component tests (11 files) |
+| `tests/unit/` | 30 unit test files covering all source modules |
+| `tests/unit/components/` | Vue component tests (10 files) |
 | `tests/integration/` | End-to-end wave simulation |
 | `tests/helpers/` | Shared mocks: `mock-stores.ts`, `mock-grid.ts`, `mock-managers.ts` |
 | `tests/setup.ts` | Global test setup: in-memory localStorage, Canvas 2D mock, performance.now |
 
-**~490 tests** across all files.
+**~690 tests** across all files.
 
 ### What's Covered
 
@@ -402,11 +406,9 @@ npm run test -- --coverage
 | Tower Manager | `tower-manager.test.ts` | Build, sell, update, towerAt |
 | Enemy Manager | `enemy-manager.test.ts` | Spawn, cull, getEnemiesInRange |
 | Skill Tree | `skill-tree.test.ts` | Unlock/refund/cost logic for all towers and general addons |
-| Projectiles | `projectile-manager.test.ts` | All 6 tower types with 2 variants each (12 projectile behaviors) |
+| Projectiles | `projectile-manager.test.ts`, `game-projectile-manager.test.ts` | Render pool (`<circle>`/`<line>`) and game-side simulation: all 6 tower types × 2 variants (12 projectile behaviors), splash, chain, burn, knockback |
 | Particles | `particles.test.ts` | Spawn, update, render, fade, expire, count limits |
-| SVG Render Managers | `svg-enemy-manager.test.ts`, `svg-tower-manager.test.ts`, `svg-effect-manager.test.ts`, `svg-ui-overlay.test.ts` | Pool allocation, syncFromGameEngine DOM writes, element recycling, visibility toggling |
-| SVG Static Content | `svg-static-content.test.ts` | Symbol generation from Constants.ts, grid content generation, filter definitions |
-| Camera Utils | `camera-utils.test.ts` | fitToGrid calculations for various viewport/map size combinations |
+| SVG Render Managers | `svg-effect-manager.test.ts` | Effect pool allocation, syncFromGameEngine DOM writes, element recycling, visibility toggling |
 | Sound | `sound-manager.test.ts` | WebAudio synth, all sound names, dispose, enabled flag |
 | Stores | `game-store.test.ts`, `persist-store.test.ts`, `ui-store.test.ts` | State, getters, actions, save/load, schema migration |
 | Router | `router.test.ts` | Navigation guards, block without map, save on leave, redirects |
@@ -414,17 +416,3 @@ npm run test -- --coverage
 | Components | 10 files in `tests/unit/components/` | Rendering, user interactions, store bindings |
 | Integration | `integration.test.ts` | Single wave simulation: kill enemies, gold economy, boss mechanics, victory |
 
-### Known Gaps
-
-| Area | Status |
-|---|---|
-| `SvgGameRoot.vue` component tests | Smoke tests only (`expect(true).toBe(true)`) — verify no crash but no real assertions |
-| `GameScreen.vue` overlays | Only verifies child components exist in template, not overlay rendering or popstate handler |
-| `SkillTree.vue` unlock flow | No test for clicking a node to unlock, refund dialog, or general add-on clicks |
-| `TowerPanel.vue` | Dropdown desync bug was found in code review and fixed (now covered by regression test) |
-| `SvgGameRoot.vue` SVG rendering | No test for CTM coordinate conversion, symbol instantiation, or pool element visibility |
-| `svg-enemy-manager.test.ts` | No test for hit flash timing or slow filter application |
-| `svg-tower-manager.test.ts` | No test for barrel rotation or level pip positioning |
-| `svg-effect-manager.test.ts` | No test for lightning path generation or glow filter application |
-| `DebugPanel.vue` | Only 3 of 8 debug buttons tested |
-| `MainMenu.vue` in-game state | No test for Resume/End Run buttons when `isInGame` is true |
