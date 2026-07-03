@@ -191,7 +191,7 @@ The earlier draft carried overlapping `uiColors`, `uiOverlay`, and `effectColors
 - Called from `useSvgStaticContent.ts`, `TowerManager.ts`, `EnemyManager.ts`, `EffectManager.ts`, `UiOverlayManager.ts`, `ProjectileManager.ts`, `ParticleSystem.ts`, and from the constants files (`Constants.ts`, `ConstantsTower.ts`, `ConstantsEnemy.ts`) — see "Constants mechanism" below.
 
 ### Constants mechanism (no reactivity required)
-`TOWER_META`, `ENEMY_TYPES`, and `Regions` are `export const` object literals imported by name across the codebase. They are evaluated once at module load and read directly at many call sites (`GameEngine.ts:34,461,543`, `useSvgStaticContent.ts:2-4`, `TowerManager.ts`, `EnemyManager.ts`, `StatsPanel.vue:90`, `GameShop.vue:38`, `TowerPanel.vue:198`, etc.). Because theme changes happen only between maps, these constants do **not** need to become reactive or be rebuilt on theme switch. Instead:
+`TOWER_META`, `ENEMY_TYPES`, and `Regions` are `export const` object literals imported by name across the codebase. They are evaluated once at module load and read directly at many call sites (`useSvgStaticContent.ts:2-4`, `TowerManager.ts`, `EnemyManager.ts`, `StatsPanel.vue:45,90`, `GameShop.vue:38`, `TowerPanel.vue:198`, `SkillTree.vue:205`, etc.). Because theme changes happen only between maps, these constants do **not** need to become reactive or be rebuilt on theme switch. Instead:
 
 - The `color` fields on `TowerMeta` / `ENEMY_TYPES[...]` / `Regions[...]` are **removed** and replaced with `themeGetter` lookups at consumption sites. Concretely:
   - `tower.color` → `themeGetter.getTowerColors(tower.type).base`
@@ -241,12 +241,13 @@ class ThemeGetter {
   }
 
   getEffectColor(key: string): string {
-    return this.themeData.effectColors[key] || '#40a0ff'
+    return this.themeData.effectColors[key] || this.themeData.effectColors.lightning
   }
 
-  getUiOverlayColor(key: string): unknown {
+  getUiOverlayColor(key: string): string | { high: string; medium: string; low: string } {
+    const val = this.themeData.uiOverlayColors[key]
     // Returns string or nested object (hpDynamic); caller narrows.
-    return (this.themeData.uiOverlayColors as Record<string, unknown>)[key] ?? '#00ff00'
+    return val ?? '#00ff00'
   }
 
   getBaseColor(side: 'player' | 'enemy'): string {
@@ -312,26 +313,31 @@ export const themes: Record<string, ThemeData> = {
 ### Modified Files — Constants
 - `src/game/Constants.ts` → `Regions` entries lose their `color`/`tileBase`/`tileAlt`/`pathColor`/`heightColors` literal fields; consumers call `themeGetter.getRegionColors(regionId)` instead. (Non-color fields like region name/gemReward stay.)
 - `src/game/ConstantsTower.ts` → `TowerMeta.color`, `TowerAnimationConfig.color`, `TowerWalkingConfig.color` are removed; consumers call `themeGetter.getTowerColors(type).base` / `.active`. `TOWER_VARIANTS` (line 332) is stat-only and unchanged.
-- `src/game/ConstantsEnemy.ts` → `ENEMY_TYPES[...].color` removed; consumers call `themeGetter.getEnemyColor(type)`. The `color: string` field on the `EnemyType` interface (line 21) is removed.
+- `src/game/ConstantsEnemy.ts` → `ENEMY_TYPES[...].color` removed; consumers call `themeGetter.getEnemyColor(type)`. The `color: string` field on the `EnemyMeta` interface (line 21) is removed.
 
 ### Modified Files — Tower class
 - `src/towers/Tower.ts` → line 172 `this.color = this.meta.color` becomes `this.color = themeGetter.getTowerColors(this.type).base`, since `TOWER_META[...].color` is removed in step 8.
 
+### Modified Files — Enemy class
+- `src/enemies/Enemy.ts` → line 105 `this.color = meta.color` becomes `this.color = themeGetter.getEnemyColor(this.type)`, since `ENEMY_TYPES[...].color` is removed in step 9.
+
 ### Modified Files — Render managers
-- `src/render/svg/useSvgStaticContent.ts` → grid tile and base colors/SVG paths read via `themeGetter`. `<defs>` regeneration is driven by the existing `computed` keyed on `currentMap`, which already re-runs on map change (the only time the theme can change).
+- `src/render/svg/useSvgStaticContent.ts` → replace `buildSymbolsFromConstants()` (lines 133-167, which reads `ENEMY_TYPES`/`TOWER_META` `referenceImages`) with theme `svgPaths`-driven `<symbol>` generation. Remove the `ENEMY_TYPES` and `TOWER_META` imports (lines 3-4) as they become dead code. Grid tile colors (`getTileFill`/`getTileSvg`), base structure colors (`renderBaseSvg`: `#5fd0ff` at lines 63, 93, 96, 97; `#3a3f55` at line 189), spawn markers (`#ff5a6e` at line 220, `rgba(255,50,50,0.5)` at line 294), and region data (line 277 `Regions[...]`) all read via `themeGetter`. `<defs>` regeneration is driven by the existing `computed` keyed on `currentMap`, which already re-runs on map change (the only time the theme can change).
 - `src/render/svg/TowerManager.ts` → `style.color` (line 138) reads `themeGetter.getTowerColors(tower.type).base`; sprite `href` resolution (line 164) resolves against theme-driven `<symbol>` ids built in `useSvgStaticContent`.
 - `src/render/svg/EnemyManager.ts` → enemy sprite `href` (lines 112, 130) resolves against theme-driven `<symbol>` ids.
 - `src/render/svg/EffectManager.ts` → effect colors read via `themeGetter.getEffectColor(...)` in `syncBuildPreview` (line 313) and the lightning/stun sync methods.
 - `src/render/svg/UiOverlayManager.ts` → HP/shield bar and boss text colors read via `themeGetter.getUiOverlayColor(...)` starting at the rect creation block (line 12+).
 - `src/render/svg/ProjectileManager.ts` → default `fill` fallback (line 36) reads `themeGetter.getProjectileColor('default')`.
-- `src/game/ProjectileManager.ts` → muzzle-flash particle color (line 138) reads `themeGetter.getProjectileColor('muzzleFlash')`.
+- `src/game/ProjectileManager.ts` → muzzle-flash particle color (line 138) reads `themeGetter.getProjectileColor('muzzleFlash')`; chain particle colors (lines 346, 365) read the same getter.
+- `src/towers/TowerManager.ts` → sell-effect particle color (line 106, `"#ffcf4d"`) reads `themeGetter.getProjectileColor('muzzleFlash')`.
 - `src/game/ParticleSystem.ts` → particles receive their color at spawn time (lines 9, 17, 34); the spawner passes a theme-resolved color rather than a literal.
 
 ### Modified Files — Vue components that inline tower/enemy/region colors
 These components read tower/enemy/region colors directly for inline styles and must be updated to use `themeGetter`. Because the theme is fixed for the run, calling the getter in a `computed` or directly in the template is fine (no per-frame reactivity needed).
-- `src/components/StatsPanel.vue` → `ENEMY_TYPES[type]?.color` (line 90) and `enemy.color` (lines 110, 114) become `themeGetter.getEnemyColor(type)`.
+- `src/components/StatsPanel.vue` → `ENEMY_TYPES[type]?.color` (line 90) and `enemy.color` (lines 45, 110, 114) become `themeGetter.getEnemyColor(type)`.
 - `src/components/GameShop.vue` → `TOWER_META[id].color` (line 38) becomes `themeGetter.getTowerColors(id).base`.
 - `src/components/TowerPanel.vue` → `tower.color` (line 198) becomes `themeGetter.getTowerColors(tower.type).base`.
+- `src/components/SkillTree.vue` → `TOWER_META[id].color` (line 205) becomes `themeGetter.getTowerColors(id).base`.
 - `src/components/GameHud.vue` → hardcoded HUD stat colors in the `<style>` block (lines 203-220: lives `#5fff8a`, gold `#ffd84d`, gems `#9be7ff`) become inline `:style` bindings sourced from `themeGetter.getHudColor(...)`.
 - `src/components/MapSelect.vue` → region label CSS colors (`.region-0 .region-label { color: #6abf6a }` etc., lines 183-185) and region divider gradients (lines 192-194) become inline styles sourced from `themeGetter.getRegionColors(regionId)`. (Note: the current `MapSelect.vue` shows region labels with hardcoded CSS colors — there are no swatches; the "Proposed Theme Selector" in §7 adds a real swatch UI.)
 - `src/components/HistoryScreen.vue` → region color usage (line 12 region names array is fine; any color rendering derived from regionId must go through `themeGetter`).
@@ -414,30 +420,32 @@ MapSelect.vue (user picks theme)
 6. Wire `themeGetter.setActiveTheme(...)` in `src/main.ts` (post-`load()`) and in `GameEngine`/`SvgGameRoot` map-start (§3 wiring step 3). Do **not** add `activeTheme` to `gameStore` — persisted value is the single source of truth.
 
 ### Phase 3: Constants Color Removal
-7. Update `src/game/Constants.ts` — remove `tileBase`/`tileAlt`/`pathColor`/`heightColors` literal fields from `Regions`; update consumers (notably `useSvgStaticContent.ts:2`) to call `themeGetter.getRegionColors(i)`.
-8. Update `src/game/ConstantsTower.ts` — remove `color` from `TowerMeta`/`TowerAnimationConfig`/`TowerWalkingConfig`; update consumers (`GameEngine.ts:34,461,543`, `TowerManager.ts:138`, `GameShop.vue:38`, `TowerPanel.vue:198`) to call `themeGetter.getTowerColors(type).base`/`.active`.
-9. Update `src/game/ConstantsEnemy.ts` — remove `color` from the `EnemyType` interface (line 21) and all 6 type entries; update consumers (`StatsPanel.vue:90,110,114`, `EnemyManager.ts`) to call `themeGetter.getEnemyColor(type)`.
+7. Update `src/game/Constants.ts` — remove `tileBase`/`tileAlt`/`pathColor`/`heightColors` literal fields from `Regions`; update consumers (notably `useSvgStaticContent.ts:2,277`) to call `themeGetter.getRegionColors(i)`.
+8. Update `src/game/ConstantsTower.ts` — remove `color` from `TowerMeta`/`TowerAnimationConfig`/`TowerWalkingConfig`; update consumers (`render/svg/TowerManager.ts:138`, `GameShop.vue:38`, `TowerPanel.vue:198`, `SkillTree.vue:205`) to call `themeGetter.getTowerColors(type).base`/`.active`.
+9. Update `src/game/ConstantsEnemy.ts` — remove `color` from the `EnemyMeta` interface (line 21) and all 6 type entries; update consumers (`Enemy.ts:105`, `StatsPanel.vue:45,90,110,114`) to call `themeGetter.getEnemyColor(type)`. (Other consumers like `EnemyManager.ts:39` read `enemy.color` from the entity, which is already set from themeGetter in `Enemy.ts:105`.)
 
 ### Phase 4: Rendering Integration
-10. Update `src/render/svg/useSvgStaticContent.ts` — grid/base SVG paths and colors via `themeGetter`; `<defs>` regenerates on map change via existing `computed`.
-11. Update `src/render/svg/TowerManager.ts` — `style.color` and sprite `href` resolution via `themeGetter` and theme-driven `<symbol>` ids.
-12. Update `src/render/svg/EnemyManager.ts` — enemy sprite `href` resolution via theme-driven `<symbol>` ids.
+10. Update `src/render/svg/useSvgStaticContent.ts` — replace `buildSymbolsFromConstants()` (lines 133-167) with theme `svgPaths`-driven `<symbol>` generation; remove dead `ENEMY_TYPES`/`TOWER_META` imports (lines 3-4); route all hardcoded colors through `themeGetter` (gem/base colors `#5fd0ff` at lines 63,93,96,97; base tile `#3a3f55` at line 189; spawn markers `#ff5a6e` at line 220, `rgba(255,50,50,0.5)` at line 294).
+11. Update `src/render/svg/TowerManager.ts` — `style.color` (line 138) and sprite `href` resolution (line 164) via `themeGetter` and theme-driven `<symbol>` ids.
+12. Update `src/render/svg/EnemyManager.ts` — enemy sprite `href` (lines 112, 130) resolution via theme-driven `<symbol>` ids.
 13. Update `src/render/svg/EffectManager.ts` — effect colors via `themeGetter.getEffectColor(...)`.
 14. Update `src/render/svg/UiOverlayManager.ts` — HP/shield/boss-text colors via `themeGetter.getUiOverlayColor(...)`.
 15. Update `src/render/svg/ProjectileManager.ts` — default `fill` fallback via `themeGetter.getProjectileColor('default')`.
-16. Update `src/game/ProjectileManager.ts` — muzzle-flash particle color via `themeGetter.getProjectileColor('muzzleFlash')`.
-17. Update `src/game/ParticleSystem.ts` — spawn-time color passed through from `themeGetter`.
-18. Update `src/components/GameHud.vue` — replace hardcoded HUD stat colors (lines 203-220) with inline `:style` from `themeGetter.getHudColor(...)`.
-19. Update `src/components/MapSelect.vue` — region label/divider colors (lines 183-194) via `themeGetter.getRegionColors(...)`.
+16. Update `src/game/ProjectileManager.ts` — muzzle-flash particle color (line 138) and chain particle colors (lines 346, 365) via `themeGetter.getProjectileColor('muzzleFlash')`.
+17. Update `src/towers/TowerManager.ts` — sell-effect particle color (line 106, `"#ffcf4d"`) via `themeGetter.getProjectileColor('muzzleFlash')`.
+18. Update `src/game/ParticleSystem.ts` — spawn-time color passed through from `themeGetter`.
+19. Update `src/components/GameHud.vue` — replace hardcoded HUD stat colors (lines 203-220) with inline `:style` from `themeGetter.getHudColor(...)`.
+20. Update `src/components/SkillTree.vue` — `TOWER_META[id].color` (line 205) via `themeGetter.getTowerColors(id).base`.
+21. Update `src/components/MapSelect.vue` — region label/divider colors (lines 183-194) via `themeGetter.getRegionColors(...)`.
 
 ### Phase 5: Theme Selector UI
-20. Create `src/components/ThemeCard.vue`
-21. Add theme selector to `src/components/MapSelect.vue` (updates `persistStore.activeTheme`, saves, calls `themeGetter.setActiveTheme(...)`)
+22. Create `src/components/ThemeCard.vue`
+23. Add theme selector to `src/components/MapSelect.vue` (updates `persistStore.activeTheme`, saves, calls `themeGetter.setActiveTheme(...)`)
 
 ### Phase 6: Additional Themes
-22. Create `src/game/themes/fantasy.json`
-23. Create `src/game/themes/sci-fi.json`
-24. Test theme switching on `MapSelect` (swatches update) and after entering a map (`<defs>` regenerated, sprites correct). Mid-map switching is out of scope (§0).
+25. Create `src/game/themes/fantasy.json`
+26. Create `src/game/themes/sci-fi.json`
+27. Test theme switching on `MapSelect` (swatches update) and after entering a map (`<defs>` regenerated, sprites correct). Mid-map switching is out of scope (§0).
 
 ## 9. Key Considerations
 
