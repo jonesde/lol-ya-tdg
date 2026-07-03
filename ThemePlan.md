@@ -26,7 +26,7 @@ the need for any in-game reactivity around theme data:
 ### What changes
 - **Static region colors** → **theme-driven palettes**
   - `src/game/Constants.ts` defines `Regions` (array of 3 region objects with `tileBase`, `tileAlt`, `pathColor`, `heightColors`), lines 20-47
-  - `src/game/ConstantsTower.ts` defines `TOWER_META` (line 37) with a `color` per tower type plus per-variant `color` values inside each variant entry (e.g. line 41 base, lines 57/68 variant A/B)
+  - `src/game/ConstantsTower.ts` defines `TOWER_META` (line 37) with a `color` per tower type plus per-state `color` values for animation and walking configs (e.g. line 41 base, lines 57/68 animation/walking color)
   - `src/game/ConstantsEnemy.ts` defines `ENEMY_TYPES` with `color` per enemy type (lines 42, 117, 192, 267, 343, 420)
   - These become theme-lookup calls instead of constant references
 - **Map visuals** → **theme-aware rendering**
@@ -124,6 +124,11 @@ Each tower in the source has up to two distinct colors: a **base** color (`Tower
       "low": "#ff0000"
     }
   },
+  "hudColors": {
+    "lives": "#5fff8a",
+    "gold": "#ffd84d",
+    "gems": "#9be7ff"
+  },
   "svgPaths": {
     "gridTile": "<path d='...' fill='...' />",
     "basePlayer": "<g>...</g>",
@@ -163,6 +168,7 @@ The earlier draft carried overlapping `uiColors`, `uiOverlay`, and `effectColors
 
 - **`effectColors`** — owned and read by `EffectManager.ts` (lightning paths, stun aura, build preview rect, range circle, upgrade button bg/border, selected-tile rect).
 - **`uiOverlayColors`** — owned and read by `UiOverlayManager.ts` (HP/shield bar foreground/background, boss HP text color, dynamic HP thresholds).
+- **`hudColors`** — owned and read by `GameHud.vue` (HUD stat colors: lives, gold, gems).
 - **`projectileColors`** — owned and read by `src/render/svg/ProjectileManager.ts` (default fill fallback) and `src/game/ProjectileManager.ts` + `src/game/ParticleSystem.ts` (muzzle-flash particle color at spawn).
 - **`regionColors`** — owned and read by `useSvgStaticContent.ts` (grid tile + base rendering) and `Constants.ts` `Regions`.
 - **`towerColors`** / **`enemyColors`** — owned and read by `ConstantsTower.ts`/`ConstantsEnemy.ts` and the render managers that consume tower/enemy color.
@@ -181,7 +187,7 @@ The earlier draft carried overlapping `uiColors`, `uiOverlay`, and `effectColors
 ### ThemeGetter
 - `src/game/ThemeGetter.ts` (new file)
 - Plain singleton (no Vue reactivity) holding the active theme object. Because theme switching is between-map only (§0), `ThemeGetter`'s values are read during map load and per-frame rendering but never change mid-run, so no reactivity system is needed.
-- Provides `setActiveTheme(key)`, `getRegionColors(regionId)`, `getTowerColors(towerType)`, `getEnemyColor(enemyType)`, `getProjectileColor(key)`, `getEffectColor(key)`, `getUiOverlayColor(key)`, `getBaseColor(side)`.
+- Provides `setActiveTheme(key)`, `getRegionColors(regionId)`, `getTowerColors(towerType)`, `getEnemyColor(enemyType)`, `getProjectileColor(key)`, `getEffectColor(key)`, `getUiOverlayColor(key)`, `getHudColor(key)`, `getBaseColor(side)`.
 - Called from `useSvgStaticContent.ts`, `TowerManager.ts`, `EnemyManager.ts`, `EffectManager.ts`, `UiOverlayManager.ts`, `ProjectileManager.ts`, `ParticleSystem.ts`, and from the constants files (`Constants.ts`, `ConstantsTower.ts`, `ConstantsEnemy.ts`) — see "Constants mechanism" below.
 
 ### Constants mechanism (no reactivity required)
@@ -246,6 +252,10 @@ class ThemeGetter {
   getBaseColor(side: 'player' | 'enemy'): string {
     return this.themeData.baseColors[side]
   }
+
+  getHudColor(key: string): string {
+    return (this.themeData.hudColors as Record<string, string>)[key] ?? '#5fff8a'
+  }
 }
 
 export const themeGetter = new ThemeGetter()
@@ -278,14 +288,14 @@ export const themes: Record<string, ThemeData> = {
 ### Theme Integration Points
 1. **Grid tiles** (`useSvgStaticContent.ts`): Full creative license — SVG paths, colors, patterns can change per theme
 2. **Bases** (`useSvgStaticContent.ts`): Full creative license — SVG paths, colors, shapes can change per theme
-3. **Tower SVG paths** (`TowerManager.ts`): Full creative license — SVG paths, colors, shapes can change per theme (overrides `ConstantsTower.ts` `referenceImages` sprites via `svgPaths.tower.*`)
-4. **Enemy SVG paths** (`EnemyManager.ts`): Full creative license — SVG paths, colors, shapes can change per theme (overrides `EnemyWalk.ts` vertex sprites via `svgPaths.enemy.*`)
+3. **Tower SVG paths** (`TowerManager.ts`): Full creative license — each theme provides its own SVG paths, colors, and shapes via `svgPaths.tower.*`
+4. **Enemy SVG paths** (`EnemyManager.ts`): Full creative license — each theme provides its own SVG paths, colors, and shapes via `svgPaths.enemy.*`
 5. **Effects** (`EffectManager.ts`): Full creative license — SVG paths, colors, shapes for lightning, stun, build preview can change per theme
 6. **UI overlays** (`UiOverlayManager.ts`): Full creative license — SVG paths, colors, shapes for HP bar, shield bar, text can change per theme
 
 ### SVG Path Strategy
-- Tower sprite geometry is defined by `TowerMeta.animation.referenceImages[].svgText` / `TowerMeta.walking.referenceImages[].svgText` in `src/game/ConstantsTower.ts`; enemy sprite geometry comes from `src/game/EnemyWalk.ts` vertex generation. These are the default sprite sources.
-- **Themes have full creative license to override these** — a theme's `svgPaths.tower.*` / `svgPaths.enemy.*` entries (§2) replace the default sprite `<symbol>` definitions when `<defs>` is regenerated at map load. A theme that wants default sprites leaves those entries empty and the regenerator falls back to the `referenceImages`/vertex pipeline.
+- Each theme is self-contained and carries its own complete `svgPaths` definitions. There is no fallback to `referenceImages`, `EnemyWalk.ts` vertex data, or any assets from another theme.
+- At map load, `<defs>` is regenerated using only the active theme's `svgPaths` entries. The existing `referenceImages`/vertex pipeline in `ConstantsTower.ts` and `EnemyWalk.ts` is used solely to author the `default.json` theme and is not consulted at runtime.
 - Each theme can therefore define completely different SVG paths for towers, enemies, map tiles, bases, effects, and UI overlays.
 - `<defs>` regeneration happens once per map load (driven by the existing `currentMap`-keyed `computed` in `useSvgStaticContent`); pooled `<use>` elements re-resolve their `href` against the new `<symbol>` ids at the same time. No mid-run refresh is needed or supported (§0).
 - This enables radically different visual styles per theme (e.g., fantasy castles vs sci-fi bases, medieval swords vs laser guns) without touching game logic.
@@ -304,6 +314,9 @@ export const themes: Record<string, ThemeData> = {
 - `src/game/ConstantsTower.ts` → `TowerMeta.color`, `TowerAnimationConfig.color`, `TowerWalkingConfig.color` are removed; consumers call `themeGetter.getTowerColors(type).base` / `.active`. `TOWER_VARIANTS` (line 332) is stat-only and unchanged.
 - `src/game/ConstantsEnemy.ts` → `ENEMY_TYPES[...].color` removed; consumers call `themeGetter.getEnemyColor(type)`. The `color: string` field on the `EnemyType` interface (line 21) is removed.
 
+### Modified Files — Tower class
+- `src/towers/Tower.ts` → line 172 `this.color = this.meta.color` becomes `this.color = themeGetter.getTowerColors(this.type).base`, since `TOWER_META[...].color` is removed in step 8.
+
 ### Modified Files — Render managers
 - `src/render/svg/useSvgStaticContent.ts` → grid tile and base colors/SVG paths read via `themeGetter`. `<defs>` regeneration is driven by the existing `computed` keyed on `currentMap`, which already re-runs on map change (the only time the theme can change).
 - `src/render/svg/TowerManager.ts` → `style.color` (line 138) reads `themeGetter.getTowerColors(tower.type).base`; sprite `href` resolution (line 164) resolves against theme-driven `<symbol>` ids built in `useSvgStaticContent`.
@@ -319,7 +332,7 @@ These components read tower/enemy/region colors directly for inline styles and m
 - `src/components/StatsPanel.vue` → `ENEMY_TYPES[type]?.color` (line 90) and `enemy.color` (lines 110, 114) become `themeGetter.getEnemyColor(type)`.
 - `src/components/GameShop.vue` → `TOWER_META[id].color` (line 38) becomes `themeGetter.getTowerColors(id).base`.
 - `src/components/TowerPanel.vue` → `tower.color` (line 198) becomes `themeGetter.getTowerColors(tower.type).base`.
-- `src/components/GameHud.vue` → hardcoded enemy-type CSS colors in the `<style>` block (lines 203-220: `#5fff8a`, `#ffd84d`, `#9be7ff`, etc.) become inline `:style` bindings sourced from `themeGetter.getEnemyColor(...)`.
+- `src/components/GameHud.vue` → hardcoded HUD stat colors in the `<style>` block (lines 203-220: lives `#5fff8a`, gold `#ffd84d`, gems `#9be7ff`) become inline `:style` bindings sourced from `themeGetter.getHudColor(...)`.
 - `src/components/MapSelect.vue` → region label CSS colors (`.region-0 .region-label { color: #6abf6a }` etc., lines 183-185) and region divider gradients (lines 192-194) become inline styles sourced from `themeGetter.getRegionColors(regionId)`. (Note: the current `MapSelect.vue` shows region labels with hardcoded CSS colors — there are no swatches; the "Proposed Theme Selector" in §7 adds a real swatch UI.)
 - `src/components/HistoryScreen.vue` → region color usage (line 12 region names array is fine; any color rendering derived from regionId must go through `themeGetter`).
 
@@ -334,11 +347,11 @@ These components read tower/enemy/region colors directly for inline styles and m
 
 ### Unchanged Files
 - `src/components/SvgGameRoot.vue` (orchestrates rendering; the only change is the one defensive `setActiveTheme` call if placed here rather than in `GameEngine`)
-- `src/towers/Tower.ts` (logic unchanged; only color references change via ThemeGetter at consumption sites)
+
 - `src/enemies/Enemy.ts` (logic unchanged; only color references change via ThemeGetter at consumption sites)
 - `src/grid/Map.ts` (map data unchanged)
 - `src/waves/WaveManager.ts` (wave logic unchanged)
-- `src/game/EnemyWalk.ts` (logic unchanged)
+- `src/game/EnemyWalk.ts` (logic unchanged; no longer a runtime rendering dependency — used only to author `default.json` svgPaths)
 - `src/services/CameraService.ts` / `src/render/svg/cameraUtils.ts` (camera logic unchanged)
 - `src/components/ConfirmDialog.vue`, `src/components/DebugPanel.vue`, `src/components/EndScreen.vue`, `src/components/HelpDialog.vue`, `src/components/MainMenu.vue` (these use only `--color-*` CSS custom properties from `App.vue`, not tower/enemy/region colors; CSS-variable theming is orthogonal to this plan and left as-is)
 
@@ -414,7 +427,7 @@ MapSelect.vue (user picks theme)
 15. Update `src/render/svg/ProjectileManager.ts` — default `fill` fallback via `themeGetter.getProjectileColor('default')`.
 16. Update `src/game/ProjectileManager.ts` — muzzle-flash particle color via `themeGetter.getProjectileColor('muzzleFlash')`.
 17. Update `src/game/ParticleSystem.ts` — spawn-time color passed through from `themeGetter`.
-18. Update `src/components/GameHud.vue` — replace hardcoded enemy-type CSS colors (lines 203-220) with inline `:style` from `themeGetter`.
+18. Update `src/components/GameHud.vue` — replace hardcoded HUD stat colors (lines 203-220) with inline `:style` from `themeGetter.getHudColor(...)`.
 19. Update `src/components/MapSelect.vue` — region label/divider colors (lines 183-194) via `themeGetter.getRegionColors(...)`.
 
 ### Phase 5: Theme Selector UI
@@ -430,7 +443,7 @@ MapSelect.vue (user picks theme)
 
 ### SVG Shape Strategy
 - **Full creative license to modify SVG paths** for each theme (see §4 for the integration points).
-- Tower and Enemy sprite geometry currently comes from `TowerMeta.animation.referenceImages[].svgText` and `EnemyWalk.ts` vertex data — not from hand-authored top-level `svgPaths`. The `svgPaths.tower.*` / `svgPaths.enemy.*` entries in the theme JSON are the mechanism by which a theme *overrides* those sprite definitions when `<defs>` is regenerated at map load. A theme that wants the default sprites can leave these entries empty and the regenerator falls back to the existing `referenceImages`/vertex pipeline.
+- Tower and Enemy sprite geometry is defined entirely by the active theme's `svgPaths.tower.*` / `svgPaths.enemy.*` entries. Themes are self-contained — no theme references or falls back to another theme's data or to the ConstantsTower referenceImages/EnemyWalk vertex pipeline at runtime.
 - Theme switching regenerates `<defs>` once at map load (driven by the existing `currentMap`-keyed `computed` in `useSvgStaticContent`); pooled `<use>` elements re-resolve their `href` against the new `<symbol>` ids at the same time. No mid-run refresh is needed or supported (§0).
 - Prefer `currentColor` / `stroke="currentColor"` in `svgPaths` markup and let render managers set `style.color` from the color buckets (matching the existing pattern at `TowerManager.ts:138`), so that `fill`/`stroke` literals embedded in `svgPaths` don't drift from the color buckets.
 
@@ -443,7 +456,7 @@ The earlier draft had every getter return a hardcoded fallback (`'#8fbc8f'`, `'#
 - `requestAnimationFrame` loop reads `themeGetter` via hashmap lookup per pooled element per frame — negligible.
 
 ### Backward Compatibility
-- `default.json` contains current hardcoded colors (with lightning corrected to `{ base: "#205088", active: "#40a0ff" }`) and (optionally empty) `svgPaths` so default sprites come from the existing `referenceImages`/vertex pipeline.
+- `default.json` contains current hardcoded colors (with lightning corrected to `{ base: "#205088", active: "#40a0ff" }`) and the current sprite geometry as `svgPaths`, ported from the existing `referenceImages` and `EnemyWalk.ts` vertex pipeline.
 - Existing maps and game logic work without theme changes.
 - Theme is optional — `persistStore.activeTheme` defaults to `'default'` on new profiles and on load of pre-existing saves (§5 migration).
 - CSS-variable theming (`--color-bg`, `--color-panel`, etc. in `App.vue`) is orthogonal to this plan and unchanged; components that use only those variables (`ConfirmDialog`, `DebugPanel`, `EndScreen`, `HelpDialog`, `MainMenu`) need no edits.
