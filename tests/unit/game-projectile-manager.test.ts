@@ -351,11 +351,11 @@ describe("ProjectileManager", () => {
 
       randomSpy.mockRestore();
 
-      // enemy1: full damage, then a chain back from enemy2
+      // enemy1: full damage, then a chain back from enemy2 (second hop, falloff applied twice)
       expect(takeDamage1).toHaveBeenCalledWith(20);
-      expect(takeDamage1).toHaveBeenCalledWith(20 * 0.8 ** 1);
-      // enemy2: chain from initial target (no falloff on first hop), no further chains remain
-      expect(takeDamage2).toHaveBeenCalledWith(20);
+      expect(takeDamage1).toHaveBeenCalledWith(20 * 0.8 ** 2);
+      // enemy2: chain from initial target (first hop, falloff applied once), no further chains remain
+      expect(takeDamage2).toHaveBeenCalledWith(20 * 0.8 ** 1);
       // 2 chain hops + 1 tower->final-target flash
       expect(lightningSparks).toHaveLength(3);
     });
