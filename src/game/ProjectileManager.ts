@@ -409,7 +409,8 @@ export class ProjectileManager {
     }
 
     if (projectile.splashRadius > 0 && this.particles) {
-      const splashEnemies = this.enemyManager.getEnemiesInRange(projectile.x, projectile.y, projectile.splashRadius);
+      const splashRadiusPx = projectile.splashRadius * (this.grid?.tileSize ?? 1);
+      const splashEnemies = this.enemyManager.getEnemiesInRange(projectile.x, projectile.y, splashRadiusPx);
       for (const splashEnemy of splashEnemies) {
         if (splashEnemy.id !== enemy.id && (splashEnemy as { takeDamage?: unknown }).takeDamage) {
           const splashDamage = finalDamage * SPLASH_DAMAGE_RATIO;
@@ -469,7 +470,8 @@ export class ProjectileManager {
 
     let chainsUsed = 0;
     while (remainingChains > 0) {
-      const nextTarget = this.findNearestEnemy(current.x, current.y, CHAIN_RANGE, current.id);
+      const chainRangePx = CHAIN_RANGE * (this.grid?.tileSize ?? 1);
+      const nextTarget = this.findNearestEnemy(current.x, current.y, chainRangePx, current.id);
       if (!nextTarget) break;
 
       const chainDamage = finalDamage * CHAIN_DAMAGE_FALLOFF ** (chainsUsed + 1);

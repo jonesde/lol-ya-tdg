@@ -49,12 +49,10 @@ function createMockEnemyManager(enemies: MockEnemy[]): MockEnemyManager {
   return {
     enemies,
     getEnemiesInRange(x, y, range) {
-      const tileSize = 36;
-      const rangePx = range * tileSize;
       return enemies.filter((e) => {
         const dx = e.x - x;
         const dy = e.y - y;
-        return Math.sqrt(dx * dx + dy * dy) <= rangePx;
+        return Math.sqrt(dx * dx + dy * dy) <= range;
       });
     },
     getEnemyById(id) {
@@ -342,7 +340,7 @@ describe("ProjectileManager", () => {
       enemyManager = createMockEnemyManager([enemy1, enemy2]);
       manager = new ProjectileManager(enemyManager, particles, (x1, y1, x2, y2) => {
         lightningSparks.push({ x1, y1, x2, y2 });
-      });
+      }, null, { tileSize: 36 } as any);
 
       // Force non-crit so damage values are deterministic
       const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
@@ -366,7 +364,7 @@ describe("ProjectileManager", () => {
       enemyManager = createMockEnemyManager([enemy1, enemy2]);
       manager = new ProjectileManager(enemyManager, particles, (x1, y1, x2, y2) => {
         lightningSparks.push({ x1, y1, x2, y2 });
-      });
+      }, null, { tileSize: 36 } as any);
 
       manager.fireLightning({ originX: 100, originY: 200, damage: 20, towerLevel: 5, targetId: 1, stunDuration: 0.1 });
       // level 5 -> tier 1 -> 3 chain hops + 1 tower->target flash
