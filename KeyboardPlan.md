@@ -1,5 +1,9 @@
 # Keyboard Navigation Plan for Menus and Dialogs
 
+DO NOT IMPLEMENT
+
+NOTE: Thinking plain browser tab/etc keyboard nav is enough, only do special stuff in-game (/game). Some existing UI elements need to be made into browser buttons and added to tab order list, but that may be all... not all of this.
+
 ## Current State
 
 The app has keyboard support only for in-game actions (`src/game/Input.ts`). Menus and dialogs have **zero** keyboard navigation -- no focus tracking, no arrow key support, no Enter-to-activate. Interactive elements like map cards and skill nodes are `<div>`s with `@click` handlers, not `<button>`s.
