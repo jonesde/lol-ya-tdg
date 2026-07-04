@@ -14,7 +14,7 @@ export function getMapDisplayName(map: GeneratedMap | null, theme: MapThemeData 
   if (!theme) return map.name || "Random Map";
   const region = theme.regions.find((r) => r.id === map.regionId);
   if (region && map.level !== undefined) {
-    return `${region.name} ${map.level}`;
+    return `${region.name} Map ${map.level}`;
   }
   return map.name || "Random Map";
 }
@@ -313,7 +313,7 @@ export function generateRandomMap(
     tiles,
     spawns,
     base,
-    name: level > 0 ? `Region ${regionId + 1} ${level}` : "Random Map",
+    name: level > 0 ? `Region ${regionId + 1} Map ${level}` : "Random Map",
     bossCadence: BOSS_CADENCE[regionId]!,
     seed,
   };

@@ -29,7 +29,7 @@ const mapDisplayName = computed(() => {
     if (theme) {
       const region = theme.regions.find((r) => r.id === map.regionId);
       if (region && map.level !== undefined) {
-        return `${region.name} ${map.level}`;
+        return `${region.name} Map ${map.level}`;
       }
     }
     return `Map ${map.regionId}`;
@@ -223,8 +223,9 @@ async function startMap(index: number) {
 
 .map-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(6, 1fr);
   gap: 12px;
+  justify-content: center;
 }
 
 .region-header {

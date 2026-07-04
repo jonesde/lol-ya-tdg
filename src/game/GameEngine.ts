@@ -137,7 +137,7 @@ export class GameEngine {
     const diffTick = this.persistStore.getDifficultyTick();
     this.particleManager = new ParticleSystem();
     this.enemyManager = new EnemyManager(this.grid, this.particleManager, diffTick, this.theme);
-    this.projectileManager = new ProjectileManager(this.enemyManager, this.particleManager, null, null);
+    this.projectileManager = new ProjectileManager(this.enemyManager, this.particleManager, null, null, this.grid);
     this.towerManager = new TowerManager(
       this.grid,
       this.particleManager,
@@ -237,7 +237,7 @@ export class GameEngine {
 
     const wm = this.waveManager;
     if (wm.countdownActive) {
-      const currentRemaining = Math.floor(wm.countdownTimer);
+      const currentRemaining = Math.ceil(wm.countdownTimer);
       const stored: { remaining: number; nextWave: number } | null = this.gameStore.waveCountdown;
       if (!stored || stored.remaining !== currentRemaining) {
         this.gameStore.waveCountdown = { remaining: currentRemaining, nextWave: wm.currentWave + 1 };

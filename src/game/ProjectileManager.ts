@@ -4,10 +4,12 @@ import {
   CHAIN_DAMAGE_FALLOFF,
   CHAIN_RANGE,
   CRIT_CHANCE,
+  MARKSMAN_CHANCE,
   NAPALM_BURN_DPS_RATIO,
   NAPALM_BURN_DURATION,
   RAILGUN_KNOCK_HP_DIVISOR,
   RAILGUN_KNOCK_SCALE,
+  RAILGUN_KNOCKBACK_MULT,
   RAILGUN_KNOCKBASE,
   SPLASH_DAMAGE_RATIO,
   TOWER_BASE,
@@ -35,6 +37,7 @@ export interface ProjectileGame {
   burnDuration: number;
   critMultiplier: number;
   isCrit: boolean;
+  marksman: boolean;
   active: boolean;
   age: number;
   hitCount: number;
@@ -50,6 +53,14 @@ interface LightningTarget {
   applyStun?(duration: number): void;
 }
 
+interface GridRef {
+  width: number;
+  height: number;
+  tileSize: number;
+  tiles: { type: string; height: number }[][];
+  blocked: Set<string>;
+}
+
 export interface EnemyManager {
   getEnemiesInRange(
     x: number,
@@ -60,6 +71,7 @@ export interface EnemyManager {
     id: number,
   ): {
     id: number;
+    type: string;
     x: number;
     y: number;
     hp: number;
@@ -69,6 +81,7 @@ export interface EnemyManager {
   } | null;
   enemies: {
     id: number;
+    type: string;
     x: number;
     y: number;
     hp: number;
@@ -89,6 +102,7 @@ export class ProjectileManager {
   private projectiles: ProjectileGame[];
   private enemyManager: EnemyManager;
   private particles: ParticleSystem | null;
+  private grid: GridRef | null;
   private onLightningFlash: OnLightningFlashCallback | null;
   private onStunEffect: OnStunEffectCallback | null;
   private nextProjectileId: number;
@@ -99,10 +113,12 @@ export class ProjectileManager {
     particles: ParticleSystem | null,
     onLightningFlash: OnLightningFlashCallback | null,
     towerLookup: ((towerId: string) => Tower | null) | null = null,
+    grid: GridRef | null = null,
   ) {
     this.projectiles = [];
     this.enemyManager = enemyManager;
     this.particles = particles;
+    this.grid = grid;
     this.onLightningFlash = onLightningFlash;
     this.onStunEffect = null;
     this.nextProjectileId = 1;
@@ -134,6 +150,8 @@ export class ProjectileManager {
     slowDur?: number;
     towerId?: string;
     napalm?: boolean;
+    marksman?: boolean;
+    knockback?: boolean;
     variant?: "A" | "B" | null;
   }): void {
     const projectile: ProjectileGame = {
@@ -158,13 +176,22 @@ export class ProjectileManager {
       burnDuration: 0,
       critMultiplier: 2,
       isCrit: Math.random() < CRIT_CHANCE,
+      marksman: false,
       active: true,
       age: 0,
       hitCount: 0,
       towerId: opts.towerId ?? "",
     };
 
-    this.applyProjectileEffects(projectile, opts.towerType, opts.towerLevel, opts.napalm ?? false, opts.variant);
+    this.applyProjectileEffects(
+      projectile,
+      opts.towerType,
+      opts.towerLevel,
+      opts.napalm ?? false,
+      opts.marksman ?? false,
+      opts.knockback ?? false,
+      opts.variant,
+    );
 
     this.projectiles.push(projectile);
   }
@@ -174,6 +201,8 @@ export class ProjectileManager {
     towerType: string,
     towerLevel: number,
     napalm: boolean,
+    marksman: boolean,
+    knockback: boolean,
     variant?: "A" | "B" | null,
   ): void {
     const tier = Math.max(0, towerLevel - 4);
@@ -190,13 +219,72 @@ export class ProjectileManager {
     if (towerType === "railgun") {
       projectile.pierceCount = 1 + tier;
       projectile.knockback = RAILGUN_KNOCKBASE + RAILGUN_KNOCK_SCALE * tier;
+      if (knockback) {
+        projectile.knockback *= RAILGUN_KNOCKBACK_MULT;
+      }
       projectile.stunDuration = 0.3;
+    }
+
+    if (marksman) {
+      projectile.marksman = Math.random() < MARKSMAN_CHANCE;
     }
 
     if (towerType === "sniper" && towerLevel >= 5 && variant === "B") {
       projectile.pierceCount = 1;
       projectile.stunDuration = TOWER_BASE.sniper!.stun ?? 0;
     }
+  }
+
+  private clampKnockback(
+    enemyX: number,
+    enemyY: number,
+    knockDx: number,
+    knockDy: number,
+    knockAmount: number,
+  ): { x: number; y: number } {
+    if (!this.grid) {
+      return { x: enemyX + knockDx * knockAmount, y: enemyY + knockDy * knockAmount };
+    }
+
+    const grid = this.grid;
+    const stepSize = 1;
+    const steps = Math.ceil(knockAmount / stepSize);
+    let clampedX = enemyX;
+    let clampedY = enemyY;
+
+    for (let step = 0; step < steps; step++) {
+      const nextX = clampedX + knockDx * stepSize;
+      const nextY = clampedY + knockDy * stepSize;
+
+      const tileX = Math.floor(nextX / grid.tileSize);
+      const tileY = Math.floor(nextY / grid.tileSize);
+
+      if (tileX < 0 || tileY < 0 || tileX >= grid.width || tileY >= grid.height) {
+        break;
+      }
+
+      const tile = grid.tiles[tileY]?.[tileX];
+      if (!tile) break;
+
+      if (tile.type === "terrain") {
+        break;
+      }
+
+      if (tile.type === "path" && grid.blocked.has(`${tileX},${tileY}`)) {
+        break;
+      }
+
+      clampedX = nextX;
+      clampedY = nextY;
+    }
+
+    const remainder = knockAmount - Math.floor(knockAmount / stepSize) * stepSize;
+    if (remainder > 0) {
+      clampedX += knockDx * remainder;
+      clampedY += knockDy * remainder;
+    }
+
+    return { x: clampedX, y: clampedY };
   }
 
   update(dt: number): void {
@@ -238,6 +326,7 @@ export class ProjectileManager {
     projectile: ProjectileGame,
     enemy: {
       id: number;
+      type: string;
       x: number;
       y: number;
       hp: number;
@@ -249,6 +338,23 @@ export class ProjectileManager {
     },
   ): void {
     const finalDamage = projectile.isCrit ? projectile.damage * projectile.critMultiplier : projectile.damage;
+
+    if (projectile.marksman && enemy.type !== "boss") {
+      const instantKillDamage = enemy.hp + 1;
+      enemy.takeDamage(instantKillDamage);
+      if (projectile.towerId) {
+        const tower = this.towerLookup?.(projectile.towerId);
+        if (tower) {
+          tower.totalDamageDealt += instantKillDamage;
+          tower.waveDamage += instantKillDamage;
+        }
+      }
+      if (this.particles) {
+        this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, { speed: 30, life: 0.2 });
+      }
+      this.removeProjectile(projectile, "hit");
+      return;
+    }
 
     enemy.takeDamage(finalDamage);
 
@@ -283,8 +389,11 @@ export class ProjectileManager {
       const dy = enemy.y - projectile.y;
       const knockDist = Math.sqrt(dx * dx + dy * dy);
       if (knockDist > 0) {
-        enemy.x += (dx / knockDist) * knockAmount;
-        enemy.y += (dy / knockDist) * knockAmount;
+        const knockDx = dx / knockDist;
+        const knockDy = dy / knockDist;
+        const clamped = this.clampKnockback(enemy.x, enemy.y, knockDx, knockDy, knockAmount);
+        enemy.x = clamped.x;
+        enemy.y = clamped.y;
       }
     }
 

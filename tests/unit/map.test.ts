@@ -72,7 +72,7 @@ describe("Map generation", () => {
         const map = getMap(i);
         expect(map.name).toBeDefined();
         expect(typeof map.name).toBe("string");
-        expect(map.name).toMatch(/^Region \d+ \d+$/);
+        expect(map.name).toMatch(/^Region \d+ Map \d+$/);
       }
     });
   });

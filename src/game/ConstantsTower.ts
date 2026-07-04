@@ -93,6 +93,10 @@ export const NAPALM_BURN_DPS_RATIO = 0.2;
 export const NAPALM_BURN_DURATION = 2;
 // basic tower with addon 0 crits CRIT_CHANCE of the time for bonus damage (ProjectileManager.js)
 export const CRIT_CHANCE = 0.15;
+// marksman variant instant-kill chance (ProjectileManager.js)
+export const MARKSMAN_CHANCE = 0.2;
+// marksman knockback multiplier for railgun variant A (ProjectileManager.js)
+export const RAILGUN_KNOCKBACK_MULT = 3;
 
 // ===== Tower Variant Definitions =====
 // Applied when a tower reaches level 4 and is specialized (Tower.js)

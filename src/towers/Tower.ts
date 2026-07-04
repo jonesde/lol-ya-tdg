@@ -76,6 +76,8 @@ interface ProjectileManagerRef {
     slowDur?: number;
     towerId?: string;
     napalm?: boolean;
+    marksman?: boolean;
+    knockback?: boolean;
     variant?: "A" | "B" | null;
   }): void;
   fireLightning(opts: {
@@ -599,6 +601,8 @@ export class Tower {
       slowAmt: stats.slowAmt,
       slowDur: stats.slowDur,
       napalm: stats.napalm,
+      marksman: stats.marksman,
+      knockback: stats.knockback,
       variant: this.variant,
     });
     this.fireAnimTime = performance.now() / 1000;
