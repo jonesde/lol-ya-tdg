@@ -21,6 +21,7 @@ Defend your base against 100 waves of enemies across 36 procedurally-generated m
 
 ### Game Features
 - **36 maps** across 3 regions (Verdant Marches, Sunscorch Coast, Thornpeak Wilds), each with increasing difficulty and different gem multipliers
+- **Map themes** selectable on the map-select screen: swaps visual identity (SVG sprites, tile images, base art, display names) of towers, enemies, and maps without affecting gameplay stats
 - **6 tower types** with 3 specialization variants each (unlock at level 4)
 - **6 enemy types** including minions, runners, tanks, shielded, healers, and bosses
 - **Gem economy** with milestone rewards, first-time bonuses, and difficulty scaling
@@ -67,7 +68,8 @@ src/
 ├── stores/
 │   ├── game.ts                  # Volatile per-run state: lives, gold, wave, game state, selection, camera
 │   ├── persist.ts               # Persistent meta-progression: gems, unlocks, difficulty, map progress (localStorage)
-│   └── ui.ts                    # UI overlay state: confirm dialogs, menu/skill-tree/stats/help context, debug panel
+│   ├── ui.ts                    # UI overlay state: confirm dialogs, menu/skill-tree/stats/help context, debug panel
+│   └── mapTheme.ts              # Map theme state: activeTheme, defaultTheme, availableThemes, preload/load actions
 ├── composables/
 │   └── cameraUtils.ts           # Vue composable: reactive camera CTM transform + world/screen coordinate conversion
 ├── components/
@@ -109,6 +111,11 @@ src/
 ├── waves/
 │   └── WaveManager.ts           # Wave composition, boss cadence, inter-wave timer
 ├── render/
+│   ├── themes/
+│   │   ├── index.ts             # Theme registry: MAP_THEME_MANIFEST, lazy loaders, visual meta types
+│   │   ├── normalize.ts         # normalizeThemeImages: fetches external SVG refs, inlines them
+│   │   └── data/
+│   │       └── default-map-theme.json  # Default theme data: tower/enemy sprites, tile images, base art
 │   └── svg/
 │       ├── EnemyManager.ts      # Enemy rendering pool: <use> elements, hit flash, slow filters
 │       ├── TowerManager.ts      # Tower rendering pool: <use> elements, barrel rotation, level pips
@@ -116,7 +123,7 @@ src/
 │       ├── ParticleManager.ts   # Particle rendering pool: <circle> elements
 │       ├── EffectManager.ts     # Lightning, stun aura, build preview, range circle, upgrade button
 │       ├── UiOverlayManager.ts  # HP bars, shield bars, boss HP text rendering
-│       ├── useSvgStaticContent.ts # Composable: generates <defs> symbols/filters and grid layer SVG strings
+│       ├── useSvgStaticContent.ts # Composable: builds <defs> symbols/filters + grid layer from active theme
 │       ├── cameraUtils.ts       # fitToGrid() and screenToWorld()/worldToScreen() helpers (pixel space)
 │       └── types.ts             # Shared types for render proxies and managers
 └── sound/
@@ -190,33 +197,41 @@ The SVG structure is:
 | `src/stores/game.ts` | Volatile game state: lives, gold, wave, selection, time scale, camera, end screen data |
 | `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, localStorage I/O |
 | `src/stores/ui.ts` | UI state: confirm dialog, main menu / skill tree / stats / help overlay flags, debug panel visibility |
+| `src/stores/mapTheme.ts` | Map theme state: activeTheme, defaultTheme (preloaded at app init), availableThemes, preload/load actions |
+
+### Map Theme
+| File | Description |
+|---|---|
+| `src/render/themes/index.ts` | Theme registry: `MAP_THEME_MANIFEST` (id/label entries), lazy loaders, `MapThemeData`/`TowerVisualMeta`/`EnemyVisualMeta`/`RegionVisualMeta` types |
+| `src/render/themes/normalize.ts` | `normalizeThemeImages(theme)`: walks theme object, fetches external SVG path/URL refs, replaces with inlined SVG text |
+| `src/render/themes/data/default-map-theme.json` | Default theme data: tower/enemy SVG sprites, tile images (path + 4 terrain heights per region), base 3×3 SVG per region |
 
 ### Vue Components
 | File | Description |
 |---|---|
 | `src/components/GameScreen.vue` | Game layout container: SvgGameRoot, HUD, shop, tower panel, wave countdown, debug panel |
-| `src/components/SvgGameRoot.vue` | Single SVG root: RAF loop, GameEngine lifecycle, imperative DOM rendering, CTM-based input |
-| `src/components/GameHud.vue` | Top bar: lives, gold, gems, wave counter, speed/pause/menu controls |
-| `src/components/GameShop.vue` | Bottom bar: tower build selection with cost and discount display |
-| `src/components/TowerPanel.vue` | Right panel: tower stats, targeting mode, upgrade/sell, specialization choices |
+| `src/components/SvgGameRoot.vue` | Single SVG root: RAF loop, GameEngine lifecycle (receives active theme), imperative DOM rendering, CTM-based input |
+| `src/components/GameHud.vue` | Top bar: lives, gold, gems, wave counter, speed/pause/menu controls; uses `getMapDisplayName` for map label |
+| `src/components/GameShop.vue` | Bottom bar: tower build selection with cost (from constants) and themed name/color/icon (from active theme) |
+| `src/components/TowerPanel.vue` | Right panel: tower stats, targeting mode, upgrade/sell, specialization; themed name/color/icon from active theme |
 | `src/components/WaveCountdown.vue` | Inter-wave countdown overlay shown before each wave spawns |
 | `src/components/HelpDialog.vue` | Help/controls overlay (toggled from the in-game pause menu) |
 | `src/components/MainMenu.vue` | Main menu: new game, resume, skill tree, difficulty slider, profile reset |
-| `src/components/MapSelect.vue` | Map grid: 36 maps with unlock status, best waves, region info |
-| `src/components/SkillTree.vue` | Skill tree: tower level unlocks, specializations, add-ons, general upgrades |
-| `src/components/EndScreen.vue` | Victory/game-over screen: gem breakdown, wave count, navigation buttons |
+| `src/components/MapSelect.vue` | Map grid: 36 maps with unlock status, best waves, region info; theme drop-down, responsive grid (`auto-fill`), awaits theme resolution before navigation |
+| `src/components/SkillTree.vue` | Skill tree: tower level unlocks, specializations, add-ons, general upgrades; reads default theme (not active theme) |
+| `src/components/EndScreen.vue` | Victory/game-over screen: gem breakdown, wave count, navigation buttons; reads default theme for region names |
 | `src/components/ConfirmDialog.vue` | Global modal dialog (teleported to body, driven by uiStore) |
 | `src/components/DebugPanel.vue` | Debug overlay: gold/gems/lives injection, wave skip, enemy clear, map unlock |
-| `src/components/StatsPanel.vue` | Wave composition, enemy list, and run statistics display |
-| `src/components/HistoryScreen.vue` | Run history entries with gem breakdown formatting |
+| `src/components/StatsPanel.vue` | Wave composition, enemy list, and run statistics; reads enemy name/color/shape from active theme |
+| `src/components/HistoryScreen.vue` | Run history entries with gem breakdown formatting; reads default theme for region names |
 
 ### Game Engine
 | File | Description |
 |---|---|
-| `src/game/GameEngine.ts` | Core loop: RAF driver, update/render, wave/enemy/tower management, rewards, end game |
-| `src/game/Constants.ts` | Shared game constants: wave config, map levels, regions, boss cadence, gem rewards |
-| `src/game/ConstantsTower.ts` | Tower constants: TowerIds, tower stats, specialization variants, milestone/splash/crit config |
-| `src/game/ConstantsEnemy.ts` | Enemy constants: EnemyType union, ENEMY_TYPES metadata, status effect tuning |
+| `src/game/GameEngine.ts` | Core loop: RAF driver, update/render, wave/enemy/tower management, rewards, end game; accepts active theme, passes visual meta to Tower/Enemy constructors |
+| `src/game/Constants.ts` | Shared game constants: wave config, map levels, boss cadence, gem rewards; `Regions` slimmed (visual fields moved to theme) |
+| `src/game/ConstantsTower.ts` | Tower constants: TowerIds, tower stats/cost, specialization variants, milestone/splash/crit config; visual fields (name, color, icon, animation, walking) moved to theme |
+| `src/game/ConstantsEnemy.ts` | Enemy constants: EnemyType union, stats-only ENEMY_TYPES (baseHp, speed, bounty, radius, shield, heal, resist, etc.); visual fields moved to theme |
 | `src/game/Input.ts` | Keyboard input composable (1-9 build, Arrow L/R speed, Esc dialogs/cancel, Tab cycle, u/s upgrade/sell) |
 | `src/game/EnemyWalk.ts` | Base shape vertex generation and path-d string conversion |
 | `src/game/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback |
@@ -226,21 +241,21 @@ The SVG structure is:
 | File | Description |
 |---|---|
 | `src/grid/Grid.ts` | Grid data structure: path tiles, base/spawn locations, build validation |
-| `src/grid/Map.ts` | Procedural map generation: 36 maps, 3 regions, 6 layout styles (open, canyon, serpentine, split, bastion, battlefield) |
+| `src/grid/Map.ts` | Procedural map generation: 36 maps, 3 regions, 6 layout styles (open, canyon, serpentine, split, bastion, battlefield); `name` computed lazily via `getMapDisplayName(map, theme)` |
 | `src/grid/Pathfinding.ts` | BFS pathfinding with dynamic tower obstacle avoidance |
 
 ### Towers
 | File | Description |
 |---|---|
-| `src/towers/Tower.ts` | Tower entity: stats, targeting modes, level scaling, variants, sell value, milestone bonuses |
-| `src/towers/TowerManager.ts` | Tower placement, upgrade, sell with refund/discount modes |
+| `src/towers/Tower.ts` | Tower entity: stats, targeting modes, level scaling, variants, sell value, milestone bonuses; accepts `visualMeta` param (color, icon, name, animation, walking) from active theme |
+| `src/towers/TowerManager.ts` | Tower placement, upgrade, sell with refund/discount modes; receives visual meta from GameEngine |
 | `src/towers/SkillTree.ts` | Gem upgrade costs, unlock/refund logic, variant definitions, general add-on config |
 
 ### Enemies & Waves
 | File | Description |
 |---|---|
-| `src/enemies/Enemy.ts` | Enemy entity: types, stats, pathfinding, status effects (slow, stun, shield) |
-| `src/enemies/EnemyManager.ts` | Enemy lifecycle: spawning, movement, death, base reach |
+| `src/enemies/Enemy.ts` | Enemy entity: types, stats, pathfinding, status effects (slow, stun, shield); accepts `visualMeta` param (color, shape, name, walking, hitReaction) from active theme |
+| `src/enemies/EnemyManager.ts` | Enemy lifecycle: spawning, movement, death, base reach; receives visual meta from GameEngine |
 | `src/waves/WaveManager.ts` | Wave composition, enemy count scaling, boss cadence, inter-wave timer |
 
 ### Rendering
@@ -252,10 +267,10 @@ The SVG structure is:
 | `src/render/svg/ParticleManager.ts` | Particle rendering pool: `<circle>` elements with fade/expansion |
 | `src/render/svg/EffectManager.ts` | Lightning paths, stun aura paths, build preview rect, range circle, upgrade button SVG elements |
 | `src/render/svg/UiOverlayManager.ts` | HP bars, shield bars, boss HP text as pooled `<rect>` and `<text>` elements |
-| `src/render/svg/useSvgStaticContent.ts` | Composable: generates `<defs>` (symbols from ConstantsTower/ConstantsEnemy, region gradients, filters) and grid layer SVG strings |
+| `src/render/svg/useSvgStaticContent.ts` | Composable: builds `<defs>` (symbols from active theme's tower/enemy frames, region gradients, filters) and grid layer SVG strings (tile images + base art from theme) |
 | `src/render/svg/cameraUtils.ts` | `fitToGrid()` plus pixel-space `screenToWorld()`/`worldToScreen()` helpers for the SVG camera |
 | `src/render/svg/types.ts` | Shared types for render proxies and managers |
-| `src/components/SvgGameRoot.vue` | Single SVG root: RAF loop, imperative DOM writes, CTM-based mouse coordinate conversion, centralized click routing |
+| `src/components/SvgGameRoot.vue` | Single SVG root: RAF loop, imperative DOM writes, CTM-based mouse coordinate conversion, centralized click routing; passes active theme to GameEngine and useSvgStaticContent |
 | `src/composables/cameraUtils.ts` | Vue composable: reactive camera CTM transform (`useCameraCTM`) and world/screen coordinate conversion backed by `gameStore.camera` |
 
 ### Audio
@@ -265,6 +280,31 @@ The SVG structure is:
 
 ### Camera
 Camera state (`x`, `y`, `zoom`) lives on `gameStore.camera` and is shared between the Vue UI and SVG rendering. Vue-side reactive transforms/conversions are provided by `src/composables/cameraUtils.ts` (`useCameraCTM`), while pixel-space helpers (`fitToGrid`, `screenToWorld`) live in `src/render/svg/cameraUtils.ts`. There is no longer a separate `services/` directory.
+
+## Map Theme System
+
+A theme swaps the visual identity of towers, enemies, and map tiles on `/game`, while leaving all gameplay stats, effects, overlays, and non-`/game`/`/map-select` screens untouched. The current polygon-based art is the default theme (`id: "default"`).
+
+### How It Works
+
+1. **Theme registry** (`src/render/themes/index.ts`): `MAP_THEME_MANIFEST` lists available themes with `{id, label}`. Lazy loaders resolve theme JSON files on demand.
+2. **Theme store** (`src/stores/mapTheme.ts`): `useMapThemeStore` holds `defaultTheme` (preloaded at app init for synchronous access by non-game screens) and `activeTheme` (resolved for the current run).
+3. **Theme JSON** (`src/render/themes/data/default-map-theme.json`): Contains tower frames (SVG `<svg>` strings), enemy walking/hit-reaction frames, per-region tile images (path + 4 terrain heights), and base 3×3 SVG art.
+4. **Symbol ID contract**: IDs stay `tower-${type}-f${i}`, `enemy-${type}-f${i}`, `enemy-${type}-hit-f${i}`. Themes swap only the *content* inside `<symbol>`s and the color/name/icon metadata. Render managers need zero changes.
+5. **Stats vs visuals split**: `TOWER_BASE`, `TOWER_VARIANTS`, `ENEMY_TYPES` numeric fields, `MAP_LEVELS`, gem multipliers — all stay in constants files. Only visual/displayed fields (name, color, icon, shape, animation frames, tile images) live in the theme JSON.
+
+### Scope
+
+- **In scope** (`/game` only): Tower SVG sprites + color/icon/name, enemy SVG sprites + color/shape/name, per-region tile images + base art + display names.
+- **Out of scope**: All gameplay data, all effects/overlays (particles, lightning, HP bars, range circles, etc.), non-`/game`/`/map-select` screens (Skill Tree uses default theme), in-game theme switching, audio, new themes beyond `default`.
+
+### UI Integration
+
+- **MapSelect**: Theme drop-down selects active theme; grid uses responsive `auto-fill` layout; `startMap` awaits theme resolution before navigating to `/game`.
+- **GameShop / TowerPanel / StatsPanel / GameHud**: Read themed name/color/icon from `mapThemeStore.activeTheme` on `/game`.
+- **SkillTree / HistoryScreen / EndScreen**: Read from `mapThemeStore.defaultTheme` (not active theme).
+- **SvgGameRoot**: Passes `activeTheme` to `GameEngine` constructor and `useSvgStaticContent` composable.
+- **Router guard**: `/game` requires `mapThemeStore.activeTheme` to be non-null.
 
 ## Build & Run
 
@@ -320,14 +360,14 @@ npm run typecheck
 
 ## Persistence
 
-Game progress (gems, unlocks, difficulty, map progress) is saved to `localStorage` under the key `gempath_save_v1`. The `persistStore.load()` call in `main.ts` restores saved state on app startup. Profile reset is available from the main menu.
+Game progress (gems, unlocks, difficulty, map progress) is saved to `localStorage` under the key `gempath_save_v1`. The `persistStore.load()` call in `main.ts` restores saved state on app startup. The `mapThemeStore.preloadDefault()` call in `main.ts` preloads the default theme synchronously before `app.mount()`. Profile reset is available from the main menu.
 
 ## Game Routes
 
 | Route | Component | Description |
 |---|---|---|
 | `/` | `MainMenu.vue` | Main menu with difficulty slider and navigation |
-| `/map-select` | `MapSelect.vue` | Map selection grid |
+| `/map-select` | `MapSelect.vue` | Map selection grid with theme drop-down, responsive layout, awaits theme resolution before navigation |
 | `/skill-tree` | `SkillTree.vue` | Gem-based upgrade tree |
 | `/game` | `GameScreen.vue` | Active gameplay with single SVG root + UI overlays |
 | `/game-over` | `EndScreen.vue` | Game over screen (`won: false`) |
@@ -386,13 +426,13 @@ npm run test -- --coverage
 
 | Directory | Description |
 |---|---|
-| `tests/unit/` | 30 unit test files covering all source modules |
+| `tests/unit/` | 31 unit test files covering all source modules (includes `map-theme.test.ts`) |
 | `tests/unit/components/` | Vue component tests (10 files) |
 | `tests/integration/` | End-to-end wave simulation |
-| `tests/helpers/` | Shared mocks: `mock-stores.ts`, `mock-grid.ts`, `mock-managers.ts` |
+| `tests/helpers/` | Shared mocks: `mock-stores.ts`, `mock-grid.ts`, `mock-managers.ts`, `mockDefaultTheme` |
 | `tests/setup.ts` | Global test setup: in-memory localStorage, Canvas 2D mock, performance.now |
 
-**~690 tests** across all files.
+**~710 tests** across all files.
 
 ### What's Covered
 
@@ -411,8 +451,8 @@ npm run test -- --coverage
 | Particles | `particles.test.ts` | Spawn, update, render, fade, expire, count limits |
 | SVG Render Managers | `svg-effect-manager.test.ts` | Effect pool allocation, syncFromGameEngine DOM writes, element recycling, visibility toggling |
 | Sound | `sound-manager.test.ts` | WebAudio synth, all sound names, dispose, enabled flag |
-| Stores | `game-store.test.ts`, `persist-store.test.ts`, `ui-store.test.ts` | State, getters, actions, save/load, schema migration |
-| Router | `router.test.ts` | Navigation guards, block without map, save on leave, redirects |
+| Stores | `game-store.test.ts`, `persist-store.test.ts`, `ui-store.test.ts`, `map-theme.test.ts` | State, getters, actions, save/load, schema migration; theme registry, loader, normalize, store preload/load/visual getters |
+| Router | `router.test.ts` | Navigation guards, block without map, save on leave, redirects, activeTheme requirement |
 | Input | `input.test.ts` | Keyboard dispatch, timeScale, pause, upgrade/sell, escape handling |
 | Components | 10 files in `tests/unit/components/` | Rendering, user interactions, store bindings |
 | Integration | `integration.test.ts` | Single wave simulation: kill enemies, gold economy, boss mechanics, victory |
