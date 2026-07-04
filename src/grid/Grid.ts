@@ -31,7 +31,6 @@ export class Grid {
   blocked: Set<string>;
   terrainTowers: Set<string>;
   paths: (Point[] | null)[] = [];
-  pathCache: Point[] | null = null;
   regionId: number = 0;
   private _blockCount: number = 0;
 
@@ -44,7 +43,6 @@ export class Grid {
     this.base = map.base as Point;
     this.blocked = new Set();
     this.terrainTowers = new Set();
-    this.pathCache = null;
     this.recomputePaths();
   }
 
@@ -133,7 +131,6 @@ export class Grid {
         }
       }
     }
-    this.pathCache = this.paths?.[0] || null;
   }
 
   recomputePaths() {
@@ -142,7 +139,6 @@ export class Grid {
       const path = bfsShortestPath(this, spawn, this.base, this.blocked);
       this.paths.push(path);
     }
-    this.pathCache = this.paths[0] ?? null;
   }
 
   getPathFor(spawnIndex: number): Point[] | null {

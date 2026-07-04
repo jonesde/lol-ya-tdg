@@ -28,13 +28,6 @@ describe("Grid", () => {
       expect(grid.paths?.[0]).not.toBeNull();
       expect(grid.paths?.[0]?.length).toBeGreaterThan(0);
     });
-
-    it("caches the first path for quick access", () => {
-      const map = makeBastionMap();
-      const grid = new Grid(map);
-      expect(grid.pathCache).not.toBeNull();
-      expect(grid.pathCache).toBe(grid.paths?.[0]);
-    });
   });
 
   describe("tile type queries", () => {
