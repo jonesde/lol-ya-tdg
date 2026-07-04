@@ -1,4 +1,4 @@
-import { TOWER_BASE } from "@/game/ConstantsTower.js";
+import { TOWER_BASE, TOWER_LEVEL_RANGE_MULT } from "@/game/ConstantsTower.js";
 import { LIGHTNING_POOL_SIZE, STUN_POOL_SIZE, SVG_NS } from "./types.js";
 
 interface LightningEffect {
@@ -380,7 +380,8 @@ export class EffectManager {
         this.rangeCircleEl.style.visibility = "visible";
         this.rangeCircleEl.setAttribute("transform", `translate(${selectedTower.x}, ${selectedTower.y})`);
         const towerBase = TOWER_BASE[selectedTower.type];
-        const rangeTiles = towerBase?.range ?? 3.5;
+        const baseRange = towerBase?.range ?? 3.5;
+        const rangeTiles = baseRange * TOWER_LEVEL_RANGE_MULT ** (selectedTower.level - 1);
         const rangePx = rangeTiles * TILE_SIZE;
         this.rangeCircleEl.setAttribute("r", String(rangePx));
         this.rangeCircleEl.setAttribute("stroke", "rgba(0,255,0,0.6)");
