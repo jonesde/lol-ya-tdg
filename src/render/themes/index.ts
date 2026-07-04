@@ -6,10 +6,6 @@ export interface MapThemeManifestEntry {
   file: string;
 }
 
-export const MAP_THEME_MANIFEST: MapThemeManifestEntry[] = [
-  { id: DEFAULT_THEME_ID, label: "Polygon (Default)", file: "./data/default-map-theme.json" },
-];
-
 export const MAP_THEME_LOADERS: Record<string, MapThemeLoader> = {};
 
 export type MapThemeId = string;
@@ -75,6 +71,16 @@ export function getThemeLoader(id: string): MapThemeLoader | undefined {
   return MAP_THEME_LOADERS[id];
 }
 
+/* ======= ADD MAP THEMES HERE ======= */
+
+export const MAP_THEME_MANIFEST: MapThemeManifestEntry[] = [
+  { id: DEFAULT_THEME_ID, label: "Polygon (Default)", file: "./data/default-map-theme.json" },
+  { id: "the-aftermath", label: "The Aftermath", file: "./data/the-aftermath.json" },
+];
+
 registerThemeLoader(DEFAULT_THEME_ID, () =>
   import("./data/default-map-theme.json").then((mod) => mod.default as unknown as MapThemeData),
+);
+registerThemeLoader("the-aftermath", () =>
+  import("./data/the-aftermath.json").then((mod) => mod.default as unknown as MapThemeData),
 );
