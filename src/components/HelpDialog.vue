@@ -43,6 +43,10 @@ const uiStore = useUiStore();
                 <td>Cycle to the next tower type in build mode, or select the next placed tower</td>
               </tr>
               <tr>
+                <td><kbd>Shift</kbd> + <kbd>Tab</kbd></td>
+                <td>Cycle to the previous tower type in build mode, or select the previous placed tower</td>
+              </tr>
+              <tr>
                 <td><kbd>&rarr;</kbd></td>
                 <td>Speed up time (1x to 2x to 4x to 8x)</td>
               </tr>

@@ -34,6 +34,7 @@ Defend your base against 100 waves of enemies across 36 procedurally-generated m
 | `Enter` | If dialog open and has default/active button (like OK) then same as button press |
 | `Spacebar` | Toggle pause state (state change only, do not open pause menu dialog; if pause menu dialog open then do same as Escape: close and unpause) |
 | `Tab` | If build mode active then cycle tower type (next to the right in the shop menu, from last loop back to first), or if no build mode then select the next tower or select the first tower if no tower was selected (search going right until end of tile row in map, then go to next row), or if no towers have been built do nothing |
+| `Shift` + `Tab` | Same as `Tab` but in reverse order (previous tower type in build mode, or previous placed tower) |
 | `Right Arrow` | Cycle time scale (1× --> 2× --> 4× --> 8× --> 1×) |
 | `Left Arrow` | Reverse cycle time scale (1× --> 8× --> 4× --> 2× --> 1×) |
 | `1`–`9` | Build mode for corresponding tower type (use current shop panel order; support up to 9 even though there are only 6 towers now) |

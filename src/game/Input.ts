@@ -18,7 +18,20 @@ const towerIdList = Object.values(TowerIds) as TowerId[];
  * Keyboard input handler as a Vue composable.
  * Dispatches actions to Pinia stores and game engine.
  */
+const KEY_REPEAT_INTERVAL = 500;
+
 export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: UiStoreLike): void {
+  let lastActionTime = 0;
+
+  function canActNow(): boolean {
+    const now = performance.now();
+    if (now - lastActionTime >= KEY_REPEAT_INTERVAL) {
+      lastActionTime = now;
+      return true;
+    }
+    return false;
+  }
+
   const handle = (event: KeyboardEvent) => {
     const gs = gameStore;
     if (gs.state === GameState.MENU || gs.state === GameState.GAME_OVER || gs.state === GameState.VICTORY) return;
@@ -50,27 +63,27 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
         }
         break;
       case "Tab":
-        handleTabCycle(gs);
+        handleTabCycle(gs, event.shiftKey);
         event.preventDefault();
         break;
       case "ArrowRight":
-        gs.cycleSpeed();
+        if (canActNow()) gs.cycleSpeed();
         break;
       case "ArrowLeft":
-        gs.cycleSpeedReverse();
+        if (canActNow()) gs.cycleSpeedReverse();
         break;
       case "ArrowUp":
-        if (gs.selectedTower) {
+        if (canActNow() && gs.selectedTower) {
           engine?.upgradeSelected?.();
         }
         break;
       case "u":
-        if (gs.selectedTower) {
+        if (canActNow() && gs.selectedTower) {
           engine?.upgradeSelected?.();
         }
         break;
       case "s":
-        if (gs.selectedTower) {
+        if (canActNow() && gs.selectedTower) {
           engine?.sellSelected?.();
         }
         break;
@@ -94,10 +107,11 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
   onUnmounted(() => window.removeEventListener("keydown", handle));
 }
 
-function handleTabCycle(gameStore: GameStoreLike): void {
+function handleTabCycle(gameStore: GameStoreLike, previous: boolean): void {
   if (gameStore.selectedTowerType !== null) {
     const towerIndex = towerIdList.indexOf(gameStore.selectedTowerType);
-    const nextIndex = (towerIndex + 1) % towerIdList.length;
+    const offset = previous ? -1 : 1;
+    const nextIndex = (towerIndex + offset + towerIdList.length) % towerIdList.length;
     gameStore.selectBuildType(towerIdList[nextIndex]!);
     return;
   }
@@ -114,9 +128,12 @@ function handleTabCycle(gameStore: GameStoreLike): void {
     const selectedId = gameStore.selectedTower.id;
     const selectedIndex = sortedTowers.findIndex((tower) => tower.id === selectedId);
     if (selectedIndex >= 0) {
-      const nextIndex = (selectedIndex + 1) % sortedTowers.length;
+      const offset = previous ? -1 : 1;
+      const nextIndex = (selectedIndex + offset + sortedTowers.length) % sortedTowers.length;
       gameStore.selectTower(sortedTowers[nextIndex]!);
     }
+  } else if (previous) {
+    gameStore.selectTower(sortedTowers[sortedTowers.length - 1]!);
   } else {
     gameStore.selectTower(sortedTowers[0]!);
   }
