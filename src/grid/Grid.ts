@@ -94,7 +94,7 @@ export class Grid {
       if (this.blocked.has(towerKey)) return false;
       this.blocked.add(towerKey);
       this._blockCount++;
-      this.recomputePathsForTile(x, y, true);
+      this.recomputePathsForTile(x, y);
       return true;
     } else {
       const towerKey = `${x},${y}`;
@@ -111,7 +111,7 @@ export class Grid {
       if (!this.blocked.has(towerKey)) return false;
       this.blocked.delete(towerKey);
       this._blockCount--;
-      this.recomputePathsForTile(x, y, false);
+      this.recomputePathsForTile(x, y);
       return true;
     } else {
       const towerKey = `${x},${y}`;
@@ -121,14 +121,12 @@ export class Grid {
     }
   }
 
-  recomputePathsForTile(x: number, y: number, isBlocking: boolean) {
-    if (isBlocking) {
-      if (!this.paths) return;
-      for (let i = 0; i < this.paths.length; i++) {
-        const path = this.paths[i];
-        if (path?.some((p) => p.x === x && p.y === y)) {
-          this.paths[i] = bfsShortestPath(this, this.spawns[i]!, this.base, this.blocked);
-        }
+  recomputePathsForTile(x: number, y: number) {
+    if (!this.paths) return;
+    for (let i = 0; i < this.paths.length; i++) {
+      const path = this.paths[i];
+      if (path?.some((p) => p.x === x && p.y === y)) {
+        this.paths[i] = bfsShortestPath(this, this.spawns[i]!, this.base, this.blocked);
       }
     }
   }

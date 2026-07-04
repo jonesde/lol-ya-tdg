@@ -387,7 +387,7 @@ describe("Enemy", () => {
       if (enemy.pathIdx + 1 < enemy.path!.length) {
         const blockedTile = enemy.path![enemy.pathIdx + 1];
         grid.blocked.add(`${blockedTile.x},${blockedTile.y}`);
-        grid.recomputePathsForTile(blockedTile.x, blockedTile.y, true);
+        grid.recomputePathsForTile(blockedTile.x, blockedTile.y);
 
         enemy.update(0.1, null);
 

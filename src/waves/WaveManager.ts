@@ -156,7 +156,12 @@ export class WaveManager {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       const next = this.queue.shift();
-      if (!next || !ENEMY_TYPES[next.type]) return;
+      if (!next || !ENEMY_TYPES[next.type]) {
+        if (next) {
+          this.waveComposition[next.type] = (this.waveComposition[next.type] || 0) - 1;
+        }
+        return;
+      }
       const spawnIdx = Math.floor(this.rng() * this.map.spawns.length);
       this.enemyManager.spawn(next.type, next.level, spawnIdx, this.currentWave);
       this.spawnTimer = next.delay;
@@ -164,6 +169,10 @@ export class WaveManager {
   }
 
   reportBossKill() {
+    this.bossesKilledThisWave++;
+  }
+
+  reportBossReachedBase() {
     this.bossesKilledThisWave++;
   }
 }

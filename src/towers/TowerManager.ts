@@ -119,9 +119,7 @@ export class TowerManager {
   sell(tower: Tower, _save: SaveData | undefined): number {
     const val = tower.sellValue();
     this.grid.unregisterTower(tower.tileX, tower.tileY);
-    const index = this.towers.findIndex(
-      (candidate) => candidate.tileX === tower.tileX && candidate.tileY === tower.tileY,
-    );
+    const index = this.towers.findIndex((t) => t.id === tower.id);
     if (index >= 0) this.towers.splice(index, 1);
     this.particles.spawn(tower.x, tower.y, "#ffcf4d", 14, { speed: 70, life: 0.5 });
     return val;
@@ -129,9 +127,7 @@ export class TowerManager {
 
   cancelBuild(tower: Tower): number {
     this.grid.unregisterTower(tower.tileX, tower.tileY);
-    const index = this.towers.findIndex(
-      (candidate) => candidate.tileX === tower.tileX && candidate.tileY === tower.tileY,
-    );
+    const index = this.towers.findIndex((t) => t.id === tower.id);
     if (index >= 0) this.towers.splice(index, 1);
     this.particles.spawn(tower.x, tower.y, "#88ff88", 14, { speed: 70, life: 0.5 });
     return tower.totalInvested;
@@ -139,13 +135,7 @@ export class TowerManager {
 
   update(dt: number, enemyManager: EnemyManagerRef): void {
     for (const tower of this.towers)
-      tower.update(
-        dt,
-        enemyManager,
-        this.projectiles,
-        this.particles as unknown as { emit(x: number, y: number, color: string): void },
-        this.sound as unknown as { play: (name: string) => void },
-      );
+      tower.update(dt, enemyManager, this.projectiles, this.sound as unknown as { play: (name: string) => void });
   }
 
   towerAt(tileX: number, tileY: number): Tower | undefined {

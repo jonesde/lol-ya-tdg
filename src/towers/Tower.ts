@@ -90,10 +90,6 @@ interface ProjectileManagerRef {
   setOnLightningFlash(callback: (startX: number, startY: number, endX: number, endY: number) => void): void;
 }
 
-interface ParticleManagerRef {
-  emit(x: number, y: number, color: string): void;
-}
-
 interface SoundManagerRef {
   play(name: string): void;
 }
@@ -247,10 +243,11 @@ export class Tower {
       milestoneTier !== null && milestoneTier !== undefined
         ? Math.floor(this.totalDamageDealt / MILESTONE_THRESHOLD)
         : -1;
-    const h = typeof heightTier === "number" ? heightTier : -1;
-    const r = typeof rangeTier === "number" ? rangeTier : -1;
-    const m = typeof milestoneTier === "number" ? milestoneTier : -1;
-    return h | (r << 8) | (m << 16) | ((milestoneLevels & 0xffff) << 24);
+    const h = (typeof heightTier === "number" ? heightTier : -1) & 0xff;
+    const r = (typeof rangeTier === "number" ? rangeTier : -1) & 0xff;
+    const m = (typeof milestoneTier === "number" ? milestoneTier : -1) & 0xff;
+    const ml = milestoneLevels < 0 ? 0 : milestoneLevels % 0x10000;
+    return h | (r << 8) | (m << 16) | (ml << 24);
   }
 
   _computeStats(): TowerStats {
@@ -508,7 +505,6 @@ export class Tower {
     dt: number,
     enemyManager: EnemyManagerRef,
     projectileManager: ProjectileManagerRef,
-    particleManager: ParticleManagerRef,
     soundManager: SoundManagerRef,
   ) {
     if (this.cooldown > 0) this.cooldown -= dt;
@@ -548,7 +544,7 @@ export class Tower {
         this.angle = Math.atan2(ddy, ddx);
         if (this.cooldown <= 0) {
           const aimTarget = { x: this.x + ddx * rangePx, y: this.y + ddy * rangePx, id: 0 };
-          this.fire(aimTarget, enemyManager, projectileManager, particleManager, soundManager);
+          this.fire(aimTarget, enemyManager, projectileManager, soundManager);
           this.cooldown = 1 / stats.fireRate;
         }
       } else {
@@ -561,7 +557,7 @@ export class Tower {
     if (target) {
       this.angle = Math.atan2(target.y - this.y, target.x - this.x);
       if (this.cooldown <= 0) {
-        this.fire(target, enemyManager, projectileManager, particleManager, soundManager);
+        this.fire(target, enemyManager, projectileManager, soundManager);
         const stats = this.stats;
         this.cooldown = 1 / stats.fireRate;
       }
@@ -572,7 +568,6 @@ export class Tower {
     target: { x: number; y: number; id: number },
     _enemyManager: EnemyManagerRef,
     projectileManager: ProjectileManagerRef,
-    _particles: ParticleManagerRef,
     sound: SoundManagerRef,
   ) {
     const stats = this.stats;

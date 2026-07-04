@@ -47,6 +47,7 @@ interface WaveManagerRef {
     onWaveStart: ((wave: number) => void) | null,
   ): void;
   reportBossKill(): void;
+  reportBossReachedBase(): void;
   startNextWave(): void;
 }
 
@@ -255,6 +256,7 @@ export class GameEngine {
         this.gameStore.loseLives(enemy.type === "boss" ? BOSS_LIFE_LOSS : 1);
         enemy.removed = true;
         this.waveManager!.baseReached = true;
+        if (enemy.type === "boss") this.waveManager!.reportBossReachedBase();
         this.sound.play("base_hit");
         if (this.gameStore.lives <= 0) {
           this.shouldEndGame = true;
