@@ -13,6 +13,7 @@ interface MapRef {
 interface EnemyManagerRef {
   enemies: unknown[];
   spawn(type: string, level: number, spawnIndex: number, wave: number): unknown;
+  getEnemiesInRange(x: number, y: number, range: number): unknown[];
 }
 
 interface WaveEntry {

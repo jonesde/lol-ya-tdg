@@ -6,12 +6,15 @@ interface ParticleManagerRef {
   spawn(x: number, y: number, color: string, count: number, opts: { speed: number; life: number }): void;
 }
 
+const SpatialCellSize = 100;
+
 export class EnemyManager {
   grid: Grid;
   particles: ParticleManagerRef;
   enemies: Enemy[];
   difficultyTick: number;
   theme: MapThemeData | null;
+  private spatialHash: Map<string, Enemy[]>;
 
   constructor(
     grid: Grid,
@@ -24,16 +27,19 @@ export class EnemyManager {
     this.enemies = [];
     this.difficultyTick = difficultyTick;
     this.theme = theme;
+    this.spatialHash = new Map();
   }
 
   clear(): void {
     this.enemies = [];
+    this.spatialHash.clear();
     resetEnemyId();
   }
 
   spawn(type: string, level: number, spawnIndex: number, wave: number): Enemy {
     const enemy = new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick, this.theme);
     this.enemies.push(enemy);
+    this.rebuildSpatialHash();
     return enemy;
   }
 
@@ -49,15 +55,45 @@ export class EnemyManager {
         this.enemies.splice(i, 1);
       }
     }
+    this.rebuildSpatialHash();
+  }
+
+  rebuildSpatialHash(): void {
+    this.spatialHash.clear();
+    for (const enemy of this.enemies) {
+      if (enemy.removed) continue;
+      const cellKey = `${Math.floor(enemy.x / SpatialCellSize)},${Math.floor(enemy.y / SpatialCellSize)}`;
+      const bucket = this.spatialHash.get(cellKey);
+      if (bucket) {
+        bucket.push(enemy);
+      } else {
+        this.spatialHash.set(cellKey, [enemy]);
+      }
+    }
   }
 
   getEnemiesInRange(x: number, y: number, range: number): Enemy[] {
-    const r2 = range * this.grid.tileSize * (range * this.grid.tileSize);
-    return this.enemies.filter((enemy) => {
-      const deltaX = enemy.x - x,
-        deltaY = enemy.y - y;
-      return deltaX * deltaX + deltaY * deltaY <= r2 && !enemy.removed && !enemy.reachedBase;
-    });
+    const rangeSquared = range * range;
+    const cellRadius = Math.ceil(range / SpatialCellSize);
+    const centerCellX = Math.floor(x / SpatialCellSize);
+    const centerCellY = Math.floor(y / SpatialCellSize);
+    const result: Enemy[] = [];
+
+    for (let cellX = centerCellX - cellRadius; cellX <= centerCellX + cellRadius; cellX++) {
+      for (let cellY = centerCellY - cellRadius; cellY <= centerCellY + cellRadius; cellY++) {
+        const bucket = this.spatialHash.get(`${cellX},${cellY}`);
+        if (!bucket) continue;
+        for (const enemy of bucket) {
+          if (enemy.removed || enemy.reachedBase) continue;
+          const deltaX = enemy.x - x;
+          const deltaY = enemy.y - y;
+          if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) {
+            result.push(enemy);
+          }
+        }
+      }
+    }
+    return result;
   }
 
   getEnemyById(id: number): Enemy | null {

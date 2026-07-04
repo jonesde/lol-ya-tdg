@@ -43,6 +43,7 @@ interface GridRef {
 
 interface EnemyManagerRef {
   enemies: Enemy[];
+  getEnemiesInRange(x: number, y: number, range: number): Enemy[];
 }
 
 export class Enemy {
@@ -230,13 +231,10 @@ export class Enemy {
     }
 
     if (this.heal > 0 && enemyManager) {
-      for (const enemy of enemyManager.enemies) {
-        if (enemy === this || enemy.removed) continue;
-        const deltaX = enemy.x - this.x;
-        const deltaY = enemy.y - this.y;
-        if (deltaX * deltaX + deltaY * deltaY <= this.healRange * this.healRange) {
-          enemy.hp = Math.min(enemy.maxHp, enemy.hp + enemy.maxHp * this.heal * dt);
-        }
+      const nearbyAllies = enemyManager.getEnemiesInRange(this.x, this.y, this.healRange);
+      for (const ally of nearbyAllies) {
+        if (ally === this) continue;
+        ally.hp = Math.min(ally.maxHp, ally.hp + ally.maxHp * this.heal * dt);
       }
     }
 

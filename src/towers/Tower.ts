@@ -46,6 +46,20 @@ interface EnemyManagerRef {
     id: number;
     applySlow(amount: number, duration: number): void;
   }[];
+  getEnemiesInRange(
+    x: number,
+    y: number,
+    range: number,
+  ): {
+    x: number;
+    y: number;
+    pathIdx: number;
+    removed: boolean;
+    maxHp: number;
+    hp: number;
+    id: number;
+    applySlow(amount: number, duration: number): void;
+  }[];
 }
 
 interface ProjectileManagerRef {

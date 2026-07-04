@@ -96,7 +96,7 @@ describe("EnemyManager", () => {
     it("returns enemies within range", () => {
       manager.spawn("minion", 1, 0, 1);
       const towerPos = { x: 18, y: 18 };
-      const inRange = manager.getEnemiesInRange(towerPos.x, towerPos.y, 3.5);
+      const inRange = manager.getEnemiesInRange(towerPos.x, towerPos.y, grid.tileSize * 3.5);
       expect(inRange.length).toBeGreaterThan(0);
     });
 
