@@ -41,12 +41,13 @@ function unregister(context: string): void
 **Priority order** for `getActiveMenu()` (highest to lowest):
 
 1. `confirmDialog` -- modal always on top of everything
-2. Route screens (`mapSelect`, `history`, `endScreen`) -- active when current route matches
+2. Route screens (`mapSelect`, `endScreen`, `history`) -- active when current route matches
 3. `mainMenu` -- full-screen overlay
 4. `skillTree` -- full-screen overlay
 5. `statsPanel` -- overlay
 6. `helpDialog` -- overlay
-7. Game overlays (`gameHud`, `gameShop`, `towerPanel`, `debugPanel`) -- only active during gameplay with no menu open
+7. `randomMapPanel` -- overlay (if present)
+8. Game overlays (`gameHud`, `gameShop`, `towerPanel`, `debugPanel`) -- only active during gameplay with no menu open
 
 ### Nearest-Button Utility
 
@@ -151,23 +152,32 @@ if (activeMenu && event.key !== 'Escape') {
   return  // menu owns all keys except Escape
 }
 
-// Escape always passes through to existing handler (closes menus)
+// Escape is handled by the active menu's handler via registry dispatch.
+// When no menu is active, Escape falls through to existing handler.
 // Game-specific keys (u, s, digits, Tab, Space) only apply when no menu is active
 ```
+
+**Input.ts changes summary:**
+- Add registry check at top of `handle()` for arrow keys and Enter
+- **Remove or gate the existing `case "Escape"` block** -- when a menu is open, the registry handles Escape; when no menu is open, the existing Escape logic (close dialogs, cancel build, deselect, open menu) applies
+- **Remove `case "Enter"` branch for `uiStore.confirmDialog`** -- the menu registry handles confirm dialog activation uniformly
+- Skip game actions when a menu is active
 
 **Key routing rules:**
 
 | Key | Menu Open | No Menu Open |
 |---|---|---|
 | Arrow keys | Navigate menu buttons | Game actions (speed, upgrade) |
-| Enter | Activate active menu button | Confirm dialog / activate menu |
-| Escape | Close menu (existing behavior) | Close menu / cancel / deselect |
+| Enter | Activate active menu button | Activate menu / build mode placement |
+| Escape | Close menu (handled by registry dispatch) | Close menu / cancel / deselect / open menu |
 | Tab | Ignored (menu uses arrow keys) | Cycle towers/build types (existing) |
 | u / s | Ignored | Upgrade / sell (existing) |
 | Digits 1-9 | Ignored | Select build type (existing) |
 | Space | Ignored | Toggle pause (existing) |
 
-This means when a menu is open, arrow keys and Enter go to the menu, Escape closes it, and all other keys are ignored (the game is paused or the user is on a non-game screen).
+**Escape handling**: The registry dispatches Escape to the active menu's `handleKeydown`. Each menu's handler closes itself (e.g. `uiStore.closeAllDialogs()`). **Input.ts must NOT double-handle Escape** -- the existing `case "Escape"` block that calls `uiStore.closeAllDialogs()` should be removed or gated so it only runs when no menu is registered. This avoids double-close behavior.
+
+This means when a menu is open, arrow keys, Enter, and Escape go to the menu, and all other keys are ignored (the game is paused or the user is on a non-game screen).
 
 ---
 
@@ -210,6 +220,7 @@ This means when a menu is open, arrow keys and Enter go to the menu, Escape clos
 - Default `activeIndex = 1` (Confirm) on mount
 - Left/Right switches between Cancel and Confirm
 - Enter presses whichever is active (uniform logic, replaces existing "Enter = confirm only")
+- **Input.ts change required**: Remove the `case "Enter"` branch that checks `uiStore.confirmDialog` and calls `uiStore.executeConfirm()` -- the menu registry handles this now
 
 ### GameHud.vue -- Horizontal Bar
 
@@ -225,7 +236,7 @@ This means when a menu is open, arrow keys and Enter go to the menu, Escape clos
 - Register with context `"gameHud"` (lowest priority, only active during gameplay with no menu)
 - Left/Right cycles through 5 buttons
 - Enter activates current button
-- **Important**: Only register when no menu overlay is open. When a menu opens, GameHud's handler is bypassed by the registry priority.
+- Registers unconditionally; registry priority bypasses this when a menu overlay is open
 
 ### GameShop.vue -- Horizontal Bar
 
@@ -238,16 +249,22 @@ This means when a menu is open, arrow keys and Enter go to the menu, Escape clos
 - Register with context `"gameShop"`
 - Left/Right cycles through 6 towers
 - Enter activates current tower (same as click)
-- **Important**: Only register when no menu overlay is open
+- Registers unconditionally; registry priority bypasses this when a menu overlay is open
 
 ### TowerPanel.vue -- Vertical Stack
 
-**Buttons** (visible subset):
-1. Specialization A (conditional)
-2. Specialization B (conditional)
-3. Upgrade (conditional)
-4. Cancel Build (conditional)
-5. Sell (always when tower selected)
+**Buttons** (visible subset, 8+ total):
+1. Aim direction N (conditional)
+2. Aim direction W (conditional)
+3. Aim direction Auto (conditional)
+4. Aim direction E (conditional)
+5. Aim direction S (conditional)
+6. Specialization A (conditional)
+7. Specialization B (conditional)
+8. Upgrade (conditional)
+9. Cancel Build (conditional)
+10. Sell (always when tower selected)
+11. Targeting mode `<select>` dropdown (native keyboard accessible)
 
 **Changes:**
 - Add `activeIndex`, `buttonElements`, `buttonActions`, `activate()`, `handleKeydown()`
@@ -292,13 +309,14 @@ This means when a menu is open, arrow keys and Enter go to the menu, Escape clos
 
 **Buttons:**
 1. Back
-2. General addon buttons (vertical stacks inside general cards)
-3. Skill nodes (clickable divs for each tower: level nodes, specialization nodes, add-on nodes)
-4. Reset Profile
+2. General addon tier buttons (already `<button>` elements)
+3. Skill nodes (currently `<div>` with `@click`: level nodes, specialization nodes, add-on nodes)
+4. Reset Profile (already `<button>`)
 
 **Changes:**
 - Convert `<div class="skill-node">` to `<button>` elements
 - All interactive elements participate in **one unified navigation pool** (addon buttons, skill nodes, Back, Reset all in same list)
+- Note: addon tier buttons and Reset Profile are already `<button>` elements; only skill nodes need conversion
 - Add `activeIndex`, `buttonElements`, `buttonActions`, `activate()`, `handleKeydown()`
 - Register with context `"skillTree"`
 - Arrow keys use nearest-button algorithm across all elements
@@ -349,12 +367,12 @@ Each component applies `:class="{ focused: idx === activeIndex }"` to its button
 | File | Change Type | Description |
 |---|---|---|
 | `src/composables/useMenuNav.ts` | **New** | `findNearestInDirection()` utility + navigation registry (register/unregister/getActive) |
-| `src/game/Input.ts` | **Modify** | Add registry check at top of handler; dispatch to active menu for arrow keys/Enter; skip game actions when menu is active; keep Escape, u, s, digits, Tab, Space as game actions when no menu |
+| `src/game/Input.ts` | **Modify** | Add registry check at top of handler; dispatch to active menu for arrow keys/Enter; remove or gate existing Escape handler so registry handles it when menu is open; remove Enter case for confirmDialog; skip game actions when menu is active |
 | `src/App.vue` | **Modify** | Add `.focused` CSS class |
 | `src/components/MainMenu.vue` | **Modify** | Add keyboard nav pattern (activeIndex, buttonRefs, @keydown, activate, register) |
 | `src/components/EndScreen.vue` | **Modify** | Same pattern |
 | `src/components/ConfirmDialog.vue` | **Modify** | Same pattern (horizontal, default focus on Confirm idx=1) |
-| `src/components/GameHud.vue` | **Modify** | Same pattern (horizontal, conditional registration) |
+| `src/components/GameHud.vue` | **Modify** | Same pattern (horizontal, unconditional registration) |
 | `src/components/GameShop.vue` | **Modify** | Same pattern + convert divs to buttons |
 | `src/components/TowerPanel.vue` | **Modify** | Same pattern (vertical, keep u/s shortcuts in Input.ts) |
 | `src/components/DebugPanel.vue` | **Modify** | Same pattern |
@@ -380,5 +398,7 @@ Each component applies `:class="{ focused: idx === activeIndex }"` to its button
 
 - **DOM timing for grid layouts**: The nearest-button algorithm relies on `getBoundingClientRect()`. For MapSelect and SkillTree, the grid may not be fully laid out when the component mounts (virtual scrolling, lazy rendering). The algorithm should compute positions on each keypress, not cache them.
 - **SkillTree scroll behavior**: When arrow keys navigate to a button outside the visible viewport, the container should auto-scroll to bring it into view. This can be done via `el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })` in the `watch(activeIndex)` handler.
-- **GameHud/GameShop conditional registration**: These register with the registry only when no menu overlay is open. The registry's `getActive()` handles this via the priority order (menu overlays > game overlays). Alternatively, the components can check `uiStore` flags before registering.
+- **GameHud/GameShop registration**: These components can register unconditionally. The registry's `getActive()` priority order handles bypassing (menu overlays > game overlays), so no conditional logic is needed in the components.
+- **Escape key conflict**: `Input.ts` currently handles Escape by calling `uiStore.closeAllDialogs()`. With the registry-based approach, Escape is dispatched to the active menu's handler. Input.ts must not double-handle Escape -- either remove the existing `case "Escape"` block entirely (let the registry handle it) or gate it to only run when `getActiveMenu()` returns null.
+- **`randomMapPanelVisible` in uiStore**: The uiStore has a `randomMapPanelVisible` flag but no corresponding component file exists yet. If this panel is implemented, it should be registered with the menu navigation system and added to the priority list between `helpDialog` and game overlays.
 - **Test coverage**: Component tests for keyboard navigation should be added for each menu/dialog. The existing `tests/unit/components/` directory should get new test files or additions to existing ones.
