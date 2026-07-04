@@ -61,6 +61,7 @@ interface ProjectileManagerRef {
     slowAmt?: number;
     slowDur?: number;
     towerId?: string;
+    napalm?: boolean;
   }): void;
   fireLightning(opts: {
     originX: number;
@@ -587,6 +588,7 @@ export class Tower {
       targetId: target.id,
       slowAmt: stats.slowAmt,
       slowDur: stats.slowDur,
+      napalm: stats.napalm,
     });
     this.fireAnimTime = performance.now() / 1000;
     if (sound) sound.play(`shoot_${this.type}`);

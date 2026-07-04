@@ -129,6 +129,7 @@ export class ProjectileManager {
     slowAmt?: number;
     slowDur?: number;
     towerId?: string;
+    napalm?: boolean;
   }): void {
     const projectile: ProjectileGame = {
       id: this.nextProjectileId++,
@@ -158,15 +159,20 @@ export class ProjectileManager {
       towerId: opts.towerId ?? "",
     };
 
-    this.applyProjectileEffects(projectile, opts.towerType, opts.towerLevel);
+    this.applyProjectileEffects(projectile, opts.towerType, opts.towerLevel, opts.napalm ?? false);
 
     this.projectiles.push(projectile);
   }
 
-  private applyProjectileEffects(projectile: ProjectileGame, towerType: string, towerLevel: number): void {
+  private applyProjectileEffects(
+    projectile: ProjectileGame,
+    towerType: string,
+    towerLevel: number,
+    napalm: boolean,
+  ): void {
     const tier = Math.max(0, towerLevel - 4);
 
-    if (towerType === "napalm") {
+    if (napalm) {
       projectile.burnDps = projectile.damage * NAPALM_BURN_DPS_RATIO;
       projectile.burnDuration = NAPALM_BURN_DURATION;
     }

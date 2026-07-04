@@ -388,9 +388,10 @@ describe("ProjectileManager", () => {
         damage: 100,
         speed: 100,
         range: 5,
-        towerType: "napalm",
+        towerType: "cannon",
         towerLevel: 1,
         targetId: 1,
+        napalm: true,
       });
 
       // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
