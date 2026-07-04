@@ -103,8 +103,16 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
     }
   };
 
-  window.addEventListener("keydown", handle);
-  onUnmounted(() => window.removeEventListener("keydown", handle));
+  const handleDown = (event: KeyboardEvent) => handle(event);
+  const handleUp = (_event: KeyboardEvent) => {
+    lastActionTime = 0;
+  };
+  window.addEventListener("keydown", handleDown);
+  window.addEventListener("keyup", handleUp);
+  onUnmounted(() => {
+    window.removeEventListener("keydown", handleDown);
+    window.removeEventListener("keyup", handleUp);
+  });
 }
 
 function handleTabCycle(gameStore: GameStoreLike, previous: boolean): void {
