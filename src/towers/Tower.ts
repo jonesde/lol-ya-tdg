@@ -466,7 +466,7 @@ export class Tower {
     let target: { x: number; y: number; pathIdx: number; hp: number; id: number } | null = null;
     const stats = this.stats;
     const tileSize = this.grid?.tileSize || 36;
-    const r2 = stats.range * tileSize * (stats.range * tileSize);
+    const r2 = (stats.range * tileSize) ** 2;
     const inRange = enemies.filter((enemy) => {
       const deltaX = enemy.x - this.x;
       const deltaY = enemy.y - this.y;

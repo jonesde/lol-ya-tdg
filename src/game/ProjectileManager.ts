@@ -92,7 +92,7 @@ export class ProjectileManager {
   private onLightningFlash: OnLightningFlashCallback | null;
   private onStunEffect: OnStunEffectCallback | null;
   private nextProjectileId: number;
-  private towerLookup: ((towerId: string) => Tower | null) | null;
+  private towerLookup: ((towerId: string) => Tower | null) | null = null;
 
   constructor(
     enemyManager: EnemyManager,
@@ -107,6 +107,10 @@ export class ProjectileManager {
     this.onStunEffect = null;
     this.nextProjectileId = 1;
     this.towerLookup = towerLookup;
+  }
+
+  setTowerLookup(callback: ((towerId: string) => Tower | null) | null): void {
+    this.towerLookup = callback;
   }
 
   setOnLightningFlash(callback: OnLightningFlashCallback | null): void {

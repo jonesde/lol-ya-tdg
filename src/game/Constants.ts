@@ -89,8 +89,8 @@ export const BONUS_GEM_BASE = 1.12;
 export const BOUNTY_BLOCKED_RATIO = 0.5;
 // seconds between waves before next spawn (WaveManager.js)
 export const BETWEEN_WAVES_TIMER = 3;
-// game-seconds after wave start before countdown begins, regardless of alive enemies (WaveManager.js)
-export const PRE_EMPTIVE_WAVE_TIMER = 120;
+// game-seconds after wave start before next wave countdown begins, regardless of alive enemies (WaveManager.js)
+export const PRE_EMPTIVE_WAVE_TIMER = 90;
 
 // ===== Difficulty & Gem Multipliers =====
 
