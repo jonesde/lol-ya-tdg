@@ -139,6 +139,12 @@ function buildCustomTheme(overrides?: {
   const pathColor = overrides?.pathColor ?? "#abcdef";
   const terrainColors = overrides?.terrainColors ?? ["#111111", "#222222", "#333333", "#444444"];
   const regionBase = overrides?.regionBase ?? "";
+  const makeTileSvg = (color: string, withCrossHatch: boolean): string => {
+    const crossHatch = withCrossHatch
+      ? '<path d="M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8" stroke="rgba(0,0,0,0.12)" stroke-width="0.5"/>'
+      : "";
+    return `<svg viewBox="0 0 36 36"><rect width="36" height="36" fill="${color}"/>${crossHatch}</svg>`;
+  };
   return {
     id: "custom",
     label: "Custom Theme",
@@ -178,11 +184,11 @@ function buildCustomTheme(overrides?: {
         id: 0,
         name: "Test Region",
         tiles: {
-          path: pathColor,
-          terrain1: terrainColors[0]!,
-          terrain2: terrainColors[1]!,
-          terrain3: terrainColors[2]!,
-          terrain4: terrainColors[3]!,
+          path: makeTileSvg(pathColor, false),
+          terrain1: makeTileSvg(terrainColors[0]!, true),
+          terrain2: makeTileSvg(terrainColors[1]!, true),
+          terrain3: makeTileSvg(terrainColors[2]!, true),
+          terrain4: makeTileSvg(terrainColors[3]!, true),
         },
         base: regionBase,
       },
@@ -250,8 +256,8 @@ describe("SVG Static Content Render Placement", () => {
       const { gridContent } = useSvgStaticContent(mapRef as never, gridRef as never);
       const svg = gridContent.value;
 
-      expect(svg).toContain('fill="#abcdef"');
-      expect(svg).toContain('fill="#bbccdd"');
+      expect(svg).toContain('<use href="#tile-r0-terrain2"');
+      expect(svg).toContain('<use href="#tile-r0-path"');
       expect(svg).toContain('stroke="rgba(0,0,0,0.15)"');
       expect(svg).toContain(">2</text>");
     });

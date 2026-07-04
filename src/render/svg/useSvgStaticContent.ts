@@ -105,8 +105,8 @@ interface TileInfo {
 }
 
 interface RegionInfo {
-  pathColor: string;
-  heightColors: readonly string[];
+  pathImage: string;
+  terrainImages: readonly string[];
   base: string;
 }
 
@@ -182,42 +182,58 @@ function buildStaticFiltersContent(): string {
 }
 
 /**
- * Ported from Shapes.ts drawTile() — computes fill color based on tile type
- * and region, returning the SVG fill attribute value.
+ * Builds <symbol> elements for each region's tile images (path + terrain1-4),
+ * so gridContent can reference them via <use> for small, fast strings.
  */
-function getTileFill(tile: TileInfo, region: RegionInfo): string {
-  const tileType = tile.type;
-  if (tileType === "path" || tileType === "spawn") return region.pathColor;
-  if (tileType === "base") return "#3a3f55";
-  const heightIdx = Math.min(3, tile.height - 1);
-  return region.heightColors[heightIdx]!;
+function buildTileSymbols(activeTheme: MapThemeData | null): string {
+  if (!activeTheme) return "";
+  const parts: string[] = [];
+  for (const region of activeTheme.regions) {
+    const prefix = `tile-r${region.id}`;
+    parts.push(`<symbol id="${prefix}-path" viewBox="0 0 36 36">${stripSvgWrapper(region.tiles.path)}</symbol>`);
+    parts.push(
+      `<symbol id="${prefix}-terrain1" viewBox="0 0 36 36">${stripSvgWrapper(region.tiles.terrain1)}</symbol>`,
+    );
+    parts.push(
+      `<symbol id="${prefix}-terrain2" viewBox="0 0 36 36">${stripSvgWrapper(region.tiles.terrain2)}</symbol>`,
+    );
+    parts.push(
+      `<symbol id="${prefix}-terrain3" viewBox="0 0 36 36">${stripSvgWrapper(region.tiles.terrain3)}</symbol>`,
+    );
+    parts.push(
+      `<symbol id="${prefix}-terrain4" viewBox="0 0 36 36">${stripSvgWrapper(region.tiles.terrain4)}</symbol>`,
+    );
+  }
+  return parts.join("\n");
 }
 
 /**
  * Ported from Shapes.ts drawTile() — returns SVG elements for a single tile
- * including fill rect, border stroke, height cross-hatch, spawn marker,
- * and blocked-tile cross-hatch indicator.
+ * using the theme's tile image via <use>, plus overlays for border, height
+ * number, spawn marker, and blocked indicator.
  */
-function getTileSvg(tile: TileInfo, x: number, y: number, region: RegionInfo, isBlocked: boolean): string {
-  const fill = getTileFill(tile, region);
+function getTileSvg(tile: TileInfo, x: number, y: number, isBlocked: boolean, regionId: number): string {
   const size = TILE_SIZE;
+  const tileSymbolId =
+    tile.type === "path" || tile.type === "spawn"
+      ? `tile-r${regionId}-path`
+      : `tile-r${regionId}-terrain${Math.min(4, Math.max(1, tile.height))}`;
 
   let svg = `<g transform="translate(${x}, ${y})">`;
 
-  // Main fill rect
-  svg += `<rect width="${size}" height="${size}" fill="${fill}" />`;
+  // Tile image (from theme, rendered at tile size via <use>)
+  svg += `<use href="#${tileSymbolId}" width="${size}" height="${size}" />`;
 
-  // Subtle border (port of canvas strokeRect)
+  // Subtle border (overlay)
   svg += `<rect x="0.5" y="0.5" width="${size - 1}" height="${size - 1}" fill="none" stroke="rgba(0,0,0,0.15)" stroke-width="1" />`;
 
-  // Terrain: cross-hatch pattern + height number (port of canvas drawTile terrain logic)
+  // Terrain: height number (cross-hatch is in the tile image)
   if (tile.type === "terrain") {
     const h = tile.height;
-    svg += `<path d="M${size * 0.2},${size * 0.2} L${size * 0.8},${size * 0.8} M${size * 0.8},${size * 0.2} L${size * 0.2},${size * 0.8}" stroke="rgba(0,0,0,0.12)" stroke-width="0.5" />`;
     svg += `<text x="${size / 2}" y="${size / 2}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="rgba(0,0,0,0.35)">${h}</text>`;
   }
 
-  // Spawn: red center square (port of canvas drawTile spawn logic)
+  // Spawn: red center square
   if (tile.type === "spawn") {
     svg += `<rect x="${size * 0.3}" y="${size * 0.3}" width="${size * 0.4}" height="${size * 0.4}" fill="#ff5a6e" />`;
   }
@@ -257,11 +273,14 @@ export function useSvgStaticContent(
   const mapDefsContent = computed(() => {
     const map = currentMap.value;
     if (!map) return "";
+    const activeTheme = currentTheme?.value ?? useMapThemeStore().activeTheme;
+    const tileSymbols = buildTileSymbols(activeTheme);
     return (
       `<linearGradient id="base-gradient" x1="0%" y1="0%" x2="100%" y2="100%">` +
       `<stop offset="0%" stop-color="#2a3a4a" />` +
       `<stop offset="100%" stop-color="#1a2a3a" />` +
-      `</linearGradient>`
+      `</linearGradient>` +
+      tileSymbols
     );
   });
 
@@ -284,12 +303,12 @@ export function useSvgStaticContent(
     const regionId = grid?.regionId ?? 0;
     const regionVisual = activeTheme?.regions.find((r) => r.id === regionId);
     const region: RegionInfo = {
-      pathColor: regionVisual?.tiles.path || "#4a3d28",
-      heightColors: [
-        regionVisual?.tiles.terrain1 || "#4e824e",
-        regionVisual?.tiles.terrain2 || "#427542",
-        regionVisual?.tiles.terrain3 || "#366836",
-        regionVisual?.tiles.terrain4 || "#2a5a2a",
+      pathImage: regionVisual?.tiles.path || "",
+      terrainImages: [
+        regionVisual?.tiles.terrain1 || "",
+        regionVisual?.tiles.terrain2 || "",
+        regionVisual?.tiles.terrain3 || "",
+        regionVisual?.tiles.terrain4 || "",
       ],
       base: regionVisual?.base || "",
     };
@@ -303,7 +322,7 @@ export function useSvgStaticContent(
       for (let tx = 0; tx < map.width; tx++) {
         const tile = map.tiles[ty]![tx] as TileInfo;
         const isBlocked = grid?.blocked.has(`${tx},${ty}`) ?? false;
-        svg += getTileSvg(tile, tx * TILE_SIZE, ty * TILE_SIZE, region, isBlocked);
+        svg += getTileSvg(tile, tx * TILE_SIZE, ty * TILE_SIZE, isBlocked, regionId);
       }
     }
 

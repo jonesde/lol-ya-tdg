@@ -442,11 +442,11 @@
       "id": 0,
       "name": "Verdant Marches",
       "tiles": {
-        "path": "<rect width=\"1\" height=\"1\" fill=\"#4a3d28\"/>",
-        "terrain1": "<rect width=\"1\" height=\"1\" fill=\"#4e824e\"/>",
-        "terrain2": "<rect width=\"1\" height=\"1\" fill=\"#427542\"/>",
-        "terrain3": "<rect width=\"1\" height=\"1\" fill=\"#366836\"/>",
-        "terrain4": "<rect width=\"1\" height=\"1\" fill=\"#2a5a2a\"/>"
+        "path": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#4a3d28\"/></svg>",
+        "terrain1": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#4e824e\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
+        "terrain2": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#427542\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
+        "terrain3": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#366836\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
+        "terrain4": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#2a5a2a\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>"
       },
       "base": ""
     },
@@ -454,11 +454,11 @@
       "id": 1,
       "name": "Sunscorch Coast",
       "tiles": {
-        "path": "<rect width=\"1\" height=\"1\" fill=\"#b8a56a\"/>",
-        "terrain1": "<rect width=\"1\" height=\"1\" fill=\"#1a3a5c\"/>",
-        "terrain2": "<rect width=\"1\" height=\"1\" fill=\"#a0896a\"/>",
-        "terrain3": "<rect width=\"1\" height=\"1\" fill=\"#6b5a3e\"/>",
-        "terrain4": "<rect width=\"1\" height=\"1\" fill=\"#0d0d0d\"/>"
+        "path": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#b8a56a\"/></svg>",
+        "terrain1": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#1a3a5c\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
+        "terrain2": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#a0896a\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
+        "terrain3": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#6b5a3e\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
+        "terrain4": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#0d0d0d\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>"
       },
       "base": ""
     },
@@ -466,11 +466,11 @@
       "id": 2,
       "name": "Thornpeak Wilds",
       "tiles": {
-        "path": "<rect width=\"1\" height=\"1\" fill=\"#3a322a\"/>",
-        "terrain1": "<rect width=\"1\" height=\"1\" fill=\"#4e443a\"/>",
-        "terrain2": "<rect width=\"1\" height=\"1\" fill=\"#6a5d52\"/>",
-        "terrain3": "<rect width=\"1\" height=\"1\" fill=\"#7a6c5e\"/>",
-        "terrain4": "<rect width=\"1\" height=\"1\" fill=\"#8a7d6a\"/>"
+        "path": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#3a322a\"/></svg>",
+        "terrain1": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#4e443a\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
+        "terrain2": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#6a5d52\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
+        "terrain3": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#7a6c5e\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
+        "terrain4": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#8a7d6a\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>"
       },
       "base": ""
     }
