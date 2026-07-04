@@ -448,7 +448,7 @@
         "terrain3": "<rect width=\"1\" height=\"1\" fill=\"#366836\"/>",
         "terrain4": "<rect width=\"1\" height=\"1\" fill=\"#2a5a2a\"/>"
       },
-      "base": "<rect width=\"1\" height=\"1\" fill=\"#1a4a1a\"/>"
+      "base": ""
     },
     {
       "id": 1,
@@ -460,7 +460,7 @@
         "terrain3": "<rect width=\"1\" height=\"1\" fill=\"#6b5a3e\"/>",
         "terrain4": "<rect width=\"1\" height=\"1\" fill=\"#0d0d0d\"/>"
       },
-      "base": "<rect width=\"1\" height=\"1\" fill=\"#c9a64f\"/>"
+      "base": ""
     },
     {
       "id": 2,
@@ -472,7 +472,7 @@
         "terrain3": "<rect width=\"1\" height=\"1\" fill=\"#7a6c5e\"/>",
         "terrain4": "<rect width=\"1\" height=\"1\" fill=\"#8a7d6a\"/>"
       },
-      "base": "<rect width=\"1\" height=\"1\" fill=\"#2f3b30\"/>"
+      "base": ""
     }
   ]
 }

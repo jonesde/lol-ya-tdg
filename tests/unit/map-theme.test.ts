@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_THEME_ID, MAP_THEME_MANIFEST } from "@/render/themes/index.js";
+import type { Grid } from "@/grid/Grid.js";
+import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
+import { DEFAULT_THEME_ID, MAP_THEME_MANIFEST, type MapThemeData } from "@/render/themes/index.js";
 import { normalizeThemeImages } from "@/render/themes/normalize.js";
 import { createTestMapThemeStore } from "../helpers/mock-stores";
 
@@ -125,6 +127,173 @@ describe("Map Theme System", () => {
       const store = createTestMapThemeStore();
       expect(store.preloadDefault).toBeInstanceOf(Function);
       expect(store.reset).toBeInstanceOf(Function);
+    });
+  });
+});
+
+function buildCustomTheme(overrides?: {
+  regionBase?: string;
+  pathColor?: string;
+  terrainColors?: string[];
+}): MapThemeData {
+  const pathColor = overrides?.pathColor ?? "#abcdef";
+  const terrainColors = overrides?.terrainColors ?? ["#111111", "#222222", "#333333", "#444444"];
+  const regionBase = overrides?.regionBase ?? "";
+  return {
+    id: "custom",
+    label: "Custom Theme",
+    towers: {
+      basic: {
+        name: "Basic Tower",
+        color: "#8fbc8f",
+        icon: "\u2500",
+        animation: {
+          duration: 0.3,
+          referenceImages: [
+            { svg: "<svg viewBox='-16 -16 32 32'><rect/></svg>" },
+            { svg: "<svg viewBox='-16 -16 32 32'><circle/></svg>" },
+            { svg: "<svg viewBox='-16 -16 32 32'><path/></svg>" },
+          ],
+        },
+        walking: { duration: 0.6, referenceImages: [{ svg: "<svg viewBox='-16 -16 32 32'><rect/></svg>" }] },
+      },
+    },
+    enemies: {
+      minion: {
+        name: "Minion",
+        color: "#e85a6a",
+        shape: "circle",
+        walking: {
+          duration: 0.5,
+          referenceImages: [
+            { svg: "<svg viewBox='-1 -1 2 2'><rect/></svg>" },
+            { svg: "<svg viewBox='-1 -1 2 2'><circle/></svg>" },
+          ],
+        },
+        hitReaction: { duration: 0.1, referenceImages: [{ svg: "<svg viewBox='-1 -1 2 2'><path/></svg>" }] },
+      },
+    },
+    regions: [
+      {
+        id: 0,
+        name: "Test Region",
+        tiles: {
+          path: pathColor,
+          terrain1: terrainColors[0]!,
+          terrain2: terrainColors[1]!,
+          terrain3: terrainColors[2]!,
+          terrain4: terrainColors[3]!,
+        },
+        base: regionBase,
+      },
+    ],
+  };
+}
+
+function makeMinimalMap(baseX: number, baseY: number) {
+  return {
+    width: 2,
+    height: 1,
+    tiles: [
+      [
+        { type: "terrain" as const, height: 2 },
+        { type: "path" as const, height: 0 },
+      ],
+    ],
+    spawns: [],
+    base: { x: baseX, y: baseY },
+    regionId: 0,
+  };
+}
+
+function makeFakeGrid(): Grid {
+  return { regionId: 0, blocked: new Set<string>(), paths: [] } as unknown as Grid;
+}
+
+describe("SVG Static Content Render Placement", () => {
+  describe("Symbol ID generation", () => {
+    it("should generate symbol IDs matching the frame counts in the theme", () => {
+      const store = createTestMapThemeStore();
+      const customTheme = buildCustomTheme();
+      store.activeTheme = customTheme;
+      store.defaultTheme = customTheme;
+
+      const mapRef = { value: null };
+      const gridRef = { value: null };
+      const { staticDefsContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const defs = staticDefsContent.value;
+
+      expect(defs).toContain('<symbol id="tower-basic-f0"');
+      expect(defs).toContain('<symbol id="tower-basic-f1"');
+      expect(defs).toContain('<symbol id="tower-basic-f2"');
+      expect(defs).toContain('<symbol id="enemy-minion-f0"');
+      expect(defs).toContain('<symbol id="enemy-minion-f1"');
+      expect(defs).toContain('<symbol id="enemy-minion-hit-f0"');
+      expect(defs).not.toContain('<symbol id="tower-basic-f3"');
+      expect(defs).not.toContain('<symbol id="enemy-minion-f2"');
+      expect(defs).toContain('viewBox="-16 -16 32 32"');
+      expect(defs).toContain('viewBox="-1 -1 2 2"');
+    });
+  });
+
+  describe("Tile placement", () => {
+    it("should render tile rects with region path/terrain colors and overlays", () => {
+      const store = createTestMapThemeStore();
+      const pathColor = "#abcdef";
+      const terrainColors = ["#aabbcc", "#bbccdd", "#ccddee", "#ddeeff"];
+      const customTheme = buildCustomTheme({ pathColor, terrainColors });
+      store.activeTheme = customTheme;
+      store.defaultTheme = customTheme;
+
+      const mapRef = { value: makeMinimalMap(1, 1) };
+      const gridRef = { value: makeFakeGrid() };
+      const { gridContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const svg = gridContent.value;
+
+      expect(svg).toContain('fill="#abcdef"');
+      expect(svg).toContain('fill="#bbccdd"');
+      expect(svg).toContain('stroke="rgba(0,0,0,0.15)"');
+      expect(svg).toContain(">2</text>");
+    });
+  });
+
+  describe("Base placement", () => {
+    it("places themed base SVG inside base-structure group when region.base is non-empty", () => {
+      const store = createTestMapThemeStore();
+      const regionBase = '<svg viewBox="0 0 10 10"><rect width="10" height="10" fill="#f0f"/></svg>';
+      const customTheme = buildCustomTheme({ regionBase });
+      store.activeTheme = customTheme;
+      store.defaultTheme = customTheme;
+
+      const mapRef = { value: makeMinimalMap(1, 1) };
+      const gridRef = { value: makeFakeGrid() };
+      const { gridContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const svg = gridContent.value;
+
+      expect(svg).toContain('<g id="base-structure"');
+      const groupStart = svg.indexOf('<g id="base-structure"');
+      const groupEnd = svg.indexOf("</g>", groupStart);
+      const groupContent = svg.slice(groupStart, groupEnd);
+      expect(groupContent).toContain('<rect width="10" height="10" fill="#f0f"/>');
+      expect(groupContent).not.toContain("url(#base-gradient)");
+    });
+
+    it("uses procedural fallback when region.base is empty", () => {
+      const store = createTestMapThemeStore();
+      const customTheme = buildCustomTheme({ regionBase: "" });
+      store.activeTheme = customTheme;
+      store.defaultTheme = customTheme;
+
+      const mapRef = { value: makeMinimalMap(1, 1) };
+      const gridRef = { value: makeFakeGrid() };
+      const { gridContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const svg = gridContent.value;
+
+      expect(svg).toContain('<g id="base-structure"');
+      const groupStart = svg.indexOf('<g id="base-structure"');
+      const groupEnd = svg.indexOf("</g>", groupStart);
+      const groupContent = svg.slice(groupStart, groupEnd);
+      expect(groupContent).toContain("url(#base-gradient)");
     });
   });
 });

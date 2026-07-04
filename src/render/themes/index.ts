@@ -70,3 +70,7 @@ export function registerThemeLoader(themeId: string, loaderFn: () => Promise<Map
     },
   };
 }
+
+registerThemeLoader(DEFAULT_THEME_ID, () =>
+  import("./data/default-map-theme.json").then((mod) => mod.default as unknown as MapThemeData),
+);

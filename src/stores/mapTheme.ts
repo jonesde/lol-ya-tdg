@@ -33,6 +33,11 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
   }
 
   async function loadActive(id: MapThemeId): Promise<MapThemeData> {
+    if (id === DEFAULT_THEME_ID && defaultTheme.value) {
+      activeThemeId.value = id;
+      activeTheme.value = defaultTheme.value;
+      return defaultTheme.value;
+    }
     isLoading.value = true;
     error.value = null;
     activeThemeId.value = id;
@@ -41,7 +46,8 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
       if (!loader) {
         throw new Error(`Unknown theme ID: ${id}`);
       }
-      const data = await loader.load();
+      const rawData = await loader.load();
+      const data = await normalizeThemeImages(rawData as never);
       activeTheme.value = data;
       return data;
     } catch (err) {

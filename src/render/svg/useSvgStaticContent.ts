@@ -236,13 +236,13 @@ function getTileSvg(tile: TileInfo, x: number, y: number, region: RegionInfo, is
  * Renders the base structure as an SVG string with rounded corners,
  * gradient fill, gem decorations, and hexagonal emblem.
  */
-function renderBaseStructure(base: { x: number; y: number }, regionId?: number): string {
-  return renderBaseSvg({
-    x: (base.x - 1) * TILE_SIZE,
-    y: (base.y - 1) * TILE_SIZE,
-    size: TILE_SIZE,
-    ...(regionId !== undefined ? { regionId } : {}),
-  });
+function renderBaseStructure(base: { x: number; y: number }, regionBaseSvg: string): string {
+  const translateX = (base.x - 1) * TILE_SIZE;
+  const translateY = (base.y - 1) * TILE_SIZE;
+  if (regionBaseSvg) {
+    return `<g id="base-structure" transform="translate(${translateX}, ${translateY})">${stripSvgWrapper(regionBaseSvg)}</g>`;
+  }
+  return renderBaseSvg({ x: translateX, y: translateY, size: TILE_SIZE });
 }
 
 export function useSvgStaticContent(currentMap: { value: MapInfo | null }, currentGrid: { value: Grid | null }) {
@@ -311,7 +311,7 @@ export function useSvgStaticContent(currentMap: { value: MapInfo | null }, curre
 
     // Base structure (port of drawBase from Shapes.ts)
     if (map.base) {
-      svg += renderBaseStructure(map.base, regionId);
+      svg += renderBaseStructure(map.base, region.base);
     }
 
     // Path highlights — Grid.paths is (Point[] | null)[], each path IS a Point[]

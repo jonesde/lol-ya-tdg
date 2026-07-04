@@ -24,8 +24,14 @@ export const mockDefaultTheme: MapThemeData = {
       name: "Rifle Tower",
       color: "#8fbc8f",
       icon: "\u2500",
-      animation: { duration: 0.3, frames: [{ image: "<svg></svg>" }] },
-      walking: { duration: 0.6, frames: [{ image: "<svg></svg>" }] },
+      animation: {
+        duration: 0.3,
+        referenceImages: [{ svg: "<svg viewBox='0 0 1 1'><rect width='1' height='1'/></svg>" }],
+      },
+      walking: {
+        duration: 0.6,
+        referenceImages: [{ svg: "<svg viewBox='0 0 1 1'><rect width='1' height='1'/></svg>" }],
+      },
     },
   },
   enemies: {
@@ -33,8 +39,14 @@ export const mockDefaultTheme: MapThemeData = {
       name: "Minion",
       color: "#e85a6a",
       shape: "circle",
-      walking: { duration: 0.784, frames: [{ image: "<svg></svg>" }] },
-      hitReaction: { duration: 0.12, frames: [{ image: "<svg></svg>" }] },
+      walking: {
+        duration: 0.784,
+        referenceImages: [{ svg: "<svg viewBox='0 0 1 1'><rect width='1' height='1'/></svg>" }],
+      },
+      hitReaction: {
+        duration: 0.12,
+        referenceImages: [{ svg: "<svg viewBox='0 0 1 1'><rect width='1' height='1'/></svg>" }],
+      },
     },
   },
   regions: [
@@ -48,7 +60,7 @@ export const mockDefaultTheme: MapThemeData = {
         terrain3: "<svg></svg>",
         terrain4: "<svg></svg>",
       },
-      base: "<svg></svg>",
+      base: "",
     },
     {
       id: 1,
@@ -60,7 +72,7 @@ export const mockDefaultTheme: MapThemeData = {
         terrain3: "<svg></svg>",
         terrain4: "<svg></svg>",
       },
-      base: "<svg></svg>",
+      base: "",
     },
     {
       id: 2,
@@ -72,7 +84,7 @@ export const mockDefaultTheme: MapThemeData = {
         terrain3: "<svg></svg>",
         terrain4: "<svg></svg>",
       },
-      base: "<svg></svg>",
+      base: "",
     },
   ],
 };

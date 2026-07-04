@@ -133,6 +133,7 @@ export class Tower {
   };
   color: string;
   icon: string;
+  name: string;
   animation: MapThemeAnimation | null;
   visualMeta: MapThemeTowerVisual | null;
   theme: MapThemeData | null;
@@ -179,6 +180,7 @@ export class Tower {
     const defaultTower = themeStore.getDefaultTowerVisual(towerId);
     this.color = towerVisual?.color || defaultTower?.color || "#8fbc8f";
     this.icon = towerVisual?.icon || defaultTower?.icon || "\u2500";
+    this.name = towerVisual?.name || defaultTower?.name || type;
     this.animation = towerVisual?.animation || null;
     this.visualMeta = towerVisual;
 
