@@ -26,6 +26,7 @@ import {
   MAX_ACCUM,
   MILESTONE_GEMS,
   MILESTONE_WAVES,
+  PRE_EMPTIVE_WAVE_TIMER,
   SLOW_HEALING_PER_ROUND,
   STARTING_GOLD_BONUS,
   STARTING_HEALTH_BONUS,
@@ -41,6 +42,7 @@ interface WaveManagerRef {
   countdownActive: boolean;
   countdownTimer: number;
   baseReached: boolean;
+  _waveGameTime: number;
   update(
     dt: number,
     onWaveCleared: ((wave: number) => void) | null,
@@ -77,6 +79,7 @@ export class GameEngine {
   renderCallback: (() => void) | null = null;
   lastScaledDt: number = 0;
   shouldEndGame: boolean = false;
+  _preemptiveTimerHandled: boolean = false;
 
   theme: MapThemeData | null = null;
 
@@ -229,13 +232,28 @@ export class GameEngine {
 
   update(dt: number): void {
     if (!this.waveManager || !this.enemyManager || !this.towerManager) return;
+
+    const wm = this.waveManager;
+    if (
+      !wm.betweenWaves &&
+      !wm.countdownActive &&
+      wm.currentWave > 0 &&
+      this.enemyManager.enemies.length > 0
+    ) {
+      const waveManagerImpl = wm as WaveManager;
+      if (waveManagerImpl.queue.length === 0 && waveManagerImpl._waveGameTime >= PRE_EMPTIVE_WAVE_TIMER) {
+        this._preemptiveTimerHandled = true;
+        this._captureWaveTopTowers();
+        this.enemyManager.clear();
+      }
+    }
+
     this.waveManager.update(
       dt,
       (wave) => this.onWaveCleared(wave),
       (wave) => this.onWaveStart(wave),
     );
 
-    const wm = this.waveManager;
     if (wm.countdownActive) {
       const currentRemaining = Math.ceil(wm.countdownTimer);
       const stored: { remaining: number; nextWave: number } | null = this.gameStore.waveCountdown;
@@ -289,6 +307,25 @@ export class GameEngine {
     }
   }
 
+  _captureWaveTopTowers(): void {
+    const towers = this.towerManager!.towers;
+    const sorted = towers
+      .map((tower) => ({ tower, dmg: tower.waveDamage }))
+      .filter((entry) => entry.dmg > 0)
+      .sort(
+        (entryA, entryB) => entryB.dmg - entryA.dmg || entryB.tower.totalDamageDealt - entryA.tower.totalDamageDealt,
+      )
+      .slice(0, 3);
+    if (sorted.length > 0) {
+      this.waveTopTowers = sorted.map((entry, i) => ({
+        tower: entry.tower,
+        rank: i + 1,
+        dmg: entry.dmg,
+        startTime: performance.now(),
+      }));
+    }
+  }
+
   onWaveCleared(wave: number): void {
     this.gameStore.setWave(wave);
 
@@ -333,22 +370,10 @@ export class GameEngine {
       }
     }
 
-    const towers = this.towerManager!.towers;
-    const sorted = towers
-      .map((tower) => ({ tower, dmg: tower.waveDamage }))
-      .filter((tower) => tower.dmg > 0)
-      .sort(
-        (entryA, entryB) => entryB.dmg - entryA.dmg || entryB.tower.totalDamageDealt - entryA.tower.totalDamageDealt,
-      )
-      .slice(0, 3);
-    if (sorted.length > 0) {
-      this.waveTopTowers = sorted.map((entry, i) => ({
-        tower: entry.tower,
-        rank: i + 1,
-        dmg: entry.dmg,
-        startTime: performance.now(),
-      }));
+    if (!this._preemptiveTimerHandled) {
+      this._captureWaveTopTowers();
     }
+    this._preemptiveTimerHandled = false;
   }
 
   onWaveStart(wave: number): void {
