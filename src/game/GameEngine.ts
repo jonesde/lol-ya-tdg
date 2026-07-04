@@ -234,12 +234,7 @@ export class GameEngine {
     if (!this.waveManager || !this.enemyManager || !this.towerManager) return;
 
     const wm = this.waveManager;
-    if (
-      !wm.betweenWaves &&
-      !wm.countdownActive &&
-      wm.currentWave > 0 &&
-      this.enemyManager.enemies.length > 0
-    ) {
+    if (!wm.betweenWaves && !wm.countdownActive && wm.currentWave > 0 && this.enemyManager.enemies.length > 0) {
       const waveManagerImpl = wm as WaveManager;
       if (waveManagerImpl.queue.length === 0 && waveManagerImpl._waveGameTime >= PRE_EMPTIVE_WAVE_TIMER) {
         this._preemptiveTimerHandled = true;
