@@ -289,6 +289,55 @@ function carveOpenArea(
   }
 }
 
+function carveOpenAreaAt(
+  tiles: Tile[][],
+  center: Point,
+  openAreaHeight: number,
+  openAreaWidth: number,
+  shapeIndex: number,
+) {
+  const halfW = Math.floor(openAreaWidth / 2);
+  const W = tiles[0]!.length;
+  const H = tiles.length;
+  const startY = Math.max(0, center.y - openAreaHeight);
+  const endY = Math.min(H - 1, center.y + openAreaHeight);
+
+  for (let cy = startY; cy <= endY; cy++) {
+    for (let cx = Math.max(0, center.x - halfW); cx <= Math.min(W - 1, center.x + halfW); cx++) {
+      const dx = cx - center.x;
+      const dy = cy - center.y;
+      let inside = false;
+
+      switch (shapeIndex) {
+        case 0:
+          inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
+          break;
+        case 1:
+          if (halfW > 0 && openAreaHeight > 0)
+            inside = (dx * dx) / (halfW * halfW) + (dy * dy) / (openAreaHeight * openAreaHeight) <= 1;
+          break;
+        case 2:
+          if (halfW > 0 && openAreaHeight > 0) inside = Math.abs(dx) / halfW + Math.abs(dy) / openAreaHeight <= 1;
+          break;
+        case 3: {
+          const distFromCenter = Math.abs(dy);
+          const rowMaxHalfW = Math.floor((halfW * (openAreaHeight - distFromCenter)) / (openAreaHeight || 1));
+          inside = Math.abs(dx) <= Math.max(0, rowMaxHalfW);
+          break;
+        }
+        default:
+          inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
+          break;
+      }
+
+      if (inside && tiles[cy]![cx]!.type !== "base") {
+        tiles[cy]![cx]!.type = "path";
+        tiles[cy]![cx]!.height = 1;
+      }
+    }
+  }
+}
+
 const mapCache = new Map<number, GeneratedMap>();
 
 export function getMap(index: number): GeneratedMap {
@@ -345,24 +394,40 @@ export function generateRandomMap(
 
   switch (style) {
     case "battlefield": {
-      const spawn = { x: Math.floor(width / 2), y: 1 };
+      const spawnX = Math.floor(width * (0.15 + rng() * 0.7));
+      const spawn = { x: spawnX, y: 1 };
       spawns.push(spawn);
-      const waypoints: Point[] = [
-        { x: Math.floor(width / 2), y: 1 },
-        { x: Math.floor(width / 2), y: 4 },
-        { x: 3, y: 4 },
-        { x: 3, y: 7 },
-        { x: width - 3, y: 7 },
-        { x: width - 3, y: 10 },
-        { x: 4, y: 10 },
-        { x: 4, y: 13 },
-        { x: width - 4, y: 13 },
-        { x: width - 4, y: 16 },
-        { x: Math.floor(width / 2), y: 16 },
-        { x: Math.floor(width / 2), y: height - 2 },
-      ];
+      const rowSpacing = 2 + Math.floor(rng() * 3);
+      const startDirection = rng() > 0.5 ? 1 : -1;
 
-      const pathWidths = [2, 3, 1, 2, 1, 3, 2, 1, 2, 3, 2];
+      const waypoints: Point[] = [spawn];
+      let curY = 1;
+      let direction = startDirection;
+
+      curY += rowSpacing;
+      waypoints.push({ x: spawnX, y: curY });
+
+      while (curY + rowSpacing <= base.y) {
+        direction = -direction;
+        const edgeMargin = 0.1 + rng() * 0.15;
+        const targetX = direction > 0 ? width - Math.floor(width * edgeMargin) : Math.floor(width * edgeMargin);
+        waypoints.push({ x: targetX, y: curY });
+        waypoints.push({ x: targetX, y: curY + rowSpacing });
+        curY += rowSpacing;
+      }
+
+      waypoints.push({ x: Math.floor(width / 2), y: curY });
+      waypoints.push({ x: Math.floor(width / 2), y: base.y });
+
+      const segmentCount = waypoints.length - 1;
+      const pathWidths: number[] = [];
+      for (let i = 0; i < segmentCount; i++) {
+        const r = rng();
+        if (r > 0.8) pathWidths.push(3);
+        else if (r > 0.45) pathWidths.push(2);
+        else pathWidths.push(1);
+      }
+
       for (let i = 0; i < waypoints.length - 1; i++) {
         const from = waypoints[i]!;
         const nextWaypoint = waypoints[i + 1]!;
@@ -384,6 +449,14 @@ export function generateRandomMap(
           }
           if (curX !== nextWaypoint.x) curX += Math.sign(nextWaypoint.x - curX);
           if (curY !== nextWaypoint.y) curY += Math.sign(nextWaypoint.y - curY);
+        }
+
+        const isHorizontal = from.y === nextWaypoint.y;
+        if (isHorizontal && rng() > 0.6) {
+          const openAreaHeight = 3 + Math.floor(rng() * 4);
+          const openAreaWidth = 3 + Math.floor(rng() * 4);
+          const shapeIndex = Math.floor(rng() * 4);
+          carveOpenAreaAt(tiles, { x: nextWaypoint.x, y: nextWaypoint.y }, openAreaHeight, openAreaWidth, shapeIndex);
         }
       }
       break;
