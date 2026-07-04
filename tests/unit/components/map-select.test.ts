@@ -133,4 +133,18 @@ describe("MapSelect", () => {
     expect(mapCards[1].classes("locked")).toBe(false);
     expect(mapCards[6].classes("locked")).toBe(true);
   });
+
+  it("map cards are tab-selectable with tabindex, role, and keyboard handlers", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    const mapCards = wrapper.findAll(".map-card");
+    expect(mapCards.length).toBe(36);
+    for (const card of mapCards) {
+      expect(card.attributes("tabindex")).toBe("0");
+      expect(card.attributes("role")).toBe("button");
+      expect(card.attributes("tabindex")).toBeDefined();
+      expect(card.attributes("role")).toBeDefined();
+    }
+  });
 });

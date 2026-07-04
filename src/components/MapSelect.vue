@@ -148,7 +148,11 @@ async function startMap(index: number) {
           :key="m.index"
           class="map-card"
           :class="{ locked: getFullEntry(m.index).locked }"
+          tabindex="0"
+          role="button"
           @click="!getFullEntry(m.index).locked && startMap(m.index)"
+          @keydown.enter="!getFullEntry(m.index).locked && startMap(m.index)"
+          @keydown.space.prevent="!getFullEntry(m.index).locked && startMap(m.index)"
         >
           <div class="map-name">{{ getFullEntry(m.index).name }}</div>
           <div class="map-region">
