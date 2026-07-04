@@ -39,8 +39,12 @@ Defend your base against 100 waves of enemies across 36 procedurally-generated m
 | `Right Arrow` | Cycle time scale (1× --> 2× --> 4× --> 8× --> 1×) |
 | `Left Arrow` | Reverse cycle time scale (1× --> 8× --> 4× --> 2× --> 1×) |
 | `1`–`9` | Build mode for corresponding tower type (use current shop panel order; support up to 9 even though there are only 6 towers now) |
-| `u` or `Up Arrow` | Upgrade the selected tower, nothing if no tower selected |
+| `u` or `Up Arrow` | Upgrade the selected tower, nothing if no tower selected (in build mode: move build position up) |
+| `Down Arrow` | Move build position down (only in build mode) |
+| `Left Arrow` / `Right Arrow` | Cycle time speed outside build mode; move build position left/right in build mode |
 | `s` | Sell the selected tower, nothing if no tower selected |
+| `d` | Deselect the selected tower |
+| `f` | Cycle targeting mode on the selected tower (first → last → closest → strong → furthest) |
 | Click on empty tile (build mode) | Place selected tower |
 | Click on tower | Select tower for upgrade/sell |
 | Click upgrade button (on selected tower) | Upgrade tower |

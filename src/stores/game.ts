@@ -57,11 +57,13 @@ export interface GameStoreLike {
   timeScale: number;
   selectedTower: Tower | null;
   selectedTowerType: TowerId | null;
+  hoverTile: HoverTile | null;
   camera: CameraState;
   cycleSpeed(): number;
   cycleSpeedReverse(): number;
   selectBuildType(type: TowerId | null): void;
   selectTower(tower: Tower | null): void;
+  setHoverTile(tile: HoverTile | null): void;
 }
 
 interface GameStateShape {

@@ -1,15 +1,23 @@
-// @ts-nocheck
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GameState } from "@/game/Constants.js";
 import { TowerIds } from "@/game/ConstantsTower.js";
 import { useInput } from "@/game/Input.js";
+import type { Grid } from "@/grid/Grid.js";
+import type { GeneratedMap } from "@/grid/Map.js";
 import type { Tower } from "@/towers/Tower.js";
 import { createTestGameStore, createTestUiStore } from "../helpers/mock-stores";
 
 const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 function makeEngine() {
-  return { togglePause: vi.fn(), upgradeSelected: vi.fn(), sellSelected: vi.fn(), cancelBuildMode: vi.fn() };
+  return {
+    togglePause: vi.fn(),
+    upgradeSelected: vi.fn(),
+    sellSelected: vi.fn(),
+    cancelBuildMode: vi.fn(),
+    setTargeting: vi.fn(),
+    handleClick: vi.fn(),
+  };
 }
 
 function makeEvent(key: string, opts: Record<string, unknown> = {}) {
@@ -169,6 +177,36 @@ describe("useInput", () => {
       triggerInput("ArrowUp");
       expect(engine.upgradeSelected).not.toHaveBeenCalled();
     });
+
+    it("moves build position up when in build mode", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 5, tileY: 3 };
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowUp");
+      expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 2 });
+    });
+
+    it("clamps build position to grid bounds on up", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 5, tileY: 0 };
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowUp");
+      expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 0 });
+    });
   });
 
   describe("s key (sell)", () => {
@@ -189,6 +227,54 @@ describe("useInput", () => {
     });
   });
 
+  describe("ArrowDown (build position)", () => {
+    it("moves build position down when in build mode", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 5, tileY: 3 };
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowDown");
+      expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 4 });
+    });
+
+    it("clamps build position to grid bounds on down", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 5, tileY: 9 };
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowDown");
+      expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 9 });
+    });
+
+    it("does nothing when not in build mode", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTower = null;
+      gameStore.selectedTowerType = null;
+      gameStore.hoverTile = { tileX: 5, tileY: 5 };
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowDown");
+      expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 5 });
+    });
+  });
+
   describe("Right Arrow (cycle speed forward)", () => {
     it("cycles timeScale forward", () => {
       gameStore.setState(GameState.PLAYING);
@@ -204,6 +290,51 @@ describe("useInput", () => {
       useInput(gameStore, engine, uiStore);
       triggerInput("ArrowRight");
       expect(gameStore.timeScale).toBe(1);
+    });
+
+    it("moves build position right when in build mode", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 3, tileY: 2 };
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.hoverTile).toEqual({ tileX: 4, tileY: 2 });
+    });
+
+    it("clamps build position to grid bounds on right", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 9, tileY: 5 };
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.hoverTile).toEqual({ tileX: 9, tileY: 5 });
+    });
+
+    it("starts from map center when hoverTile is null", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = null;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 5 });
     });
   });
 
@@ -222,6 +353,36 @@ describe("useInput", () => {
       useInput(gameStore, engine, uiStore);
       triggerInput("ArrowLeft");
       expect(gameStore.timeScale).toBe(1);
+    });
+
+    it("moves build position left when in build mode", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 5, tileY: 3 };
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowLeft");
+      expect(gameStore.hoverTile).toEqual({ tileX: 4, tileY: 3 });
+    });
+
+    it("clamps build position to grid bounds on left", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 0, tileY: 5 };
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowLeft");
+      expect(gameStore.hoverTile).toEqual({ tileX: 0, tileY: 5 });
     });
   });
 
@@ -380,6 +541,103 @@ describe("useInput", () => {
       useInput(gameStore, engine, uiStore);
       triggerInput("Enter");
       expect(gameStore.state).toBe(GameState.PLAYING);
+    });
+
+    it("attempts to build at hoverTile when in build mode", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 5, tileY: 3 };
+      useInput(gameStore, engine, uiStore);
+      triggerInput("Enter");
+      expect(engine.handleClick).toHaveBeenCalledWith(5 * 36 + 18, 3 * 36 + 18);
+    });
+
+    it("does nothing when in build mode but hoverTile is null", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = null;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("Enter");
+      expect(engine.handleClick).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when not in build mode", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTowerType = null;
+      gameStore.hoverTile = { tileX: 5, tileY: 3 };
+      useInput(gameStore, engine, uiStore);
+      triggerInput("Enter");
+      expect(engine.handleClick).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("d key (deselect tower)", () => {
+    it("deselects tower when one is selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = { id: 1 } as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("d");
+      expect(gameStore.selectedTower).toBeNull();
+    });
+
+    it("does nothing when no tower is selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = null;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("d");
+      expect(gameStore.selectedTower).toBeNull();
+    });
+  });
+
+  describe("f key (cycle targeting)", () => {
+    it("cycles targeting mode on selected tower", () => {
+      gameStore.setState(GameState.PLAYING);
+      const tower = { id: 1, targeting: "first" } as unknown as Tower;
+      gameStore.selectedTower = tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("f");
+      expect(engine.setTargeting).toHaveBeenCalledWith("last");
+    });
+
+    it("cycles through all targeting modes", () => {
+      gameStore.setState(GameState.PLAYING);
+      const tower = { id: 1, targeting: "last" } as unknown as Tower;
+      gameStore.selectedTower = tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("f");
+      expect(engine.setTargeting).toHaveBeenCalledWith("closest");
+    });
+
+    it("wraps from furthest back to first", () => {
+      gameStore.setState(GameState.PLAYING);
+      const tower = { id: 1, targeting: "furthest" } as unknown as Tower;
+      gameStore.selectedTower = tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("f");
+      expect(engine.setTargeting).toHaveBeenCalledWith("first");
+    });
+
+    it("defaults to first when targeting is undefined", () => {
+      gameStore.setState(GameState.PLAYING);
+      const tower = { id: 1 } as unknown as Tower;
+      gameStore.selectedTower = tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("f");
+      expect(engine.setTargeting).toHaveBeenCalledWith("last");
+    });
+
+    it("does nothing when no tower is selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = null;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("f");
+      expect(engine.setTargeting).not.toHaveBeenCalled();
     });
   });
 

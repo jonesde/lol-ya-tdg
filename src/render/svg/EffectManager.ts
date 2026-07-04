@@ -151,14 +151,14 @@ export class EffectManager {
   }
 
   syncFromGameEngine(
-    mousePos: { x: number; y: number } | null,
+    buildTilePos: { tileX: number; tileY: number } | null,
     selectedTowerType: string | null,
     selectedTower: { x: number; y: number; type: string; level: number } | null,
     dt: number,
   ): void {
     this.syncLightning(dt);
     this.syncStun(dt);
-    this.syncBuildPreview(mousePos, selectedTowerType);
+    this.syncBuildPreview(buildTilePos, selectedTowerType);
     this.syncUpgradeButton(selectedTower);
   }
 
@@ -310,10 +310,13 @@ export class EffectManager {
     }
   }
 
-  private syncBuildPreview(mousePos: { x: number; y: number } | null, selectedTowerType: string | null): void {
-    if (selectedTowerType && mousePos) {
-      const tileX = Math.floor(mousePos.x / TILE_SIZE) * TILE_SIZE;
-      const tileY = Math.floor(mousePos.y / TILE_SIZE) * TILE_SIZE;
+  private syncBuildPreview(
+    buildTilePos: { tileX: number; tileY: number } | null,
+    selectedTowerType: string | null,
+  ): void {
+    if (selectedTowerType && buildTilePos) {
+      const tileX = buildTilePos.tileX * TILE_SIZE;
+      const tileY = buildTilePos.tileY * TILE_SIZE;
       const centerX = tileX + TILE_SIZE / 2;
       const centerY = tileY + TILE_SIZE / 2;
 

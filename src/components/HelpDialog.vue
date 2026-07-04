@@ -60,11 +60,27 @@ const uiStore = useUiStore();
               </tr>
               <tr>
                 <td><kbd>U</kbd> or <kbd>&uarr;</kbd></td>
-                <td>Upgrade the selected tower</td>
+                <td>Upgrade the selected tower (in build mode: move build position up)</td>
+              </tr>
+              <tr>
+                <td><kbd>&darr;</kbd></td>
+                <td>Move build position down (only in build mode)</td>
+              </tr>
+              <tr>
+                <td><kbd>&larr;</kbd> / <kbd>&rarr;</kbd></td>
+                <td>Cycle time speed (outside build mode) or move build position left/right (in build mode)</td>
               </tr>
               <tr>
                 <td><kbd>S</kbd></td>
                 <td>Sell the selected tower for a partial gold refund</td>
+              </tr>
+              <tr>
+                <td><kbd>D</kbd></td>
+                <td>Deselect the selected tower</td>
+              </tr>
+              <tr>
+                <td><kbd>F</kbd></td>
+                <td>Cycle targeting mode on the selected tower (first → last → closest → strong → furthest)</td>
               </tr>
               <tr>
                 <td>Click empty tile</td>

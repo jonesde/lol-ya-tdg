@@ -10,9 +10,12 @@ interface EngineLike {
   cancelBuildMode?: () => void;
   upgradeSelected?: () => void;
   sellSelected?: () => void;
+  setTargeting?: (mode: string) => void;
+  handleClick?: (worldX: number, worldY: number) => void;
 }
 
 const towerIdList = Object.values(TowerIds) as TowerId[];
+const targetingModes = ["first", "last", "closest", "strong", "furthest"] as const;
 
 /**
  * Keyboard input handler as a Vue composable.
@@ -67,14 +70,29 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
         event.preventDefault();
         break;
       case "ArrowRight":
-        if (canActNow()) gs.cycleSpeed();
+        if (gs.selectedTowerType) {
+          if (canActNow()) moveBuildPosition(gs, 1, 0);
+        } else if (canActNow()) {
+          gs.cycleSpeed();
+        }
         break;
       case "ArrowLeft":
-        if (canActNow()) gs.cycleSpeedReverse();
+        if (gs.selectedTowerType) {
+          if (canActNow()) moveBuildPosition(gs, -1, 0);
+        } else if (canActNow()) {
+          gs.cycleSpeedReverse();
+        }
         break;
       case "ArrowUp":
-        if (canActNow() && gs.selectedTower) {
+        if (gs.selectedTowerType) {
+          if (canActNow()) moveBuildPosition(gs, 0, -1);
+        } else if (canActNow() && gs.selectedTower) {
           engine?.upgradeSelected?.();
+        }
+        break;
+      case "ArrowDown":
+        if (gs.selectedTowerType) {
+          if (canActNow()) moveBuildPosition(gs, 0, 1);
         }
         break;
       case "u":
@@ -87,9 +105,28 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
           engine?.sellSelected?.();
         }
         break;
+      case "d":
+        gs.selectedTower = null;
+        break;
+      case "f":
+        if (canActNow() && gs.selectedTower) {
+          const currentMode = gs.selectedTower.targeting || "first";
+          const currentIndex = targetingModes.indexOf(currentMode as (typeof targetingModes)[number]);
+          const nextIndex = (currentIndex + 1) % targetingModes.length;
+          engine?.setTargeting?.(targetingModes[nextIndex]!);
+        }
+        break;
       case "Enter":
         if (uiStore.confirmDialog) {
           uiStore.executeConfirm();
+        } else if (gs.selectedTowerType && gs.hoverTile) {
+          const grid = (
+            gs as unknown as { grid: { tileToWorld: (tx: number, ty: number) => { x: number; y: number } } | null }
+          ).grid;
+          if (grid) {
+            const worldPos = grid.tileToWorld(gs.hoverTile.tileX, gs.hoverTile.tileY);
+            engine?.handleClick?.(worldPos.x, worldPos.y);
+          }
         }
         break;
       default: {
@@ -145,4 +182,26 @@ function handleTabCycle(gameStore: GameStoreLike, previous: boolean): void {
   } else {
     gameStore.selectTower(sortedTowers[0]!);
   }
+}
+
+function moveBuildPosition(gameStore: GameStoreLike, dx: number, dy: number): void {
+  const grid = (gameStore as unknown as { grid: { width: number; height: number } | null }).grid;
+  if (!grid) return;
+
+  const currentHover = gameStore.hoverTile;
+  let tileX: number;
+  let tileY: number;
+
+  if (currentHover === null) {
+    tileX = Math.floor(grid.width / 2);
+    tileY = Math.floor(grid.height / 2);
+  } else {
+    tileX = currentHover.tileX + dx;
+    tileY = currentHover.tileY + dy;
+  }
+
+  tileX = Math.max(0, Math.min(tileX, grid.width - 1));
+  tileY = Math.max(0, Math.min(tileY, grid.height - 1));
+
+  gameStore.setHoverTile({ tileX, tileY });
 }

@@ -58,6 +58,19 @@ const { staticDefsContent, mapDefsContent, gridContent } = useSvgStaticContent(
 
 const mouseWorldPos = ref<{ x: number; y: number } | null>(null);
 
+const buildPreviewTilePos = computed(() => {
+  if (gameStore.selectedTowerType) {
+    if (gameStore.hoverTile) {
+      return gameStore.hoverTile;
+    }
+    const grid = gameStore.grid;
+    if (grid) {
+      return { tileX: Math.floor(grid.width / 2), tileY: Math.floor(grid.height / 2) };
+    }
+  }
+  return null;
+});
+
 const engine = ref<GameEngine | null>(null);
 
 const viewSize = ref({ w: 800, h: 600 });
@@ -192,7 +205,7 @@ onMounted(async () => {
       projectileManager.syncFromGameEngine(projectiles, dt);
       particleManager.syncFromGameEngine(particles);
       effectManager.syncFromGameEngine(
-        mouseWorldPos.value,
+        buildPreviewTilePos.value,
         gameStore.selectedTowerType || null,
         gameStore.selectedTower,
         dt,
