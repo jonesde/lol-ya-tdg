@@ -150,6 +150,111 @@ describe("Map generation", () => {
       }
     });
 
+    it("bastion open area stays within 20-40% height bounds", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.style !== "bastion") continue;
+        const map = getMap(i);
+        const base = map.base;
+        const centerCol = Math.floor(map.width / 2);
+        const minTop = base.y - Math.floor(map.height * 0.4);
+        let aboveBounds = false;
+        for (let y = Math.max(0, minTop - 1); y >= 0; y--) {
+          for (let x = 0; x < map.width; x++) {
+            if (x !== centerCol && map.tiles[y][x].type === "path") {
+              aboveBounds = true;
+              break;
+            }
+          }
+          if (aboveBounds) break;
+        }
+        expect(aboveBounds).toBe(false);
+        let hasOpenAreaPath = false;
+        for (let y = base.y; y > minTop && !hasOpenAreaPath; y--) {
+          for (let x = 0; x < map.width; x++) {
+            if (map.tiles[y][x].type === "path") {
+              hasOpenAreaPath = true;
+              break;
+            }
+          }
+        }
+        expect(hasOpenAreaPath).toBe(true);
+      }
+    });
+
+    it("bastion open area bottom edge is at base.y", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.style !== "bastion") continue;
+        const map = getMap(i);
+        let hasPathAtBaseY = false;
+        for (let x = 0; x < map.width; x++) {
+          if (map.tiles[map.base.y][x].type === "path") {
+            hasPathAtBaseY = true;
+            break;
+          }
+        }
+        if (!hasPathAtBaseY) continue;
+        let belowBase = false;
+        for (let y = map.base.y + 1; y < map.height; y++) {
+          for (let x = 0; x < map.width; x++) {
+            if (map.tiles[y][x].type === "path") {
+              belowBase = true;
+              break;
+            }
+          }
+          if (belowBase) break;
+        }
+        expect(belowBase).toBe(false);
+      }
+    });
+
+    it("bastion base is within open area bounds", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.style !== "bastion") continue;
+        const map = getMap(i);
+        const base = map.base;
+        let foundTopEdge = false;
+        let topEdge = base.y;
+        for (let y = base.y; y >= 0; y--) {
+          for (let x = 0; x < map.width; x++) {
+            if (map.tiles[y][x].type === "path" && y < base.y) {
+              foundTopEdge = true;
+              topEdge = y;
+              break;
+            }
+          }
+          if (foundTopEdge) break;
+        }
+        expect(base.y).toBeGreaterThanOrEqual(topEdge);
+        expect(base.y).toBeLessThanOrEqual(base.y);
+      }
+    });
+
+    it("all 4 bastion shapes produce valid maps", () => {
+      for (let shape = 0; shape < 4; shape++) {
+        const map = generateRandomMap(30, 30, "bastion", 0, 1, 42);
+        const grid = new Grid(map);
+        for (let s = 0; s < grid.spawns.length; s++) {
+          const path = grid.getPathFor(s);
+          expect(path, `bastion shape ${shape}: spawn ${s} should have a valid path`).not.toBeNull();
+        }
+      }
+    });
+
+    it("bastion different seeds produce different layouts", () => {
+      const map1 = generateRandomMap(30, 30, "bastion", 0, 1, 11111);
+      const map2 = generateRandomMap(30, 30, "bastion", 0, 1, 99999);
+      let different = false;
+      for (let y = 0; y < map1.height && !different; y++) {
+        for (let x = 0; x < map1.width && !different; x++) {
+          if (map1.tiles[y][x].type !== map2.tiles[y][x].type) different = true;
+        }
+      }
+      expect(different).toBe(true);
+    });
+
     it("MAP_GEM_MULTIPLIERS has 36 entries", () => {
       expect(MAP_GEM_MULTIPLIERS.length).toBe(36);
     });

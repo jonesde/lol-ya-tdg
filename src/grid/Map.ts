@@ -43,7 +43,7 @@ export interface GeneratedMap {
   seed: number;
 }
 
-function carveStraight(tiles: Tile[][], from: Point, nextWaypoint: Point) {
+function _carveStraight(tiles: Tile[][], from: Point, nextWaypoint: Point) {
   let curX = from.x;
   let curY = from.y;
   while (curY !== nextWaypoint.y) {
@@ -136,6 +136,53 @@ function carveSerpentine(tiles: Tile[][], from: Point, nextWaypoint: Point, _wid
       carved.push([curX, curY]);
     }
     curY += Math.sign(nextWaypoint.y - curY);
+  }
+}
+
+function carveOpenArea(
+  tiles: Tile[][],
+  base: Point,
+  openAreaHeight: number,
+  openAreaWidth: number,
+  shapeIndex: number,
+) {
+  const halfW = Math.floor(openAreaWidth / 2);
+  const topEdge = base.y - openAreaHeight;
+  const W = tiles[0]!.length;
+
+  for (let cy = Math.max(0, topEdge); cy <= Math.min(tiles.length - 1, base.y); cy++) {
+    for (let cx = Math.max(0, base.x - halfW); cx <= Math.min(W - 1, base.x + halfW); cx++) {
+      const dx = cx - base.x;
+      const dy = cy - base.y;
+      let inside = false;
+
+      switch (shapeIndex) {
+        case 0:
+          inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
+          break;
+        case 1:
+          if (halfW > 0 && openAreaHeight > 0)
+            inside = (dx * dx) / (halfW * halfW) + (dy * dy) / (openAreaHeight * openAreaHeight) <= 1;
+          break;
+        case 2:
+          if (halfW > 0 && openAreaHeight > 0) inside = Math.abs(dx) / halfW + Math.abs(dy) / openAreaHeight <= 1;
+          break;
+        case 3: {
+          const rowY = cy - topEdge;
+          const rowMaxHalfW = Math.floor((halfW * rowY) / openAreaHeight);
+          inside = Math.abs(dx) <= rowMaxHalfW;
+          break;
+        }
+        default:
+          inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
+          break;
+      }
+
+      if (inside && tiles[cy]![cx]!.type !== "base") {
+        tiles[cy]![cx]!.type = "path";
+        tiles[cy]![cx]!.height = 1;
+      }
+    }
   }
 }
 
@@ -291,7 +338,18 @@ export function generateRandomMap(
     case "bastion": {
       const spawn = { x: Math.floor(width / 2), y: 0 };
       spawns.push(spawn);
-      carveStraight(tiles, spawn, base);
+      const openAreaHeight = Math.floor(height * (0.2 + rng() * 0.2));
+      const openAreaWidthFactor = 0.8 + rng() * 0.6;
+      const openAreaWidth = Math.floor(height * openAreaWidthFactor);
+      const shapeIndex = Math.floor(rng() * 4);
+      const topEdge = base.y - openAreaHeight;
+      for (let y = 0; y < topEdge; y++) {
+        if (tiles[y]![spawn.x]!.type !== "base") {
+          tiles[y]![spawn.x]!.type = "path";
+          tiles[y]![spawn.x]!.height = 1;
+        }
+      }
+      carveOpenArea(tiles, base, openAreaHeight, openAreaWidth, shapeIndex);
       break;
     }
   }
