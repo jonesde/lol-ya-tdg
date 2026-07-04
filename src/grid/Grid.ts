@@ -81,10 +81,23 @@ export class Grid {
     if (tileType.type === "terrain") return !this.terrainTowers.has(`${x},${y}`);
     if (tileType.type === "path") {
       if (this.blocked.has(`${x},${y}`)) return false;
-      return canPlaceWithoutBlocking(this, this.spawns, this.base, { x, y }, this.blocked);
+      const cachedPathTiles = this.paths.length > 0 ? this.buildCachedPathTiles() : undefined;
+      return canPlaceWithoutBlocking(this, this.spawns, this.base, { x, y }, this.blocked, cachedPathTiles);
     }
     if (tileType.type === "spawn") return false;
     return false;
+  }
+
+  buildCachedPathTiles(): Set<string> {
+    const pathTiles = new Set<string>();
+    for (const path of this.paths) {
+      if (path) {
+        for (const tile of path) {
+          pathTiles.add(`${tile.x},${tile.y}`);
+        }
+      }
+    }
+    return pathTiles;
   }
 
   registerTower(x: number, y: number): boolean {
