@@ -10,6 +10,7 @@ import type {
 } from "../render/themes/index.js";
 import { DEFAULT_THEME_ID, MAP_THEME_LOADERS, MAP_THEME_MANIFEST } from "../render/themes/index.js";
 import { normalizeThemeImages } from "../render/themes/normalize.js";
+import { usePersistStore } from "./persist.js";
 
 export const useMapThemeStore = defineStore("mapTheme", () => {
   const activeThemeId = ref<MapThemeId>(DEFAULT_THEME_ID);
@@ -25,7 +26,12 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
       const normalized = await normalizeThemeImages(rawData as never);
       defaultTheme.value = normalized;
       activeTheme.value = normalized;
-      activeThemeId.value = DEFAULT_THEME_ID;
+
+      const persistStore = usePersistStore();
+      const savedThemeId = persistStore.lastSelectedThemeId;
+      const resolvedThemeId: MapThemeId =
+        savedThemeId && savedThemeId !== DEFAULT_THEME_ID ? (savedThemeId as MapThemeId) : DEFAULT_THEME_ID;
+      activeThemeId.value = resolvedThemeId;
     } catch (err) {
       error.value = err instanceof Error ? err.message : "Failed to preload default theme";
       throw err;

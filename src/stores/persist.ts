@@ -33,6 +33,13 @@ interface PersistStateShape {
   generalAddons: GeneralAddons;
   unlocked: Record<string, TowerUnlocks>;
   runHistory: unknown[];
+  randomMapRegion: number;
+  randomMapLevel: number;
+  randomMapStyle: string;
+  randomMapSeed: number | null;
+  randomMapWidth: number;
+  randomMapHeight: number;
+  lastSelectedThemeId: string;
 }
 
 function blankTower(): TowerUnlocks {
@@ -81,6 +88,13 @@ function defaultState(): PersistStateShape {
     generalAddons: defaultGeneralAddons(),
     unlocked: defaultUnlocked(),
     runHistory: [],
+    randomMapRegion: 1,
+    randomMapLevel: 1,
+    randomMapStyle: "open",
+    randomMapSeed: null,
+    randomMapWidth: 20,
+    randomMapHeight: 20,
+    lastSelectedThemeId: "default",
   };
 }
 

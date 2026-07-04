@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { getMap, getMapDisplayName } from "@/grid/Map.js";
+import { generateRandomMap, getMap, getMapDisplayName } from "@/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 
@@ -30,9 +30,24 @@ function replay() {
     return;
   }
   gameStore.resetToMenu();
-  const mapData = getMap(latest.mapIndex);
-  gameStore.mapIndex = latest.mapIndex;
-  gameStore.map = mapData;
+  if (latest.mapIndex === -1 && (latest as Record<string, unknown>).randomMapParams) {
+    const p = (latest as Record<string, unknown>).randomMapParams as {
+      width: number;
+      height: number;
+      level: number;
+      style: string;
+      regionId: number;
+      seed: number;
+    };
+    const mapData = generateRandomMap(p.width, p.height, p.style, p.regionId, p.level, p.seed);
+    gameStore.mapIndex = -1;
+    gameStore.map = mapData;
+    gameStore.randomMapParams = p;
+  } else {
+    const mapData = getMap(latest.mapIndex);
+    gameStore.mapIndex = latest.mapIndex;
+    gameStore.map = mapData;
+  }
   router.push("/game");
 }
 

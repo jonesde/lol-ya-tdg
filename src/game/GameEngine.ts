@@ -443,7 +443,7 @@ export class GameEngine {
 
     this.persistStore.save();
 
-    this.persistStore.addRunToHistory({
+    const historyEntry: Record<string, unknown> = {
       mapIndex: this.gameStore.mapIndex,
       victory,
       wave: this.waveManager!.currentWave,
@@ -451,7 +451,13 @@ export class GameEngine {
       bossesKilled: gameStore.bossesKilledThisRun,
       gemBreakdown: gameStore.gemBreakdown,
       date: Date.now(),
-    });
+    };
+
+    if (this.gameStore.mapIndex === -1 && gameStore.randomMapParams) {
+      historyEntry.randomMapParams = gameStore.randomMapParams;
+    }
+
+    this.persistStore.addRunToHistory(historyEntry);
 
     gameStore.triggerEnd(victory, {
       wave: this.waveManager!.currentWave,

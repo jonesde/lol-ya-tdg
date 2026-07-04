@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { getMap, getMapDisplayName } from "@/grid/Map.js";
+import { generateRandomMap, getMap, getMapDisplayName } from "@/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -65,9 +65,24 @@ function getMapInfo(mapIndex: number) {
 
 function replayRun(entry: Record<string, unknown>) {
   gameStore.resetToMenu();
-  const mapData = getMap(entry.mapIndex as number);
-  gameStore.mapIndex = entry.mapIndex as number;
-  gameStore.map = mapData;
+  if (entry.mapIndex === -1 && entry.randomMapParams) {
+    const p = entry.randomMapParams as {
+      width: number;
+      height: number;
+      level: number;
+      style: string;
+      regionId: number;
+      seed: number;
+    };
+    const mapData = generateRandomMap(p.width, p.height, p.style, p.regionId, p.level, p.seed);
+    gameStore.mapIndex = -1;
+    gameStore.map = mapData;
+    gameStore.randomMapParams = p;
+  } else {
+    const mapData = getMap(entry.mapIndex as number);
+    gameStore.mapIndex = entry.mapIndex as number;
+    gameStore.map = mapData;
+  }
   router.push("/game");
 }
 </script>

@@ -11,7 +11,7 @@ describe("Map Theme System", () => {
       const theme = MAP_THEME_MANIFEST.find((e) => e.id === DEFAULT_THEME_ID);
       expect(theme).toBeDefined();
       expect(theme!.id).toBe(DEFAULT_THEME_ID);
-      expect(theme!.label).toBe("Polygon (Default)");
+      expect(theme!.label).toBe("Polymath (Default)");
     });
 
     it("should have a file path for the default theme", () => {

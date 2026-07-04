@@ -214,7 +214,19 @@ onMounted(async () => {
     }
   };
 
-  engine.value.loadMap(gameStore.mapIndex);
+  if (gameStore.mapIndex === -1 && gameStore.randomMapParams) {
+    const p = gameStore.randomMapParams as {
+      width: number;
+      height: number;
+      level: number;
+      style: string;
+      regionId: number;
+      seed: number;
+    };
+    engine.value.loadRandomMap(p.width, p.height, p.level, p.style, p.regionId, p.seed);
+  } else {
+    engine.value.loadMap(gameStore.mapIndex);
+  }
 
   if (engine.value.projectileManager) {
     engine.value.projectileManager.setOnLightningFlash((startX, startY, endX, endY) => {

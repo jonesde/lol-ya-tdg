@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import type { MapStyle } from "@/game/Constants.js";
 import { MAP_GEM_MULTIPLIERS } from "@/game/Constants.js";
-import { getMap } from "@/grid/Map.js";
+import { generateRandomMap, getMap } from "@/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -37,8 +38,9 @@ const mapDisplayName = computed(() => {
 });
 
 watch(
-  () => themeStore.activeThemeId,
+  () => persistStore.lastSelectedThemeId,
   (id) => {
+    themeStore.activeThemeId = id;
     themeStore.loadActive(id).catch((err) => console.error("Failed to load theme:", err));
   },
 );
@@ -93,7 +95,7 @@ const mapsByRegion = computed<MapGroup[]>(() => {
     if (count === 0) continue;
     groups.push({
       regionId: regionIdx,
-      name: regionNames[regionIdx],
+      name: regionNames.value[regionIdx],
       maps: Array.from({ length: count }, (_, i) => ({ index: start + i })),
     });
     start += count;
@@ -105,19 +107,95 @@ async function startMap(index: number) {
   persistStore.clearActiveWave(index);
 
   // Ensure theme is resolved before navigating to /game
-  if (themeStore.activeTheme && themeStore.activeTheme.id === themeStore.activeThemeId) {
+  const themeId = persistStore.lastSelectedThemeId;
+  if (themeStore.activeTheme && themeStore.activeTheme.id === themeId) {
     // Theme already loaded and matches selected id
-  } else if (themeStore.defaultTheme && themeStore.activeThemeId === themeStore.defaultTheme.id) {
+  } else if (themeStore.defaultTheme && themeId === themeStore.defaultTheme.id) {
     // Use preloaded default theme
     themeStore.activeTheme = themeStore.defaultTheme;
   } else {
-    await themeStore.loadActive(themeStore.activeThemeId).catch((err) => console.error("Failed to load theme:", err));
+    await themeStore.loadActive(themeId).catch((err) => console.error("Failed to load theme:", err));
   }
 
   // Load map data into the store so SvgGameRoot can pick it up
   const mapData = getMap(index);
   gameStore.mapIndex = index;
   gameStore.map = mapData;
+
+  router.push("/game");
+}
+
+const randomRegion = computed({
+  get: () => persistStore.randomMapRegion,
+  set: (v: number) => {
+    persistStore.randomMapRegion = v;
+  },
+});
+const randomLevel = computed({
+  get: () => persistStore.randomMapLevel,
+  set: (v: number) => {
+    persistStore.randomMapLevel = v;
+  },
+});
+const randomStyle = computed({
+  get: () => persistStore.randomMapStyle,
+  set: (v: MapStyle) => {
+    persistStore.randomMapStyle = v;
+  },
+});
+const randomSeed = computed({
+  get: () => persistStore.randomMapSeed,
+  set: (v: number | null) => {
+    persistStore.randomMapSeed = v;
+  },
+});
+const randomWidth = computed({
+  get: () => persistStore.randomMapWidth,
+  set: (v: number) => {
+    persistStore.randomMapWidth = v;
+  },
+});
+const randomHeight = computed({
+  get: () => persistStore.randomMapHeight,
+  set: (v: number) => {
+    persistStore.randomMapHeight = v;
+  },
+});
+
+const DIMENSION_OPTIONS = [15, 20, 25, 30, 35, 40, 45, 50] as const;
+const STYLE_OPTIONS: MapStyle[] = ["open", "canyon", "serpentine", "split", "bastion", "battlefield"];
+
+function startRandomMap() {
+  const regionId = randomRegion.value - 1;
+  const level = randomLevel.value;
+  const style = randomStyle.value;
+  const width = randomWidth.value;
+  const height = randomHeight.value;
+  const seed = randomSeed.value ?? Math.floor(Math.random() * 999999);
+
+  if (level < 1 || level > 12) {
+    alert("Map Level must be between 1 and 12.");
+    return;
+  }
+  if (width < 15 || width > 50 || width % 5 !== 0) {
+    alert("Width must be between 15 and 50 in steps of 5.");
+    return;
+  }
+  if (height < 15 || height > 50 || height % 5 !== 0) {
+    alert("Height must be between 15 and 50 in steps of 5.");
+    return;
+  }
+  if (seed < 0) {
+    alert("Seed must be a non-negative number.");
+    return;
+  }
+
+  const mapData = generateRandomMap(width, height, style, regionId, level, seed);
+  const params = { regionId, level, style, seed, width, height };
+
+  gameStore.mapIndex = -1;
+  gameStore.map = mapData;
+  gameStore.randomMapParams = params;
 
   router.push("/game");
 }
@@ -128,7 +206,7 @@ async function startMap(index: number) {
     <div class="map-select-header">
       <h2>Select Map</h2>
       <div class="header-controls">
-        <select v-model="themeStore.activeThemeId" class="theme-select">
+        <select v-model="persistStore.lastSelectedThemeId" class="theme-select">
           <option v-for="theme in themeStore.availableThemes" :key="theme.id" :value="theme.id">
             {{ theme.label }}
           </option>
@@ -162,6 +240,54 @@ async function startMap(index: number) {
           <div class="map-dimensions">{{ getFullEntry(m.index).width }}×{{ getFullEntry(m.index).height }}</div>
         </div>
       </template>
+    </div>
+
+    <div class="random-map-section">
+      <div class="random-map-header">
+        <h3>Random Map</h3>
+        <span class="random-map-subtitle">Generate a procedural map with custom parameters</span>
+      </div>
+      <div class="random-map-form">
+        <div class="form-row">
+          <div class="form-field">
+            <label for="random-region">Region</label>
+            <select id="random-region" v-model.number="randomRegion">
+              <option v-for="name in regionNames" :key="name" :value="regionNames.indexOf(name) + 1">{{ name }}</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="random-level">Map Level</label>
+            <input id="random-level" type="number" v-model.number="randomLevel" min="1" max="12" />
+          </div>
+          <div class="form-field">
+            <label for="random-style">Generation Type</label>
+            <select id="random-style" v-model="randomStyle">
+              <option v-for="s in STYLE_OPTIONS" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="random-seed">Map Gen Seed</label>
+            <input id="random-seed" type="number" v-model.number="randomSeed" min="0" placeholder="Auto" />
+          </div>
+          <div class="form-field">
+            <label for="random-width">Width (tiles)</label>
+            <select id="random-width" v-model.number="randomWidth">
+              <option v-for="v in DIMENSION_OPTIONS" :key="v" :value="v">{{ v }}</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="random-height">Height (tiles)</label>
+            <select id="random-height" v-model.number="randomHeight">
+              <option v-for="v in DIMENSION_OPTIONS" :key="v" :value="v">{{ v }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="random-play-btn" @click="startRandomMap">Play Random Map</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -306,5 +432,103 @@ async function startMap(index: number) {
 .map-dimensions {
   font-size: 11px;
   color: var(--color-text-dim);
+}
+
+.random-map-section {
+  margin-top: 24px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.random-map-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.random-map-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-accent);
+  margin: 0;
+}
+
+.random-map-subtitle {
+  font-size: 12px;
+  color: var(--color-text-dim);
+}
+
+.random-map-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-field label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.form-field input,
+.form-field select {
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.form-field input:focus,
+.form-field select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.form-field input::placeholder {
+  color: var(--color-text-dim);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.random-play-btn {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 6px;
+  border: 1px solid rgba(68, 170, 255, 0.4);
+  background: rgba(68, 170, 255, 0.2);
+  color: var(--color-accent);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.random-play-btn:hover {
+  background: rgba(68, 170, 255, 0.35);
 }
 </style>
