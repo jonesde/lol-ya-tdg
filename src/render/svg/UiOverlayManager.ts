@@ -68,7 +68,7 @@ export class UiOverlayManager {
       const text = document.createElementNS(SVG_NS, "text");
       text.style.visibility = "hidden";
       text.setAttribute("fill", "#ffffff");
-      text.setAttribute("font-size", "12");
+      text.setAttribute("font-size", "6");
       text.setAttribute("font-weight", "bold");
       text.setAttribute("font-family", "sans-serif");
       text.setAttribute("text-anchor", "middle");
@@ -92,7 +92,7 @@ export class UiOverlayManager {
       barIndex += 3;
 
       const barX = enemy.x - 12;
-      const barY = enemy.y - 16;
+      const barY = enemy.y - 12;
 
       bg.setAttribute("transform", `translate(${barX}, ${barY})`);
       border.setAttribute("transform", `translate(${barX}, ${barY})`);
@@ -112,7 +112,7 @@ export class UiOverlayManager {
         shieldIndex += 3;
 
         const shieldBarX = enemy.x - 12;
-        const shieldBarY = enemy.y - 12;
+        const shieldBarY = enemy.y - 16;
 
         shieldBg.style.visibility = "visible";
         shieldBg.setAttribute("transform", `translate(${shieldBarX}, ${shieldBarY})`);

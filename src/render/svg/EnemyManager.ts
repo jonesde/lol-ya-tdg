@@ -112,17 +112,9 @@ class EnemyRenderProxy {
         this.el.setAttribute("href", `#${spriteId}`);
         this.lastSpriteId = spriteId;
       }
-      const scale = 0.7;
-      this.el.setAttribute(
-        "transform",
-        `translate(${enemy.x - (spriteSize * scale) / 2}, ${enemy.y - (spriteSize * scale) / 2}) scale(${scale})`,
-      );
     } else {
       if (this.hitReactionStartElapsed > 0) {
         this.hitReactionStartElapsed = 0;
-        const currentTransform = this.el.getAttribute("transform") || "";
-        const baseTransform = currentTransform.replace(/ scale\([\d.]+\)/, "");
-        this.el.setAttribute("transform", baseTransform);
       }
       const frameIdx = computeEnemyFrame(enemy, this.walkingScaledElapsed);
       const spriteId = `enemy-${enemy.type}-f${frameIdx}`;
