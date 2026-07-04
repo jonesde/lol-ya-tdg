@@ -93,15 +93,38 @@ function carveWidePath(tiles: Tile[][], from: Point, nextWaypoint: Point, width:
   }
 }
 
-function carveSerpentine(tiles: Tile[][], from: Point, nextWaypoint: Point, _width: number = 1) {
+interface SerpentineConfig {
+  phase: "cross" | "drift" | "down";
+  crossTargetX?: number;
+  downStepMultiplier?: number;
+}
+
+function carveSerpentine(
+  tiles: Tile[][],
+  from: Point,
+  nextWaypoint: Point,
+  _width: number = 1,
+  config: SerpentineConfig = { phase: "cross" },
+) {
   const W = tiles[0]!.length;
   let curX = from.x;
   let curY = from.y;
   let dir = from.x < nextWaypoint.x ? 1 : -1;
   const step = SERPENTINE_STEP;
+  const downCap =
+    config.phase === "down" ? Math.floor(SERPENTINE_DOWN_CAP * (config.downStepMultiplier ?? 2)) : SERPENTINE_DOWN_CAP;
+  const crossTarget = config.crossTargetX ?? Math.floor(W / 2) + 2;
   const carved: number[][] = [];
+
   while (curY < nextWaypoint.y) {
-    const targetX = dir > 0 ? Math.min(W - 2, curX + step) : Math.max(1, curX - step);
+    let targetX: number;
+    if (config.phase === "cross") {
+      targetX = dir > 0 ? Math.min(crossTarget, curX + step) : Math.max(1, curX - step);
+    } else if (config.phase === "drift") {
+      targetX = dir > 0 ? Math.min(W - 2, curX + step) : Math.max(1, curX - step);
+    } else {
+      targetX = dir > 0 ? Math.min(W - 2, curX + step) : Math.max(1, curX - step);
+    }
     while (curX !== targetX) {
       if (tiles[curY]![curX]!.type !== "base") {
         tiles[curY]![curX]!.type = "path";
@@ -110,7 +133,7 @@ function carveSerpentine(tiles: Tile[][], from: Point, nextWaypoint: Point, _wid
       }
       curX += dir;
     }
-    const downSteps = Math.min(SERPENTINE_DOWN_CAP, nextWaypoint.y - curY);
+    const downSteps = Math.min(downCap, nextWaypoint.y - curY);
     for (let i = 0; i < downSteps; i++) {
       if (tiles[curY]?.[curX] && tiles[curY]![curX]!.type !== "base") {
         tiles[curY]![curX]!.type = "path";
@@ -137,6 +160,86 @@ function carveSerpentine(tiles: Tile[][], from: Point, nextWaypoint: Point, _wid
     }
     curY += Math.sign(nextWaypoint.y - curY);
   }
+}
+
+function carveCanyon(tiles: Tile[][], from: Point, nextWaypoint: Point, rng: () => number) {
+  const W = tiles[0]!.length;
+  const H = tiles.length;
+  const targetY = nextWaypoint.y - 1;
+  let curX = from.x;
+  let curY = from.y;
+  let segmentCount = 0;
+  const maxSegments = H * 3;
+
+  const carveAt = (x: number, y: number, width: number) => {
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    const halfW = Math.floor(width / 2);
+    for (let deltaY = -halfW; deltaY <= halfW; deltaY++) {
+      for (let deltaX = -halfW; deltaX <= halfW; deltaX++) {
+        const neighborX = x + deltaX;
+        const neighborY = y + deltaY;
+        if (
+          neighborX >= 0 &&
+          neighborY >= 0 &&
+          neighborX < W &&
+          neighborY < H &&
+          tiles[neighborY]![neighborX]!.type !== "base"
+        ) {
+          tiles[neighborY]![neighborX]!.type = "path";
+          tiles[neighborY]![neighborX]!.height = 1;
+        }
+      }
+    }
+  };
+
+  while (curY < targetY && segmentCount < maxSegments) {
+    const segmentLength = 6 + Math.floor(rng() * 5);
+    const currentWidth = rng() > 0.5 ? 3 : 1;
+
+    let targetX: number;
+    if (segmentCount % 2 === 0) {
+      targetX = Math.floor(W / 2) + Math.floor(rng() * 4 - 2);
+    } else {
+      targetX = curX > Math.floor(W / 2) ? 1 : W - 2;
+    }
+
+    const xDir = targetX > curX ? 1 : targetX < curX ? -1 : 0;
+    const yDir = 1;
+
+    for (let step = 0; step < segmentLength; step++) {
+      carveAt(curX, curY, currentWidth);
+
+      const xRemaining = targetX - curX;
+      const yRemaining = targetY - curY;
+
+      const moveX = xRemaining !== 0 && (yRemaining === 0 || Math.abs(xRemaining) >= yRemaining * 2);
+      const moveY = yRemaining > 0 && (xRemaining === 0 || Math.abs(yRemaining) > Math.abs(xRemaining) * 0.5);
+
+      if (moveX) curX += xDir;
+      if (moveY) curY += yDir;
+      curX = Math.max(1, Math.min(W - 2, curX));
+      curY = Math.max(0, Math.min(H - 1, curY));
+
+      if (curY >= targetY && Math.abs(targetX - curX) <= 1) break;
+    }
+    carveAt(curX, curY, currentWidth);
+
+    segmentCount++;
+  }
+
+  let horizontalSteps = 0;
+  while (curX !== nextWaypoint.x && horizontalSteps < W) {
+    carveAt(curX, curY, 1);
+    curX += Math.sign(nextWaypoint.x - curX);
+    horizontalSteps++;
+  }
+
+  while (curY !== nextWaypoint.y) {
+    carveAt(curX, curY, 1);
+    curY += Math.sign(nextWaypoint.y - curY);
+  }
+
+  carveAt(curX, curY, 1);
 }
 
 function carveOpenArea(
@@ -318,13 +421,15 @@ export function generateRandomMap(
       const spawnX = rng() > 0.5 ? 1 : width - 2;
       const spawn = { x: spawnX, y: 1 };
       spawns.push(spawn);
-      carveSerpentine(tiles, spawn, base, 1);
+      carveCanyon(tiles, spawn, base, rng);
       break;
     }
     case "serpentine": {
-      const spawn = { x: Math.round(rng() * 2), y: Math.floor(height / 2) };
+      const spawn = { x: Math.round(rng() * 2), y: Math.floor(height * (0.1 + rng() * 0.3)) };
       spawns.push(spawn);
-      carveSerpentine(tiles, spawn, base, 1);
+      carveSerpentine(tiles, spawn, base, 1, { phase: "cross", crossTargetX: Math.floor(width / 2) + 2 });
+      carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "drift" });
+      carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "down", downStepMultiplier: 2 });
       break;
     }
     case "split": {

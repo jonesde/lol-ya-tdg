@@ -267,5 +267,35 @@ describe("Map generation", () => {
       expect(MAP_GEM_MULTIPLIERS[24]).toBe(7);
       expect(MAP_GEM_MULTIPLIERS[32]).toBe(10);
     });
+
+    it("serpentine spawn Y is in 10-40% of map height range", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.style !== "serpentine") continue;
+        const map = getMap(i);
+        const spawnY = map.spawns[0]!.y;
+        const lowerBound = Math.floor(map.height * 0.1);
+        const upperBound = Math.floor(map.height * 0.4);
+        expect(spawnY).toBeGreaterThanOrEqual(lowerBound);
+        expect(spawnY).toBeLessThanOrEqual(upperBound);
+      }
+    });
+
+    it("canyon has tiles with width 3 (path tile with path neighbor 2 tiles away in X)", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.style !== "canyon") continue;
+        const map = getMap(i);
+        let foundWidth3 = false;
+        for (let y = 0; y < map.height && !foundWidth3; y++) {
+          for (let x = 0; x < map.width - 2 && !foundWidth3; x++) {
+            if (map.tiles[y][x].type === "path" && map.tiles[y][x + 2].type === "path") {
+              foundWidth3 = true;
+            }
+          }
+        }
+        expect(foundWidth3).toBe(true);
+      }
+    });
   });
 });
