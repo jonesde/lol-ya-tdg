@@ -250,6 +250,7 @@ export class GameEngine {
 
     this.enemyManager.update(dt, (enemy) => {
       if (enemy.reachedBase) {
+        this.onEnemyKill(enemy);
         this.gameStore.loseLives(enemy.type === "boss" ? BOSS_LIFE_LOSS : 1);
         enemy.removed = true;
         this.waveManager!.baseReached = true;

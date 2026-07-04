@@ -32,6 +32,7 @@ interface ProjectileManagerRef {
     slowDur?: number;
     towerId?: string;
     napalm?: boolean;
+    variant?: "A" | "B" | null;
   }): void;
   fireLightning(opts: {
     originX: number;

@@ -130,6 +130,7 @@ export class ProjectileManager {
     slowDur?: number;
     towerId?: string;
     napalm?: boolean;
+    variant?: "A" | "B" | null;
   }): void {
     const projectile: ProjectileGame = {
       id: this.nextProjectileId++,
@@ -159,7 +160,7 @@ export class ProjectileManager {
       towerId: opts.towerId ?? "",
     };
 
-    this.applyProjectileEffects(projectile, opts.towerType, opts.towerLevel, opts.napalm ?? false);
+    this.applyProjectileEffects(projectile, opts.towerType, opts.towerLevel, opts.napalm ?? false, opts.variant);
 
     this.projectiles.push(projectile);
   }
@@ -169,6 +170,7 @@ export class ProjectileManager {
     towerType: string,
     towerLevel: number,
     napalm: boolean,
+    variant?: "A" | "B" | null,
   ): void {
     const tier = Math.max(0, towerLevel - 4);
 
@@ -187,7 +189,7 @@ export class ProjectileManager {
       projectile.stunDuration = 0.3;
     }
 
-    if (towerType === "sniper" && towerLevel >= 5) {
+    if (towerType === "sniper" && towerLevel >= 5 && variant === "B") {
       projectile.pierceCount = 1;
       projectile.stunDuration = TOWER_BASE.sniper!.stun ?? 0;
     }
@@ -357,7 +359,7 @@ export class ProjectileManager {
       const nextTarget = this.findNearestEnemy(current.x, current.y, CHAIN_RANGE, current.id);
       if (!nextTarget) break;
 
-      const chainDamage = finalDamage * CHAIN_DAMAGE_FALLOFF ** chainsUsed;
+      const chainDamage = finalDamage * CHAIN_DAMAGE_FALLOFF ** (chainsUsed + 1);
       nextTarget.takeDamage(chainDamage);
       if (opts.towerId) {
         const tower = this.towerLookup?.(opts.towerId);
