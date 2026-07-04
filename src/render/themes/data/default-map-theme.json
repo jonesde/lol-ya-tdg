@@ -1,0 +1,478 @@
+{
+  "id": "default",
+  "label": "Default",
+  "towers": {
+    "basic": {
+      "name": "Rifle Tower",
+      "color": "#8fbc8f",
+      "icon": "\u2500",
+      "animation": {
+        "duration": 0.3,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><circle cx=\"0\" cy=\"0\" r=\"8\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><path d=\"M-10,-6 A12,12 0 0,0 -10,6\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><line x1=\"8\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><circle cx=\"0\" cy=\"0\" r=\"8\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><path d=\"M-10,-6 A12,12 0 0,0 -10,6\" stroke=\"#8fdd8f\" fill=\"none\" stroke-width=\"3\"/><line x1=\"8\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"#8fdd8f\" fill=\"none\" stroke-width=\"2.5\"/></svg>"
+          }
+        ]
+      },
+      "walking": {
+        "duration": 0.6,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><circle cx=\"0\" cy=\"0\" r=\"8\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><path d=\"M-10,-6 A12,12 0 0,0 -10,6\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><line x1=\"8\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          }
+        ]
+      }
+    },
+    "ice": {
+      "name": "Frost Pylon",
+      "color": "#9be7ff",
+      "icon": "\u2744",
+      "animation": {
+        "duration": 0.3,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><polygon points=\"0,-10 8.66,-5 8.66,5 0,10 -8.66,5 -8.66,-5\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><line x1=\"10\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><polygon points=\"0,-10 8.66,-5 8.66,5 0,10 -8.66,5 -8.66,-5\" stroke=\"#00BFFF\" fill=\"none\" stroke-width=\"2.5\"/><line x1=\"10\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"#00BFFF\" fill=\"none\" stroke-width=\"2.5\"/></svg>"
+          }
+        ]
+      },
+      "walking": {
+        "duration": 0.7,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><polygon points=\"0,-10 8.66,-5 8.66,5 0,10 -8.66,5 -8.66,-5\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><line x1=\"10\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          }
+        ]
+      }
+    },
+    "sniper": {
+      "name": "Sniper Nest",
+      "color": "#ffd84d",
+      "icon": "\u25CE",
+      "animation": {
+        "duration": 0.5,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><circle cx=\"0\" cy=\"0\" r=\"8\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><circle cx=\"0\" cy=\"0\" r=\"4\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"1.5\"/><line x1=\"8\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><circle cx=\"0\" cy=\"0\" r=\"8\" stroke=\"#FFD700\" fill=\"none\" stroke-width=\"2.5\"/><circle cx=\"0\" cy=\"0\" r=\"4\" stroke=\"#FFD700\" fill=\"none\" stroke-width=\"2\"/><line x1=\"8\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"#FFD700\" fill=\"none\" stroke-width=\"2.5\"/></svg>"
+          }
+        ]
+      },
+      "walking": {
+        "duration": 0.5,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><circle cx=\"0\" cy=\"0\" r=\"8\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><circle cx=\"0\" cy=\"0\" r=\"4\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"1.5\"/><line x1=\"8\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          }
+        ]
+      }
+    },
+    "cannon": {
+      "name": "Mortar Launcher",
+      "color": "#ff8a4d",
+      "icon": "\u25CF",
+      "animation": {
+        "duration": 0.5,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><circle cx=\"0\" cy=\"0\" r=\"10\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><circle cx=\"0\" cy=\"0\" r=\"6\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"1.5\"/><line x1=\"10\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><circle cx=\"0\" cy=\"0\" r=\"10\" stroke=\"#FF4500\" fill=\"none\" stroke-width=\"2.5\"/><circle cx=\"0\" cy=\"0\" r=\"6\" stroke=\"#FF4500\" fill=\"none\" stroke-width=\"2\"/><line x1=\"10\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"#FF4500\" fill=\"none\" stroke-width=\"2.5\"/></svg>"
+          }
+        ]
+      },
+      "walking": {
+        "duration": 0.8,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><circle cx=\"0\" cy=\"0\" r=\"10\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><circle cx=\"0\" cy=\"0\" r=\"6\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"1.5\"/><line x1=\"10\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          }
+        ]
+      }
+    },
+    "lightning": {
+      "name": "Stun Gun",
+      "color": "#205088",
+      "icon": "\u26A1",
+      "animation": {
+        "duration": 0.5,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><polygon points=\"0,-12 12,0 0,12 -12,0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><circle cx=\"0\" cy=\"0\" r=\"7\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><line x1=\"10\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><polygon points=\"0,-12 12,0 0,12 -12,0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><circle cx=\"0\" cy=\"0\" r=\"6\" stroke=\"#40a0ff\" fill=\"none\" stroke-width=\"3\"/><line x1=\"12\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"#40a0ff\" fill=\"none\" stroke-width=\"2.5\"/></svg>"
+          }
+        ]
+      },
+      "walking": {
+        "duration": 0.8,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><polygon points=\"0,-10 10,0 0,10 -10,0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><circle cx=\"0\" cy=\"0\" r=\"3\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"1.5\"/><line x1=\"10\" y1=\"0\" x2=\"16\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          }
+        ]
+      }
+    },
+    "railgun": {
+      "name": "Rail Cannon",
+      "color": "#c98aff",
+      "icon": "\u2550",
+      "animation": {
+        "duration": 0.6,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><line x1=\"-12\" y1=\"-5\" x2=\"12\" y2=\"-5\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><line x1=\"-12\" y1=\"5\" x2=\"12\" y2=\"5\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><circle cx=\"-12\" cy=\"-5\" r=\"2\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"1.5\"/><circle cx=\"-12\" cy=\"5\" r=\"2\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"1.5\"/><line x1=\"12\" y1=\"0\" x2=\"20\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><line x1=\"-12\" y1=\"-5\" x2=\"12\" y2=\"-5\" stroke=\"#00FF00\" fill=\"none\" stroke-width=\"3\"/><line x1=\"-12\" y1=\"5\" x2=\"12\" y2=\"5\" stroke=\"#00FF00\" fill=\"none\" stroke-width=\"3\"/><circle cx=\"-12\" cy=\"-5\" r=\"2.5\" stroke=\"#00FF00\" fill=\"none\" stroke-width=\"2\"/><circle cx=\"-12\" cy=\"5\" r=\"2.5\" stroke=\"#00FF00\" fill=\"none\" stroke-width=\"2\"/><line x1=\"12\" y1=\"0\" x2=\"20\" y2=\"0\" stroke=\"#00FF00\" fill=\"none\" stroke-width=\"3\"/></svg>"
+          }
+        ]
+      },
+      "walking": {
+        "duration": 1.0,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-16 -16 32 32\"><line x1=\"-12\" y1=\"-5\" x2=\"12\" y2=\"-5\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><line x1=\"-12\" y1=\"5\" x2=\"12\" y2=\"5\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/><circle cx=\"-12\" cy=\"-5\" r=\"2\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"1.5\"/><circle cx=\"-12\" cy=\"5\" r=\"2\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"1.5\"/><line x1=\"12\" y1=\"0\" x2=\"20\" y2=\"0\" stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\"/></svg>"
+          }
+        ]
+      }
+    }
+  },
+  "enemies": {
+    "minion": {
+      "name": "Minion",
+      "color": "#e85a6a",
+      "shape": "circle",
+      "walking": {
+        "duration": 0.784,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.37\" fill=\"#e85a6a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.35\" fill=\"#e85a6a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.36\" fill=\"#e85a6a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.37\" fill=\"#e85a6a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.38\" fill=\"#e85a6a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.37\" fill=\"#e85a6a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.36\" fill=\"#e85a6a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.35\" fill=\"#e85a6a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "hitReaction": {
+        "duration": 0.12,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.37\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.35\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.35\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      }
+    },
+    "runner": {
+      "name": "Runner",
+      "color": "#ffd84d",
+      "shape": "triangle",
+      "walking": {
+        "duration": 0.504,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.24 0.262,0.18 -0.262,0.18\" fill=\"#ffd84d\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.26 0.252,0.16 -0.252,0.16\" fill=\"#ffd84d\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.28 0.242,0.14 -0.242,0.14\" fill=\"#ffd84d\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.30 0.232,0.12 -0.232,0.12\" fill=\"#ffd84d\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.32 0.222,0.10 -0.222,0.10\" fill=\"#ffd84d\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.30 0.232,0.12 -0.232,0.12\" fill=\"#ffd84d\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.28 0.242,0.14 -0.242,0.14\" fill=\"#ffd84d\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.26 0.252,0.16 -0.252,0.16\" fill=\"#ffd84d\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "hitReaction": {
+        "duration": 0.12,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.24 0.262,0.18 -0.262,0.18\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.228 0.249,0.171 -0.249,0.171\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.228 0.249,0.171 -0.249,0.171\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      }
+    },
+    "tank": {
+      "name": "Tank",
+      "color": "#7a8a9a",
+      "shape": "square",
+      "walking": {
+        "duration": 1.2,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.40\" width=\"0.96\" height=\"0.96\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.44\" width=\"0.96\" height=\"0.96\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.48\" width=\"0.96\" height=\"0.96\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.52\" width=\"0.96\" height=\"0.96\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.56\" width=\"0.96\" height=\"0.96\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.52\" width=\"0.96\" height=\"0.96\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.48\" width=\"0.96\" height=\"0.96\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.44\" width=\"0.96\" height=\"0.96\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "hitReaction": {
+        "duration": 0.12,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.40\" width=\"0.96\" height=\"0.96\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.456\" y=\"-0.38\" width=\"0.912\" height=\"0.912\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.456\" y=\"-0.38\" width=\"0.912\" height=\"0.912\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      }
+    },
+    "shielded": {
+      "name": "Shielded",
+      "color": "#5fd0ff",
+      "shape": "hexagon",
+      "walking": {
+        "duration": 1.0,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.416,0 0.208,0.36 -0.208,0.36 -0.416,0 -0.208,-0.36 0.208,-0.36\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.408,0 0.204,0.353 -0.204,0.353 -0.408,0 -0.204,-0.353 0.204,-0.353\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.400,0 0.200,0.346 -0.200,0.346 -0.400,0 -0.200,-0.346 0.200,-0.346\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.392,0 0.196,0.339 -0.196,0.339 -0.392,0 -0.196,-0.339 0.196,-0.339\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.384,0 0.192,0.333 -0.192,0.333 -0.384,0 -0.192,-0.333 0.192,-0.333\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.392,0 0.196,0.339 -0.196,0.339 -0.392,0 -0.196,-0.339 0.196,-0.339\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.400,0 0.200,0.346 -0.200,0.346 -0.400,0 -0.200,-0.346 0.200,-0.346\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.408,0 0.204,0.353 -0.204,0.353 -0.408,0 -0.204,-0.353 0.204,-0.353\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "hitReaction": {
+        "duration": 0.12,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.416,0 0.208,0.36 -0.208,0.36 -0.416,0 -0.208,-0.36 0.208,-0.36\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.395,0 0.198,0.342 -0.198,0.342 -0.395,0 -0.198,-0.342 0.198,-0.342\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.395,0 0.198,0.342 -0.198,0.342 -0.395,0 -0.198,-0.342 0.198,-0.342\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      }
+    },
+    "healer": {
+      "name": "Healer",
+      "color": "#5fff8a",
+      "shape": "cross",
+      "walking": {
+        "duration": 1.0,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.33,-0.108 0.39,-0.108 0.39,0.108 -0.33,0.108 -0.078,-0.36 0.138,-0.36 0.138,0.36 -0.078,0.36\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.345,-0.108 0.375,-0.108 0.375,0.108 -0.345,0.108 -0.093,-0.36 0.123,-0.36 0.123,0.36 -0.093,0.36\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.36,-0.108 0.36,-0.108 0.36,0.108 -0.36,0.108 -0.108,-0.36 0.108,-0.36 0.108,0.36 -0.108,0.36\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.375,-0.108 0.345,-0.108 0.345,0.108 -0.375,0.108 -0.123,-0.36 0.093,-0.36 0.093,0.36 -0.123,0.36\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.39,-0.108 0.33,-0.108 0.33,0.108 -0.39,0.108 -0.138,-0.36 0.078,-0.36 0.078,0.36 -0.138,0.36\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.375,-0.108 0.345,-0.108 0.345,0.108 -0.375,0.108 -0.123,-0.36 0.093,-0.36 0.093,0.36 -0.123,0.36\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.36,-0.108 0.36,-0.108 0.36,0.108 -0.36,0.108 -0.108,-0.36 0.108,-0.36 0.108,0.36 -0.108,0.36\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.345,-0.108 0.375,-0.108 0.375,0.108 -0.345,0.108 -0.093,-0.36 0.123,-0.36 0.123,0.36 -0.093,0.36\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "hitReaction": {
+        "duration": 0.12,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.33,-0.108 0.39,-0.108 0.39,0.108 -0.33,0.108 -0.078,-0.36 0.138,-0.36 0.138,0.36 -0.078,0.36\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.314,-0.103 0.371,-0.103 0.371,0.103 -0.314,0.103 -0.074,-0.342 0.131,-0.342 0.131,0.342 -0.074,0.342\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.314,-0.103 0.371,-0.103 0.371,0.103 -0.314,0.103 -0.074,-0.342 0.131,-0.342 0.131,0.342 -0.074,0.342\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      }
+    },
+    "boss": {
+      "name": "Boss",
+      "color": "#c98aff",
+      "shape": "star",
+      "walking": {
+        "duration": 1.504,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.6 0.206,-0.183 0.666,-0.116 0.333,0.208 0.411,0.666 0,0.45 -0.411,0.666 -0.333,0.208 -0.666,-0.116 -0.206,-0.183\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.014,-0.65 0.211,-0.229 0.67,-0.153 0.331,0.165 0.4,0.624 -0.007,0.4 -0.423,0.608 -0.335,0.151 -0.661,-0.18 -0.2,-0.237\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.028,-0.699 0.217,-0.275 0.674,-0.19 0.328,0.121 0.388,0.582 -0.014,0.35 -0.434,0.549 -0.337,0.095 -0.657,-0.243 -0.194,-0.291\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.014,-0.75 0.211,-0.329 0.67,-0.253 0.331,0.065 0.4,0.524 -0.007,0.3 -0.423,0.508 -0.335,0.051 -0.661,-0.28 -0.2,-0.337\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.8 0.206,-0.383 0.666,-0.316 0.333,0.008 0.411,0.466 0,0.25 -0.411,0.466 -0.333,0.008 -0.666,-0.316 -0.206,-0.383\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.014,-0.75 0.2,-0.337 0.661,-0.28 0.335,0.051 0.423,0.508 0.007,0.3 -0.4,0.524 -0.331,0.065 -0.67,-0.253 -0.211,-0.329\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.028,-0.699 0.194,-0.291 0.657,-0.243 0.337,0.095 0.434,0.549 0.014,0.35 -0.388,0.582 -0.328,0.121 -0.674,-0.19 -0.217,-0.275\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.014,-0.65 0.2,-0.237 0.661,-0.18 0.335,0.151 0.423,0.608 0.007,0.4 -0.4,0.624 -0.331,0.165 -0.67,-0.153 -0.211,-0.229\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "hitReaction": {
+        "duration": 0.12,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.6 0.206,-0.183 0.666,-0.116 0.333,0.208 0.411,0.666 0,0.45 -0.411,0.666 -0.333,0.208 -0.666,-0.116 -0.206,-0.183\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.57 0.196,-0.174 0.633,-0.11 0.316,0.198 0.39,0.633 0,0.428 -0.39,0.633 -0.316,0.198 -0.633,-0.11 -0.196,-0.174\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.57 0.196,-0.174 0.633,-0.11 0.316,0.198 0.39,0.633 0,0.428 -0.39,0.633 -0.316,0.198 -0.633,-0.11 -0.196,-0.174\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      }
+    }
+  },
+  "regions": [
+    {
+      "id": 0,
+      "name": "Verdant Marches",
+      "tiles": {
+        "path": "<rect width=\"1\" height=\"1\" fill=\"#4a3d28\"/>",
+        "terrain1": "<rect width=\"1\" height=\"1\" fill=\"#4e824e\"/>",
+        "terrain2": "<rect width=\"1\" height=\"1\" fill=\"#427542\"/>",
+        "terrain3": "<rect width=\"1\" height=\"1\" fill=\"#366836\"/>",
+        "terrain4": "<rect width=\"1\" height=\"1\" fill=\"#2a5a2a\"/>"
+      },
+      "base": "<rect width=\"1\" height=\"1\" fill=\"#1a4a1a\"/>"
+    },
+    {
+      "id": 1,
+      "name": "Sunscorch Coast",
+      "tiles": {
+        "path": "<rect width=\"1\" height=\"1\" fill=\"#b8a56a\"/>",
+        "terrain1": "<rect width=\"1\" height=\"1\" fill=\"#1a3a5c\"/>",
+        "terrain2": "<rect width=\"1\" height=\"1\" fill=\"#a0896a\"/>",
+        "terrain3": "<rect width=\"1\" height=\"1\" fill=\"#6b5a3e\"/>",
+        "terrain4": "<rect width=\"1\" height=\"1\" fill=\"#0d0d0d\"/>"
+      },
+      "base": "<rect width=\"1\" height=\"1\" fill=\"#c9a64f\"/>"
+    },
+    {
+      "id": 2,
+      "name": "Thornpeak Wilds",
+      "tiles": {
+        "path": "<rect width=\"1\" height=\"1\" fill=\"#3a322a\"/>",
+        "terrain1": "<rect width=\"1\" height=\"1\" fill=\"#4e443a\"/>",
+        "terrain2": "<rect width=\"1\" height=\"1\" fill=\"#6a5d52\"/>",
+        "terrain3": "<rect width=\"1\" height=\"1\" fill=\"#7a6c5e\"/>",
+        "terrain4": "<rect width=\"1\" height=\"1\" fill=\"#8a7d6a\"/>"
+      },
+      "base": "<rect width=\"1\" height=\"1\" fill=\"#2f3b30\"/>"
+    }
+  ]
+}

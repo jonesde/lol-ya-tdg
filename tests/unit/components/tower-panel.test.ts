@@ -6,6 +6,7 @@ import TowerPanel from "@/components/TowerPanel.vue";
 import type { GameEngine } from "@/game/GameEngine.js";
 import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 import type { Tower } from "@/towers/Tower.js";
@@ -70,6 +71,7 @@ function makeMockTower(overrides: Partial<MockTower> = {}): MockTower {
 interface MountResult {
   pinia: ReturnType<typeof createPinia>;
   gameStore: ReturnType<typeof useGameStore>;
+  themeStore: ReturnType<typeof useMapThemeStore>;
   persistStore: ReturnType<typeof usePersistStore>;
   uiStore: ReturnType<typeof useUiStore>;
   engineMock: EngineMock;
@@ -79,8 +81,24 @@ function mountTowerPanel(tower: MockTower | null = null): MountResult {
   const pinia = createPinia();
   setActivePinia(pinia);
   const gameStore = useGameStore();
+  const themeStore = useMapThemeStore();
   const persistStore = usePersistStore();
   const uiStore = useUiStore();
+  themeStore.defaultTheme = {
+    id: "default",
+    towers: {
+      basic: { name: "Rifle Tower" },
+      ice: { name: "Frost Pylon" },
+      power: { name: "Power Tower" },
+      sniper: { name: "Sniper Nest" },
+      poison: { name: "Poison Tower" },
+      splash: { name: "Splash Tower" },
+      railgun: { name: "Rail Cannon" },
+    },
+    enemies: {},
+    regions: [],
+  } as never;
+  themeStore.activeTheme = themeStore.defaultTheme;
   gameStore.selectedTower = tower as unknown as Tower;
   gameStore.gold = 500;
   const engineMock = {
@@ -92,7 +110,7 @@ function mountTowerPanel(tower: MockTower | null = null): MountResult {
     cancelSelected: vi.fn(),
   } as unknown as EngineMock;
   vi.mocked(getGameEngine).mockReturnValue(engineMock);
-  return { pinia, gameStore, persistStore, uiStore, engineMock };
+  return { pinia, gameStore, themeStore, persistStore, uiStore, engineMock };
 }
 
 describe("TowerPanel", () => {
@@ -117,7 +135,7 @@ describe("TowerPanel", () => {
 
   it("displays tower name and level", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ level: 3 }));
+    const { pinia, gameStore, themeStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ level: 3 }));
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.text()).toContain("Lv 3");
     expect(wrapper.text()).toContain("Rifle Tower");

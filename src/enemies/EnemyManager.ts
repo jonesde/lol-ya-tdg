@@ -1,3 +1,4 @@
+import type { MapThemeData } from "@/render/themes/index.js";
 import type { Grid } from "../grid/Grid.js";
 import { Enemy, resetEnemyId } from "./Enemy.js";
 
@@ -10,12 +11,19 @@ export class EnemyManager {
   particles: ParticleManagerRef;
   enemies: Enemy[];
   difficultyTick: number;
+  theme: MapThemeData | null;
 
-  constructor(grid: Grid, particles: ParticleManagerRef, difficultyTick: number = 0) {
+  constructor(
+    grid: Grid,
+    particles: ParticleManagerRef,
+    difficultyTick: number = 0,
+    theme: MapThemeData | null = null,
+  ) {
     this.grid = grid;
     this.particles = particles;
     this.enemies = [];
     this.difficultyTick = difficultyTick;
+    this.theme = theme;
   }
 
   clear(): void {
@@ -24,7 +32,7 @@ export class EnemyManager {
   }
 
   spawn(type: string, level: number, spawnIndex: number, wave: number): Enemy {
-    const enemy = new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick);
+    const enemy = new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick, this.theme);
     this.enemies.push(enemy);
     return enemy;
   }

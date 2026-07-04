@@ -4,15 +4,21 @@ import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
 import { TOWER_META } from "@/game/ConstantsTower.js";
 import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { VARIANT_INFO } from "@/towers/SkillTree.js";
 
 const gameStore = useGameStore();
 const persistStore = usePersistStore();
+const themeStore = useMapThemeStore();
 
 const tower = computed(() => gameStore.selectedTower);
 const upgradeCheck = computed(() => tower.value?.canUpgrade(persistStore.$state));
 const sellValue = computed(() => tower.value?.sellValue() || 0);
+
+function getTowerName(type: string): string {
+  return themeStore.getTowerVisual(type)?.name || type;
+}
 
 // Reactive damage tracking (Phase 2)
 // Tower properties are plain JS fields, not Vue-reactive, so a periodic tick
@@ -196,7 +202,7 @@ function handleFixedAim(dir: string | null) {
 <template>
   <div v-if="tower" class="tower-panel" :style="{ top: gameStore.towerPanelPos.y + 'px', left: gameStore.towerPanelPos.x + 'px' }">
     <div class="panel-header" :style="{ color: tower.color }" @mousedown="onHeaderMouseDown">
-      {{ TOWER_META[tower.type].name }} Lv {{ tower.level }}
+      {{ getTowerName(tower.type) }} Lv {{ tower.level }}
       <span v-if="specName" class="spec-badge">{{ specName }}</span>
     </div>
 

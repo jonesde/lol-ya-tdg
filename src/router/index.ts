@@ -8,6 +8,7 @@ import {
 import { GameState } from "@/game/Constants.js";
 import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 
 const routes: RouteRecordRaw[] = [
@@ -34,6 +35,13 @@ router.beforeEach((to: RouteLocationNormalized, from: RouteLocationNormalized, n
   // Block direct access to /game without a loaded map
   // Check `gameStore.map` instead of `mapIndex` — random maps use mapIndex=-1 but still have a valid map
   if (to.name === "game" && !gameStore.map) {
+    next("/map-select");
+    return;
+  }
+
+  // Require active theme to be resolved before entering /game
+  const mapThemeStore = useMapThemeStore();
+  if (to.name === "game" && !mapThemeStore.activeTheme) {
     next("/map-select");
     return;
   }

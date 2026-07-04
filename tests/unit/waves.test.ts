@@ -1,6 +1,8 @@
 // @ts-nocheck
 /** @vitest-environment node */
-import { describe, expect, it } from "vitest";
+
+import { createPinia, setActivePinia } from "pinia";
+import { beforeEach, describe, expect, it } from "vitest";
 import { resetEnemyId } from "@/enemies/Enemy.js";
 import { EnemyManager } from "@/enemies/EnemyManager.js";
 import {
@@ -13,9 +15,19 @@ import {
   WAVE_COUNT_SCALE,
 } from "@/game/Constants.js";
 import { Grid } from "@/grid/Grid.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { WaveManager } from "@/waves/WaveManager.js";
 import { makeBastionMap, makeMapData } from "../helpers/mock-grid";
 import { makeParticleSystem } from "../helpers/mock-managers";
+import { mockDefaultTheme } from "../helpers/mock-stores";
+
+beforeEach(() => {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const themeStore = useMapThemeStore();
+  themeStore.defaultTheme = mockDefaultTheme;
+  themeStore.activeTheme = mockDefaultTheme;
+});
 
 function makeWaveManager(mapData: ReturnType<typeof makeBastionMap>) {
   resetEnemyId();

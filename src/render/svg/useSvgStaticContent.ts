@@ -1,8 +1,6 @@
 import { computed } from "vue";
-import { Regions } from "@/game/Constants.js";
-import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
-import { TOWER_META } from "@/game/ConstantsTower.js";
 import type { Grid } from "@/grid/Grid.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 
 interface BaseSvgParams {
   x: number;
@@ -108,6 +106,7 @@ interface TileInfo {
 interface RegionInfo {
   pathColor: string;
   heightColors: readonly string[];
+  base: string;
 }
 
 interface MapInfo {
@@ -132,16 +131,19 @@ function stripSvgWrapper(svgText: string): string {
 
 function buildSymbolsFromConstants(): string {
   const symbolParts: string[] = [];
+  const themeStore = useMapThemeStore();
+  const activeTheme = themeStore.activeTheme ?? themeStore.defaultTheme;
+  if (!activeTheme) return "";
 
-  for (const [typeId, enemyMeta] of Object.entries(ENEMY_TYPES)) {
-    const walking = enemyMeta.walking;
+  for (const [typeId, enemyVisual] of Object.entries(activeTheme.enemies)) {
+    const walking = enemyVisual.walking;
     if (!walking) continue;
     for (let frameIndex = 0; frameIndex < walking.referenceImages.length; frameIndex++) {
       const frame = walking.referenceImages[frameIndex]!;
       const innerContent = stripSvgWrapper(frame.svg);
       symbolParts.push(`<symbol id="enemy-${typeId}-f${frameIndex}" viewBox="-1 -1 2 2">${innerContent}</symbol>`);
     }
-    const hitReaction = enemyMeta.hitReaction;
+    const hitReaction = enemyVisual.hitReaction;
     if (hitReaction) {
       for (let frameIndex = 0; frameIndex < hitReaction.referenceImages.length; frameIndex++) {
         const frame = hitReaction.referenceImages[frameIndex]!;
@@ -153,12 +155,12 @@ function buildSymbolsFromConstants(): string {
     }
   }
 
-  for (const [typeId, towerMeta] of Object.entries(TOWER_META)) {
-    const animation = towerMeta.animation;
+  for (const [typeId, towerVisual] of Object.entries(activeTheme.towers)) {
+    const animation = towerVisual.animation;
     if (!animation) continue;
     for (let frameIndex = 0; frameIndex < animation.referenceImages.length; frameIndex++) {
       const frame = animation.referenceImages[frameIndex]!;
-      const innerContent = stripSvgWrapper(frame.svgText);
+      const innerContent = stripSvgWrapper(frame.svg);
       symbolParts.push(`<symbol id="tower-${typeId}-f${frameIndex}" viewBox="-16 -16 32 32">${innerContent}</symbol>`);
     }
   }
@@ -274,7 +276,20 @@ export function useSvgStaticContent(currentMap: { value: MapInfo | null }, curre
     void _invalidate;
 
     const grid = currentGrid.value;
-    const region = Regions[grid?.regionId ?? 0] || Regions[0];
+    const themeStore = useMapThemeStore();
+    const activeTheme = themeStore.activeTheme;
+    const regionId = grid?.regionId ?? 0;
+    const regionVisual = activeTheme?.regions.find((r) => r.id === regionId);
+    const region: RegionInfo = {
+      pathColor: regionVisual?.tiles.path || "#4a3d28",
+      heightColors: [
+        regionVisual?.tiles.terrain1 || "#4e824e",
+        regionVisual?.tiles.terrain2 || "#427542",
+        regionVisual?.tiles.terrain3 || "#366836",
+        regionVisual?.tiles.terrain4 || "#2a5a2a",
+      ],
+      base: regionVisual?.base || "",
+    };
     let svg = "";
 
     // Background rect
@@ -296,7 +311,7 @@ export function useSvgStaticContent(currentMap: { value: MapInfo | null }, curre
 
     // Base structure (port of drawBase from Shapes.ts)
     if (map.base) {
-      svg += renderBaseStructure(map.base, grid?.regionId);
+      svg += renderBaseStructure(map.base, regionId);
     }
 
     // Path highlights — Grid.paths is (Point[] | null)[], each path IS a Point[]

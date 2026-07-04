@@ -3,10 +3,12 @@ import { computed } from "vue";
 import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
 import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { useUiStore } from "@/stores/ui.js";
 
 const gameStore = useGameStore();
 const uiStore = useUiStore();
+const themeStore = useMapThemeStore();
 
 const engine = computed(() => getGameEngine());
 const waveManager = computed(() => engine.value?.waveManager);
@@ -38,7 +40,7 @@ const activeEnemies = computed<EnemyStat[]>(() => {
   return enemies.map((enemy) => ({
     id: enemy.id,
     type: enemy.type,
-    name: ENEMY_TYPES[enemy.type]?.name || enemy.type,
+    name: themeStore.getEnemyVisual(enemy.type)?.name || ENEMY_TYPES[enemy.type]?.name || enemy.type,
     level: enemy.level,
     hp: enemy.hp,
     maxHp: enemy.maxHp,
@@ -87,8 +89,8 @@ function hpPercent(enemy: EnemyStat) {
           <div v-if="waveComposition.length > 0" class="wave-composition">
             <div class="comp-grid">
               <div v-for="[type, count] in waveComposition" :key="type" class="comp-item">
-                <span class="comp-dot" :style="{ background: ENEMY_TYPES[type]?.color }"></span>
-                <span class="comp-name">{{ ENEMY_TYPES[type]?.name || type }}</span>
+                <span class="comp-dot" :style="{ background: themeStore.getEnemyVisual(type)?.color || ENEMY_TYPES[type]?.color }"></span>
+                <span class="comp-name">{{ themeStore.getEnemyVisual(type)?.name || ENEMY_TYPES[type]?.name || type }}</span>
                 <span class="comp-count">x{{ count }}</span>
               </div>
             </div>

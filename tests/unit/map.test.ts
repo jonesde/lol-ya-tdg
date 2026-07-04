@@ -1,7 +1,7 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { MAP_GEM_MULTIPLIERS, MAP_LEVELS, Regions, TOTAL_MAPS } from "@/game/Constants.js";
+import { MAP_GEM_MULTIPLIERS, MAP_LEVELS, TOTAL_MAPS } from "@/game/Constants.js";
 import { BOSS_CADENCE } from "@/game/ConstantsEnemy.js";
 import { Grid } from "@/grid/Grid.js";
 import { generateRandomMap, getMap } from "@/grid/Map.js";
@@ -72,7 +72,7 @@ describe("Map generation", () => {
         const map = getMap(i);
         expect(map.name).toBeDefined();
         expect(typeof map.name).toBe("string");
-        expect(map.name).toContain(Regions[MAP_LEVELS[i].regionId].name);
+        expect(map.name).toMatch(/^Region \d+ \d+$/);
       }
     });
   });

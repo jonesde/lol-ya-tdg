@@ -1,5 +1,16 @@
 import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "../game/Constants.js";
-import { TOWER_META, TowerIds } from "../game/ConstantsTower.js";
+import { TowerIds } from "../game/ConstantsTower.js";
+import type { MapThemeTowerVisual } from "../render/themes/index.js";
+import { useMapThemeStore } from "../stores/mapTheme.js";
+
+const TOWER_DISPLAY_NAMES: Record<string, { name: string; color: string; icon: string }> = {
+  basic: { name: "Rifle Tower", color: "#8fbc8f", icon: "\u2500" },
+  ice: { name: "Frost Pylon", color: "#9be7ff", icon: "\u2744" },
+  sniper: { name: "Sniper Nest", color: "#ffd84d", icon: "\u25CE" },
+  cannon: { name: "Mortar Launcher", color: "#ff8a4d", icon: "\u25CF" },
+  lightning: { name: "Stun Gun", color: "#205088", icon: "\u26A1" },
+  railgun: { name: "Rail Cannon", color: "#c98aff", icon: "\u2550" },
+};
 
 const LEVEL_COSTS = [0, 0, 16, 32, 64, 128, 256];
 const ADDON_COSTS = [100, 300, 900];
@@ -115,10 +126,22 @@ for (const id of Object.values(TowerIds)) {
   const variantA = VARIANT_INFO[id]!.A;
   const variantB = VARIANT_INFO[id]!.B;
   const addonDefs = ADDON_INFO[id]!;
+  let defaultTower: MapThemeTowerVisual | undefined;
+  try {
+    const themeStore = useMapThemeStore();
+    defaultTower = themeStore.getDefaultTowerVisual(id);
+  } catch {
+    // Theme store not available (e.g., in tests)
+  }
+  const display = TOWER_DISPLAY_NAMES[id] || {
+    name: id,
+    color: defaultTower?.color || "#8fbc8f",
+    icon: defaultTower?.icon || "\u2500",
+  };
   SKILL_TREE[id] = {
-    name: TOWER_META[id]!.name,
-    color: TOWER_META[id]!.color,
-    icon: TOWER_META[id]!.icon,
+    name: display.name,
+    color: display.color,
+    icon: display.icon,
     levels: [
       { tier: "level", index: 2, label: "Level 3", cost: LEVEL_COSTS[2]!, desc: "Unlock upgrade to level 3." },
       { tier: "level", index: 3, label: "Level 4", cost: LEVEL_COSTS[3]!, desc: "Unlock upgrade to level 4." },

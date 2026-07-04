@@ -16,11 +16,12 @@ import {
   TOWER_LEVEL_RATE_MULT,
   TOWER_META,
   TOWER_VARIANTS,
-  type TowerAnimationConfig,
   type TowerId,
   type TowerMeta,
   UPGRADE_COST_BASE,
 } from "../game/ConstantsTower.js";
+import type { MapThemeAnimation, MapThemeData, MapThemeTowerVisual } from "../render/themes/index.js";
+import { useMapThemeStore } from "../stores/mapTheme.js";
 import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
 
 interface SaveData {
@@ -132,7 +133,9 @@ export class Tower {
   };
   color: string;
   icon: string;
-  animation: TowerAnimationConfig | null;
+  animation: MapThemeAnimation | null;
+  visualMeta: MapThemeTowerVisual | null;
+  theme: MapThemeData | null;
   level: number;
   totalInvested: number;
   totalDamageDealt: number;
@@ -156,6 +159,7 @@ export class Tower {
     tileY: number,
     save: SaveData | undefined,
     grid: GridRef,
+    theme: MapThemeData | null = null,
     placedAt: number = Date.now(),
   ) {
     this.type = type;
@@ -169,9 +173,14 @@ export class Tower {
     const towerId = type as TowerId;
     this.meta = TOWER_META[towerId]!;
     this.base = TOWER_BASE[towerId]!;
-    this.color = this.meta.color;
-    this.icon = this.meta.icon;
-    this.animation = this.meta.animation || null;
+    this.theme = theme;
+    const towerVisual = (theme?.towers[type] ?? null) as MapThemeTowerVisual | null;
+    const themeStore = useMapThemeStore();
+    const defaultTower = themeStore.getDefaultTowerVisual(towerId);
+    this.color = towerVisual?.color || defaultTower?.color || "#8fbc8f";
+    this.icon = towerVisual?.icon || defaultTower?.icon || "\u2500";
+    this.animation = towerVisual?.animation || null;
+    this.visualMeta = towerVisual;
 
     this.level = 1;
     this.totalInvested = this.meta.cost;

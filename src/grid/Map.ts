@@ -3,11 +3,21 @@ import {
   HEIGHT_NOISE_DIVISOR,
   HEIGHT_NOISE_FREQ,
   MAP_LEVELS,
-  Regions,
   SERPENTINE_DOWN_CAP,
   SERPENTINE_STEP,
 } from "../game/Constants.js";
 import { BOSS_CADENCE } from "../game/ConstantsEnemy.js";
+import type { MapThemeData } from "../render/themes/index.js";
+
+export function getMapDisplayName(map: GeneratedMap | null, theme: MapThemeData | null): string {
+  if (!map) return "";
+  if (!theme) return map.name || "Random Map";
+  const region = theme.regions.find((r) => r.id === map.regionId);
+  if (region && map.level !== undefined) {
+    return `${region.name} ${map.level}`;
+  }
+  return map.name || "Random Map";
+}
 
 interface Tile {
   type: "terrain" | "path" | "base" | "spawn";
@@ -303,7 +313,7 @@ export function generateRandomMap(
     tiles,
     spawns,
     base,
-    name: level > 0 ? `${Regions[regionId]!.name} ${level}` : "Random Map",
+    name: level > 0 ? `Region ${regionId + 1} ${level}` : "Random Map",
     bossCadence: BOSS_CADENCE[regionId]!,
     seed,
   };

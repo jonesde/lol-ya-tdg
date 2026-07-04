@@ -16,33 +16,8 @@ export const GameState = {
 
 export type GameStateValue = (typeof GameState)[keyof typeof GameState];
 
-// 3 region definitions; regionId===2 adds +1 to height noise (Map.js), used for map name (Map.js)
-export const Regions = [
-  {
-    id: 0,
-    name: "Verdant Marches",
-    tileBase: "#1a4a1a",
-    tileAlt: "#2d6b2d",
-    pathColor: "#4a3d28",
-    heightColors: ["#4e824e", "#427542", "#366836", "#2a5a2a"],
-  },
-  {
-    id: 1,
-    name: "Sunscorch Coast",
-    tileBase: "#c9a64f",
-    tileAlt: "#d8b75a",
-    pathColor: "#b8a56a",
-    heightColors: ["#1a3a5c", "#a0896a", "#6b5a3e", "#0d0d0d"],
-  },
-  {
-    id: 2,
-    name: "Thornpeak Wilds",
-    tileBase: "#2f3b30",
-    tileAlt: "#384538",
-    pathColor: "#3a322a",
-    heightColors: ["#4e443a", "#6a5d52", "#7a6c5e", "#8a7d6a"],
-  },
-] as const;
+// 3 region definitions; regionId===2 adds +1 to height noise (Map.js)
+export const Regions = [{ id: 0 }, { id: 1 }, { id: 2 }] as const;
 
 export type Region = (typeof Regions)[number];
 export type RegionId = 0 | 1 | 2;
@@ -58,8 +33,6 @@ export {
   ENEMY_WAVE_DAMAGE_MULT,
   type EnemyMeta,
   type EnemyType,
-  type EnemyWalkingConfig,
-  type EnemyWalkingFrame,
   MIN_SLOW_FACTOR,
   WAVE_COUNT_BASE,
   WAVE_COUNT_SCALE,
@@ -86,13 +59,11 @@ export {
   TOWER_LEVEL_RATE_MULT,
   TOWER_META,
   TOWER_VARIANTS,
-  type TowerAnimationConfig,
   type TowerBase,
   type TowerId,
   TowerIds,
   type TowerMeta,
   type TowerVariantConfig,
-  type TowerWalkingConfig,
   UPGRADE_COST_BASE,
 } from "./ConstantsTower.js";
 

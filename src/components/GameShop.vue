@@ -3,10 +3,12 @@ import { computed } from "vue";
 import type { TowerId } from "@/game/ConstantsTower.js";
 import { TOWER_META, TowerIds } from "@/game/ConstantsTower.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 
 const gameStore = useGameStore();
 const persistStore = usePersistStore();
+const themeStore = useMapThemeStore();
 
 const discount = computed(() => {
   return persistStore.generalAddons?.sellActive === "discount" ? 0.75 : 1;
@@ -20,6 +22,18 @@ function toggleBuild(type: TowerId) {
 
 function getCost(type: TowerId) {
   return Math.floor(TOWER_META[type].cost * discount.value);
+}
+
+function getTowerDisplayName(type: TowerId): string {
+  return themeStore.getTowerVisual(type)?.name || type;
+}
+
+function getTowerDisplayColor(type: TowerId): string {
+  return themeStore.getTowerVisual(type)?.color || "#8fbc8f";
+}
+
+function getTowerDisplayIcon(type: TowerId): string {
+  return themeStore.getTowerVisual(type)?.icon || "\u2500";
 }
 </script>
 
@@ -35,11 +49,11 @@ function getCost(type: TowerId) {
       }"
       @click="gameStore.gold >= getCost(id) && toggleBuild(id)"
     >
-      <span class="tower-icon" :style="{ color: TOWER_META[id].color }">
-        {{ TOWER_META[id].icon }}
+      <span class="tower-icon" :style="{ color: getTowerDisplayColor(id) }">
+        {{ getTowerDisplayIcon(id) }}
       </span>
       <div class="tower-name-wrap">
-        <div v-for="word in TOWER_META[id].name.split(' ')" :key="word" class="tower-name">
+        <div v-for="word in getTowerDisplayName(id).split(' ')" :key="word" class="tower-name">
           {{ word }}
         </div>
       </div>

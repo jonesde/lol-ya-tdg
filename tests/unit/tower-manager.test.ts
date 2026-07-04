@@ -1,12 +1,16 @@
 // @ts-nocheck
 /** @vitest-environment node */
+
+import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
 import { SELL_VALUE_RATIO } from "@/game/Constants.js";
 import { Grid } from "@/grid/Grid.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import type { Tower } from "@/towers/Tower.js";
 import { TowerManager } from "@/towers/TowerManager.js";
 import { makeBastionMap } from "../helpers/mock-grid";
 import { makeParticleSystem, makeSoundManager } from "../helpers/mock-managers";
+import { mockDefaultTheme } from "../helpers/mock-stores.js";
 
 type TowerId = "basic" | "ice" | "sniper" | "cannon" | "lightning" | "railgun";
 
@@ -84,6 +88,12 @@ describe("TowerManager", () => {
   let sound: ReturnType<typeof makeSoundManager>;
 
   beforeEach(() => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const themeStore = useMapThemeStore();
+    themeStore.defaultTheme = mockDefaultTheme;
+    themeStore.activeTheme = mockDefaultTheme;
+
     const map = makeBastionMap();
     const realGrid = new Grid(map);
     grid = realGrid;

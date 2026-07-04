@@ -140,9 +140,8 @@ class TowerRenderProxy {
     const fireAnimTime = (tower as unknown as { fireAnimTime: number }).fireAnimTime;
     if (fireAnimTime > 0 && fireAnimTime !== this.lastSeenFireAnimTime) {
       this.lastSeenFireAnimTime = fireAnimTime;
-      const config = (
-        tower as unknown as { meta?: { animation: { duration: number; referenceImages?: unknown[] } | null } | null }
-      ).meta?.animation;
+      const config = (tower as unknown as { animation: { duration: number; referenceImages?: unknown[] } | null })
+        .animation;
       if (config && config.duration > 0) {
         this.animConfig = config;
         this.animStartElapsed = this.scaledElapsed;

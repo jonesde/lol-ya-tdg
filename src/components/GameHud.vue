@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { getGameEngine } from "@/game/GameEngine.js";
+import { getMapDisplayName } from "@/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 
 const gameStore = useGameStore();
 const persistStore = usePersistStore();
 const uiStore = useUiStore();
+const themeStore = useMapThemeStore();
 
 const notificationVisible = ref(false);
 
@@ -80,7 +83,7 @@ watch(
   <div class="hud-container">
     <div class="hud-bar">
       <div class="hud-left">
-        <span class="hud-label map-title">{{ gameStore.map?.name || '' }}</span>
+        <span class="hud-label map-title">{{ getMapDisplayName(gameStore.map, themeStore.activeTheme) }}</span>
       </div>
       <div class="hud-center">
         <span class="hud-stat lives" :class="{ warning: gameStore.lives <= 10 && gameStore.lives > 5, critical: gameStore.lives <= 5 }">

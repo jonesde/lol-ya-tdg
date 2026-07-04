@@ -1,3 +1,4 @@
+import type { MapThemeData } from "@/render/themes/index.js";
 import { Tower } from "./Tower.js";
 
 interface EnemyManagerRef {
@@ -67,17 +68,20 @@ export class TowerManager {
   sound: SoundManagerRef | null;
   towers: Tower[];
   private nextTowerId: number = 0;
+  theme: MapThemeData | null;
 
   constructor(
     grid: GridRef,
     particles: ParticleManagerRef,
     projectiles: ProjectileManagerRef,
     sound: SoundManagerRef | null,
+    theme: MapThemeData | null = null,
   ) {
     this.grid = grid;
     this.particles = particles;
     this.projectiles = projectiles;
     this.sound = sound;
+    this.theme = theme;
     this.towers = [];
   }
 
@@ -87,7 +91,7 @@ export class TowerManager {
 
   build(type: string, tileX: number, tileY: number, save: SaveData | undefined, grid: GridRef): Tower | null {
     if (!this.grid.canBuild(tileX, tileY)) return null;
-    const tower = new Tower(type, tileX, tileY, save, grid);
+    const tower = new Tower(type, tileX, tileY, save, grid, this.theme);
     tower.id = `tower-${++this.nextTowerId}`;
     if (!this.grid.registerTower(tileX, tileY)) return null;
     this.towers.push(tower);

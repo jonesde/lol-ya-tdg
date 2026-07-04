@@ -1,15 +1,23 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { getMap } from "@/grid/Map.js";
+import { getMap, getMapDisplayName } from "@/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 
 const router = useRouter();
 const gameStore = useGameStore();
 const persistStore = usePersistStore();
+const themeStore = useMapThemeStore();
 
-const regionNames = ["Verdant Marches", "Sunscorch Coast", "Thornpeak Wilds"];
+const regionNames = computed(() => {
+  const names: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    names.push(themeStore.defaultTheme?.regions.find((r) => r.id === i)?.name || `Region ${i + 1}`);
+  }
+  return names;
+});
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -52,7 +60,7 @@ interface MapInfo {
 function getMapInfo(mapIndex: number) {
   if (mapIndex < 0) return null;
   const map = getMap(mapIndex);
-  return { name: map.name, region: regionNames[map.regionId], style: map.style };
+  return { name: getMapDisplayName(map, themeStore.defaultTheme), region: regionNames[map.regionId], style: map.style };
 }
 
 function replayRun(entry: Record<string, unknown>) {

@@ -3,14 +3,79 @@ import { createPinia, setActivePinia } from "pinia";
 import { type GameState, StartingGold } from "@/game/Constants.js";
 import type { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
+import type { MapThemeData } from "@/render/themes/index.js";
+import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 
 type GameStore = ReturnType<typeof useGameStore>;
 type PersistStore = ReturnType<typeof usePersistStore>;
 type UiStore = ReturnType<typeof useUiStore>;
+type MapThemeStore = ReturnType<typeof useMapThemeStore>;
 type GameStateValue = (typeof GameState)[keyof typeof GameState];
+
+export const mockDefaultTheme: MapThemeData = {
+  id: DEFAULT_THEME_ID,
+  label: "Default",
+  towers: {
+    basic: {
+      name: "Rifle Tower",
+      color: "#8fbc8f",
+      icon: "\u2500",
+      animation: { duration: 0.3, frames: [{ image: "<svg></svg>" }] },
+      walking: { duration: 0.6, frames: [{ image: "<svg></svg>" }] },
+    },
+  },
+  enemies: {
+    minion: {
+      name: "Minion",
+      color: "#e85a6a",
+      shape: "circle",
+      walking: { duration: 0.784, frames: [{ image: "<svg></svg>" }] },
+      hitReaction: { duration: 0.12, frames: [{ image: "<svg></svg>" }] },
+    },
+  },
+  regions: [
+    {
+      id: 0,
+      name: "Verdant Marches",
+      tiles: {
+        path: "<svg></svg>",
+        terrain1: "<svg></svg>",
+        terrain2: "<svg></svg>",
+        terrain3: "<svg></svg>",
+        terrain4: "<svg></svg>",
+      },
+      base: "<svg></svg>",
+    },
+    {
+      id: 1,
+      name: "Sunscorch Coast",
+      tiles: {
+        path: "<svg></svg>",
+        terrain1: "<svg></svg>",
+        terrain2: "<svg></svg>",
+        terrain3: "<svg></svg>",
+        terrain4: "<svg></svg>",
+      },
+      base: "<svg></svg>",
+    },
+    {
+      id: 2,
+      name: "Thornpeak Wilds",
+      tiles: {
+        path: "<svg></svg>",
+        terrain1: "<svg></svg>",
+        terrain2: "<svg></svg>",
+        terrain3: "<svg></svg>",
+        terrain4: "<svg></svg>",
+      },
+      base: "<svg></svg>",
+    },
+  ],
+};
 
 export function createTestGameStore(): GameStore {
   const pinia = createPinia();
@@ -30,6 +95,16 @@ export function createTestUiStore(): UiStore {
   const pinia = createPinia();
   setActivePinia(pinia);
   return useUiStore();
+}
+
+export function createTestMapThemeStore(): MapThemeStore {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const store = useMapThemeStore();
+  store.activeThemeId = DEFAULT_THEME_ID as MapThemeStore["activeThemeId"];
+  store.defaultTheme = mockDefaultTheme;
+  store.activeTheme = mockDefaultTheme;
+  return store;
 }
 
 export function createTestStores(): { game: GameStore; persist: PersistStore; ui: UiStore } {

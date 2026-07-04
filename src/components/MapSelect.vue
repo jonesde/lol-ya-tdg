@@ -1,16 +1,47 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { MAP_GEM_MULTIPLIERS } from "@/game/Constants.js";
 import { getMap } from "@/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 
 const router = useRouter();
 const gameStore = useGameStore();
 const persistStore = usePersistStore();
+const themeStore = useMapThemeStore();
 
-const regionNames = ["Verdant Marches", "Sunscorch Coast", "Thornpeak Wilds"];
+const regionNames = computed(() => {
+  const names: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    const activeRegion = themeStore.activeTheme?.regions.find((r) => r.id === i);
+    const defaultRegion = themeStore.defaultTheme?.regions.find((r) => r.id === i);
+    names.push(activeRegion?.name ?? defaultRegion?.name ?? `Region ${i + 1}`);
+  }
+  return names;
+});
+
+const mapDisplayName = computed(() => {
+  return (map: { regionId: number; level?: number; name?: string }) => {
+    if (map.name) return map.name;
+    const theme = themeStore.activeTheme ?? themeStore.defaultTheme;
+    if (theme) {
+      const region = theme.regions.find((r) => r.id === map.regionId);
+      if (region && map.level !== undefined) {
+        return `${region.name} ${map.level}`;
+      }
+    }
+    return `Map ${map.regionId}`;
+  };
+});
+
+watch(
+  () => themeStore.activeThemeId,
+  (id) => {
+    themeStore.loadActive(id).catch((err) => console.error("Failed to load theme:", err));
+  },
+);
 
 interface MapEntry {
   name: string;
@@ -29,8 +60,8 @@ const mapEntries = computed<Record<number, MapEntry>>(() => {
   for (let i = 0; i < 36; i++) {
     const map = getMap(i);
     entries[i] = {
-      name: map.name,
-      region: regionNames[map.regionId],
+      name: mapDisplayName.value(map),
+      region: regionNames.value[map.regionId],
       style: map.style,
       gemReward: MAP_GEM_MULTIPLIERS[i],
       width: map.width,
@@ -70,8 +101,18 @@ const mapsByRegion = computed<MapGroup[]>(() => {
   return groups;
 });
 
-function startMap(index: number) {
+async function startMap(index: number) {
   persistStore.clearActiveWave(index);
+
+  // Ensure theme is resolved before navigating to /game
+  if (themeStore.activeTheme && themeStore.activeTheme.id === themeStore.activeThemeId) {
+    // Theme already loaded and matches selected id
+  } else if (themeStore.defaultTheme && themeStore.activeThemeId === themeStore.defaultTheme.id) {
+    // Use preloaded default theme
+    themeStore.activeTheme = themeStore.defaultTheme;
+  } else {
+    await themeStore.loadActive(themeStore.activeThemeId).catch((err) => console.error("Failed to load theme:", err));
+  }
 
   // Load map data into the store so SvgGameRoot can pick it up
   const mapData = getMap(index);
@@ -86,7 +127,14 @@ function startMap(index: number) {
   <div class="map-select">
     <div class="map-select-header">
       <h2>Select Map</h2>
-      <button class="back-btn" @click="$router.push('/')">← Back</button>
+      <div class="header-controls">
+        <select v-model="themeStore.activeThemeId" class="theme-select">
+          <option v-for="theme in themeStore.availableThemes" :key="theme.id" :value="theme.id">
+            {{ theme.label }}
+          </option>
+        </select>
+        <button class="back-btn" @click="$router.push('/')">← Back</button>
+      </div>
     </div>
 
     <div class="map-grid">
@@ -134,6 +182,26 @@ function startMap(index: number) {
   flex-shrink: 0;
 }
 
+.header-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.theme-select {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--color-text);
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.theme-select:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
 .map-select-header h2 {
   color: var(--color-accent);
   font-size: 24px;
@@ -155,7 +223,7 @@ function startMap(index: number) {
 
 .map-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 12px;
 }
 

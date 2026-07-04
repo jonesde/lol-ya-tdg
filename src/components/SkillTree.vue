@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import type { TowerId } from "@/game/ConstantsTower.js";
 import { TOWER_META, TowerIds } from "@/game/ConstantsTower.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 import {
@@ -22,6 +23,7 @@ import {
 
 const router = useRouter();
 const persistStore = usePersistStore();
+const themeStore = useMapThemeStore();
 const uiStore = useUiStore();
 
 const towerIds = Object.values(TowerIds) as TowerId[];
@@ -202,8 +204,8 @@ function showResetConfirm() {
     <!-- Tower Skill Columns -->
     <div class="tower-skills">
       <div v-for="id in towerIds" :key="id" class="skill-col">
-        <div class="skill-col-header" :style="{ color: TOWER_META[id].color }">
-          {{ TOWER_META[id].icon }} {{ TOWER_META[id].name }}
+        <div class="skill-col-header" :style="{ color: themeStore.getDefaultTowerVisual(id)?.color || TOWER_META[id].color }">
+          {{ themeStore.getDefaultTowerVisual(id)?.icon || TOWER_META[id].icon }} {{ themeStore.getDefaultTowerVisual(id)?.name || TOWER_META[id].name }}
         </div>
 
         <!-- Levels -->

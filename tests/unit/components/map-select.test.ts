@@ -4,8 +4,10 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { RouteRecordRaw } from "vue-router";
 import { createMemoryHistory, createRouter } from "vue-router";
+import { mockDefaultTheme } from "@/../tests/helpers/mock-stores.js";
 import MapSelect from "@/components/MapSelect.vue";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 
@@ -32,6 +34,9 @@ function mountMapSelect(): MountResult {
   const gameStore = useGameStore();
   const persistStore = usePersistStore();
   const uiStore = useUiStore();
+  const themeStore = useMapThemeStore();
+  themeStore.defaultTheme = mockDefaultTheme;
+  themeStore.activeTheme = mockDefaultTheme;
   gameStore.resetToMenu();
   const router = createRouterWithRoutes();
   return { pinia, gameStore, persistStore, uiStore, router };

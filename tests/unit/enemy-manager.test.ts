@@ -1,12 +1,16 @@
 // @ts-nocheck
 /** @vitest-environment node */
-import { describe, expect, it } from "vitest";
+
+import { createPinia, setActivePinia } from "pinia";
+import { beforeEach, describe, expect, it } from "vitest";
 import { resetEnemyId } from "@/enemies/Enemy.js";
 import { EnemyManager } from "@/enemies/EnemyManager.js";
 import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
 import { Grid } from "@/grid/Grid.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
 import { makeParticleSystem } from "../helpers/mock-managers";
+import { mockDefaultTheme } from "../helpers/mock-stores.js";
 
 describe("EnemyManager", () => {
   let manager: EnemyManager;
@@ -14,6 +18,12 @@ describe("EnemyManager", () => {
   let particles: ReturnType<typeof makeParticleSystem>;
 
   beforeEach(() => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const themeStore = useMapThemeStore();
+    themeStore.defaultTheme = mockDefaultTheme;
+    themeStore.activeTheme = mockDefaultTheme;
+
     resetEnemyId();
     const map = makeBastionMap();
     grid = new Grid(map);

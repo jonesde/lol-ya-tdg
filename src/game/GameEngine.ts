@@ -6,8 +6,10 @@ import { ProjectileManager } from "@/game/ProjectileManager.js";
 import { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
 import { generateRandomMap, getMap } from "@/grid/Map.js";
+import type { MapThemeData } from "@/render/themes/index.js";
 import { SoundManager } from "@/sound/SoundManager.js";
 import type { GameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import type { PersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 import type { Tower } from "@/towers/Tower.js";
@@ -75,9 +77,16 @@ export class GameEngine {
   lastScaledDt: number = 0;
   shouldEndGame: boolean = false;
 
-  constructor(gameStore: GameStore, persistStore: PersistStore) {
+  theme: MapThemeData | null = null;
+
+  constructor(gameStore: GameStore, persistStore: PersistStore, theme?: MapThemeData | null) {
     this.gameStore = gameStore;
     this.persistStore = persistStore;
+    this.theme = theme ?? null;
+
+    if (this.theme) {
+      this.setTheme(this.theme);
+    }
 
     currentEngine = this;
 
@@ -98,6 +107,10 @@ export class GameEngine {
     this.totalHealingReceived = 0;
     this.startingLives = 20;
     this.waveTopTowers = null;
+  }
+
+  setTheme(theme: MapThemeData | null): void {
+    this.theme = theme;
   }
 
   loadMap(mapIndex: number): void {
@@ -122,11 +135,17 @@ export class GameEngine {
 
     const diffTick = this.persistStore.getDifficultyTick();
     this.particleManager = new ParticleSystem();
-    this.enemyManager = new EnemyManager(this.grid, this.particleManager, diffTick);
+    this.enemyManager = new EnemyManager(this.grid, this.particleManager, diffTick, this.theme);
     this.projectileManager = new ProjectileManager(this.enemyManager, this.particleManager, null, (towerId) => {
       return this.towerManager?.towers.find((t) => t.id === towerId) || null;
     });
-    this.towerManager = new TowerManager(this.grid, this.particleManager, this.projectileManager, this.sound);
+    this.towerManager = new TowerManager(
+      this.grid,
+      this.particleManager,
+      this.projectileManager,
+      this.sound,
+      this.theme,
+    );
     this.waveManager = new WaveManager(mapData, this.enemyManager);
 
     this.gameStore.setManagers(this.towerManager, this.enemyManager, this.projectileManager, this.particleManager);
@@ -540,7 +559,9 @@ export class GameEngine {
     }
 
     const tower = gameStore.selectedTower;
-    const towerName = TOWER_META[tower.type]?.name || tower.type;
+    const themeStore = useMapThemeStore();
+    const towerVisual = themeStore.getDefaultTowerVisual(tower.type);
+    const towerName = towerVisual?.name || tower.type;
     const val = tower.sellValue();
 
     const uiStore = useUiStore();

@@ -1,6 +1,8 @@
 // @ts-nocheck
 /** @vitest-environment node */
-import { describe, expect, it } from "vitest";
+
+import { createPinia, setActivePinia } from "pinia";
+import { beforeEach, describe, expect, it } from "vitest";
 import { Enemy, resetEnemyId } from "@/enemies/Enemy.js";
 import { DIFFICULTY_MULT_TICK } from "@/game/Constants.js";
 import {
@@ -11,7 +13,9 @@ import {
   MIN_SLOW_FACTOR,
 } from "@/game/ConstantsEnemy.js";
 import { Grid } from "@/grid/Grid.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
+import { mockDefaultTheme } from "../helpers/mock-stores.js";
 
 describe("Enemy", () => {
   let grid: Grid;
@@ -19,6 +23,11 @@ describe("Enemy", () => {
 
   beforeEach(() => {
     resetEnemyId();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const themeStore = useMapThemeStore();
+    themeStore.defaultTheme = mockDefaultTheme;
+    themeStore.activeTheme = mockDefaultTheme;
     map = makeBastionMap();
     grid = new Grid(map);
   });

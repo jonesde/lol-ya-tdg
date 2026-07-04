@@ -1,6 +1,8 @@
 // @ts-nocheck
 /** @vitest-environment node */
-import { describe, expect, it } from "vitest";
+
+import { createPinia, setActivePinia } from "pinia";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   MILESTONE_BONUS_PCT,
   MILESTONE_THRESHOLD,
@@ -13,8 +15,10 @@ import {
   TOWER_META,
   UPGRADE_COST_BASE,
 } from "@/game/Constants.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { Tower } from "@/towers/Tower.js";
 import { makeBastionMap } from "../helpers/mock-grid";
+import { mockDefaultTheme } from "../helpers/mock-stores.js";
 
 interface SaveFixture {
   gems: number;
@@ -63,6 +67,14 @@ function makeMockGrid() {
 }
 
 describe("Tower", () => {
+  beforeEach(() => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const themeStore = useMapThemeStore();
+    themeStore.defaultTheme = mockDefaultTheme;
+    themeStore.activeTheme = mockDefaultTheme;
+  });
+
   describe("constructor", () => {
     it("sets type, grid coords, and world position", () => {
       const tower = new Tower("basic", 5, 3, makeSave(), makeMockGrid());

@@ -1,3 +1,4 @@
+import type { MapThemeAnimation, MapThemeData, MapThemeEnemyVisual } from "@/render/themes/index.js";
 import { DIFFICULTY_MULT_TICK } from "../game/Constants.js";
 import {
   BOSS_STUN_REDUCTION,
@@ -6,6 +7,7 @@ import {
   ENEMY_WAVE_DAMAGE_MULT,
   MIN_SLOW_FACTOR,
 } from "../game/ConstantsEnemy.js";
+import { useMapThemeStore } from "../stores/mapTheme.js";
 
 let nextId = 1;
 
@@ -22,16 +24,14 @@ interface EnemyMetaRef {
   baseHp: number;
   speed: number;
   bounty: number;
-  color: string;
   radius: number;
-  shape: unknown;
   walking: unknown;
   hitReaction: unknown;
-  resist: number;
-  slowResist: number;
-  shield: number;
-  heal: number;
-  healRange: number;
+  resist?: number;
+  slowResist?: number;
+  shield?: number;
+  heal?: number;
+  healRange?: number;
 }
 
 interface GridRef {
@@ -57,8 +57,10 @@ export class Enemy {
   color: string;
   radius: number;
   shape: unknown;
-  walking: unknown;
-  hitReaction: unknown;
+  walking: MapThemeAnimation | null;
+  hitReaction: MapThemeAnimation | null;
+  visualMeta: MapThemeEnemyVisual | null;
+  theme: MapThemeData | null;
   resist: number;
   slowResist: number;
   shield: number;
@@ -90,29 +92,36 @@ export class Enemy {
     grid: GridRef,
     wave: number,
     difficultyTick: number = 0,
+    theme: MapThemeData | null = null,
   ) {
-    const meta = ENEMY_TYPES[type] as EnemyMetaRef;
+    const meta = ENEMY_TYPES[type] as unknown as EnemyMetaRef;
     this.id = nextId++;
     this.type = type;
     this.level = level;
     this.meta = meta;
-    const waveMult = 1 + ENEMY_WAVE_DAMAGE_MULT * (wave - 1);
-    const diffMult = (difficultyTick || 0) * DIFFICULTY_MULT_TICK + 1;
-    this.maxHp = meta.baseHp * ENEMY_LEVEL_HP_MULT(level) * waveMult * diffMult;
-    this.hp = this.maxHp;
-    this.speed = meta.speed;
-    this.bounty = Math.ceil(meta.bounty * (1 + 0.5 * (level - 1)));
-    this.color = meta.color;
+    this.theme = theme;
+    const enemyVisual = (theme?.enemies[type] ?? null) as MapThemeEnemyVisual | null;
+    const themeStore = useMapThemeStore();
+    const defaultEnemy = themeStore.getDefaultEnemyVisual(type);
+    this.color = enemyVisual?.color || defaultEnemy?.color || "#e85a6a";
     this.radius = meta.radius * grid.tileSize * 0.5;
-    this.shape = meta.shape;
-    this.walking = meta.walking || null;
-    this.hitReaction = meta.hitReaction || null;
+    this.shape = enemyVisual?.shape || defaultEnemy?.shape || "circle";
+    this.walking = enemyVisual?.walking || null;
+    this.hitReaction = enemyVisual?.hitReaction || null;
+    this.visualMeta = enemyVisual;
     this.resist = meta.resist || 0;
     this.slowResist = meta.slowResist || 0;
     this.shield = meta.shield ? meta.shield * level : 0;
     this.maxShield = this.shield;
     this.heal = meta.heal || 0;
     this.healRange = (meta.healRange || 0) * grid.tileSize;
+
+    const waveMult = 1 + ENEMY_WAVE_DAMAGE_MULT * (wave - 1);
+    const diffMult = (difficultyTick || 0) * DIFFICULTY_MULT_TICK + 1;
+    this.maxHp = meta.baseHp * ENEMY_LEVEL_HP_MULT(level) * waveMult * diffMult;
+    this.hp = this.maxHp;
+    this.speed = meta.speed;
+    this.bounty = Math.ceil(meta.bounty * (1 + 0.5 * (level - 1)));
 
     this.spawnIndex = spawnIndex;
     this.grid = grid;

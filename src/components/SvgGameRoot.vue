@@ -32,6 +32,7 @@ import type { Particle, Projectile } from "@/render/svg/types.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 import type { Tower } from "@/towers/Tower.js";
@@ -52,6 +53,7 @@ const effectLayer = ref<SVGGElement | null>(null);
 const gameStore = useGameStore();
 const persistStore = usePersistStore();
 const uiStore = useUiStore();
+const themeStore = useMapThemeStore();
 
 const mouseWorldPos = ref<{ x: number; y: number } | null>(null);
 
@@ -120,7 +122,7 @@ async function buildDefsImperative(staticContent: string, mapContent: string): P
 }
 
 onMounted(async () => {
-  engine.value = new GameEngine(gameStore, persistStore);
+  engine.value = new GameEngine(gameStore, persistStore, themeStore.activeTheme);
 
   const staticContent = staticDefsContent.value;
   const mapContent = mapDefsContent.value;

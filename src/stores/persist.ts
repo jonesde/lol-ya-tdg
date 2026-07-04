@@ -33,6 +33,7 @@ interface PersistStateShape {
   generalAddons: GeneralAddons;
   unlocked: Record<string, TowerUnlocks>;
   runHistory: unknown[];
+  activeThemeId: string;
 }
 
 function blankTower(): TowerUnlocks {
@@ -81,6 +82,7 @@ function defaultState(): PersistStateShape {
     generalAddons: defaultGeneralAddons(),
     unlocked: defaultUnlocked(),
     runHistory: [],
+    activeThemeId: "default",
   };
 }
 
