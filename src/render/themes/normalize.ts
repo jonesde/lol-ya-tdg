@@ -1,10 +1,10 @@
 import type {
+  EnemyVisualMeta,
   MapThemeAnimation,
   MapThemeData,
-  MapThemeEnemyVisual,
   MapThemeFrame,
-  MapThemeRegionVisual,
-  MapThemeTowerVisual,
+  RegionVisualMeta,
+  TowerVisualMeta,
 } from "./index.js";
 
 function stripSvgWrapper(svgContent: string): string {
@@ -58,7 +58,7 @@ async function normalizeTowerVisual(raw: {
   icon: string;
   animation: { duration: number; frames: { image: string }[] } | null;
   walking?: { duration: number; frames: { image: string }[] };
-}): Promise<MapThemeTowerVisual> {
+}): Promise<TowerVisualMeta> {
   const animation = raw.animation ? await normalizeAnimation(raw.animation) : null;
   const walking = raw.walking ? await normalizeAnimation(raw.walking) : null;
   return { name: raw.name, color: raw.color, icon: raw.icon, animation, walking };
@@ -70,7 +70,7 @@ async function normalizeEnemyVisual(raw: {
   shape: string;
   walking: { duration: number; frames: { image: string }[] };
   hitReaction?: { duration: number; frames: { image: string }[] };
-}): Promise<MapThemeEnemyVisual> {
+}): Promise<EnemyVisualMeta> {
   const walking = await normalizeAnimation(raw.walking);
   const hitReaction = raw.hitReaction ? await normalizeAnimation(raw.hitReaction) : null;
   return { name: raw.name, color: raw.color, shape: raw.shape, walking, hitReaction };
@@ -81,7 +81,7 @@ async function normalizeRegionVisual(raw: {
   name: string;
   tiles: { path: string; terrain1: string; terrain2: string; terrain3: string; terrain4: string };
   base: string;
-}): Promise<MapThemeRegionVisual> {
+}): Promise<RegionVisualMeta> {
   const path = stripSvgWrapper(await resolveImage(raw.tiles.path));
   const terrain1 = stripSvgWrapper(await resolveImage(raw.tiles.terrain1));
   const terrain2 = stripSvgWrapper(await resolveImage(raw.tiles.terrain2));
@@ -121,17 +121,17 @@ export async function normalizeThemeImages(raw: {
     base: string;
   }>;
 }): Promise<MapThemeData> {
-  const normalizedTowers: Record<string, MapThemeTowerVisual> = {};
+  const normalizedTowers: Record<string, TowerVisualMeta> = {};
   for (const [key, tower] of Object.entries(raw.towers)) {
     normalizedTowers[key] = await normalizeTowerVisual(tower);
   }
 
-  const normalizedEnemies: Record<string, MapThemeEnemyVisual> = {};
+  const normalizedEnemies: Record<string, EnemyVisualMeta> = {};
   for (const [key, enemy] of Object.entries(raw.enemies)) {
     normalizedEnemies[key] = await normalizeEnemyVisual(enemy);
   }
 
-  const normalizedRegions: MapThemeRegionVisual[] = await Promise.all(raw.regions.map(normalizeRegionVisual));
+  const normalizedRegions: RegionVisualMeta[] = await Promise.all(raw.regions.map(normalizeRegionVisual));
 
   return {
     id: raw.id,

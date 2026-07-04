@@ -1,4 +1,4 @@
-import type { MapThemeAnimation, MapThemeData, MapThemeEnemyVisual } from "@/render/themes/index.js";
+import type { EnemyVisualMeta, MapThemeAnimation, MapThemeData } from "@/render/themes/index.js";
 import { DIFFICULTY_MULT_TICK } from "../game/Constants.js";
 import {
   BOSS_STUN_REDUCTION,
@@ -59,7 +59,7 @@ export class Enemy {
   shape: unknown;
   walking: MapThemeAnimation | null;
   hitReaction: MapThemeAnimation | null;
-  visualMeta: MapThemeEnemyVisual | null;
+  visualMeta: EnemyVisualMeta | null;
   theme: MapThemeData | null;
   resist: number;
   slowResist: number;
@@ -100,7 +100,7 @@ export class Enemy {
     this.level = level;
     this.meta = meta;
     this.theme = theme;
-    const enemyVisual = (theme?.enemies[type] ?? null) as MapThemeEnemyVisual | null;
+    const enemyVisual = (theme?.enemies[type] ?? null) as EnemyVisualMeta | null;
     const themeStore = useMapThemeStore();
     const defaultEnemy = themeStore.getDefaultEnemyVisual(type);
     this.color = enemyVisual?.color || defaultEnemy?.color || "#e85a6a";

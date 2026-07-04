@@ -1,12 +1,12 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import type {
+  EnemyVisualMeta,
   MapThemeData,
-  MapThemeEnemyVisual,
   MapThemeId,
   MapThemeManifestEntry,
-  MapThemeRegionVisual,
-  MapThemeTowerVisual,
+  RegionVisualMeta,
+  TowerVisualMeta,
 } from "../render/themes/index.js";
 import { DEFAULT_THEME_ID, MAP_THEME_LOADERS, MAP_THEME_MANIFEST } from "../render/themes/index.js";
 import { normalizeThemeImages } from "../render/themes/normalize.js";
@@ -15,7 +15,7 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
   const activeThemeId = ref<MapThemeId>(DEFAULT_THEME_ID);
   const activeTheme = ref<MapThemeData | null>(null);
   const defaultTheme = ref<MapThemeData | null>(null);
-  const isLoading = ref(false);
+  const loading = ref(false);
   const error = ref<string | null>(null);
 
   async function preloadDefault(): Promise<void> {
@@ -38,7 +38,7 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
       activeTheme.value = defaultTheme.value;
       return defaultTheme.value;
     }
-    isLoading.value = true;
+    loading.value = true;
     error.value = null;
     activeThemeId.value = id;
     try {
@@ -54,7 +54,7 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
       error.value = err instanceof Error ? err.message : "Failed to load theme";
       throw err;
     } finally {
-      isLoading.value = false;
+      loading.value = false;
     }
   }
 
@@ -63,23 +63,23 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
     return MAP_THEME_MANIFEST.find((e) => e.id === activeThemeId.value)?.label || "Unknown";
   });
 
-  function getTowerVisual(typeId: string): MapThemeTowerVisual | undefined {
+  function getTowerVisual(typeId: string): TowerVisualMeta | undefined {
     return activeTheme.value?.towers[typeId] ?? defaultTheme.value?.towers[typeId];
   }
 
-  function getEnemyVisual(typeId: string): MapThemeEnemyVisual | undefined {
+  function getEnemyVisual(typeId: string): EnemyVisualMeta | undefined {
     return activeTheme.value?.enemies[typeId] ?? defaultTheme.value?.enemies[typeId];
   }
 
-  function getDefaultTowerVisual(typeId: string): MapThemeTowerVisual | undefined {
+  function getDefaultTowerVisual(typeId: string): TowerVisualMeta | undefined {
     return defaultTheme.value?.towers[typeId];
   }
 
-  function getDefaultEnemyVisual(typeId: string): MapThemeEnemyVisual | undefined {
+  function getDefaultEnemyVisual(typeId: string): EnemyVisualMeta | undefined {
     return defaultTheme.value?.enemies[typeId];
   }
 
-  function getRegionVisual(regionId: number): MapThemeRegionVisual | undefined {
+  function getRegionVisual(regionId: number): RegionVisualMeta | undefined {
     return (
       activeTheme.value?.regions.find((r) => r.id === regionId) ??
       defaultTheme.value?.regions.find((r) => r.id === regionId)
@@ -96,7 +96,7 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
     activeThemeId,
     activeTheme,
     defaultTheme,
-    isLoading,
+    loading,
     error,
     preloadDefault,
     loadActive,

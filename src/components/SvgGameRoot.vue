@@ -37,11 +37,6 @@ import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 import type { Tower } from "@/towers/Tower.js";
 
-const { staticDefsContent, mapDefsContent, gridContent } = useSvgStaticContent(
-  computed(() => gameStore.map),
-  computed(() => gameStore.grid),
-);
-
 const svgRoot = ref<SVGSVGElement | null>(null);
 const defsLayer = ref<SVGDefsElement | null>(null);
 const worldLayer = ref<SVGGElement | null>(null);
@@ -54,6 +49,12 @@ const gameStore = useGameStore();
 const persistStore = usePersistStore();
 const uiStore = useUiStore();
 const themeStore = useMapThemeStore();
+
+const { staticDefsContent, mapDefsContent, gridContent } = useSvgStaticContent(
+  computed(() => gameStore.map),
+  computed(() => gameStore.grid),
+  themeStore.activeTheme,
+);
 
 const mouseWorldPos = ref<{ x: number; y: number } | null>(null);
 

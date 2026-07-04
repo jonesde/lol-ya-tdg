@@ -28,7 +28,7 @@ export interface MapThemeAnimation {
   referenceImages: MapThemeFrame[];
 }
 
-export interface MapThemeTowerVisual {
+export interface TowerVisualMeta {
   name: string;
   color: string;
   icon: string;
@@ -36,7 +36,7 @@ export interface MapThemeTowerVisual {
   walking: MapThemeAnimation | null;
 }
 
-export interface MapThemeEnemyVisual {
+export interface EnemyVisualMeta {
   name: string;
   color: string;
   shape: string;
@@ -44,7 +44,7 @@ export interface MapThemeEnemyVisual {
   hitReaction: MapThemeAnimation | null;
 }
 
-export interface MapThemeRegionVisual {
+export interface RegionVisualMeta {
   id: number;
   name: string;
   tiles: { path: string; terrain1: string; terrain2: string; terrain3: string; terrain4: string };
@@ -54,9 +54,9 @@ export interface MapThemeRegionVisual {
 export interface MapThemeData {
   id: string;
   label: string;
-  towers: Record<string, MapThemeTowerVisual>;
-  enemies: Record<string, MapThemeEnemyVisual>;
-  regions: MapThemeRegionVisual[];
+  towers: Record<string, TowerVisualMeta>;
+  enemies: Record<string, EnemyVisualMeta>;
+  regions: RegionVisualMeta[];
 }
 
 export interface MapThemeLoader {
@@ -69,6 +69,10 @@ export function registerThemeLoader(themeId: string, loaderFn: () => Promise<Map
       return loaderFn();
     },
   };
+}
+
+export function getThemeLoader(id: string): MapThemeLoader | undefined {
+  return MAP_THEME_LOADERS[id];
 }
 
 registerThemeLoader(DEFAULT_THEME_ID, () =>

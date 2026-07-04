@@ -20,7 +20,7 @@ import {
   type TowerMeta,
   UPGRADE_COST_BASE,
 } from "../game/ConstantsTower.js";
-import type { MapThemeAnimation, MapThemeData, MapThemeTowerVisual } from "../render/themes/index.js";
+import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "../render/themes/index.js";
 import { useMapThemeStore } from "../stores/mapTheme.js";
 import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
 
@@ -135,7 +135,7 @@ export class Tower {
   icon: string;
   name: string;
   animation: MapThemeAnimation | null;
-  visualMeta: MapThemeTowerVisual | null;
+  visualMeta: TowerVisualMeta | null;
   theme: MapThemeData | null;
   level: number;
   totalInvested: number;
@@ -175,7 +175,7 @@ export class Tower {
     this.meta = TOWER_META[towerId]!;
     this.base = TOWER_BASE[towerId]!;
     this.theme = theme;
-    const towerVisual = (theme?.towers[type] ?? null) as MapThemeTowerVisual | null;
+    const towerVisual = (theme?.towers[type] ?? null) as TowerVisualMeta | null;
     const themeStore = useMapThemeStore();
     const defaultTower = themeStore.getDefaultTowerVisual(towerId);
     this.color = towerVisual?.color || defaultTower?.color || "#8fbc8f";

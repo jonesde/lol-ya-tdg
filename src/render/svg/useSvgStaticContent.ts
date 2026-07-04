@@ -1,5 +1,6 @@
 import { computed } from "vue";
 import type { Grid } from "@/grid/Grid.js";
+import type { MapThemeData } from "@/render/themes/index.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 
 interface BaseSvgParams {
@@ -129,10 +130,9 @@ function stripSvgWrapper(svgText: string): string {
   return svgText;
 }
 
-function buildSymbolsFromConstants(): string {
+function buildSymbolsFromConstants(themeOverride?: MapThemeData | null): string {
   const symbolParts: string[] = [];
-  const themeStore = useMapThemeStore();
-  const activeTheme = themeStore.activeTheme ?? themeStore.defaultTheme;
+  const activeTheme = themeOverride ?? useMapThemeStore().activeTheme ?? useMapThemeStore().defaultTheme;
   if (!activeTheme) return "";
 
   for (const [typeId, enemyVisual] of Object.entries(activeTheme.enemies)) {
@@ -245,9 +245,13 @@ function renderBaseStructure(base: { x: number; y: number }, regionBaseSvg: stri
   return renderBaseSvg({ x: translateX, y: translateY, size: TILE_SIZE });
 }
 
-export function useSvgStaticContent(currentMap: { value: MapInfo | null }, currentGrid: { value: Grid | null }) {
+export function useSvgStaticContent(
+  currentMap: { value: MapInfo | null },
+  currentGrid: { value: Grid | null },
+  currentTheme?: { value: MapThemeData | null },
+) {
   const staticFiltersContent = computed(() => buildStaticFiltersContent());
-  const staticSymbolsContent = computed(() => buildSymbolsFromConstants());
+  const staticSymbolsContent = computed(() => buildSymbolsFromConstants(currentTheme?.value));
   const staticDefsContent = computed(() => `${staticFiltersContent.value}\n${staticSymbolsContent.value}`);
 
   const mapDefsContent = computed(() => {
@@ -276,8 +280,7 @@ export function useSvgStaticContent(currentMap: { value: MapInfo | null }, curre
     void _invalidate;
 
     const grid = currentGrid.value;
-    const themeStore = useMapThemeStore();
-    const activeTheme = themeStore.activeTheme;
+    const activeTheme = currentTheme?.value ?? useMapThemeStore().activeTheme;
     const regionId = grid?.regionId ?? 0;
     const regionVisual = activeTheme?.regions.find((r) => r.id === regionId);
     const region: RegionInfo = {
