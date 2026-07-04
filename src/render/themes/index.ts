@@ -74,8 +74,8 @@ export function getThemeLoader(id: string): MapThemeLoader | undefined {
 /* ======= ADD MAP THEMES HERE ======= */
 
 export const MAP_THEME_MANIFEST: MapThemeManifestEntry[] = [
-  { id: DEFAULT_THEME_ID, label: "Polygon (Default)", file: "./data/default-map-theme.json" },
-  { id: "the-aftermath", label: "The Aftermath", file: "./data/the-aftermath.json" },
+  { id: DEFAULT_THEME_ID, label: "Polymath (Default)", file: "./data/default-map-theme.json" },
+  { id: "the-aftermath", label: "Aftermath", file: "./data/the-aftermath.json" },
 ];
 
 registerThemeLoader(DEFAULT_THEME_ID, () =>

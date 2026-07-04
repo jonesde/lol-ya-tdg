@@ -1,6 +1,6 @@
 {
   "id": "the-aftermath",
-  "label": "The Aftermath",
+  "label": "Aftermath",
   "towers": {
     "basic": {
       "name": "Ten-Miss Blaster",
@@ -197,7 +197,7 @@
       }
     },
     "runner": {
-      "name": "Big Buzzer",
+      "name": "Manic Mantis",
       "color": "#44aa44",
       "shape": "◆",
       "walking": {
@@ -389,7 +389,7 @@
       }
     },
     "boss": {
-      "name": "Death Straw",
+      "name": "Death Draw",
       "color": "#cc6600",
       "shape": "★",
       "walking": {
