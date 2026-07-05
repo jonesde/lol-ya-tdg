@@ -397,5 +397,33 @@ describe("Enemy", () => {
         expect(enemy.pathIdx).toBeLessThan(enemy.path!.length);
       }
     });
+
+    it("never selects a backward pathIdx on recalculation", () => {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+
+      for (let i = 0; i < 5; i++) {
+        enemy.update(0.5, null);
+      }
+
+      const baseWorldPos = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
+      const oldPathIdx = enemy.pathIdx;
+      const oldPathTile = enemy.path![oldPathIdx];
+      const oldPathWorldPos = grid.tileToWorld(oldPathTile.x, oldPathTile.y);
+      const oldPathDistSqToBase = (oldPathWorldPos.x - baseWorldPos.x) ** 2 + (oldPathWorldPos.y - baseWorldPos.y) ** 2;
+
+      if (oldPathIdx + 1 < enemy.path!.length) {
+        const blockedTile = enemy.path![oldPathIdx + 1];
+        grid.blocked.add(`${blockedTile.x},${blockedTile.y}`);
+        grid.recomputePathsForTile(blockedTile.x, blockedTile.y);
+
+        enemy.update(0.1, null);
+
+        const newPathTile = enemy.path![enemy.pathIdx];
+        const newPathWorldPos = grid.tileToWorld(newPathTile.x, newPathTile.y);
+        const newPathDistSqToBase =
+          (newPathWorldPos.x - baseWorldPos.x) ** 2 + (newPathWorldPos.y - baseWorldPos.y) ** 2;
+        expect(newPathDistSqToBase).toBeLessThanOrEqual(oldPathDistSqToBase);
+      }
+    });
   });
 });

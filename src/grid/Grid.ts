@@ -169,4 +169,8 @@ export class Grid {
   tileToWorld(tx: number, ty: number): Point {
     return { x: tx * this.tileSize + this.tileSize / 2, y: ty * this.tileSize + this.tileSize / 2 };
   }
+
+  getBase(): Point {
+    return this.base;
+  }
 }

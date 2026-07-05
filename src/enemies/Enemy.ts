@@ -38,6 +38,7 @@ interface GridRef {
   tileSize: number;
   getPathFor(spawnIndex: number): { x: number; y: number }[] | null;
   tileToWorld(tx: number, ty: number): { x: number; y: number };
+  getBase(): { x: number; y: number };
   blocked: Set<string>;
 }
 
@@ -290,8 +291,13 @@ export class Enemy {
           const newPath = this.grid.getPathFor(this.spawnIndex);
           if (newPath) {
             this.path = newPath;
+            const baseTile = this.grid.getBase();
+            const baseWorldPos = this.grid.tileToWorld(baseTile.x, baseTile.y);
+            const currentDistSqToBase = (this.x - baseWorldPos.x) ** 2 + (this.y - baseWorldPos.y) ** 2;
             let minDist = Infinity;
             let nearestIdx = 0;
+            let bestForwardIdx = -1;
+            let bestForwardDist = Infinity;
             for (let i = 0; i < newPath.length; i++) {
               const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
               const distSq = (worldPos.x - this.x) ** 2 + (worldPos.y - this.y) ** 2;
@@ -299,8 +305,13 @@ export class Enemy {
                 minDist = distSq;
                 nearestIdx = i;
               }
+              const distSqToBase = (worldPos.x - baseWorldPos.x) ** 2 + (worldPos.y - baseWorldPos.y) ** 2;
+              if (distSqToBase < currentDistSqToBase && distSq < bestForwardDist) {
+                bestForwardDist = distSq;
+                bestForwardIdx = i;
+              }
             }
-            this.pathIdx = nearestIdx;
+            this.pathIdx = bestForwardIdx >= 0 ? bestForwardIdx : nearestIdx;
           }
         }
       }
