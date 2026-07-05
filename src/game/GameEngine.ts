@@ -158,7 +158,7 @@ export class GameEngine {
     this._applyStartingBonuses();
 
     this.gameStore.setWave(this.waveManager.currentWave);
-    this.totalGoldEarned = this.gameStore.gold;
+    this.totalGoldEarned = 0;
     this.totalHealingReceived = 0;
   }
 
