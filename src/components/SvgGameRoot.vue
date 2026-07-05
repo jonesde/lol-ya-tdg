@@ -200,6 +200,8 @@ async function buildDefsImperative(staticContent: string, mapContent: string): P
 onMounted(async () => {
   engine.value = new GameEngine(gameStore, persistStore, themeStore.activeTheme);
 
+  useInput(gameStore, engine.value, uiStore);
+
   const staticContent = staticDefsContent.value;
   const mapContent = mapDefsContent.value;
 
@@ -317,8 +319,6 @@ onMounted(async () => {
 
   gameStore.setState(GameState.PAUSED);
   engine.value.start();
-
-  useInput(gameStore, engine.value, uiStore);
 });
 
 onUnmounted(() => {
