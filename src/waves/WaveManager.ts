@@ -13,6 +13,10 @@ interface MapRef {
 interface EnemyManagerRef {
   enemies: unknown[];
   spawn(type: string, level: number, spawnIndex: number, wave: number): unknown;
+  enqueueOrSpawn(type: string, level: number, spawnIndex: number, wave: number): void;
+  releaseOnePending(spawnIndex: number): void;
+  hasPendingEnemies(): boolean;
+  getPendingCountForSpawn(spawnIndex: number): number;
   getEnemiesInRange(x: number, y: number, range: number): unknown[];
 }
 
@@ -68,7 +72,8 @@ export class WaveManager {
   startNextWave() {
     this.currentWave++;
     this.betweenWaves = false;
-    this.queue = this.generateWave(this.currentWave);
+    const newQueue = this.generateWave(this.currentWave);
+    this.queue.push(...newQueue);
     this.spawnTimer = 0;
     this._waveGameTime = 0;
     this.countdownActive = false;
@@ -148,15 +153,25 @@ export class WaveManager {
       return;
     }
 
-    if (!this.queue.length) {
-      if (this.enemyManager.enemies.length === 0 || this._waveGameTime >= PRE_EMPTIVE_WAVE_TIMER) {
-        if (onWaveCleared) onWaveCleared(this.currentWave);
-        if (this.currentWave >= VICTORY_WAVE) {
-          this.betweenWaves = true;
-        } else {
-          this.countdownActive = true;
-          this.countdownTimer = BETWEEN_WAVES_TIMER;
-        }
+    // Timer expiry: force next wave without clearing (enemies accumulate)
+    if (this._waveGameTime >= PRE_EMPTIVE_WAVE_TIMER) {
+      if (this.currentWave >= VICTORY_WAVE) {
+        this.betweenWaves = true;
+        return;
+      }
+      this.startNextWave();
+      if (onWaveStart) onWaveStart(this.currentWave);
+      return;
+    }
+
+    // Natural wave clear: only when everything is done
+    if (!this.queue.length && !this.enemyManager.hasPendingEnemies() && this.enemyManager.enemies.length === 0) {
+      if (onWaveCleared) onWaveCleared(this.currentWave);
+      if (this.currentWave >= VICTORY_WAVE) {
+        this.betweenWaves = true;
+      } else {
+        this.countdownActive = true;
+        this.countdownTimer = BETWEEN_WAVES_TIMER;
       }
       return;
     }
@@ -171,7 +186,7 @@ export class WaveManager {
         return;
       }
       const spawnIdx = Math.floor(this.rng() * this.map.spawns.length);
-      this.enemyManager.spawn(next.type, next.level, spawnIdx, this.currentWave);
+      this.enemyManager.enqueueOrSpawn(next.type, next.level, spawnIdx, this.currentWave);
       this.spawnTimer = next.delay;
     }
   }

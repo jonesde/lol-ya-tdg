@@ -258,29 +258,29 @@ describe("WaveManager", () => {
       expect(waveManager.countdownTimer).toBe(0);
     });
 
-    it("starts countdown after PRE_EMPTIVE_WAVE_TIMER even when enemies remain", () => {
+    it("starts next wave directly after PRE_EMPTIVE_WAVE_TIMER even when enemies remain", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       waveManager.startNextWave();
       waveManager.enemyManager.spawn("minion", 1, 0, 1);
       waveManager.queue = [];
       waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, null, null);
-      expect(waveManager.countdownActive).toBe(true);
-      expect(waveManager.countdownTimer).toBe(BETWEEN_WAVES_TIMER);
+      expect(waveManager.countdownActive).toBe(false);
+      expect(waveManager.currentWave).toBe(2);
+      expect(waveManager.betweenWaves).toBe(false);
+      expect(waveManager._waveGameTime).toBe(0);
     });
 
-    it("starts next wave after countdown completes", () => {
+    it("timer starts next wave with onWaveStart callback", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       waveManager.startNextWave();
       waveManager.queue = [];
-      waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, null, null);
-      expect(waveManager.countdownActive).toBe(true);
       let startedWave: number | null = null;
-      waveManager.update(BETWEEN_WAVES_TIMER + 1, null, (wave) => {
+      waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, null, (wave) => {
         startedWave = wave;
       });
       expect(startedWave).toBe(2);
-      expect(waveManager.countdownActive).toBe(false);
       expect(waveManager.currentWave).toBe(2);
+      expect(waveManager.countdownActive).toBe(false);
       expect(waveManager.betweenWaves).toBe(false);
     });
   });

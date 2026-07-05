@@ -224,6 +224,9 @@ onMounted(async () => {
         dt,
       );
       uiOverlayManager.syncFromGameEngine(enemies, gameStore.selectedTower);
+      if (gameStore.grid && gameStore.enemyManager) {
+        uiOverlayManager.syncPendingQueueOverlays(gameStore.grid, gameStore.enemyManager);
+      }
     }
   };
 

@@ -288,7 +288,8 @@ export class GameEngine {
     if (
       this.waveManager.currentWave >= VICTORY_WAVE &&
       this.waveManager.betweenWaves &&
-      this.enemyManager.enemies.length === 0
+      this.enemyManager.enemies.length === 0 &&
+      !this.enemyManager.hasPendingEnemies()
     ) {
       this.endGame(true);
     }
@@ -337,6 +338,10 @@ export class GameEngine {
         this.persistStore.maybeUnlockNextMap(this.gameStore.mapIndex);
       }
     }
+  }
+
+  onWaveStart(wave: number): void {
+    this.gameStore.setWave(wave);
 
     const towers = this.towerManager!.towers;
     const sorted = towers
@@ -354,10 +359,6 @@ export class GameEngine {
         startTime: performance.now(),
       }));
     }
-  }
-
-  onWaveStart(wave: number): void {
-    this.gameStore.setWave(wave);
 
     this.towerManager!.towers.forEach((tower) => {
       tower.waveDamage = 0;

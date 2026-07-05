@@ -1,4 +1,6 @@
 import type { Enemy } from "../../enemies/Enemy.js";
+import type { EnemyManager } from "../../enemies/EnemyManager.js";
+import type { Grid } from "../../grid/Grid.js";
 import type { Tower } from "../../towers/Tower.js";
 import { BOSS_TEXT_POOL_SIZE, HP_BAR_POOL_SIZE, SHIELD_BAR_POOL_SIZE, SVG_NS } from "./types.js";
 
@@ -6,6 +8,7 @@ export class UiOverlayManager {
   private hpBarPool: SVGRectElement[] = [];
   private shieldBarPool: SVGRectElement[] = [];
   private bossTextPool: SVGTextElement[] = [];
+  private pendingTextPool: SVGTextElement[] = [];
 
   init(layer: SVGGElement): void {
     for (let i = 0; i < HP_BAR_POOL_SIZE; i++) {
@@ -75,6 +78,19 @@ export class UiOverlayManager {
       text.setAttribute("dominant-baseline", "central");
       layer.appendChild(text);
       this.bossTextPool.push(text);
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const text = document.createElementNS(SVG_NS, "text");
+      text.style.visibility = "hidden";
+      text.setAttribute("fill", "#ffff00");
+      text.setAttribute("font-size", "8");
+      text.setAttribute("font-weight", "bold");
+      text.setAttribute("font-family", "sans-serif");
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("dominant-baseline", "central");
+      layer.appendChild(text);
+      this.pendingTextPool.push(text);
     }
   }
 
@@ -146,6 +162,27 @@ export class UiOverlayManager {
     }
   }
 
+  syncPendingQueueOverlays(grid: Grid, enemyManager: EnemyManager): void {
+    let textIndex = 0;
+    for (let spawnIndex = 0; spawnIndex < grid.spawns.length; spawnIndex++) {
+      const pendingCount = enemyManager.getPendingCountForSpawn(spawnIndex);
+      if (pendingCount <= 0) continue;
+      if (textIndex >= this.pendingTextPool.length) break;
+
+      const text = this.pendingTextPool[textIndex]!;
+      textIndex++;
+      const spawnTile = grid.spawns[spawnIndex]!;
+      const worldPos = grid.tileToWorld(spawnTile.x, spawnTile.y);
+      text.style.visibility = "visible";
+      text.setAttribute("transform", `translate(${worldPos.x}, ${worldPos.y})`);
+      text.textContent = `+${pendingCount}`;
+    }
+
+    for (let i = textIndex; i < this.pendingTextPool.length; i++) {
+      this.pendingTextPool[i]!.style.visibility = "hidden";
+    }
+  }
+
   dispose(): void {
     for (const el of this.hpBarPool) {
       if (el.parentNode) {
@@ -162,8 +199,14 @@ export class UiOverlayManager {
         el.parentNode.removeChild(el);
       }
     }
+    for (const el of this.pendingTextPool) {
+      if (el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
+    }
     this.hpBarPool = [];
     this.shieldBarPool = [];
     this.bossTextPool = [];
+    this.pendingTextPool = [];
   }
 }

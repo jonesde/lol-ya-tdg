@@ -1,9 +1,16 @@
+import { ENEMY_POOL_SIZE } from "@/render/svg/types.js";
 import type { MapThemeData } from "@/render/themes/index.js";
 import type { Grid } from "../grid/Grid.js";
 import { Enemy, resetEnemyId } from "./Enemy.js";
 
 interface ParticleManagerRef {
   spawn(x: number, y: number, color: string, count: number, opts: { speed: number; life: number }): void;
+}
+
+interface PendingEnemyEntry {
+  type: string;
+  level: number;
+  wave: number;
 }
 
 const SpatialCellSize = 100;
@@ -15,6 +22,7 @@ export class EnemyManager {
   difficultyTick: number;
   theme: MapThemeData | null;
   private spatialHash: Map<string, Enemy[]>;
+  private pendingQueues: Map<number, PendingEnemyEntry[]>;
 
   constructor(
     grid: Grid,
@@ -28,11 +36,13 @@ export class EnemyManager {
     this.difficultyTick = difficultyTick;
     this.theme = theme;
     this.spatialHash = new Map();
+    this.pendingQueues = new Map();
   }
 
   clear(): void {
     this.enemies = [];
     this.spatialHash.clear();
+    this.pendingQueues.clear();
     resetEnemyId();
   }
 
@@ -43,6 +53,37 @@ export class EnemyManager {
     return enemy;
   }
 
+  enqueueOrSpawn(type: string, level: number, spawnIndex: number, wave: number): void {
+    if (this.enemies.length < ENEMY_POOL_SIZE) {
+      this.spawn(type, level, spawnIndex, wave);
+      return;
+    }
+    if (!this.pendingQueues.has(spawnIndex)) {
+      this.pendingQueues.set(spawnIndex, []);
+    }
+    this.pendingQueues.get(spawnIndex)!.push({ type, level, wave });
+  }
+
+  releaseOnePending(spawnIndex: number): void {
+    const queue = this.pendingQueues.get(spawnIndex);
+    if (!queue || queue.length === 0) return;
+    if (this.enemies.length >= ENEMY_POOL_SIZE) return;
+    const entry = queue.shift()!;
+    this.spawn(entry.type, entry.level, spawnIndex, entry.wave);
+  }
+
+  hasPendingEnemies(): boolean {
+    for (const queue of this.pendingQueues.values()) {
+      if (queue.length > 0) return true;
+    }
+    return false;
+  }
+
+  getPendingCountForSpawn(spawnIndex: number): number {
+    const queue = this.pendingQueues.get(spawnIndex);
+    return queue ? queue.length : 0;
+  }
+
   update(dt: number, onEnemyKill: ((enemy: Enemy) => void) | null): void {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
@@ -50,7 +91,9 @@ export class EnemyManager {
       if (enemy.removed || enemy.reachedBase) {
         this.particles.spawn(enemy.x, enemy.y, enemy.color, 12, { speed: 80, life: 0.5 });
         if (onEnemyKill) onEnemyKill(enemy);
+        const removedSpawnIndex = enemy.spawnIndex;
         this.enemies.splice(i, 1);
+        this.releaseOnePending(removedSpawnIndex);
         continue;
       }
       enemy.update(dt, this);
