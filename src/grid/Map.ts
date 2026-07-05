@@ -59,18 +59,35 @@ function _carveStraight(tiles: Tile[][], from: Point, nextWaypoint: Point) {
   tiles[curY]![curX]!.type = "path";
 }
 
-function carveWidePath(tiles: Tile[][], from: Point, nextWaypoint: Point, width: number = 1) {
+function carveWidePath(
+  tiles: Tile[][],
+  from: Point,
+  nextWaypoint: Point,
+  width: number = 1,
+  isLandscape: boolean = false,
+) {
   const pts: Point[] = [];
   let curX = from.x;
   let curY = from.y;
   pts.push({ x: curX, y: curY });
-  while (curX !== nextWaypoint.x) {
-    curX += Math.sign(nextWaypoint.x - curX);
-    pts.push({ x: curX, y: curY });
-  }
-  while (curY !== nextWaypoint.y) {
-    curY += Math.sign(nextWaypoint.y - curY);
-    pts.push({ x: curX, y: curY });
+  if (isLandscape) {
+    while (curY !== nextWaypoint.y) {
+      curY += Math.sign(nextWaypoint.y - curY);
+      pts.push({ x: curX, y: curY });
+    }
+    while (curX !== nextWaypoint.x) {
+      curX += Math.sign(nextWaypoint.x - curX);
+      pts.push({ x: curX, y: curY });
+    }
+  } else {
+    while (curX !== nextWaypoint.x) {
+      curX += Math.sign(nextWaypoint.x - curX);
+      pts.push({ x: curX, y: curY });
+    }
+    while (curY !== nextWaypoint.y) {
+      curY += Math.sign(nextWaypoint.y - curY);
+      pts.push({ x: curX, y: curY });
+    }
   }
   for (const pt of pts) {
     const halfW = Math.ceil(width / 2);
@@ -96,6 +113,7 @@ function carveWidePath(tiles: Tile[][], from: Point, nextWaypoint: Point, width:
 interface SerpentineConfig {
   phase: "cross" | "drift" | "down";
   crossTargetX?: number;
+  crossTargetY?: number;
   downStepMultiplier?: number;
 }
 
@@ -105,71 +123,98 @@ function carveSerpentine(
   nextWaypoint: Point,
   _width: number = 1,
   config: SerpentineConfig = { phase: "cross" },
+  isLandscape: boolean = false,
 ) {
   const W = tiles[0]!.length;
+  const H = tiles.length;
   let curX = from.x;
   let curY = from.y;
-  let dir = from.x < nextWaypoint.x ? 1 : -1;
+  let dir = isLandscape ? (from.y < nextWaypoint.y ? 1 : -1) : from.x < nextWaypoint.x ? 1 : -1;
   const step = SERPENTINE_STEP;
   const downCap =
     config.phase === "down" ? Math.floor(SERPENTINE_DOWN_CAP * (config.downStepMultiplier ?? 2)) : SERPENTINE_DOWN_CAP;
-  const crossTarget = config.crossTargetX ?? Math.floor(W / 2) + 2;
+  const crossTarget = isLandscape
+    ? (config.crossTargetY ?? Math.floor(H / 2) + 2)
+    : (config.crossTargetX ?? Math.floor(W / 2) + 2);
   const carved: number[][] = [];
+  const mainBound = isLandscape ? nextWaypoint.x : nextWaypoint.y;
+  const perpBound = isLandscape ? W : H;
 
-  while (curY < nextWaypoint.y) {
-    let targetX: number;
+  while (isLandscape ? curX < mainBound : curY < mainBound) {
+    let targetMain: number;
     if (config.phase === "cross") {
-      targetX = dir > 0 ? Math.min(crossTarget, curX + step) : Math.max(1, curX - step);
+      targetMain =
+        dir > 0
+          ? Math.min(crossTarget, isLandscape ? curY + step : curX + step)
+          : Math.max(1, isLandscape ? curY - step : curX - step);
     } else if (config.phase === "drift") {
-      targetX = dir > 0 ? Math.min(W - 2, curX + step) : Math.max(1, curX - step);
+      targetMain =
+        dir > 0
+          ? Math.min(perpBound - 2, isLandscape ? curY + step : curX + step)
+          : Math.max(1, isLandscape ? curY - step : curX - step);
     } else {
-      targetX = dir > 0 ? Math.min(W - 2, curX + step) : Math.max(1, curX - step);
+      targetMain =
+        dir > 0
+          ? Math.min(perpBound - 2, isLandscape ? curY + step : curX + step)
+          : Math.max(1, isLandscape ? curY - step : curX - step);
     }
-    while (curX !== targetX) {
+    while ((isLandscape ? curY : curX) !== targetMain) {
       if (tiles[curY]![curX]!.type !== "base") {
         tiles[curY]![curX]!.type = "path";
         tiles[curY]![curX]!.height = 1;
         carved.push([curX, curY]);
       }
-      curX += dir;
+      if (isLandscape) curY += dir;
+      else curX += dir;
     }
-    const downSteps = Math.min(downCap, nextWaypoint.y - curY);
+    const downSteps = Math.min(downCap, isLandscape ? nextWaypoint.x - curX : nextWaypoint.y - curY);
     for (let i = 0; i < downSteps; i++) {
       if (tiles[curY]?.[curX] && tiles[curY]![curX]!.type !== "base") {
         tiles[curY]![curX]!.type = "path";
         tiles[curY]![curX]!.height = 1;
         carved.push([curX, curY]);
       }
-      curY++;
+      if (isLandscape) curX++;
+      else curY++;
     }
     dir *= -1;
   }
-  while (curX !== nextWaypoint.x) {
+  while ((isLandscape ? curY : curX) !== (isLandscape ? nextWaypoint.y : nextWaypoint.x)) {
     if (tiles[curY]![curX]!.type !== "base") {
       tiles[curY]![curX]!.type = "path";
       tiles[curY]![curX]!.height = 1;
       carved.push([curX, curY]);
     }
-    curX += Math.sign(nextWaypoint.x - curX);
+    if (isLandscape) curY += Math.sign(nextWaypoint.y - curY);
+    else curX += Math.sign(nextWaypoint.x - curX);
   }
-  while (curY !== nextWaypoint.y) {
+  while ((isLandscape ? curX : curY) !== (isLandscape ? nextWaypoint.x : nextWaypoint.y)) {
     if (tiles[curY]![curX]!.type !== "base") {
       tiles[curY]![curX]!.type = "path";
       tiles[curY]![curX]!.height = 1;
       carved.push([curX, curY]);
     }
-    curY += Math.sign(nextWaypoint.y - curY);
+    if (isLandscape) curX += Math.sign(nextWaypoint.x - curX);
+    else curY += Math.sign(nextWaypoint.y - curY);
   }
 }
 
-function carveCanyon(tiles: Tile[][], from: Point, nextWaypoint: Point, rng: () => number) {
+function carveCanyon(
+  tiles: Tile[][],
+  from: Point,
+  nextWaypoint: Point,
+  rng: () => number,
+  isLandscape: boolean = false,
+) {
   const W = tiles[0]!.length;
   const H = tiles.length;
-  const targetY = nextWaypoint.y - 1;
+  const targetMain = isLandscape ? nextWaypoint.x - 1 : nextWaypoint.y - 1;
+  const nextMain = isLandscape ? nextWaypoint.x : nextWaypoint.y;
+  const nextPerp = isLandscape ? nextWaypoint.y : nextWaypoint.x;
   let curX = from.x;
   let curY = from.y;
   let segmentCount = 0;
-  const maxSegments = H * 3;
+  const maxSegments = isLandscape ? W * 3 : H * 3;
 
   const carveAt = (x: number, y: number, width: number) => {
     if (x < 0 || y < 0 || x >= W || y >= H) return;
@@ -192,35 +237,46 @@ function carveCanyon(tiles: Tile[][], from: Point, nextWaypoint: Point, rng: () 
     }
   };
 
-  while (curY < targetY && segmentCount < maxSegments) {
+  while ((isLandscape ? curX : curY) < targetMain && segmentCount < maxSegments) {
     const segmentLength = 6 + Math.floor(rng() * 5);
     const currentWidth = rng() > 0.5 ? 3 : 1;
 
-    let targetX: number;
+    let targetPerp: number;
     if (segmentCount % 2 === 0) {
-      targetX = Math.floor(W / 2) + Math.floor(rng() * 4 - 2);
+      targetPerp = Math.floor((isLandscape ? H : W) / 2) + Math.floor(rng() * 4 - 2);
     } else {
-      targetX = curX > Math.floor(W / 2) ? 1 : W - 2;
+      targetPerp = isLandscape ? (curY > Math.floor(H / 2) ? 1 : H - 2) : curX > Math.floor(W / 2) ? 1 : W - 2;
     }
 
-    const xDir = targetX > curX ? 1 : targetX < curX ? -1 : 0;
-    const yDir = 1;
+    const mainDir = 1;
+    const perpDir = targetPerp > (isLandscape ? curY : curX) ? 1 : targetPerp < (isLandscape ? curY : curX) ? -1 : 0;
 
     for (let step = 0; step < segmentLength; step++) {
       carveAt(curX, curY, currentWidth);
 
-      const xRemaining = targetX - curX;
-      const yRemaining = targetY - curY;
+      const mainRemaining = targetMain - (isLandscape ? curX : curY);
+      const perpRemaining = targetPerp - (isLandscape ? curY : curX);
 
-      const moveX = xRemaining !== 0 && (yRemaining === 0 || Math.abs(xRemaining) >= yRemaining * 2);
-      const moveY = yRemaining > 0 && (xRemaining === 0 || Math.abs(yRemaining) > Math.abs(xRemaining) * 0.5);
+      const moveMain =
+        mainRemaining !== 0 && (perpRemaining === 0 || Math.abs(mainRemaining) >= Math.abs(perpRemaining) * 2);
+      const movePerp =
+        perpRemaining > 0 && (mainRemaining === 0 || Math.abs(perpRemaining) > Math.abs(mainRemaining) * 0.5);
 
-      if (moveX) curX += xDir;
-      if (moveY) curY += yDir;
-      curX = Math.max(1, Math.min(W - 2, curX));
-      curY = Math.max(0, Math.min(H - 1, curY));
+      if (moveMain)
+        if (isLandscape) curX += mainDir;
+        else curY += mainDir;
+      if (movePerp)
+        if (isLandscape) curY += perpDir;
+        else curX += perpDir;
+      if (isLandscape) {
+        curX = Math.max(0, Math.min(W - 1, curX));
+        curY = Math.max(1, Math.min(H - 2, curY));
+      } else {
+        curX = Math.max(1, Math.min(W - 2, curX));
+        curY = Math.max(0, Math.min(H - 1, curY));
+      }
 
-      if (curY >= targetY && Math.abs(targetX - curX) <= 1) break;
+      if ((isLandscape ? curX : curY) >= targetMain && Math.abs(targetPerp - (isLandscape ? curY : curX)) <= 1) break;
     }
     carveAt(curX, curY, currentWidth);
 
@@ -228,15 +284,17 @@ function carveCanyon(tiles: Tile[][], from: Point, nextWaypoint: Point, rng: () 
   }
 
   let horizontalSteps = 0;
-  while (curX !== nextWaypoint.x && horizontalSteps < W) {
+  while ((isLandscape ? curY : curX) !== nextPerp && horizontalSteps < (isLandscape ? H : W)) {
     carveAt(curX, curY, 1);
-    curX += Math.sign(nextWaypoint.x - curX);
+    if (isLandscape) curY += Math.sign(nextWaypoint.y - curY);
+    else curX += Math.sign(nextWaypoint.x - curX);
     horizontalSteps++;
   }
 
-  while (curY !== nextWaypoint.y) {
+  while ((isLandscape ? curX : curY) !== nextMain) {
     carveAt(curX, curY, 1);
-    curY += Math.sign(nextWaypoint.y - curY);
+    if (isLandscape) curX += Math.sign(nextWaypoint.x - curX);
+    else curY += Math.sign(nextWaypoint.y - curY);
   }
 
   carveAt(curX, curY, 1);
@@ -248,42 +306,83 @@ function carveOpenArea(
   openAreaHeight: number,
   openAreaWidth: number,
   shapeIndex: number,
+  isLandscape: boolean = false,
 ) {
   const halfW = Math.floor(openAreaWidth / 2);
-  const topEdge = base.y - openAreaHeight;
   const W = tiles[0]!.length;
+  const H = tiles.length;
 
-  for (let cy = Math.max(0, topEdge); cy <= Math.min(tiles.length - 1, base.y); cy++) {
-    for (let cx = Math.max(0, base.x - halfW); cx <= Math.min(W - 1, base.x + halfW); cx++) {
-      const dx = cx - base.x;
-      const dy = cy - base.y;
-      let inside = false;
+  if (isLandscape) {
+    const leftEdge = base.x - openAreaHeight;
+    for (let cx = Math.max(0, leftEdge); cx <= Math.min(W - 1, base.x); cx++) {
+      for (let cy = Math.max(0, base.y - halfW); cy <= Math.min(H - 1, base.y + halfW); cy++) {
+        const dx = cx - base.x;
+        const dy = cy - base.y;
+        let inside = false;
 
-      switch (shapeIndex) {
-        case 0:
-          inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
-          break;
-        case 1:
-          if (halfW > 0 && openAreaHeight > 0)
-            inside = (dx * dx) / (halfW * halfW) + (dy * dy) / (openAreaHeight * openAreaHeight) <= 1;
-          break;
-        case 2:
-          if (halfW > 0 && openAreaHeight > 0) inside = Math.abs(dx) / halfW + Math.abs(dy) / openAreaHeight <= 1;
-          break;
-        case 3: {
-          const rowY = cy - topEdge;
-          const rowMaxHalfW = Math.floor((halfW * rowY) / openAreaHeight);
-          inside = Math.abs(dx) <= rowMaxHalfW;
-          break;
+        switch (shapeIndex) {
+          case 0:
+            inside = Math.abs(dx) <= openAreaHeight && Math.abs(dy) <= halfW;
+            break;
+          case 1:
+            if (openAreaHeight > 0 && halfW > 0)
+              inside = (dx * dx) / (openAreaHeight * openAreaHeight) + (dy * dy) / (halfW * halfW) <= 1;
+            break;
+          case 2:
+            if (openAreaHeight > 0 && halfW > 0) inside = Math.abs(dx) / openAreaHeight + Math.abs(dy) / halfW <= 1;
+            break;
+          case 3: {
+            const rowX = cx - leftEdge;
+            const rowMaxHalfW = Math.floor((halfW * rowX) / openAreaHeight);
+            inside = Math.abs(dy) <= rowMaxHalfW;
+            break;
+          }
+          default:
+            inside = Math.abs(dx) <= openAreaHeight && Math.abs(dy) <= halfW;
+            break;
         }
-        default:
-          inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
-          break;
-      }
 
-      if (inside && tiles[cy]![cx]!.type !== "base") {
-        tiles[cy]![cx]!.type = "path";
-        tiles[cy]![cx]!.height = 1;
+        if (inside && tiles[cy]![cx]!.type !== "base") {
+          tiles[cy]![cx]!.type = "path";
+          tiles[cy]![cx]!.height = 1;
+        }
+      }
+    }
+  } else {
+    const topEdge = base.y - openAreaHeight;
+
+    for (let cy = Math.max(0, topEdge); cy <= Math.min(H - 1, base.y); cy++) {
+      for (let cx = Math.max(0, base.x - halfW); cx <= Math.min(W - 1, base.x + halfW); cx++) {
+        const dx = cx - base.x;
+        const dy = cy - base.y;
+        let inside = false;
+
+        switch (shapeIndex) {
+          case 0:
+            inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
+            break;
+          case 1:
+            if (halfW > 0 && openAreaHeight > 0)
+              inside = (dx * dx) / (halfW * halfW) + (dy * dy) / (openAreaHeight * openAreaHeight) <= 1;
+            break;
+          case 2:
+            if (halfW > 0 && openAreaHeight > 0) inside = Math.abs(dx) / halfW + Math.abs(dy) / openAreaHeight <= 1;
+            break;
+          case 3: {
+            const rowY = cy - topEdge;
+            const rowMaxHalfW = Math.floor((halfW * rowY) / openAreaHeight);
+            inside = Math.abs(dx) <= rowMaxHalfW;
+            break;
+          }
+          default:
+            inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
+            break;
+        }
+
+        if (inside && tiles[cy]![cx]!.type !== "base") {
+          tiles[cy]![cx]!.type = "path";
+          tiles[cy]![cx]!.height = 1;
+        }
       }
     }
   }
@@ -295,44 +394,84 @@ function carveOpenAreaAt(
   openAreaHeight: number,
   openAreaWidth: number,
   shapeIndex: number,
+  isLandscape: boolean = false,
 ) {
   const halfW = Math.floor(openAreaWidth / 2);
   const W = tiles[0]!.length;
   const H = tiles.length;
-  const startY = Math.max(0, center.y - openAreaHeight);
-  const endY = Math.min(H - 1, center.y + openAreaHeight);
 
-  for (let cy = startY; cy <= endY; cy++) {
-    for (let cx = Math.max(0, center.x - halfW); cx <= Math.min(W - 1, center.x + halfW); cx++) {
-      const dx = cx - center.x;
-      const dy = cy - center.y;
-      let inside = false;
+  if (isLandscape) {
+    const leftEdge = center.x - openAreaHeight;
+    for (let cx = Math.max(0, leftEdge); cx <= Math.min(W - 1, center.x + openAreaHeight); cx++) {
+      for (let cy = Math.max(0, center.y - halfW); cy <= Math.min(H - 1, center.y + halfW); cy++) {
+        const dx = cx - center.x;
+        const dy = cy - center.y;
+        let inside = false;
 
-      switch (shapeIndex) {
-        case 0:
-          inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
-          break;
-        case 1:
-          if (halfW > 0 && openAreaHeight > 0)
-            inside = (dx * dx) / (halfW * halfW) + (dy * dy) / (openAreaHeight * openAreaHeight) <= 1;
-          break;
-        case 2:
-          if (halfW > 0 && openAreaHeight > 0) inside = Math.abs(dx) / halfW + Math.abs(dy) / openAreaHeight <= 1;
-          break;
-        case 3: {
-          const distFromCenter = Math.abs(dy);
-          const rowMaxHalfW = Math.floor((halfW * (openAreaHeight - distFromCenter)) / (openAreaHeight || 1));
-          inside = Math.abs(dx) <= Math.max(0, rowMaxHalfW);
-          break;
+        switch (shapeIndex) {
+          case 0:
+            inside = Math.abs(dx) <= openAreaHeight && Math.abs(dy) <= halfW;
+            break;
+          case 1:
+            if (openAreaHeight > 0 && halfW > 0)
+              inside = (dx * dx) / (openAreaHeight * openAreaHeight) + (dy * dy) / (halfW * halfW) <= 1;
+            break;
+          case 2:
+            if (openAreaHeight > 0 && halfW > 0) inside = Math.abs(dx) / openAreaHeight + Math.abs(dy) / halfW <= 1;
+            break;
+          case 3: {
+            const distFromCenter = Math.abs(dx);
+            const rowMaxHalfW = Math.floor((halfW * (openAreaHeight - distFromCenter)) / (openAreaHeight || 1));
+            inside = Math.abs(dy) <= Math.max(0, rowMaxHalfW);
+            break;
+          }
+          default:
+            inside = Math.abs(dx) <= openAreaHeight && Math.abs(dy) <= halfW;
+            break;
         }
-        default:
-          inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
-          break;
-      }
 
-      if (inside && tiles[cy]![cx]!.type !== "base") {
-        tiles[cy]![cx]!.type = "path";
-        tiles[cy]![cx]!.height = 1;
+        if (inside && tiles[cy]![cx]!.type !== "base") {
+          tiles[cy]![cx]!.type = "path";
+          tiles[cy]![cx]!.height = 1;
+        }
+      }
+    }
+  } else {
+    const startY = Math.max(0, center.y - openAreaHeight);
+    const endY = Math.min(H - 1, center.y + openAreaHeight);
+
+    for (let cy = startY; cy <= endY; cy++) {
+      for (let cx = Math.max(0, center.x - halfW); cx <= Math.min(W - 1, center.x + halfW); cx++) {
+        const dx = cx - center.x;
+        const dy = cy - center.y;
+        let inside = false;
+
+        switch (shapeIndex) {
+          case 0:
+            inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
+            break;
+          case 1:
+            if (halfW > 0 && openAreaHeight > 0)
+              inside = (dx * dx) / (halfW * halfW) + (dy * dy) / (openAreaHeight * openAreaHeight) <= 1;
+            break;
+          case 2:
+            if (halfW > 0 && openAreaHeight > 0) inside = Math.abs(dx) / halfW + Math.abs(dy) / openAreaHeight <= 1;
+            break;
+          case 3: {
+            const distFromCenter = Math.abs(dy);
+            const rowMaxHalfW = Math.floor((halfW * (openAreaHeight - distFromCenter)) / (openAreaHeight || 1));
+            inside = Math.abs(dx) <= Math.max(0, rowMaxHalfW);
+            break;
+          }
+          default:
+            inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
+            break;
+        }
+
+        if (inside && tiles[cy]![cx]!.type !== "base") {
+          tiles[cy]![cx]!.type = "path";
+          tiles[cy]![cx]!.height = 1;
+        }
       }
     }
   }
@@ -389,145 +528,291 @@ export function generateRandomMap(
     tiles.push(row);
   }
 
-  const base: Point = { x: Math.floor(width / 2), y: height - 2 };
+  const portraitBase: Point = { x: Math.floor(width / 2), y: height - 2 };
+  const base: Point = width > height ? { x: width - 2, y: Math.floor(height / 2) } : portraitBase;
+  const isLandscape = width > height;
   const spawns: Point[] = [];
 
   switch (style) {
     case "battlefield": {
-      const spawnX = Math.floor(width * (0.15 + rng() * 0.7));
-      const spawn = { x: spawnX, y: 1 };
-      spawns.push(spawn);
-      const rowSpacing = 2 + Math.floor(rng() * 3);
-      const startDirection = rng() > 0.5 ? 1 : -1;
+      if (isLandscape) {
+        const spawnY = Math.floor(height * (0.15 + rng() * 0.7));
+        const spawn = { x: 1, y: spawnY };
+        spawns.push(spawn);
+        const rowSpacing = 2 + Math.floor(rng() * 3);
+        const startDirection = rng() > 0.5 ? 1 : -1;
 
-      const waypoints: Point[] = [spawn];
-      let curY = 1;
-      let direction = startDirection;
+        const waypoints: Point[] = [spawn];
+        let curX = 1;
+        let direction = startDirection;
 
-      curY += rowSpacing;
-      waypoints.push({ x: spawnX, y: curY });
+        curX += rowSpacing;
+        waypoints.push({ x: curX, y: spawnY });
 
-      while (curY + rowSpacing <= base.y) {
-        direction = -direction;
-        const edgeMargin = 0.1 + rng() * 0.15;
-        const targetX = direction > 0 ? width - Math.floor(width * edgeMargin) : Math.floor(width * edgeMargin);
-        waypoints.push({ x: targetX, y: curY });
-        waypoints.push({ x: targetX, y: curY + rowSpacing });
-        curY += rowSpacing;
-      }
+        while (curX + rowSpacing <= base.x) {
+          direction = -direction;
+          const edgeMargin = 0.1 + rng() * 0.15;
+          const targetY = direction > 0 ? height - Math.floor(height * edgeMargin) : Math.floor(height * edgeMargin);
+          waypoints.push({ x: curX, y: targetY });
+          waypoints.push({ x: curX + rowSpacing, y: targetY });
+          curX += rowSpacing;
+        }
 
-      waypoints.push({ x: Math.floor(width / 2), y: curY });
-      waypoints.push({ x: Math.floor(width / 2), y: base.y });
+        waypoints.push({ x: curX, y: Math.floor(height / 2) });
+        waypoints.push({ x: base.x, y: Math.floor(height / 2) });
 
-      const segmentCount = waypoints.length - 1;
-      const pathWidths: number[] = [];
-      for (let i = 0; i < segmentCount; i++) {
-        const r = rng();
-        if (r > 0.8) pathWidths.push(3);
-        else if (r > 0.45) pathWidths.push(2);
-        else pathWidths.push(1);
-      }
+        const segmentCount = waypoints.length - 1;
+        const pathWidths: number[] = [];
+        for (let i = 0; i < segmentCount; i++) {
+          const r = rng();
+          if (r > 0.8) pathWidths.push(3);
+          else if (r > 0.45) pathWidths.push(2);
+          else pathWidths.push(1);
+        }
 
-      for (let i = 0; i < waypoints.length - 1; i++) {
-        const from = waypoints[i]!;
-        const nextWaypoint = waypoints[i + 1]!;
-        const pathWidth = pathWidths[i] || 2;
-        let curX = from.x;
-        let curY = from.y;
-        while (curX !== nextWaypoint.x || curY !== nextWaypoint.y) {
-          for (let deltaY = -Math.floor(pathWidth / 2); deltaY <= Math.floor(pathWidth / 2); deltaY++) {
-            for (let deltaX = -Math.floor(pathWidth / 2); deltaX <= Math.floor(pathWidth / 2); deltaX++) {
-              const neighborX = curX + deltaX;
-              const neighborY = curY + deltaY;
-              if (neighborX >= 0 && neighborX < width && neighborY >= 0 && neighborY < height) {
-                if (tiles[neighborY]![neighborX]!.type !== "base") {
-                  tiles[neighborY]![neighborX]!.type = "path";
-                  tiles[neighborY]![neighborX]!.height = 1;
+        for (let i = 0; i < waypoints.length - 1; i++) {
+          const from = waypoints[i]!;
+          const nextWaypoint = waypoints[i + 1]!;
+          const pathWidth = pathWidths[i] || 2;
+          let curX = from.x;
+          let curY = from.y;
+          while (curX !== nextWaypoint.x || curY !== nextWaypoint.y) {
+            for (let deltaY = -Math.floor(pathWidth / 2); deltaY <= Math.floor(pathWidth / 2); deltaY++) {
+              for (let deltaX = -Math.floor(pathWidth / 2); deltaX <= Math.floor(pathWidth / 2); deltaX++) {
+                const neighborX = curX + deltaX;
+                const neighborY = curY + deltaY;
+                if (neighborX >= 0 && neighborX < width && neighborY >= 0 && neighborY < height) {
+                  if (tiles[neighborY]![neighborX]!.type !== "base") {
+                    tiles[neighborY]![neighborX]!.type = "path";
+                    tiles[neighborY]![neighborX]!.height = 1;
+                  }
                 }
               }
             }
+            if (curX !== nextWaypoint.x) curX += Math.sign(nextWaypoint.x - curX);
+            if (curY !== nextWaypoint.y) curY += Math.sign(nextWaypoint.y - curY);
           }
-          if (curX !== nextWaypoint.x) curX += Math.sign(nextWaypoint.x - curX);
-          if (curY !== nextWaypoint.y) curY += Math.sign(nextWaypoint.y - curY);
+
+          const isHorizontal = from.x === nextWaypoint.x;
+          if (isHorizontal && rng() > 0.6) {
+            const openAreaHeight = 3 + Math.floor(rng() * 4);
+            const openAreaWidth = 3 + Math.floor(rng() * 4);
+            const shapeIndex = Math.floor(rng() * 4);
+            carveOpenAreaAt(
+              tiles,
+              { x: nextWaypoint.x, y: nextWaypoint.y },
+              openAreaWidth,
+              openAreaHeight,
+              shapeIndex,
+              true,
+            );
+          }
+        }
+      } else {
+        const spawnX = Math.floor(width * (0.15 + rng() * 0.7));
+        const spawn = { x: spawnX, y: 1 };
+        spawns.push(spawn);
+        const rowSpacing = 2 + Math.floor(rng() * 3);
+        const startDirection = rng() > 0.5 ? 1 : -1;
+
+        const waypoints: Point[] = [spawn];
+        let curY = 1;
+        let direction = startDirection;
+
+        curY += rowSpacing;
+        waypoints.push({ x: spawnX, y: curY });
+
+        while (curY + rowSpacing <= base.y) {
+          direction = -direction;
+          const edgeMargin = 0.1 + rng() * 0.15;
+          const targetX = direction > 0 ? width - Math.floor(width * edgeMargin) : Math.floor(width * edgeMargin);
+          waypoints.push({ x: targetX, y: curY });
+          waypoints.push({ x: targetX, y: curY + rowSpacing });
+          curY += rowSpacing;
         }
 
-        const isHorizontal = from.y === nextWaypoint.y;
-        if (isHorizontal && rng() > 0.6) {
-          const openAreaHeight = 3 + Math.floor(rng() * 4);
-          const openAreaWidth = 3 + Math.floor(rng() * 4);
-          const shapeIndex = Math.floor(rng() * 4);
-          carveOpenAreaAt(tiles, { x: nextWaypoint.x, y: nextWaypoint.y }, openAreaHeight, openAreaWidth, shapeIndex);
+        waypoints.push({ x: Math.floor(width / 2), y: curY });
+        waypoints.push({ x: Math.floor(width / 2), y: base.y });
+
+        const segmentCount = waypoints.length - 1;
+        const pathWidths: number[] = [];
+        for (let i = 0; i < segmentCount; i++) {
+          const r = rng();
+          if (r > 0.8) pathWidths.push(3);
+          else if (r > 0.45) pathWidths.push(2);
+          else pathWidths.push(1);
+        }
+
+        for (let i = 0; i < waypoints.length - 1; i++) {
+          const from = waypoints[i]!;
+          const nextWaypoint = waypoints[i + 1]!;
+          const pathWidth = pathWidths[i] || 2;
+          let curX = from.x;
+          let curY = from.y;
+          while (curX !== nextWaypoint.x || curY !== nextWaypoint.y) {
+            for (let deltaY = -Math.floor(pathWidth / 2); deltaY <= Math.floor(pathWidth / 2); deltaY++) {
+              for (let deltaX = -Math.floor(pathWidth / 2); deltaX <= Math.floor(pathWidth / 2); deltaX++) {
+                const neighborX = curX + deltaX;
+                const neighborY = curY + deltaY;
+                if (neighborX >= 0 && neighborX < width && neighborY >= 0 && neighborY < height) {
+                  if (tiles[neighborY]![neighborX]!.type !== "base") {
+                    tiles[neighborY]![neighborX]!.type = "path";
+                    tiles[neighborY]![neighborX]!.height = 1;
+                  }
+                }
+              }
+            }
+            if (curX !== nextWaypoint.x) curX += Math.sign(nextWaypoint.x - curX);
+            if (curY !== nextWaypoint.y) curY += Math.sign(nextWaypoint.y - curY);
+          }
+
+          const isHorizontal = from.y === nextWaypoint.y;
+          if (isHorizontal && rng() > 0.6) {
+            const openAreaHeight = 3 + Math.floor(rng() * 4);
+            const openAreaWidth = 3 + Math.floor(rng() * 4);
+            const shapeIndex = Math.floor(rng() * 4);
+            carveOpenAreaAt(tiles, { x: nextWaypoint.x, y: nextWaypoint.y }, openAreaHeight, openAreaWidth, shapeIndex);
+          }
         }
       }
       break;
     }
     case "open": {
-      const spawn = { x: Math.floor(width / 2), y: 1 };
-      spawns.push(spawn);
-      const pathWidth = Math.round(rng() * 10) % 2 === 0 ? 3 : 2;
-      carveWidePath(tiles, spawn, base, pathWidth);
-      if (rng() > 0.5) {
-        const midY = Math.floor(height * (0.25 + rng() * 0.5));
-        const branchX = Math.floor(width * (0.2 + rng() * 0.6));
-        for (let x = Math.max(0, branchX - 2); x <= Math.min(width - 1, branchX + 2); x++) {
-          if (midY >= 0 && midY < height && tiles[midY]![x]!.type !== "base") {
-            tiles[midY]![x]!.type = "path";
-            tiles[midY]![x]!.height = 1;
+      if (isLandscape) {
+        const spawn = { x: 1, y: Math.floor(height / 2) };
+        spawns.push(spawn);
+        const pathWidth = Math.round(rng() * 10) % 2 === 0 ? 3 : 2;
+        carveWidePath(tiles, spawn, base, pathWidth, true);
+        if (rng() > 0.5) {
+          const midX = Math.floor(width * (0.25 + rng() * 0.5));
+          const branchY = Math.floor(height * (0.2 + rng() * 0.6));
+          for (let y = Math.max(0, branchY - 2); y <= Math.min(height - 1, branchY + 2); y++) {
+            if (midX >= 0 && midX < width && tiles[y]![midX]!.type !== "base") {
+              tiles[y]![midX]!.type = "path";
+              tiles[y]![midX]!.height = 1;
+            }
+          }
+          for (let x = Math.max(0, midX - 2); x <= Math.min(width - 1, midX + 2); x++) {
+            const topY = Math.max(0, Math.floor(height / 2) - 3);
+            const bottomY = Math.min(height - 1, Math.floor(height / 2) + 3);
+            if (tiles[topY]![x]!.type !== "base") {
+              tiles[topY]![x]!.type = "path";
+              tiles[topY]![x]!.height = 1;
+            }
+            if (tiles[bottomY]![x]!.type !== "base") {
+              tiles[bottomY]![x]!.type = "path";
+              tiles[bottomY]![x]!.height = 1;
+            }
           }
         }
-        for (let y = Math.max(0, midY - 2); y <= Math.min(height - 1, midY + 2); y++) {
-          const leftX = Math.max(0, Math.floor(width / 2) - 3);
-          const rightX = Math.min(width - 1, Math.floor(width / 2) + 3);
-          if (tiles[y]![leftX]!.type !== "base") {
-            tiles[y]![leftX]!.type = "path";
-            tiles[y]![leftX]!.height = 1;
+      } else {
+        const spawn = { x: Math.floor(width / 2), y: 1 };
+        spawns.push(spawn);
+        const pathWidth = Math.round(rng() * 10) % 2 === 0 ? 3 : 2;
+        carveWidePath(tiles, spawn, base, pathWidth);
+        if (rng() > 0.5) {
+          const midY = Math.floor(height * (0.25 + rng() * 0.5));
+          const branchX = Math.floor(width * (0.2 + rng() * 0.6));
+          for (let x = Math.max(0, branchX - 2); x <= Math.min(width - 1, branchX + 2); x++) {
+            if (midY >= 0 && midY < height && tiles[midY]![x]!.type !== "base") {
+              tiles[midY]![x]!.type = "path";
+              tiles[midY]![x]!.height = 1;
+            }
           }
-          if (tiles[y]![rightX]!.type !== "base") {
-            tiles[y]![rightX]!.type = "path";
-            tiles[y]![rightX]!.height = 1;
+          for (let y = Math.max(0, midY - 2); y <= Math.min(height - 1, midY + 2); y++) {
+            const leftX = Math.max(0, Math.floor(width / 2) - 3);
+            const rightX = Math.min(width - 1, Math.floor(width / 2) + 3);
+            if (tiles[y]![leftX]!.type !== "base") {
+              tiles[y]![leftX]!.type = "path";
+              tiles[y]![leftX]!.height = 1;
+            }
+            if (tiles[y]![rightX]!.type !== "base") {
+              tiles[y]![rightX]!.type = "path";
+              tiles[y]![rightX]!.height = 1;
+            }
           }
         }
       }
       break;
     }
     case "canyon": {
-      const spawnX = rng() > 0.5 ? 1 : width - 2;
-      const spawn = { x: spawnX, y: 1 };
-      spawns.push(spawn);
-      carveCanyon(tiles, spawn, base, rng);
+      if (isLandscape) {
+        const spawnY = rng() > 0.5 ? 1 : height - 2;
+        const spawn = { x: 1, y: spawnY };
+        spawns.push(spawn);
+        carveCanyon(tiles, spawn, base, rng, true);
+      } else {
+        const spawnX = rng() > 0.5 ? 1 : width - 2;
+        const spawn = { x: spawnX, y: 1 };
+        spawns.push(spawn);
+        carveCanyon(tiles, spawn, base, rng);
+      }
       break;
     }
     case "serpentine": {
-      const spawn = { x: Math.round(rng() * 2), y: Math.floor(height * (0.1 + rng() * 0.3)) };
-      spawns.push(spawn);
-      carveSerpentine(tiles, spawn, base, 1, { phase: "cross", crossTargetX: Math.floor(width / 2) + 2 });
-      carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "drift" });
-      carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "down", downStepMultiplier: 2 });
+      if (isLandscape) {
+        const spawn = { x: Math.floor(width * (0.1 + rng() * 0.3)), y: Math.round(rng() * 2) };
+        spawns.push(spawn);
+        carveSerpentine(tiles, spawn, base, 1, { phase: "cross", crossTargetY: Math.floor(height / 2) + 2 }, true);
+        carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "drift" }, true);
+        carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "down", downStepMultiplier: 2 }, true);
+      } else {
+        const spawn = { x: Math.round(rng() * 2), y: Math.floor(height * (0.1 + rng() * 0.3)) };
+        spawns.push(spawn);
+        carveSerpentine(tiles, spawn, base, 1, { phase: "cross", crossTargetX: Math.floor(width / 2) + 2 });
+        carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "drift" });
+        carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "down", downStepMultiplier: 2 });
+      }
       break;
     }
     case "split": {
-      const spawn1 = { x: 1, y: 1 };
-      const spawn2 = { x: width - 2, y: 1 };
-      spawns.push(spawn1, spawn2);
-      carveWidePath(tiles, spawn1, base, 1);
-      carveWidePath(tiles, spawn2, base, 1);
+      if (isLandscape) {
+        const spawn1 = { x: 1, y: 1 };
+        const spawn2 = { x: 1, y: height - 2 };
+        spawns.push(spawn1, spawn2);
+        carveWidePath(tiles, spawn1, base, 1, true);
+        carveWidePath(tiles, spawn2, base, 1, true);
+      } else {
+        const spawn1 = { x: 1, y: 1 };
+        const spawn2 = { x: width - 2, y: 1 };
+        spawns.push(spawn1, spawn2);
+        carveWidePath(tiles, spawn1, base, 1);
+        carveWidePath(tiles, spawn2, base, 1);
+      }
       break;
     }
     case "bastion": {
-      const spawn = { x: Math.floor(width / 2), y: 0 };
-      spawns.push(spawn);
-      const openAreaHeight = Math.floor(height * (0.2 + rng() * 0.2));
-      const openAreaWidthFactor = 0.8 + rng() * 0.6;
-      const openAreaWidth = Math.floor(height * openAreaWidthFactor);
-      const shapeIndex = Math.floor(rng() * 4);
-      const topEdge = base.y - openAreaHeight;
-      for (let y = 0; y < topEdge; y++) {
-        if (tiles[y]![spawn.x]!.type !== "base") {
-          tiles[y]![spawn.x]!.type = "path";
-          tiles[y]![spawn.x]!.height = 1;
+      if (isLandscape) {
+        const spawn = { x: 0, y: Math.floor(height / 2) };
+        spawns.push(spawn);
+        const openAreaHeight = Math.floor(height * (0.2 + rng() * 0.2));
+        const openAreaWidthFactor = 0.8 + rng() * 0.6;
+        const openAreaWidth = Math.floor(height * openAreaWidthFactor);
+        const shapeIndex = Math.floor(rng() * 4);
+        const leftEdge = base.x - openAreaHeight;
+        for (let x = 0; x < leftEdge; x++) {
+          if (tiles[spawn.y]![x]!.type !== "base") {
+            tiles[spawn.y]![x]!.type = "path";
+            tiles[spawn.y]![x]!.height = 1;
+          }
         }
+        carveOpenArea(tiles, base, openAreaHeight, openAreaWidth, shapeIndex, true);
+      } else {
+        const spawn = { x: Math.floor(width / 2), y: 0 };
+        spawns.push(spawn);
+        const openAreaHeight = Math.floor(height * (0.2 + rng() * 0.2));
+        const openAreaWidthFactor = 0.8 + rng() * 0.6;
+        const openAreaWidth = Math.floor(height * openAreaWidthFactor);
+        const shapeIndex = Math.floor(rng() * 4);
+        const topEdge = base.y - openAreaHeight;
+        for (let y = 0; y < topEdge; y++) {
+          if (tiles[y]![spawn.x]!.type !== "base") {
+            tiles[y]![spawn.x]!.type = "path";
+            tiles[y]![spawn.x]!.height = 1;
+          }
+        }
+        carveOpenArea(tiles, base, openAreaHeight, openAreaWidth, shapeIndex);
       }
-      carveOpenArea(tiles, base, openAreaHeight, openAreaWidth, shapeIndex);
       break;
     }
   }

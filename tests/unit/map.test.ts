@@ -156,25 +156,50 @@ describe("Map generation", () => {
         if (config.style !== "bastion") continue;
         const map = getMap(i);
         const base = map.base;
-        const centerCol = Math.floor(map.width / 2);
-        const minTop = base.y - Math.floor(map.height * 0.4);
+        const isLandscape = map.width > map.height;
+        const centerCoord = isLandscape ? base.x : Math.floor(map.width / 2);
+        const extent = isLandscape ? Math.floor(map.width * 0.4) : Math.floor(map.height * 0.4);
+        const minEdge = isLandscape ? base.x - extent : base.y - extent;
         let aboveBounds = false;
-        for (let y = Math.max(0, minTop - 1); y >= 0; y--) {
-          for (let x = 0; x < map.width; x++) {
-            if (x !== centerCol && map.tiles[y][x].type === "path") {
-              aboveBounds = true;
-              break;
+        if (isLandscape) {
+          for (let x = Math.max(0, minEdge - 1); x >= 0; x--) {
+            for (let y = 0; y < map.height; y++) {
+              if (y !== map.spawns[0]!.y && map.tiles[y][x].type === "path") {
+                aboveBounds = true;
+                break;
+              }
             }
+            if (aboveBounds) break;
           }
-          if (aboveBounds) break;
+        } else {
+          for (let y = Math.max(0, minEdge - 1); y >= 0; y--) {
+            for (let x = 0; x < map.width; x++) {
+              if (x !== centerCoord && map.tiles[y][x].type === "path") {
+                aboveBounds = true;
+                break;
+              }
+            }
+            if (aboveBounds) break;
+          }
         }
         expect(aboveBounds).toBe(false);
         let hasOpenAreaPath = false;
-        for (let y = base.y; y > minTop && !hasOpenAreaPath; y--) {
-          for (let x = 0; x < map.width; x++) {
-            if (map.tiles[y][x].type === "path") {
-              hasOpenAreaPath = true;
-              break;
+        if (isLandscape) {
+          for (let x = base.x; x > minEdge && !hasOpenAreaPath; x--) {
+            for (let y = 0; y < map.height; y++) {
+              if (map.tiles[y][x].type === "path") {
+                hasOpenAreaPath = true;
+                break;
+              }
+            }
+          }
+        } else {
+          for (let y = base.y; y > minEdge && !hasOpenAreaPath; y--) {
+            for (let x = 0; x < map.width; x++) {
+              if (map.tiles[y][x].type === "path") {
+                hasOpenAreaPath = true;
+                break;
+              }
             }
           }
         }
@@ -187,23 +212,45 @@ describe("Map generation", () => {
         const config = MAP_LEVELS[i];
         if (config.style !== "bastion") continue;
         const map = getMap(i);
-        let hasPathAtBaseY = false;
-        for (let x = 0; x < map.width; x++) {
-          if (map.tiles[map.base.y][x].type === "path") {
-            hasPathAtBaseY = true;
-            break;
-          }
-        }
-        if (!hasPathAtBaseY) continue;
-        let belowBase = false;
-        for (let y = map.base.y + 1; y < map.height; y++) {
-          for (let x = 0; x < map.width; x++) {
-            if (map.tiles[y][x].type === "path") {
-              belowBase = true;
+        const isLandscape = map.width > map.height;
+        let hasPathAtBaseCoord = false;
+        if (isLandscape) {
+          for (let y = 0; y < map.height; y++) {
+            if (map.tiles[y][map.base.x].type === "path") {
+              hasPathAtBaseCoord = true;
               break;
             }
           }
-          if (belowBase) break;
+        } else {
+          for (let x = 0; x < map.width; x++) {
+            if (map.tiles[map.base.y][x].type === "path") {
+              hasPathAtBaseCoord = true;
+              break;
+            }
+          }
+        }
+        if (!hasPathAtBaseCoord) continue;
+        let belowBase = false;
+        if (isLandscape) {
+          for (let x = map.base.x + 1; x < map.width; x++) {
+            for (let y = 0; y < map.height; y++) {
+              if (map.tiles[y][x].type === "path") {
+                belowBase = true;
+                break;
+              }
+            }
+            if (belowBase) break;
+          }
+        } else {
+          for (let y = map.base.y + 1; y < map.height; y++) {
+            for (let x = 0; x < map.width; x++) {
+              if (map.tiles[y][x].type === "path") {
+                belowBase = true;
+                break;
+              }
+            }
+            if (belowBase) break;
+          }
         }
         expect(belowBase).toBe(false);
       }
@@ -273,28 +320,97 @@ describe("Map generation", () => {
         const config = MAP_LEVELS[i];
         if (config.style !== "serpentine") continue;
         const map = getMap(i);
-        const spawnY = map.spawns[0]!.y;
-        const lowerBound = Math.floor(map.height * 0.1);
-        const upperBound = Math.floor(map.height * 0.4);
-        expect(spawnY).toBeGreaterThanOrEqual(lowerBound);
-        expect(spawnY).toBeLessThanOrEqual(upperBound);
+        const isLandscape = map.width > map.height;
+        const spawnCoord = isLandscape ? map.spawns[0]!.x : map.spawns[0]!.y;
+        const extent = isLandscape ? map.width : map.height;
+        const lowerBound = Math.floor(extent * 0.1);
+        const upperBound = Math.floor(extent * 0.4);
+        expect(spawnCoord).toBeGreaterThanOrEqual(lowerBound);
+        expect(spawnCoord).toBeLessThanOrEqual(upperBound);
       }
     });
 
-    it("canyon has tiles with width 3 (path tile with path neighbor 2 tiles away in X)", () => {
+    it("canyon has tiles with width 3 (path tile with path neighbor 2 tiles away in perpendicular axis)", () => {
       for (let i = 0; i < TOTAL_MAPS; i++) {
         const config = MAP_LEVELS[i];
         if (config.style !== "canyon") continue;
         const map = getMap(i);
+        const isLandscape = map.width > map.height;
         let foundWidth3 = false;
-        for (let y = 0; y < map.height && !foundWidth3; y++) {
-          for (let x = 0; x < map.width - 2 && !foundWidth3; x++) {
-            if (map.tiles[y][x].type === "path" && map.tiles[y][x + 2].type === "path") {
-              foundWidth3 = true;
+        if (isLandscape) {
+          for (let x = 0; x < map.width && !foundWidth3; x++) {
+            for (let y = 0; y < map.height - 2 && !foundWidth3; y++) {
+              if (map.tiles[y][x].type === "path" && map.tiles[y + 2][x].type === "path") {
+                foundWidth3 = true;
+              }
+            }
+          }
+        } else {
+          for (let y = 0; y < map.height && !foundWidth3; y++) {
+            for (let x = 0; x < map.width - 2 && !foundWidth3; x++) {
+              if (map.tiles[y][x].type === "path" && map.tiles[y][x + 2].type === "path") {
+                foundWidth3 = true;
+              }
             }
           }
         }
         expect(foundWidth3).toBe(true);
+      }
+    });
+
+    it("landscape maps have valid spawn-to-base paths", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.width <= config.height) continue;
+        const map = getMap(i);
+        const grid = new Grid(map);
+        for (let s = 0; s < grid.spawns.length; s++) {
+          const path = grid.getPathFor(s);
+          expect(path, `Landscape map ${i}, spawn ${s} should have a valid path`).not.toBeNull();
+          expect(path?.length).toBeGreaterThan(0);
+          const pathTiles = path!;
+          const last = pathTiles[pathTiles.length - 1];
+          expect(last.x).toBe(map.base.x);
+          expect(last.y).toBe(map.base.y);
+        }
+      }
+    });
+
+    it("landscape split has 2 spawns on left edge", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.style !== "split" || config.width <= config.height) continue;
+        const map = getMap(i);
+        expect(map.spawns).toHaveLength(2);
+        for (const spawn of map.spawns) {
+          expect(spawn.x).toBe(1);
+        }
+      }
+    });
+
+    it("landscape serpentine spawn X is in 10-40% of map width", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.style !== "serpentine" || config.width <= config.height) continue;
+        const map = getMap(i);
+        const spawnX = map.spawns[0]!.x;
+        const lowerBound = Math.floor(map.width * 0.1);
+        const upperBound = Math.floor(map.width * 0.4);
+        expect(spawnX).toBeGreaterThanOrEqual(lowerBound);
+        expect(spawnX).toBeLessThanOrEqual(upperBound);
+      }
+    });
+
+    it("landscape styles produce 1 spawn (except split)", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.width <= config.height) continue;
+        const map = getMap(i);
+        if (config.style === "split") {
+          expect(map.spawns).toHaveLength(2);
+        } else {
+          expect(map.spawns, `Landscape ${config.style} should have 1 spawn`).toHaveLength(1);
+        }
       }
     });
   });
