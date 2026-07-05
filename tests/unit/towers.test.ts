@@ -599,16 +599,14 @@ describe("Tower", () => {
       };
     }
 
-    it("returns null when no enemies in range", () => {
+    it("returns null when no enemies provided", () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
-      const enemies = [makeEnemy({ pathIdx: 0, x: 1000, y: 1000, hp: 10 })];
-      expect(tower.selectTarget(enemies)).toBeNull();
+      expect(tower.selectTarget([])).toBeNull();
     });
 
-    it("selects non-removed enemies even if removed flag is set on some", () => {
+    it("selects enemies regardless of removed flag", () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
       const enemies = [makeEnemy({ pathIdx: 0, x: tower.x, y: tower.y, hp: 10 })];
-      // selectTarget filters by range but not by removed flag
       const target = tower.selectTarget(enemies);
       expect(target).not.toBeNull();
     });

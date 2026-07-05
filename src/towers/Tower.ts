@@ -568,44 +568,35 @@ export class Tower {
   selectTarget(
     enemies: { x: number; y: number; pathIdx: number; hp: number; id: number }[],
   ): { x: number; y: number; pathIdx: number; hp: number; id: number } | null {
-    if (!enemies.length) return null;
+    if (enemies.length === 0) return null;
     let target: { x: number; y: number; pathIdx: number; hp: number; id: number } | null = null;
-    const stats = this.stats;
-    const tileSize = this.grid?.tileSize || 36;
-    const r2 = (stats.range * tileSize) ** 2;
-    const inRange = enemies.filter((enemy) => {
-      const deltaX = enemy.x - this.x;
-      const deltaY = enemy.y - this.y;
-      return deltaX * deltaX + deltaY * deltaY <= r2;
-    });
-    if (!inRange.length) return null;
 
     switch (this.targeting) {
       case "first":
-        target = inRange.reduce((prevA, prevB) => (prevA.pathIdx > prevB.pathIdx ? prevA : prevB));
+        target = enemies.reduce((prevA, prevB) => (prevA.pathIdx > prevB.pathIdx ? prevA : prevB));
         break;
       case "last":
-        target = inRange.reduce((prevA, prevB) => (prevA.pathIdx < prevB.pathIdx ? prevA : prevB));
+        target = enemies.reduce((prevA, prevB) => (prevA.pathIdx < prevB.pathIdx ? prevA : prevB));
         break;
       case "closest":
-        target = inRange.reduce((prevA, prevB) => {
+        target = enemies.reduce((prevA, prevB) => {
           const da = (prevA.x - this.x) ** 2 + (prevA.y - this.y) ** 2;
           const db = (prevB.x - this.x) ** 2 + (prevB.y - this.y) ** 2;
           return da < db ? prevA : prevB;
         });
         break;
       case "strong":
-        target = inRange.reduce((prevA, prevB) => (prevA.hp > prevB.hp ? prevA : prevB));
+        target = enemies.reduce((prevA, prevB) => (prevA.hp > prevB.hp ? prevA : prevB));
         break;
       case "furthest":
-        target = inRange.reduce((prevA, prevB) => {
+        target = enemies.reduce((prevA, prevB) => {
           const da = (prevA.x - this.x) ** 2 + (prevA.y - this.y) ** 2;
           const db = (prevB.x - this.x) ** 2 + (prevB.y - this.y) ** 2;
           return da > db ? prevA : prevB;
         });
         break;
       default:
-        target = inRange[0]!;
+        target = enemies[0]!;
     }
     return target;
   }
@@ -654,11 +645,11 @@ export class Tower {
       const tileSize = this.grid?.tileSize || 36;
       const rangePx = stats.range * tileSize;
       let targetEnemy: { x: number; y: number } | null = null;
-      for (const enemy of enemyManager.enemies) {
+      for (const enemy of enemyManager.getEnemiesInRange(this.x, this.y, rangePx)) {
         const edx = enemy.x - this.x;
         const edy = enemy.y - this.y;
         const dist = Math.hypot(edx, edy);
-        if (dist > rangePx || dist === 0) continue;
+        if (dist === 0) continue;
         const dot = (edx / dist) * ddx + (edy / dist) * ddy;
         if (dot > 0.5) {
           if (!targetEnemy || dist < Math.hypot(targetEnemy.x - this.x, targetEnemy.y - this.y)) {
@@ -679,7 +670,10 @@ export class Tower {
       return;
     }
 
-    const target = this.selectTarget(enemyManager.enemies);
+    const tileSize = this.grid?.tileSize || 36;
+    const rangePx = stats.range * tileSize;
+    const inRangeEnemies = enemyManager.getEnemiesInRange(this.x, this.y, rangePx);
+    const target = this.selectTarget(inRangeEnemies);
     if (target) {
       this.angle = Math.atan2(target.y - this.y, target.x - this.x);
       if (this.cooldown <= 0) {
