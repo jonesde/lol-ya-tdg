@@ -322,8 +322,8 @@ export const WAVE_GRAPH_DOT_OPACITY = 0.2;
 export const WAVE_GRAPH_DOT_OPACITY_WAVE_START = 0.8;
 export const WAVE_GRAPH_MAIN_OPACITY = 0.5;
 
-export const WAVE_GRAPH_COLOR_DAMAGE = "#ff4444";
-export const WAVE_GRAPH_COLOR_MAX_ENEMY_HEALTH = "#ffa500";
+export const WAVE_GRAPH_COLOR_DAMAGE = "#5fff8a";
+export const WAVE_GRAPH_COLOR_MAX_ENEMY_HEALTH = "#ff4444";
 export const WAVE_GRAPH_COLOR_GOLD_EARNED = "#ffd700";
 export const WAVE_GRAPH_COLOR_GEMS_EARNED = "#4488ff";
 

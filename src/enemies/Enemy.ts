@@ -318,6 +318,9 @@ export class Enemy {
               }
             }
             this.pathIdx = bestForwardIdx >= 0 ? bestForwardIdx : nearestIdx;
+          } else {
+            this.onPathBlocked = true;
+            this.removed = true;
           }
         }
       }

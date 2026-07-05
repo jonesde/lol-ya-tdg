@@ -139,9 +139,6 @@ export class WaveGraphTracker {
     if (this._dots.length > this._maxDots) {
       this._dots.splice(0, this._dots.length - this._maxDots);
     }
-    console.log("dots after push and splice next:");
-    console.log(this._dots);
-
     this._gameTimeAccum = 0;
     this._intervalDamage = 0;
     this._intervalPeakEnemyHp = 0;

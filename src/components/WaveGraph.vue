@@ -133,8 +133,6 @@ function updatePaths(): void {
   const visibleStart = Math.max(0, dots.length - maxDots);
   const visibleCount = Math.min(maxDots, dots.length);
 
-  console.log(`WaveGraph updatePaths() visibleCount ${visibleCount}`);
-
   if (visibleCount === 0) {
     for (let m = 0; m < 5; m++) {
       paths.value[m] = { d: "", opacity: 0, stroke: getMetricColor(m) };
