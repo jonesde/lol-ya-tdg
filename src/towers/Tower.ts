@@ -705,10 +705,12 @@ export class Tower {
       }
     }
 
+    const tileSize = this.grid?.tileSize || 36;
+    const barrelOffset = tileSize * 0.45;
     if (this.type === "lightning") {
       projectileManager.fireLightning({
-        originX: this.x,
-        originY: this.y,
+        originX: this.x + Math.cos(this.angle) * barrelOffset,
+        originY: this.y + Math.sin(this.angle) * barrelOffset,
         damage: fireDamage,
         towerLevel: this.level,
         targetId: target.id,
@@ -725,11 +727,10 @@ export class Tower {
       if (sound) sound.play(`shoot_${this.type}`);
       return;
     }
-    const tileSize = this.grid?.tileSize || 36;
     projectileManager.spawn({
       towerId: this.id,
-      x: this.x,
-      y: this.y,
+      x: this.x + Math.cos(this.angle) * barrelOffset,
+      y: this.y + Math.sin(this.angle) * barrelOffset,
       damage: fireDamage,
       speed: (this.base.projSpeed || 1) * tileSize,
       range: stats.range,
