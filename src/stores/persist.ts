@@ -199,9 +199,9 @@ export const usePersistStore = defineStore("persist", {
       this.save();
     },
 
-    isFirstTimeMilestone(mapIndex: number, wave: number): boolean {
+    hasClaimedMilestone(mapIndex: number, wave: number): boolean {
       const key = `${mapIndex}_${wave}`;
-      return !this.firstTimeMilestones[key];
+      return !!this.firstTimeMilestones[key];
     },
 
     markFirstClear(mapIndex: number) {
@@ -210,9 +210,9 @@ export const usePersistStore = defineStore("persist", {
       this.save();
     },
 
-    isFirstClear(mapIndex: number): boolean {
+    hasCleared(mapIndex: number): boolean {
       const key = String(mapIndex);
-      return !this.firstClears[key];
+      return !!this.firstClears[key];
     },
   },
 });

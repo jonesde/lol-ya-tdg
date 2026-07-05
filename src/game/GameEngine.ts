@@ -331,8 +331,8 @@ export class GameEngine {
       if (wave >= m && !this.gameStore.hasClaimedMilestone(m)) {
         this.gameStore.claimMilestone(m);
 
-        const isFirstTime =
-          this.gameStore.mapIndex >= 0 && this.persistStore.isFirstTimeMilestone(this.gameStore.mapIndex, m);
+        const hasClaimed =
+          this.gameStore.mapIndex >= 0 && this.persistStore.hasClaimedMilestone(this.gameStore.mapIndex, m);
         const base = MILESTONE_GEMS[m];
         const diffMult = this.persistStore.difficultyMultiplier;
         const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
@@ -342,7 +342,7 @@ export class GameEngine {
         const afterRegion = Math.ceil(afterDiff * mapMult);
         let afterFirstTime = afterRegion;
 
-        if (isFirstTime) {
+        if (!hasClaimed) {
           afterFirstTime = afterRegion * 2;
         }
 
@@ -355,7 +355,7 @@ export class GameEngine {
         this.persistStore.gems += afterFirstTime;
         this.gameStore.runGemsEarned += afterFirstTime;
 
-        if (isFirstTime && this.gameStore.mapIndex >= 0) {
+        if (!hasClaimed && this.gameStore.mapIndex >= 0) {
           this.persistStore.markFirstTimeMilestone(this.gameStore.mapIndex, m);
         }
       }
@@ -430,7 +430,7 @@ export class GameEngine {
     }
 
     if (victory && this.waveManager!.currentWave >= VICTORY_WAVE && gameStore.mapIndex >= 0) {
-      if (this.persistStore.isFirstClear(gameStore.mapIndex)) {
+      if (!this.persistStore.hasCleared(gameStore.mapIndex)) {
         const breakdown = this.gameStore.gemBreakdown;
         const subtotal =
           breakdown.bossKills.afterFirstTime +

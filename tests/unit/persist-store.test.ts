@@ -175,42 +175,42 @@ describe("PersistStore", () => {
   });
 
   describe("first-time milestones", () => {
-    it("returns true before marking (first time)", () => {
-      expect(store.isFirstTimeMilestone(0, 15)).toBe(true);
+    it("returns false before marking (not yet claimed)", () => {
+      expect(store.hasClaimedMilestone(0, 15)).toBe(false);
     });
 
-    it("returns false after marking", () => {
+    it("returns true after marking", () => {
       store.markFirstTimeMilestone(0, 15);
-      expect(store.isFirstTimeMilestone(0, 15)).toBe(false);
+      expect(store.hasClaimedMilestone(0, 15)).toBe(true);
     });
 
     it("tracks different maps independently", () => {
       store.markFirstTimeMilestone(0, 15);
-      expect(store.isFirstTimeMilestone(0, 15)).toBe(false);
-      expect(store.isFirstTimeMilestone(1, 15)).toBe(true);
+      expect(store.hasClaimedMilestone(0, 15)).toBe(true);
+      expect(store.hasClaimedMilestone(1, 15)).toBe(false);
     });
 
     it("tracks different waves independently", () => {
       store.markFirstTimeMilestone(0, 15);
-      expect(store.isFirstTimeMilestone(0, 15)).toBe(false);
-      expect(store.isFirstTimeMilestone(0, 30)).toBe(true);
+      expect(store.hasClaimedMilestone(0, 15)).toBe(true);
+      expect(store.hasClaimedMilestone(0, 30)).toBe(false);
     });
   });
 
   describe("first clears", () => {
-    it("returns true before marking (first clear)", () => {
-      expect(store.isFirstClear(0)).toBe(true);
+    it("returns false before marking (not yet cleared)", () => {
+      expect(store.hasCleared(0)).toBe(false);
     });
 
-    it("returns false after marking", () => {
+    it("returns true after marking", () => {
       store.markFirstClear(0);
-      expect(store.isFirstClear(0)).toBe(false);
+      expect(store.hasCleared(0)).toBe(true);
     });
 
     it("tracks different maps independently", () => {
       store.markFirstClear(0);
-      expect(store.isFirstClear(0)).toBe(false);
-      expect(store.isFirstClear(1)).toBe(true);
+      expect(store.hasCleared(0)).toBe(true);
+      expect(store.hasCleared(1)).toBe(false);
     });
   });
 
