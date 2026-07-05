@@ -1,5 +1,6 @@
 import { computed } from "vue";
 import type { Grid } from "@/grid/Grid.js";
+import { mulberry32 } from "@/grid/Map.js";
 import type { MapThemeData } from "@/render/themes/index.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 
@@ -117,6 +118,7 @@ interface MapInfo {
   spawns: { x: number; y: number }[];
   base: { x: number; y: number };
   regionId?: number;
+  seed: number;
 }
 
 const TILE_SIZE = 36;
@@ -212,7 +214,14 @@ function buildTileSymbols(activeTheme: MapThemeData | null): string {
  * using the theme's tile image via <use>, plus overlays for border, height
  * number, spawn marker, and blocked indicator.
  */
-function getTileSvg(tile: TileInfo, x: number, y: number, isBlocked: boolean, regionId: number): string {
+function getTileSvg(
+  tile: TileInfo,
+  x: number,
+  y: number,
+  isBlocked: boolean,
+  regionId: number,
+  rotation: number,
+): string {
   const size = TILE_SIZE;
   const tileSymbolId =
     tile.type === "path" || tile.type === "spawn"
@@ -221,17 +230,15 @@ function getTileSvg(tile: TileInfo, x: number, y: number, isBlocked: boolean, re
 
   let svg = `<g transform="translate(${x}, ${y})">`;
 
+  if (rotation !== 0) {
+    svg += `<g style="transform-box:fill-box;transform-origin:center" transform="rotate(${rotation})">`;
+  }
+
   // Tile image (from theme, rendered at tile size via <use>)
   svg += `<use href="#${tileSymbolId}" width="${size}" height="${size}" />`;
 
   // Subtle border (overlay)
   svg += `<rect x="0.5" y="0.5" width="${size - 1}" height="${size - 1}" fill="none" stroke="rgba(0,0,0,0.15)" stroke-width="1" />`;
-
-  // Terrain: height number (cross-hatch is in the tile image)
-  if (tile.type === "terrain") {
-    const h = tile.height;
-    svg += `<text x="${size / 2}" y="${size / 2}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="rgba(0,0,0,0.35)">${h}</text>`;
-  }
 
   // Spawn: red center square
   if (tile.type === "spawn") {
@@ -241,6 +248,16 @@ function getTileSvg(tile: TileInfo, x: number, y: number, isBlocked: boolean, re
   // Blocked path tiles: white cross-hatch indicator
   if (isBlocked) {
     svg += `<path d="M6,6 L30,30 M30,6 L6,30" stroke="rgba(255,255,255,0.2)" stroke-width="1" />`;
+  }
+
+  if (rotation !== 0) {
+    svg += `</g>`;
+  }
+
+  // Terrain: height number (rendered outside rotation so it stays upright)
+  if (tile.type === "terrain") {
+    const h = tile.height;
+    svg += `<text x="${size / 2}" y="${size / 2}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="rgba(0,0,0,0.35)">${h}</text>`;
   }
 
   svg += `</g>`;
@@ -318,11 +335,13 @@ export function useSvgStaticContent(
     svg += `<rect x="0" y="0" width="${map.width * TILE_SIZE}" height="${map.height * TILE_SIZE}" fill="#0a0d12" />`;
 
     // Tiles — iterate 2D array, check blocked status from Grid.blocked Set
+    const tileRng = mulberry32(map.seed);
     for (let ty = 0; ty < map.height; ty++) {
       for (let tx = 0; tx < map.width; tx++) {
         const tile = map.tiles[ty]![tx] as TileInfo;
         const isBlocked = grid?.blocked.has(`${tx},${ty}`) ?? false;
-        svg += getTileSvg(tile, tx * TILE_SIZE, ty * TILE_SIZE, isBlocked, regionId);
+        const rotation = Math.floor(tileRng() * 4) * 90;
+        svg += getTileSvg(tile, tx * TILE_SIZE, ty * TILE_SIZE, isBlocked, regionId, rotation);
       }
     }
 

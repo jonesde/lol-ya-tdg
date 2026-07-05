@@ -33,6 +33,7 @@ export class Grid {
   paths: (Point[] | null)[] = [];
   regionId: number = 0;
   private _blockCount: number = 0;
+  private _cachedPathTiles: Set<string> | null = null;
 
   constructor(map: MapData) {
     this.width = map.width;
@@ -89,6 +90,7 @@ export class Grid {
   }
 
   buildCachedPathTiles(): Set<string> {
+    if (this._cachedPathTiles !== null) return this._cachedPathTiles;
     const pathTiles = new Set<string>();
     for (const path of this.paths) {
       if (path) {
@@ -97,6 +99,7 @@ export class Grid {
         }
       }
     }
+    this._cachedPathTiles = pathTiles;
     return pathTiles;
   }
 
@@ -142,10 +145,12 @@ export class Grid {
         this.paths[i] = bfsShortestPath(this, this.spawns[i]!, this.base, this.blocked);
       }
     }
+    this._cachedPathTiles = null;
   }
 
   recomputePaths() {
     this.paths = [];
+    this._cachedPathTiles = null;
     for (const spawn of this.spawns) {
       const path = bfsShortestPath(this, spawn, this.base, this.blocked);
       this.paths.push(path);
