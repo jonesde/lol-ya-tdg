@@ -311,3 +311,23 @@ export const MILESTONE_BONUS_PCT = [
 
 // total damage threshold for each milestone tier (1M, 2M, 3M...)
 export const MILESTONE_THRESHOLD = 1000000;
+
+// ===== Wave Graph =====
+
+// Wave Graph — real-time metric chart overlay
+export const WAVE_GRAPH_INTERVAL_SECONDS = 5;
+export const WAVE_GRAPH_HEIGHT = 40;
+export const WAVE_GRAPH_DOT_SIZE = 2;
+export const WAVE_GRAPH_DOT_OPACITY = 0.2;
+export const WAVE_GRAPH_DOT_OPACITY_WAVE_START = 0.8;
+export const WAVE_GRAPH_MAIN_OPACITY = 0.5;
+
+export const WAVE_GRAPH_COLOR_DAMAGE = "#ff4444";
+export const WAVE_GRAPH_COLOR_MAX_ENEMY_HEALTH = "#ffa500";
+export const WAVE_GRAPH_COLOR_GOLD_EARNED = "#ffd700";
+export const WAVE_GRAPH_COLOR_GEMS_EARNED = "#4488ff";
+
+// Base health dynamic colors
+export const WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN = "#5fff8a";
+export const WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW = "#ffd84d";
+export const WAVE_GRAPH_COLOR_BASE_HEALTH_RED = "#ff4444";

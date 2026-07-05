@@ -15,6 +15,7 @@ import StatsPanel from "./StatsPanel.vue";
 import SvgGameRoot from "./SvgGameRoot.vue";
 import TowerPanel from "./TowerPanel.vue";
 import WaveCountdown from "./WaveCountdown.vue";
+import WaveGraph from "./WaveGraph.vue";
 
 const router = useRouter();
 const gameStore = useGameStore();
@@ -81,6 +82,7 @@ onUnmounted(() => {
     <GameShop />
     <TowerPanel />
     <DebugPanel />
+    <WaveGraph />
 
     <!-- Wave countdown overlay -->
     <WaveCountdown v-if="gameStore.waveCountdown" />

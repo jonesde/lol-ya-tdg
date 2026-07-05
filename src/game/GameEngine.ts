@@ -3,6 +3,7 @@ import { resetEnemyId } from "@/enemies/Enemy.js";
 import { EnemyManager } from "@/enemies/EnemyManager.js";
 import { ParticleSystem } from "@/game/ParticleSystem.js";
 import { ProjectileManager } from "@/game/ProjectileManager.js";
+import { WaveGraphTracker } from "@/game/WaveGraphTracker.js";
 import { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
 import { generateRandomMap, getMap } from "@/grid/Map.js";
@@ -67,6 +68,7 @@ export class GameEngine {
   waveManager: WaveManagerRef | null;
   projectileManager: ProjectileManager | null;
   particleManager: ParticleSystem | null;
+  waveGraphTracker: WaveGraphTracker | null = null;
   _rafId: number | null;
   lastTime: number;
   _accumulator: number;
@@ -152,6 +154,13 @@ export class GameEngine {
     this.waveManager = new WaveManager(mapData, this.enemyManager);
 
     this.gameStore.setManagers(this.towerManager, this.enemyManager, this.projectileManager, this.particleManager);
+
+    this.waveGraphTracker = new WaveGraphTracker(
+      this.gameStore,
+      this.persistStore,
+      this.towerManager!,
+      this.enemyManager!,
+    );
 
     this._applyStartingBonuses();
 
@@ -270,6 +279,7 @@ export class GameEngine {
         this.onEnemyKill(enemy);
       } else if (enemy.onPathBlocked) {
         const bounty = Math.ceil((ENEMY_TYPES[enemy.type]?.bounty || 1) * BOUNTY_BLOCKED_RATIO);
+        this.waveGraphTracker?.onGoldBounty(bounty);
         this.earnGold(bounty);
       } else {
         this.onEnemyKill(enemy);
@@ -277,6 +287,8 @@ export class GameEngine {
     });
 
     this.towerManager.update(dt, this.enemyManager);
+
+    this.waveGraphTracker?.update(dt);
 
     if (this.shouldEndGame) {
       this.endGame(false);
@@ -340,6 +352,7 @@ export class GameEngine {
 
   onWaveStart(wave: number): void {
     this.gameStore.setWave(wave);
+    this.waveGraphTracker?.onWaveStart(wave);
 
     const towers = this.towerManager!.towers;
     const sorted = towers
@@ -376,6 +389,7 @@ export class GameEngine {
 
   onEnemyKill(enemy: Enemy): void {
     const bounty = ENEMY_TYPES[enemy.type]?.bounty || 1;
+    this.waveGraphTracker?.onGoldBounty(bounty);
     this.earnGold(bounty);
   }
 
@@ -672,6 +686,7 @@ export class GameEngine {
   dispose(): void {
     this.stop();
     this.sound.dispose();
+    this.waveGraphTracker?.dispose();
     if (currentEngine === this) {
       currentEngine = null;
     }

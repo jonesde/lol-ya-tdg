@@ -1,0 +1,175 @@
+import type { GameStore } from "@/stores/game.js";
+import type { PersistStore } from "@/stores/persist.js";
+import {
+  WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN,
+  WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
+  WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW,
+  WAVE_GRAPH_DOT_SIZE,
+  WAVE_GRAPH_HEIGHT,
+  WAVE_GRAPH_INTERVAL_SECONDS,
+} from "./Constants.js";
+
+export interface WaveGraphDot {
+  damage: number;
+  peakEnemyHp: number;
+  gold: number;
+  gems: number;
+  baseHealth: number;
+  baseHealthColor: string;
+  waveStart: boolean;
+}
+
+interface TowerManagerRef {
+  towers: { totalDamageDealt: number }[];
+}
+
+interface EnemyManagerRef {
+  enemies: { hp: number }[];
+}
+
+export class WaveGraphTracker {
+  private gameStore: GameStore;
+  private persistStore: PersistStore;
+  private towerManager: TowerManagerRef;
+  private enemyManager: EnemyManagerRef;
+
+  private _gameTimeAccum: number = 0;
+  private _dots: WaveGraphDot[] = [];
+  private _containerWidth: number = 0;
+  private _maxDots: number = 0;
+  private _prevTotalDamage: number = 0;
+  private _prevGems: number = 0;
+  private _intervalDamage: number = 0;
+  private _intervalPeakEnemyHp: number = 0;
+  private _intervalGold: number = 0;
+  private _intervalGems: number = 0;
+  private _intervalMinLives: number = 0;
+  private _waveStartThisInterval: boolean = false;
+  private _lastKnownWave: number = 0;
+
+  constructor(
+    gameStore: GameStore,
+    persistStore: PersistStore,
+    towerManager: TowerManagerRef,
+    enemyManager: EnemyManagerRef,
+  ) {
+    this.gameStore = gameStore;
+    this.persistStore = persistStore;
+    this.towerManager = towerManager;
+    this.enemyManager = enemyManager;
+
+    this._containerWidth = WAVE_GRAPH_HEIGHT;
+    this._maxDots = Math.ceil(this._containerWidth / WAVE_GRAPH_DOT_SIZE);
+    this._prevTotalDamage = this._sumTotalDamage();
+    this._prevGems = persistStore.gems;
+    this._intervalMinLives = gameStore.lives;
+  }
+
+  update(dt: number): void {
+    this._gameTimeAccum += dt;
+
+    const currentDamage = this._sumTotalDamage();
+    const damageDelta = Math.max(0, currentDamage - this._prevTotalDamage);
+    this._intervalDamage += damageDelta;
+    this._prevTotalDamage = currentDamage;
+
+    const currentHpSum = this._sumEnemyHp();
+    if (currentHpSum > this._intervalPeakEnemyHp) {
+      this._intervalPeakEnemyHp = currentHpSum;
+    }
+
+    const currentGems = this.persistStore.gems;
+    const gemDelta = currentGems - this._prevGems;
+    if (gemDelta > 0) {
+      this._intervalGems += gemDelta;
+    }
+    this._prevGems = currentGems;
+
+    if (this.gameStore.lives < this._intervalMinLives) {
+      this._intervalMinLives = this.gameStore.lives;
+    }
+
+    if (this._gameTimeAccum >= WAVE_GRAPH_INTERVAL_SECONDS) {
+      this._flushInterval();
+    }
+  }
+
+  onGoldBounty(amount: number): void {
+    this._intervalGold += amount;
+  }
+
+  onWaveStart(wave: number): void {
+    if (wave !== this._lastKnownWave) {
+      this._waveStartThisInterval = true;
+      this._lastKnownWave = wave;
+    }
+  }
+
+  setContainerWidth(width: number): void {
+    this._containerWidth = width;
+    const newMaxDots = Math.ceil(width / WAVE_GRAPH_DOT_SIZE);
+    if (newMaxDots < this._maxDots) {
+      this._dots.splice(0, this._dots.length - newMaxDots);
+    }
+    this._maxDots = newMaxDots;
+  }
+
+  getDots(): WaveGraphDot[] {
+    return this._dots;
+  }
+
+  dispose(): void {
+    this._dots = [];
+  }
+
+  private _flushInterval(): void {
+    const baseHealthColor = this._computeBaseHealthColor(this._intervalMinLives);
+
+    const dot: WaveGraphDot = {
+      damage: Math.round(this._intervalDamage),
+      peakEnemyHp: Math.round(this._intervalPeakEnemyHp),
+      gold: Math.round(this._intervalGold),
+      gems: Math.round(this._intervalGems),
+      baseHealth: this._intervalMinLives,
+      baseHealthColor,
+      waveStart: this._waveStartThisInterval,
+    };
+
+    this._dots.push(dot);
+    if (this._dots.length > this._maxDots) {
+      this._dots.splice(0, this._dots.length - this._maxDots);
+    }
+    console.log("dots after push and splice next:");
+    console.log(this._dots);
+
+    this._gameTimeAccum = 0;
+    this._intervalDamage = 0;
+    this._intervalPeakEnemyHp = 0;
+    this._intervalGold = 0;
+    this._intervalGems = 0;
+    this._intervalMinLives = this.gameStore.lives;
+    this._waveStartThisInterval = false;
+  }
+
+  private _computeBaseHealthColor(lives: number): string {
+    if (lives >= 11) return WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN;
+    if (lives >= 6) return WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW;
+    return WAVE_GRAPH_COLOR_BASE_HEALTH_RED;
+  }
+
+  private _sumTotalDamage(): number {
+    let total = 0;
+    for (const tower of this.towerManager.towers) {
+      total += tower.totalDamageDealt;
+    }
+    return total;
+  }
+
+  private _sumEnemyHp(): number {
+    let total = 0;
+    for (const enemy of this.enemyManager.enemies) {
+      total += enemy.hp;
+    }
+    return total;
+  }
+}
