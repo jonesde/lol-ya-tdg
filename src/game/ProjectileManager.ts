@@ -632,7 +632,8 @@ export class ProjectileManager {
         opts.targetId,
       );
       if (secondTarget) {
-        const secondDamage = finalDamage * 0.5;
+        const secondIsCrit = critChance > 0 && Math.random() < critChance;
+        const secondDamage = finalDamage * 0.5 * (secondIsCrit ? 2 : 1);
         secondTarget.takeDamage(secondDamage);
         if (opts.towerId) {
           const tower = this.towerLookup?.(opts.towerId);
@@ -640,6 +641,10 @@ export class ProjectileManager {
             tower.totalDamageDealt += secondDamage;
             tower.waveDamage += secondDamage;
           }
+        }
+        // Gold Rush: grant gold on critical hit for second bolt
+        if (secondIsCrit && (opts.goldOnCrit ?? 0) > 0 && this.onGoldReward) {
+          this.onGoldReward(opts.goldOnCrit ?? 0);
         }
         if (opts.stunDuration > 0 && secondTarget.applyStun) {
           secondTarget.applyStun(opts.stunDuration);
