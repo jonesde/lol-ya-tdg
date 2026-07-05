@@ -83,6 +83,11 @@ const buildPreviewValid = computed(() => {
   return gameStore.grid.canBuild(pos.tileX, pos.tileY) && gameStore.gold >= cost;
 });
 
+const buildPreviewColor = computed(() => {
+  if (!gameStore.selectedTowerType) return null;
+  return themeStore.getTowerVisual(gameStore.selectedTowerType)?.color ?? null;
+});
+
 const engine = ref<GameEngine | null>(null);
 
 const viewSize = ref({ w: 800, h: 600 });
@@ -275,6 +280,7 @@ onMounted(async () => {
       effectManager.syncFromGameEngine(
         buildPreviewTilePos.value,
         gameStore.selectedTowerType || null,
+        buildPreviewColor.value,
         gameStore.selectedTower,
         buildPreviewValid.value,
         dt,

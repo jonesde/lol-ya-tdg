@@ -1,5 +1,5 @@
 import { TOWER_BASE, TOWER_LEVEL_RANGE_MULT } from "@/game/ConstantsTower.js";
-import { LIGHTNING_POOL_SIZE, STUN_POOL_SIZE, SVG_NS } from "./types.js";
+import { GRID_TILE_SIZE, LIGHTNING_POOL_SIZE, STUN_POOL_SIZE, SVG_NS } from "./types.js";
 
 interface LightningEffect {
   id: string;
@@ -39,6 +39,7 @@ export class EffectManager {
   private lightningPool: SVGPolylineElement[] = [];
   private stunPool: SVGGElement[] = [];
   private buildPreviewEl: SVGRectElement | null = null;
+  private buildPreviewSpriteEl: SVGUseElement | null = null;
   private rangeCircleEl: SVGCircleElement | null = null;
   private buildRangeCircleEl: SVGCircleElement | null = null;
   private upgradeButtonEl: SVGGElement | null = null;
@@ -51,6 +52,11 @@ export class EffectManager {
 
   private nextLightningId: number = 0;
   private nextStunId: number = 0;
+
+  private buildPreviewSpriteLastId = "";
+  private buildPreviewSpriteLastTransform = "";
+  private buildPreviewSpriteLastSize = "";
+  private buildPreviewSpriteLastColor = "";
 
   init(layer: SVGGElement): void {
     for (let i = 0; i < LIGHTNING_POOL_SIZE; i++) {
@@ -79,6 +85,11 @@ export class EffectManager {
     this.buildPreviewEl.setAttribute("stroke", "none");
     this.buildPreviewEl.style.visibility = "hidden";
     layer.appendChild(this.buildPreviewEl);
+
+    this.buildPreviewSpriteEl = document.createElementNS(SVG_NS, "use");
+    this.buildPreviewSpriteEl.style.visibility = "hidden";
+    this.buildPreviewSpriteEl.style.opacity = "0.6";
+    layer.appendChild(this.buildPreviewSpriteEl);
 
     this.rangeCircleEl = document.createElementNS(SVG_NS, "circle");
     this.rangeCircleEl.setAttribute("fill", "none");
@@ -153,13 +164,14 @@ export class EffectManager {
   syncFromGameEngine(
     buildTilePos: { tileX: number; tileY: number } | null,
     selectedTowerType: string | null,
+    buildPreviewColor: string | null,
     selectedTower: { x: number; y: number; type: string; level: number } | null,
     buildValid: boolean,
     dt: number,
   ): void {
     this.syncLightning(dt);
     this.syncStun(dt);
-    this.syncBuildPreview(buildTilePos, selectedTowerType, buildValid);
+    this.syncBuildPreview(buildTilePos, selectedTowerType, buildPreviewColor, buildValid);
     this.syncUpgradeButton(selectedTower);
   }
 
@@ -314,6 +326,7 @@ export class EffectManager {
   private syncBuildPreview(
     buildTilePos: { tileX: number; tileY: number } | null,
     selectedTowerType: string | null,
+    buildPreviewColor: string | null,
     buildValid: boolean,
   ): void {
     if (selectedTowerType && buildTilePos) {
@@ -330,6 +343,40 @@ export class EffectManager {
         this.buildPreviewEl.setAttribute("fill", buildValid ? "rgba(0,255,0,0.3)" : "rgba(255,0,0,0.3)");
       }
 
+      if (this.buildPreviewSpriteEl) {
+        this.buildPreviewSpriteEl.style.visibility = "visible";
+        const spriteId = `tower-${selectedTowerType}-f0`;
+        if (spriteId !== this.buildPreviewSpriteLastId) {
+          this.buildPreviewSpriteEl.setAttribute("href", `#${spriteId}`);
+          this.buildPreviewSpriteLastId = spriteId;
+        }
+        const previewSize = GRID_TILE_SIZE * 0.56;
+        const halfPreview = previewSize / 2;
+        const spriteTransform = `translate(${centerX - halfPreview}, ${centerY - halfPreview})`;
+        if (spriteTransform !== this.buildPreviewSpriteLastTransform) {
+          this.buildPreviewSpriteEl.setAttribute("transform", spriteTransform);
+          this.buildPreviewSpriteLastTransform = spriteTransform;
+        }
+        const sizeStr = String(previewSize);
+        if (sizeStr !== this.buildPreviewSpriteLastSize) {
+          this.buildPreviewSpriteEl.setAttribute("width", sizeStr);
+          this.buildPreviewSpriteEl.setAttribute("height", sizeStr);
+          this.buildPreviewSpriteLastSize = sizeStr;
+        }
+        if (buildValid) {
+          if (buildPreviewColor && buildPreviewColor !== this.buildPreviewSpriteLastColor) {
+            this.buildPreviewSpriteEl.style.color = buildPreviewColor;
+            this.buildPreviewSpriteLastColor = buildPreviewColor;
+          }
+        } else {
+          const redColor = "rgba(255,0,0,0.8)";
+          if (redColor !== this.buildPreviewSpriteLastColor) {
+            this.buildPreviewSpriteEl.style.color = redColor;
+            this.buildPreviewSpriteLastColor = redColor;
+          }
+        }
+      }
+
       if (this.buildRangeCircleEl) {
         this.buildRangeCircleEl.style.visibility = "visible";
         this.buildRangeCircleEl.setAttribute("transform", `translate(${centerX}, ${centerY})`);
@@ -343,6 +390,9 @@ export class EffectManager {
     } else {
       if (this.buildPreviewEl) {
         this.buildPreviewEl.style.visibility = "hidden";
+      }
+      if (this.buildPreviewSpriteEl) {
+        this.buildPreviewSpriteEl.style.visibility = "hidden";
       }
       if (this.buildRangeCircleEl) {
         this.buildRangeCircleEl.style.visibility = "hidden";
@@ -427,6 +477,9 @@ export class EffectManager {
     }
     if (this.buildPreviewEl?.parentNode) {
       this.buildPreviewEl.parentNode.removeChild(this.buildPreviewEl);
+    }
+    if (this.buildPreviewSpriteEl?.parentNode) {
+      this.buildPreviewSpriteEl.parentNode.removeChild(this.buildPreviewSpriteEl);
     }
     if (this.rangeCircleEl?.parentNode) {
       this.rangeCircleEl.parentNode.removeChild(this.rangeCircleEl);

@@ -51,7 +51,7 @@ describe("EffectManager", () => {
   describe("lightning effects", () => {
     it("renders a single lightning effect at the given coordinates", () => {
       manager.addLightningEffect(10, 20, 100, 200);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("visible");
@@ -65,7 +65,7 @@ describe("EffectManager", () => {
 
     it("hides unused lightning pool slots when fewer effects are active", () => {
       manager.addLightningEffect(0, 0, 10, 10);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("visible");
@@ -78,7 +78,7 @@ describe("EffectManager", () => {
       manager.addLightningEffect(0, 0, 10, 10);
       manager.addLightningEffect(50, 50, 60, 60);
       manager.addLightningEffect(100, 100, 110, 110);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("visible");
@@ -93,12 +93,12 @@ describe("EffectManager", () => {
 
     it("hides effect after its life expires", () => {
       manager.addLightningEffect(0, 0, 10, 10);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("visible");
 
       for (let frame = 0; frame < 45; frame++) {
-        manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+        manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       }
 
       expect(polylines[0]!.style.visibility).toBe("hidden");
@@ -108,7 +108,7 @@ describe("EffectManager", () => {
       for (let i = 0; i < LIGHTNING_POOL_SIZE + 5; i++) {
         manager.addLightningEffect(i * 10, 0, i * 10 + 5, 0);
       }
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(visibleCount(polylines)).toBe(LIGHTNING_POOL_SIZE);
@@ -121,13 +121,13 @@ describe("EffectManager", () => {
     it("clears expired effects and reuses slots for new effects", () => {
       manager.addLightningEffect(1, 0, 2, 0);
       for (let frame = 0; frame < 45; frame++) {
-        manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+        manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       }
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("hidden");
 
       manager.addLightningEffect(99, 0, 100, 0);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       expect(polylines[0]!.style.visibility).toBe("visible");
       expect(polylines[0]!.getAttribute("points")?.split(" ")[0]).toBe("99.0,0.0");
     });
@@ -136,7 +136,7 @@ describe("EffectManager", () => {
   describe("stun effects", () => {
     it("renders a single stun effect at the given coordinates", () => {
       manager.addStunEffect(40, 50);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.style.visibility).toBe("visible");
@@ -147,7 +147,7 @@ describe("EffectManager", () => {
 
     it("initializes star circles lazily inside the stun group", () => {
       manager.addStunEffect(10, 10);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       const stars = groups[0]!.querySelectorAll("circle");
@@ -156,7 +156,7 @@ describe("EffectManager", () => {
 
     it("hides unused stun pool slots", () => {
       manager.addStunEffect(10, 10);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.style.visibility).toBe("visible");
@@ -169,7 +169,7 @@ describe("EffectManager", () => {
       manager.addStunEffect(10, 10);
       manager.addStunEffect(20, 20);
       manager.addStunEffect(30, 30);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.style.visibility).toBe("visible");
@@ -183,12 +183,12 @@ describe("EffectManager", () => {
 
     it("hides stun effect after its life expires", () => {
       manager.addStunEffect(10, 10);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.style.visibility).toBe("visible");
 
       for (let frame = 0; frame < 35; frame++) {
-        manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+        manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       }
 
       expect(groups[0]!.style.visibility).toBe("hidden");
@@ -198,7 +198,7 @@ describe("EffectManager", () => {
       for (let i = 0; i < STUN_POOL_SIZE + 5; i++) {
         manager.addStunEffect(i, i);
       }
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(visibleCount(groups)).toBe(STUN_POOL_SIZE);
@@ -211,7 +211,7 @@ describe("EffectManager", () => {
       manager.addStunEffect(20, 20);
       manager.addLightningEffect(30, 30, 40, 40);
       manager.addStunEffect(50, 50);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
@@ -237,7 +237,7 @@ describe("EffectManager", () => {
       manager.addStunEffect(20, 20);
       manager.dispose();
       manager.init(layer);
-      manager.syncFromGameEngine(null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
