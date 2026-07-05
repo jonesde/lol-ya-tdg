@@ -582,13 +582,14 @@ export class GameEngine {
     const themeStore = useMapThemeStore();
     const towerVisual = themeStore.getDefaultTowerVisual(tower.type);
     const towerName = towerVisual?.name || tower.type;
-    const val = tower.sellValue();
+    const isRefund = this.persistStore.generalAddons.sellActive === "refund";
+    const val = isRefund ? tower.totalInvested : tower.sellValue();
 
     const uiStore = useUiStore();
     uiStore.showConfirm({
-      title: "Sell Tower",
-      message: `Sell ${towerName} (Lv ${tower.level}) for ${val}g?`,
-      confirmLabel: "Sell",
+      title: isRefund ? "Full Refund" : "Sell Tower",
+      message: `${isRefund ? "Refund" : "Sell"} ${towerName} (Lv ${tower.level}) for ${val}g?`,
+      confirmLabel: isRefund ? "Refund" : "Sell",
       cancelLabel: "Keep",
       onConfirm: () => this.executeSell(),
     });
@@ -596,13 +597,14 @@ export class GameEngine {
 
   executeSell(): void {
     const gameStore = this.gameStore;
-    if (!gameStore.selectedTower) return;
+    const tower = gameStore.selectedTower;
+    if (tower === null) return;
 
-    const val = this.towerManager!.sell(gameStore.selectedTower, this.persistStore.$state);
-    if (val !== undefined) {
-      gameStore.setGold(gameStore.gold + val);
-      this.totalGoldEarned += val;
-    }
+    this.towerManager!.sell(tower, this.persistStore.$state);
+    const val =
+      this.persistStore.$state.generalAddons?.sellActive === "refund" ? tower.totalInvested : tower.sellValue();
+    gameStore.setGold(gameStore.gold + val);
+    this.totalGoldEarned += val;
     gameStore.selectTower(null);
   }
 

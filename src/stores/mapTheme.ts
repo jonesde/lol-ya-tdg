@@ -32,6 +32,10 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
       const resolvedThemeId: MapThemeId =
         savedThemeId && savedThemeId !== DEFAULT_THEME_ID ? (savedThemeId as MapThemeId) : DEFAULT_THEME_ID;
       activeThemeId.value = resolvedThemeId;
+
+      if (resolvedThemeId !== DEFAULT_THEME_ID) {
+        await loadActive(resolvedThemeId);
+      }
     } catch (err) {
       error.value = err instanceof Error ? err.message : "Failed to preload default theme";
       throw err;
