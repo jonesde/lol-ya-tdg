@@ -44,8 +44,6 @@ export class EnemyManager {
   }
 
   update(dt: number, onEnemyKill: ((enemy: Enemy) => void) | null): void {
-    const enemies = this.enemies.slice();
-    for (const enemy of enemies) enemy.update(dt, this);
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       if (!enemy) continue;
@@ -53,7 +51,9 @@ export class EnemyManager {
         this.particles.spawn(enemy.x, enemy.y, enemy.color, 12, { speed: 80, life: 0.5 });
         if (onEnemyKill) onEnemyKill(enemy);
         this.enemies.splice(i, 1);
+        continue;
       }
+      enemy.update(dt, this);
     }
     this.rebuildSpatialHash();
   }

@@ -334,15 +334,16 @@ export class ProjectileManager {
   }
 
   update(dt: number): void {
-    const activeProjectiles = this.projectiles.slice();
-
-    for (const projectile of activeProjectiles) {
-      if (!projectile.active) continue;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const projectile = this.projectiles[i];
+      if (!projectile) continue;
+      if (!projectile.active) {
+        this.projectiles.splice(i, 1);
+        continue;
+      }
       projectile.age += dt;
       this.updateCircleProjectile(projectile, dt);
     }
-
-    this.projectiles = this.projectiles.filter((p) => p.active);
   }
 
   private updateCircleProjectile(projectile: ProjectileGame, dt: number): void {
