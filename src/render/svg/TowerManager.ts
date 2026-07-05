@@ -5,14 +5,8 @@ export class TowerManager {
   private layer: SVGGElement | null = null;
   private towerMap: Map<string, TowerRenderProxy> = new Map();
   private pipMap: Map<string, SVGCircleElement[]> = new Map();
-  private timeOffset: number = 0;
-
   init(layer: SVGGElement): void {
     this.layer = layer;
-  }
-
-  setTimeOffset(offset: number): void {
-    this.timeOffset = offset;
   }
 
   syncFromGameEngine(towers: Tower[], dt: number): void {
@@ -32,7 +26,7 @@ export class TowerManager {
       }
 
       const proxy = this.towerMap.get(towerId) as TowerRenderProxy;
-      proxy.sync(tower, dt, this.timeOffset);
+      proxy.sync(tower, dt);
 
       const pipCount = Math.max(0, tower.level - 1);
       let pips = this.pipMap.get(towerId);
@@ -133,7 +127,7 @@ class TowerRenderProxy {
     return this.el;
   }
 
-  sync(tower: Tower, dt: number, _timeOffset: number): void {
+  sync(tower: Tower, dt: number): void {
     this.el.style.visibility = "visible";
     this.el.style.color = tower.color;
 

@@ -3,8 +3,6 @@ import { ENEMY_POOL_SIZE, SVG_NS } from "./types.js";
 
 export class EnemyManager {
   private pool: EnemyRenderProxy[] = [];
-  private timeOffset: number = 0;
-
   init(layer: SVGGElement): void {
     for (let i = 0; i < ENEMY_POOL_SIZE; i++) {
       const el = document.createElementNS(SVG_NS, "use") as SVGUseElement;
@@ -16,10 +14,6 @@ export class EnemyManager {
     }
   }
 
-  setTimeOffset(offset: number): void {
-    this.timeOffset = offset;
-  }
-
   syncFromGameEngine(enemies: Enemy[], dt: number): void {
     let proxyIndex = 0;
 
@@ -27,7 +21,7 @@ export class EnemyManager {
       if (proxyIndex >= this.pool.length) break;
 
       const proxy = this.pool[proxyIndex]!;
-      proxy.sync(enemy, dt, this.timeOffset);
+      proxy.sync(enemy, dt);
       proxyIndex++;
     }
 
@@ -80,7 +74,7 @@ class EnemyRenderProxy {
     return elapsed < (hitReaction as { duration: number }).duration;
   }
 
-  sync(enemy: Enemy, dt: number, _timeOffset: number): void {
+  sync(enemy: Enemy, dt: number): void {
     if (!this.active) {
       this.walkingScaledElapsed = 0;
       this.lastSpriteId = "";

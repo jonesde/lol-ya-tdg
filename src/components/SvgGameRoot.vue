@@ -176,12 +176,6 @@ onMounted(async () => {
   particleManager.init(ef);
   effectManager.init(ef);
 
-  const wallClockStart = performance.now();
-  const scaledStart = engine.value._accumulator;
-  const timeOffset = wallClockStart / 1000 - scaledStart;
-  enemyManager.setTimeOffset(timeOffset);
-  towerManager.setTimeOffset(timeOffset);
-
   const map = gameStore.map;
   if (map) {
     const mapWidth = map.width;
