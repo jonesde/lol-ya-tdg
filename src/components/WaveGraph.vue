@@ -8,6 +8,7 @@ import {
   WAVE_GRAPH_DOT_OPACITY,
   WAVE_GRAPH_DOT_OPACITY_WAVE_START,
   WAVE_GRAPH_DOT_SIZE,
+  WAVE_GRAPH_DOT_SPACING,
   WAVE_GRAPH_HEIGHT,
 } from "@/game/Constants.js";
 import { getGameEngine } from "@/game/GameEngine.js";
@@ -107,7 +108,7 @@ function buildPathD(dots: WaveGraphDot[], metricIndex: number, maxVal: number): 
   for (let i = 0; i < dots.length; i++) {
     const dot = dots[i];
     if (!dot) continue;
-    const x = i * WAVE_GRAPH_DOT_SIZE + WAVE_GRAPH_DOT_SIZE / 2;
+    const x = i * WAVE_GRAPH_DOT_SPACING;
     const value = getMetricValue(dot, metricIndex);
     let y: number;
     if (value <= 0 || maxVal <= 0) {
@@ -127,7 +128,7 @@ function updatePaths(): void {
   if (!tracker) return;
 
   const dots = tracker.getDots();
-  const maxDots = Math.ceil(containerWidth.value / WAVE_GRAPH_DOT_SIZE);
+  const maxDots = Math.ceil(containerWidth.value / WAVE_GRAPH_DOT_SPACING);
   if (maxDots <= 0) return;
 
   const visibleStart = Math.max(0, dots.length - maxDots);
@@ -174,14 +175,14 @@ function onMouseMove(event: MouseEvent): void {
 
   const rect = overlayRef.value.getBoundingClientRect();
   const relativeX = event.clientX - rect.left;
-  const dotIndex = Math.floor(relativeX / WAVE_GRAPH_DOT_SIZE);
+  const dotIndex = Math.floor(relativeX / WAVE_GRAPH_DOT_SPACING);
 
   const engineRef = getGameEngine();
   const tracker = engineRef?.waveGraphTracker;
   if (!tracker) return;
 
   const dots = tracker.getDots();
-  const maxDots = Math.ceil(containerWidth.value / WAVE_GRAPH_DOT_SIZE);
+  const maxDots = Math.ceil(containerWidth.value / WAVE_GRAPH_DOT_SPACING);
   const visibleStart = Math.max(0, dots.length - maxDots);
   const actualIndex = dotIndex + visibleStart;
 
@@ -312,7 +313,6 @@ onUnmounted(() => {
   bottom: 64px;
   left: 0;
   right: 0;
-  height: 40px;
   z-index: 5;
   pointer-events: all;
 }

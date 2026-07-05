@@ -4,7 +4,7 @@ import {
   WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN,
   WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
   WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW,
-  WAVE_GRAPH_DOT_SIZE,
+  WAVE_GRAPH_DOT_SPACING,
   WAVE_GRAPH_HEIGHT,
   WAVE_GRAPH_INTERVAL_SECONDS,
 } from "./Constants.js";
@@ -59,7 +59,7 @@ export class WaveGraphTracker {
     this.enemyManager = enemyManager;
 
     this._containerWidth = WAVE_GRAPH_HEIGHT;
-    this._maxDots = Math.ceil(this._containerWidth / WAVE_GRAPH_DOT_SIZE);
+    this._maxDots = Math.ceil(this._containerWidth / WAVE_GRAPH_DOT_SPACING);
     this._prevTotalDamage = this._sumTotalDamage();
     this._prevGems = persistStore.gems;
     this._intervalMinLives = gameStore.lives;
@@ -107,7 +107,7 @@ export class WaveGraphTracker {
 
   setContainerWidth(width: number): void {
     this._containerWidth = width;
-    const newMaxDots = Math.ceil(width / WAVE_GRAPH_DOT_SIZE);
+    const newMaxDots = Math.ceil(width / WAVE_GRAPH_DOT_SPACING);
     if (newMaxDots < this._maxDots) {
       this._dots.splice(0, this._dots.length - newMaxDots);
     }
