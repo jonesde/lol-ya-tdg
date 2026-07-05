@@ -16,7 +16,6 @@ import {
   RAILGUN_KNOCKBACK_MULT,
   RAILGUN_KNOCKBASE,
   SPLASH_DAMAGE_RATIO,
-  TOWER_BASE,
 } from "./ConstantsTower.js";
 
 export interface ProjectileGame {
@@ -185,6 +184,7 @@ export class ProjectileManager {
     markTarget?: number;
     antiHeal?: boolean;
     pierce?: number;
+    stunDur?: number;
   }): void {
     const projectile: ProjectileGame = {
       id: this.nextProjectileId++,
@@ -203,7 +203,7 @@ export class ProjectileManager {
       knockback: 0,
       slowFactor: opts.slowAmt ?? 0,
       slowDuration: opts.slowDur ?? 0,
-      stunDuration: 0,
+      stunDuration: opts.stunDur ?? 0,
       burnDps: 0,
       burnDuration: 0,
       critMultiplier: 2,
@@ -280,7 +280,6 @@ export class ProjectileManager {
 
     if (towerType === "sniper" && towerLevel >= 5 && variant === "B") {
       projectile.pierceCount = (pierce ?? 0) - 1;
-      projectile.stunDuration = TOWER_BASE.sniper!.stun ?? 0;
     }
   }
 

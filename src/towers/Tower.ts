@@ -99,6 +99,7 @@ interface ProjectileManagerRef {
     markTarget?: number;
     antiHeal?: boolean;
     pierce?: number;
+    stunDur?: number;
   }): void;
   fireLightning(opts: {
     originX: number;
@@ -752,6 +753,7 @@ export class Tower {
       markTarget: stats.markTarget,
       antiHeal: stats.antiHeal,
       pierce: stats.pierce,
+      stunDur: stats.stun,
     });
     this.fireAnimTime = performance.now() / 1000;
     if (sound) sound.play(`shoot_${this.type}`);
