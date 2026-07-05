@@ -438,13 +438,7 @@ export class ProjectileManager {
       enemy.applyAntiHeal(ANTI_HEAL_DURATION);
     }
 
-    if (projectile.towerId) {
-      const tower = this.towerLookup?.(projectile.towerId);
-      if (tower) {
-        tower.totalDamageDealt += finalDamage;
-        tower.waveDamage += finalDamage;
-      }
-    }
+    this.recordDamage(projectile.towerId, finalDamage);
 
     // Gold Rush: grant gold on critical hit
     if (projectile.isCrit && projectile.goldOnCrit > 0 && this.onGoldReward) {
@@ -500,13 +494,7 @@ export class ProjectileManager {
         if (splashEnemy.id !== enemy.id && (splashEnemy as { takeDamage?: unknown }).takeDamage) {
           const splashDamage = finalDamage * SPLASH_DAMAGE_RATIO;
           (splashEnemy as { takeDamage(dmg: number): void }).takeDamage(splashDamage);
-          if (projectile.towerId) {
-            const tower = this.towerLookup?.(projectile.towerId);
-            if (tower) {
-              tower.totalDamageDealt += splashDamage;
-              tower.waveDamage += splashDamage;
-            }
-          }
+          this.recordDamage(projectile.towerId, splashDamage);
           // Stun Shell: splash damage applies stun
           if (projectile.splashStun > 0) {
             const splashEnemyWithStun = splashEnemy as unknown as { applyStun?: (duration: number) => void };
@@ -566,13 +554,7 @@ export class ProjectileManager {
     const chainTargets: LightningTarget[] = [];
 
     current.takeDamage(finalDamage);
-    if (opts.towerId) {
-      const tower = this.towerLookup?.(opts.towerId);
-      if (tower) {
-        tower.totalDamageDealt += finalDamage;
-        tower.waveDamage += finalDamage;
-      }
-    }
+    this.recordDamage(opts.towerId, finalDamage);
     // Gold Rush: grant gold on critical hit
     if (isCrit && (opts.goldOnCrit ?? 0) > 0 && this.onGoldReward) {
       this.onGoldReward(opts.goldOnCrit ?? 0);
@@ -590,13 +572,7 @@ export class ProjectileManager {
 
       const chainDamage = finalDamage * CHAIN_DAMAGE_FALLOFF ** (chainsUsed + 1);
       nextTarget.takeDamage(chainDamage);
-      if (opts.towerId) {
-        const tower = this.towerLookup?.(opts.towerId);
-        if (tower) {
-          tower.totalDamageDealt += chainDamage;
-          tower.waveDamage += chainDamage;
-        }
-      }
+      this.recordDamage(opts.towerId, chainDamage);
       chainTargets.push(nextTarget);
       if (this.particles) {
         this.particles.spawn(nextTarget.x, nextTarget.y, "#ffcf4d", 3, { speed: 30, life: 0.2 });
@@ -635,13 +611,7 @@ export class ProjectileManager {
         const secondIsCrit = critChance > 0 && Math.random() < critChance;
         const secondDamage = finalDamage * 0.5 * (secondIsCrit ? 2 : 1);
         secondTarget.takeDamage(secondDamage);
-        if (opts.towerId) {
-          const tower = this.towerLookup?.(opts.towerId);
-          if (tower) {
-            tower.totalDamageDealt += secondDamage;
-            tower.waveDamage += secondDamage;
-          }
-        }
+        this.recordDamage(opts.towerId, secondDamage);
         // Gold Rush: grant gold on critical hit for second bolt
         if (secondIsCrit && (opts.goldOnCrit ?? 0) > 0 && this.onGoldReward) {
           this.onGoldReward(opts.goldOnCrit ?? 0);
@@ -653,6 +623,15 @@ export class ProjectileManager {
           this.onLightningFlash(opts.originX, opts.originY, secondTarget.x, secondTarget.y);
         }
       }
+    }
+  }
+
+  private recordDamage(towerId: string | undefined, amount: number): void {
+    if (!towerId) return;
+    const tower = this.towerLookup?.(towerId);
+    if (tower) {
+      tower.totalDamageDealt += amount;
+      tower.waveDamage += amount;
     }
   }
 
