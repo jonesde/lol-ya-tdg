@@ -49,7 +49,7 @@ export class EnemyManager {
   spawn(type: string, level: number, spawnIndex: number, wave: number): Enemy {
     const enemy = new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick, this.theme);
     this.enemies.push(enemy);
-    this.rebuildSpatialHash();
+    this.addToSpatialHash(enemy);
     return enemy;
   }
 
@@ -91,6 +91,7 @@ export class EnemyManager {
       if (enemy.removed || enemy.reachedBase) {
         this.particles.spawn(enemy.x, enemy.y, enemy.color, 12, { speed: 80, life: 0.5 });
         if (onEnemyKill) onEnemyKill(enemy);
+        this.removeFromSpatialHash(enemy);
         const removedSpawnIndex = enemy.spawnIndex;
         this.enemies.splice(i, 1);
         this.releaseOnePending(removedSpawnIndex);
@@ -98,7 +99,7 @@ export class EnemyManager {
       }
       enemy.update(dt, this);
     }
-    this.rebuildSpatialHash();
+    this.updateSpatialHash();
   }
 
   rebuildSpatialHash(): void {
@@ -112,6 +113,45 @@ export class EnemyManager {
       } else {
         this.spatialHash.set(cellKey, [enemy]);
       }
+    }
+  }
+
+  addToSpatialHash(enemy: Enemy): void {
+    const cellKey = `${Math.floor(enemy.x / SpatialCellSize)},${Math.floor(enemy.y / SpatialCellSize)}`;
+    const bucket = this.spatialHash.get(cellKey);
+    if (bucket) {
+      bucket.push(enemy);
+    } else {
+      this.spatialHash.set(cellKey, [enemy]);
+    }
+    enemy.lastCellX = Math.floor(enemy.x / SpatialCellSize);
+    enemy.lastCellY = Math.floor(enemy.y / SpatialCellSize);
+  }
+
+  removeFromSpatialHash(enemy: Enemy): void {
+    const cellKey = `${enemy.lastCellX},${enemy.lastCellY}`;
+    const bucket = this.spatialHash.get(cellKey);
+    if (!bucket) return;
+    const index = bucket.indexOf(enemy);
+    if (index !== -1) bucket.splice(index, 1);
+    if (bucket.length === 0) this.spatialHash.delete(cellKey);
+  }
+
+  updateSpatialHash(): void {
+    for (const enemy of this.enemies) {
+      const currentCellX = Math.floor(enemy.x / SpatialCellSize);
+      const currentCellY = Math.floor(enemy.y / SpatialCellSize);
+      if (currentCellX === enemy.lastCellX && currentCellY === enemy.lastCellY) continue;
+      this.removeFromSpatialHash(enemy);
+      const cellKey = `${currentCellX},${currentCellY}`;
+      const bucket = this.spatialHash.get(cellKey);
+      if (bucket) {
+        bucket.push(enemy);
+      } else {
+        this.spatialHash.set(cellKey, [enemy]);
+      }
+      enemy.lastCellX = currentCellX;
+      enemy.lastCellY = currentCellY;
     }
   }
 

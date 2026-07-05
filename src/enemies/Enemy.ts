@@ -90,6 +90,8 @@ export class Enemy {
   markTargetMult!: number;
   markTargetTimer!: number;
   antiHealTimer!: number;
+  lastCellX!: number;
+  lastCellY!: number;
 
   constructor(
     type: string,
@@ -152,6 +154,8 @@ export class Enemy {
     this.x = start.x;
     this.y = start.y;
     this.worldPos = { x: this.x, y: this.y };
+    this.lastCellX = -1;
+    this.lastCellY = -1;
 
     this.reachedBase = false;
     this.removed = false;

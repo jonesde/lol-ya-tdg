@@ -133,4 +133,51 @@ describe("EnemyManager", () => {
       expect(enemy.id).toBe(1);
     });
   });
+
+  describe("incremental spatial hash", () => {
+    it("initializes enemy cell tracking on spawn", () => {
+      const enemy = manager.spawn("minion", 1, 0, 1);
+      expect(enemy.lastCellX).toBe(Math.floor(enemy.x / 100));
+      expect(enemy.lastCellY).toBe(Math.floor(enemy.y / 100));
+    });
+
+    it("does not rehash enemies that stay in the same cell", () => {
+      const enemy = manager.spawn("minion", 1, 0, 1);
+      const cellXBefore = enemy.lastCellX;
+      const cellYBefore = enemy.lastCellY;
+      manager.update(0.001, () => {});
+      expect(enemy.lastCellX).toBe(cellXBefore);
+      expect(enemy.lastCellY).toBe(cellYBefore);
+    });
+
+    it("rehashes enemies that move to a new cell", () => {
+      const enemy = manager.spawn("runner", 1, 0, 1);
+      const cellXBefore = enemy.lastCellX;
+      manager.update(1.0, () => {});
+      const cellXAfter = enemy.lastCellX;
+      const inRange = manager.getEnemiesInRange(enemy.x, enemy.y, 10);
+      expect(inRange).toContain(enemy);
+      expect(cellXAfter).toBeGreaterThanOrEqual(cellXBefore);
+    });
+
+    it("removes enemy from spatial hash on cull", () => {
+      const enemy = manager.spawn("minion", 1, 0, 1);
+      enemy.removed = true;
+      manager.update(0.016, () => {});
+      const inRange = manager.getEnemiesInRange(enemy.x, enemy.y, 10);
+      expect(inRange).not.toContain(enemy);
+    });
+
+    it("maintains correct hash after multiple spawn and cull cycles", () => {
+      const e1 = manager.spawn("minion", 1, 0, 1);
+      const e2 = manager.spawn("runner", 1, 0, 1);
+      e1.removed = true;
+      manager.update(0.016, () => {});
+      expect(manager.enemies).toHaveLength(1);
+      expect(manager.enemies[0]).toBe(e2);
+      const inRange = manager.getEnemiesInRange(e2.x, e2.y, 10);
+      expect(inRange).toContain(e2);
+      expect(inRange).not.toContain(e1);
+    });
+  });
 });
