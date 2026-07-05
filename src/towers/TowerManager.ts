@@ -81,7 +81,7 @@ export class TowerManager {
   grid: GridRef;
   particles: ParticleManagerRef;
   projectiles: ProjectileManagerRef;
-  sound: SoundManagerRef | null;
+  sound: SoundManagerRef;
   towers: Tower[];
   private nextTowerId: number = 0;
   theme: MapThemeData | null;
@@ -90,7 +90,7 @@ export class TowerManager {
     grid: GridRef,
     particles: ParticleManagerRef,
     projectiles: ProjectileManagerRef,
-    sound: SoundManagerRef | null,
+    sound: SoundManagerRef,
     theme: MapThemeData | null = null,
   ) {
     this.grid = grid;
@@ -112,7 +112,7 @@ export class TowerManager {
     if (!this.grid.registerTower(tileX, tileY)) return null;
     this.towers.push(tower);
     this.particles.spawn(tower.x, tower.y, tower.color, 10, { speed: 50, life: 0.4 });
-    if (this.sound) this.sound.play("place");
+    this.sound.play("place");
     return tower;
   }
 
@@ -134,8 +134,7 @@ export class TowerManager {
   }
 
   update(dt: number, enemyManager: EnemyManagerRef): void {
-    for (const tower of this.towers)
-      tower.update(dt, enemyManager, this.projectiles, this.sound as unknown as { play: (name: string) => void });
+    for (const tower of this.towers) tower.update(dt, enemyManager, this.projectiles, this.sound);
   }
 
   towerAt(tileX: number, tileY: number): Tower | undefined {
