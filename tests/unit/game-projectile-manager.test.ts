@@ -338,9 +338,15 @@ describe("ProjectileManager", () => {
       enemy1.takeDamage = takeDamage1;
       enemy2.takeDamage = takeDamage2;
       enemyManager = createMockEnemyManager([enemy1, enemy2]);
-      manager = new ProjectileManager(enemyManager, particles, (x1, y1, x2, y2) => {
-        lightningSparks.push({ x1, y1, x2, y2 });
-      }, null, { tileSize: 36 } as any);
+      manager = new ProjectileManager(
+        enemyManager,
+        particles,
+        (x1, y1, x2, y2) => {
+          lightningSparks.push({ x1, y1, x2, y2 });
+        },
+        null,
+        { tileSize: 36 } as any,
+      );
 
       // Force non-crit so damage values are deterministic
       const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
@@ -362,9 +368,15 @@ describe("ProjectileManager", () => {
       const enemy1 = createMockEnemy({ id: 1, x: 105, y: 200, hp: 10000, maxHp: 10000 });
       const enemy2 = createMockEnemy({ id: 2, x: 108, y: 200, hp: 10000, maxHp: 10000 });
       enemyManager = createMockEnemyManager([enemy1, enemy2]);
-      manager = new ProjectileManager(enemyManager, particles, (x1, y1, x2, y2) => {
-        lightningSparks.push({ x1, y1, x2, y2 });
-      }, null, { tileSize: 36 } as any);
+      manager = new ProjectileManager(
+        enemyManager,
+        particles,
+        (x1, y1, x2, y2) => {
+          lightningSparks.push({ x1, y1, x2, y2 });
+        },
+        null,
+        { tileSize: 36 } as any,
+      );
 
       manager.fireLightning({ originX: 100, originY: 200, damage: 20, towerLevel: 5, targetId: 1, stunDuration: 0.1 });
       // level 5 -> tier 1 -> 3 chain hops + 1 tower->target flash

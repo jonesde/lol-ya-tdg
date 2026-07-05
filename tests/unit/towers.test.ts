@@ -277,11 +277,25 @@ describe("Tower", () => {
       expect(tower.stats.range).toBeCloseTo(baseRange + 2, 4);
     });
 
-    it("basic addon [2] (Bounce Shot) sets chain to max(chain, 1)", () => {
+    it("basic addon [2] (Bounce Shot) sets bounceShot flag", () => {
       const save = makeSave();
       save.unlocked.basic.addons = [false, false, true];
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
-      expect(tower.stats.chain).toBe(1);
+      expect(tower.stats.bounceShot).toBe(true);
+    });
+
+    it("basic addon [0] (Critical Hit) sets critChance", () => {
+      const save = makeSave();
+      save.unlocked.basic.addons = [true, false, false];
+      const tower = new Tower("basic", 0, 0, save, makeMockGrid());
+      expect(tower.stats.critChance).toBe(0.15);
+    });
+
+    it("basic addon [1] (Gold Rush) sets goldOnCrit", () => {
+      const save = makeSave();
+      save.unlocked.basic.addons = [false, true, false];
+      const tower = new Tower("basic", 0, 0, save, makeMockGrid());
+      expect(tower.stats.goldOnCrit).toBe(1);
     });
 
     it("cannon addon [0] (Wide Blast) multiplies splash by 1.5", () => {
@@ -292,20 +306,97 @@ describe("Tower", () => {
       expect(tower.stats.splash).toBeCloseTo(expectedSplash, 4);
     });
 
-    it("lightning addon [0] (Static Field) adds 1 to chain", () => {
+    it("cannon addon [1] (Stun Shell) sets splashStun", () => {
+      const save = makeSave();
+      save.unlocked.cannon.addons = [false, true, false];
+      const tower = new Tower("cannon", 0, 0, save, makeMockGrid());
+      expect(tower.stats.splashStun).toBe(0.3);
+    });
+
+    it("cannon addon [2] (Anti-Air) sets antiAir flag", () => {
+      const save = makeSave();
+      save.unlocked.cannon.addons = [false, false, true];
+      const tower = new Tower("cannon", 0, 0, save, makeMockGrid());
+      expect(tower.stats.antiAir).toBe(true);
+    });
+
+    it("lightning addon [0] (Static Field) sets staticField flag", () => {
       const save = makeSave();
       save.unlocked.lightning.addons = [true, false, false];
       const tower = new Tower("lightning", 0, 0, save, makeMockGrid());
-      const expectedChain = (TOWER_BASE.lightning.chain ?? 0) + 1;
-      expect(tower.stats.chain).toBe(expectedChain);
+      expect(tower.stats.staticField).toBe(true);
     });
 
-    it("lightning addon [2] (Burn Circuit) multiplies damage by 1.2", () => {
+    it("lightning addon [1] (Double Discharge) sets doubleDischarge chance", () => {
+      const save = makeSave();
+      save.unlocked.lightning.addons = [false, true, false];
+      const tower = new Tower("lightning", 0, 0, save, makeMockGrid());
+      expect(tower.stats.doubleDischarge).toBe(0.1);
+    });
+
+    it("lightning addon [2] (Burn Circuit) sets burnCircuit flag", () => {
       const save = makeSave();
       save.unlocked.lightning.addons = [false, false, true];
       const tower = new Tower("lightning", 0, 0, save, makeMockGrid());
-      const baseDamage = TOWER_BASE.lightning.damage;
-      expect(tower.stats.damage).toBeCloseTo(baseDamage * 1.2, 4);
+      expect(tower.stats.burnCircuit).toBe(true);
+    });
+
+    it("ice addon [0] (Frost Aura) sets frostAura flag", () => {
+      const save = makeSave();
+      save.unlocked.ice.addons = [true, false, false];
+      const tower = new Tower("ice", 0, 0, save, makeMockGrid());
+      expect(tower.stats.frostAura).toBe(true);
+    });
+
+    it("ice addon [1] (Deep Freeze) multiplies slowAmt by 1.25", () => {
+      const save = makeSave();
+      save.unlocked.ice.addons = [false, true, false];
+      const tower = new Tower("ice", 0, 0, save, makeMockGrid());
+      const expectedSlow = (TOWER_BASE.ice.slowAmt ?? 0) * 1.25;
+      expect(tower.stats.slowAmt).toBeCloseTo(expectedSlow, 4);
+    });
+
+    it("ice addon [2] (Ice Burst) sets iceBurst flag", () => {
+      const save = makeSave();
+      save.unlocked.ice.addons = [false, false, true];
+      const tower = new Tower("ice", 0, 0, save, makeMockGrid());
+      expect(tower.stats.iceBurst).toBe(true);
+    });
+
+    it("sniper addon [0] (True Shot) sets trueShot chance", () => {
+      const save = makeSave();
+      save.unlocked.sniper.addons = [true, false, false];
+      const tower = new Tower("sniper", 0, 0, save, makeMockGrid());
+      expect(tower.stats.trueShot).toBe(0.2);
+    });
+
+    it("sniper addon [1] (Mark Target) sets markTarget percentage", () => {
+      const save = makeSave();
+      save.unlocked.sniper.addons = [false, true, false];
+      const tower = new Tower("sniper", 0, 0, save, makeMockGrid());
+      expect(tower.stats.markTarget).toBe(0.25);
+    });
+
+    it("railgun addon [0] (Charge Shot) sets chargeShot flag", () => {
+      const save = makeSave();
+      save.unlocked.railgun.addons = [true, false, false];
+      const tower = new Tower("railgun", 0, 0, save, makeMockGrid());
+      expect(tower.stats.chargeShot).toBe(true);
+    });
+
+    it("railgun addon [1] (Anti-Heal) sets antiHeal flag", () => {
+      const save = makeSave();
+      save.unlocked.railgun.addons = [false, true, false];
+      const tower = new Tower("railgun", 0, 0, save, makeMockGrid());
+      expect(tower.stats.antiHeal).toBe(true);
+    });
+
+    it("railgun addon [2] (Multi-Pierce) adds 2 to pierce", () => {
+      const save = makeSave();
+      save.unlocked.railgun.addons = [false, false, true];
+      const tower = new Tower("railgun", 0, 0, save, makeMockGrid());
+      const basePierce = tower.stats.pierce;
+      expect(basePierce).toBe(2);
     });
   });
 

@@ -6,10 +6,18 @@ import {
 } from "../game/Constants.js";
 import {
   CANCEL_BUILD_WINDOW_MS,
+  CHARGE_SHOT_COUNT,
+  CHARGE_SHOT_MULT,
   ICE_AURA_DURATION,
   ICE_AURA_RANGE,
   ICE_AURA_SLOW_MULT,
+  ICE_BURST_RANGE,
+  ICE_BURST_STUN_DURATION,
   SELL_VALUE_RATIO,
+  STATIC_FIELD_RANGE,
+  STATIC_FIELD_SLOW_AMT,
+  STATIC_FIELD_SLOW_DUR,
+  TOWER_ADDON_EFFECTS,
   TOWER_BASE,
   TOWER_LEVEL_DMG_MULT,
   TOWER_LEVEL_RANGE_MULT,
@@ -45,6 +53,7 @@ interface EnemyManagerRef {
     hp: number;
     id: number;
     applySlow(amount: number, duration: number): void;
+    applyStun?(duration: number): void;
   }[];
   getEnemiesInRange(
     x: number,
@@ -79,6 +88,14 @@ interface ProjectileManagerRef {
     marksman?: boolean;
     knockback?: boolean;
     variant?: "A" | "B" | null;
+    critChance?: number;
+    goldOnCrit?: number;
+    bounceShot?: boolean;
+    splashStun?: number;
+    antiAir?: boolean;
+    trueShot?: number;
+    markTarget?: number;
+    antiHeal?: boolean;
   }): void;
   fireLightning(opts: {
     originX: number;
@@ -88,6 +105,8 @@ interface ProjectileManagerRef {
     targetId: number;
     stunDuration: number;
     towerId?: string;
+    doubleDischarge?: number;
+    antiAir?: boolean;
   }): void;
   setOnLightningFlash(callback: (startX: number, startY: number, endX: number, endY: number) => void): void;
 }
@@ -111,6 +130,21 @@ interface TowerStats {
   napalm: boolean;
   stormcall: boolean;
   knockback: boolean;
+  // Addon-driven stat modifiers
+  critChance: number;
+  goldOnCrit: number;
+  bounceShot: boolean;
+  frostAura: boolean;
+  staticField: boolean;
+  iceBurst: boolean;
+  splashStun: number;
+  antiAir: boolean;
+  doubleDischarge: number;
+  burnCircuit: boolean;
+  trueShot: number;
+  markTarget: number;
+  chargeShot: boolean;
+  antiHeal: boolean;
 }
 
 interface CanUpgradeResult {
@@ -167,6 +201,8 @@ export class Tower {
   _statsCache: TowerStats | null;
   _statsCacheKey: number;
   terrainHeight: number;
+  chargeShotCount: number;
+  iceBurstTimer: number;
 
   constructor(
     type: string,
@@ -215,6 +251,8 @@ export class Tower {
     this.save = save;
     this._statsCache = null;
     this._statsCacheKey = -1;
+    this.chargeShotCount = 0;
+    this.iceBurstTimer = 0;
     if (grid?.tiles?.[tileY]?.[tileX]) {
       this.terrainHeight = grid.tiles[tileY][tileX].height || 1;
     } else {
@@ -352,11 +390,21 @@ export class Tower {
       }
     }
 
-    if (this.addons.includes(2) && this.type === "sniper") range += 2;
-    if (this.addons.includes(2) && this.type === "basic") chain = Math.max(chain, 1);
-    if (this.addons.includes(0) && this.type === "cannon") splash *= 1.5;
-    if (this.addons.includes(0) && this.type === "lightning") chain += 1;
-    if (this.addons.includes(2) && this.type === "lightning") damage *= 1.2;
+    // Apply data-driven addon effects
+    const addonEffects = TOWER_ADDON_EFFECTS[this.type as TowerId];
+    if (addonEffects) {
+      for (const addonIdx of this.addons) {
+        const effect = addonEffects[addonIdx];
+        if (!effect) continue;
+        if (effect.damageMult != null) damage *= effect.damageMult;
+        if (effect.splashMult != null) splash *= effect.splashMult;
+        if (effect.slowMult != null) slowAmt *= effect.slowMult;
+        if (effect.rangeAdd != null) range += effect.rangeAdd;
+        if (effect.chainAdd != null) chain += effect.chainAdd;
+        if (effect.stunAdd != null) stun += effect.stunAdd;
+        if (effect.pierceAdd != null) pierce += effect.pierceAdd;
+      }
+    }
 
     const heightTier = this.save ? getGeneralAddonValue(this.save, "terrainHeightBonus") : null;
     if (heightTier !== null && heightTier !== undefined) {
@@ -379,6 +427,43 @@ export class Tower {
       fireRate *= 1 + speedPct * tiers;
     }
 
+    // Collect behavior flags from addon effects
+    let critChance = 0;
+    let goldOnCrit = 0;
+    let bounceShot = false;
+    let frostAura = false;
+    let staticField = false;
+    let iceBurst = false;
+    let splashStun = 0;
+    let antiAir = false;
+    let doubleDischarge = 0;
+    let burnCircuit = false;
+    let trueShot = 0;
+    let markTarget = 0;
+    let chargeShot = false;
+    let antiHeal = false;
+
+    if (addonEffects) {
+      for (const addonIdx of this.addons) {
+        const effect = addonEffects[addonIdx];
+        if (!effect) continue;
+        if (effect.critChance != null) critChance = effect.critChance;
+        if (effect.goldOnCrit != null) goldOnCrit = effect.goldOnCrit;
+        if (effect.bounceShot) bounceShot = true;
+        if (effect.frostAura) frostAura = true;
+        if (effect.staticField) staticField = true;
+        if (effect.iceBurst) iceBurst = true;
+        if (effect.splashStun != null) splashStun = effect.splashStun;
+        if (effect.antiAir) antiAir = true;
+        if (effect.doubleDischarge != null) doubleDischarge = effect.doubleDischarge;
+        if (effect.burnCircuit) burnCircuit = true;
+        if (effect.trueShot != null) trueShot = effect.trueShot;
+        if (effect.markTarget != null) markTarget = effect.markTarget;
+        if (effect.chargeShot) chargeShot = true;
+        if (effect.antiHeal) antiHeal = true;
+      }
+    }
+
     return {
       range,
       damage,
@@ -394,6 +479,20 @@ export class Tower {
       napalm,
       stormcall,
       knockback,
+      critChance,
+      goldOnCrit,
+      bounceShot,
+      frostAura,
+      staticField,
+      iceBurst,
+      splashStun,
+      antiAir,
+      doubleDischarge,
+      burnCircuit,
+      trueShot,
+      markTarget,
+      chargeShot,
+      antiHeal,
     };
   }
 
@@ -511,8 +610,10 @@ export class Tower {
   ) {
     if (this.cooldown > 0) this.cooldown -= dt;
 
-    if (this.addons.includes(0) && this.type === "ice") {
-      const stats = this.stats;
+    const stats = this.stats;
+
+    // Data-driven frost aura (ice addon 0)
+    if (stats.frostAura) {
       const tileSize = this.grid?.tileSize || 36;
       const r2 = (ICE_AURA_RANGE * tileSize) ** 2;
       for (const enemy of enemyManager.enemies) {
@@ -523,10 +624,35 @@ export class Tower {
       }
     }
 
+    // Data-driven static field (lightning addon 0)
+    if (stats.staticField) {
+      const tileSize = this.grid?.tileSize || 36;
+      const r2 = (STATIC_FIELD_RANGE * tileSize) ** 2;
+      for (const enemy of enemyManager.enemies) {
+        const deltaX = enemy.x - this.x;
+        const deltaY = enemy.y - this.y;
+        if (deltaX * deltaX + deltaY * deltaY <= r2) enemy.applySlow(STATIC_FIELD_SLOW_AMT, STATIC_FIELD_SLOW_DUR);
+      }
+    }
+
+    // Data-driven ice burst (ice addon 2)
+    if (stats.iceBurst) {
+      this.iceBurstTimer += dt;
+      if (this.iceBurstTimer >= 3) {
+        this.iceBurstTimer = 0;
+        const tileSize = this.grid?.tileSize || 36;
+        const r2 = (ICE_BURST_RANGE * tileSize) ** 2;
+        for (const enemy of enemyManager.enemies) {
+          const deltaX = enemy.x - this.x;
+          const deltaY = enemy.y - this.y;
+          if (deltaX * deltaX + deltaY * deltaY <= r2 && enemy.applyStun) enemy.applyStun(ICE_BURST_STUN_DURATION);
+        }
+      }
+    }
+
     if (this.base.fixedAim && this.fixedAimDir) {
       const dirVectors = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] } as Record<string, [number, number]>;
       const [ddx, ddy] = dirVectors[this.fixedAimDir]!;
-      const stats = this.stats;
       const tileSize = this.grid?.tileSize || 36;
       const rangePx = stats.range * tileSize;
       let targetEnemy: { x: number; y: number } | null = null;
@@ -560,7 +686,6 @@ export class Tower {
       this.angle = Math.atan2(target.y - this.y, target.x - this.x);
       if (this.cooldown <= 0) {
         this.fire(target, enemyManager, projectileManager, soundManager);
-        const stats = this.stats;
         this.cooldown = 1 / stats.fireRate;
       }
     }
@@ -573,15 +698,27 @@ export class Tower {
     sound: SoundManagerRef,
   ) {
     const stats = this.stats;
+    let fireDamage = stats.damage;
+
+    // Charge shot: every 5th shot deals 3x damage
+    if (stats.chargeShot) {
+      this.chargeShotCount = (this.chargeShotCount + 1) % CHARGE_SHOT_COUNT;
+      if (this.chargeShotCount === 0) {
+        fireDamage *= CHARGE_SHOT_MULT;
+      }
+    }
+
     if (this.type === "lightning") {
       projectileManager.fireLightning({
         originX: this.x,
         originY: this.y,
-        damage: stats.damage,
+        damage: fireDamage,
         towerLevel: this.level,
         targetId: target.id,
         stunDuration: stats.stun,
         towerId: this.id,
+        doubleDischarge: stats.doubleDischarge,
+        antiAir: stats.antiAir,
       });
       this.fireAnimTime = performance.now() / 1000;
       if (sound) sound.play(`shoot_${this.type}`);
@@ -592,7 +729,7 @@ export class Tower {
       towerId: this.id,
       x: this.x,
       y: this.y,
-      damage: stats.damage,
+      damage: fireDamage,
       speed: (this.base.projSpeed || 1) * tileSize,
       range: stats.range,
       towerType: this.type,
@@ -604,6 +741,14 @@ export class Tower {
       marksman: stats.marksman,
       knockback: stats.knockback,
       variant: this.variant,
+      critChance: stats.critChance,
+      goldOnCrit: stats.goldOnCrit,
+      bounceShot: stats.bounceShot,
+      splashStun: stats.splashStun,
+      antiAir: stats.antiAir,
+      trueShot: stats.trueShot,
+      markTarget: stats.markTarget,
+      antiHeal: stats.antiHeal,
     });
     this.fireAnimTime = performance.now() / 1000;
     if (sound) sound.play(`shoot_${this.type}`);

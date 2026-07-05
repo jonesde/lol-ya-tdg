@@ -42,6 +42,16 @@ export interface ProjectileGame {
   age: number;
   hitCount: number;
   towerId: string;
+  // Addon-driven effects
+  critChance: number;
+  goldOnCrit: number;
+  bounceShot: boolean;
+  splashStun: number;
+  antiAir: boolean;
+  trueShot: number;
+  markTarget: number;
+  antiHeal: boolean;
+  burnCircuit: boolean;
 }
 
 interface LightningTarget {
@@ -97,6 +107,7 @@ export interface ParticleSystem {
 
 export type OnLightningFlashCallback = (startX: number, startY: number, endX: number, endY: number) => void;
 export type OnStunEffectCallback = (x: number, y: number) => void;
+export type OnGoldRewardCallback = (amount: number) => void;
 
 export class ProjectileManager {
   private projectiles: ProjectileGame[];
@@ -105,6 +116,7 @@ export class ProjectileManager {
   private grid: GridRef | null;
   private onLightningFlash: OnLightningFlashCallback | null;
   private onStunEffect: OnStunEffectCallback | null;
+  private onGoldReward: OnGoldRewardCallback | null;
   private nextProjectileId: number;
   private towerLookup: ((towerId: string) => Tower | null) | null = null;
 
@@ -121,8 +133,13 @@ export class ProjectileManager {
     this.grid = grid;
     this.onLightningFlash = onLightningFlash;
     this.onStunEffect = null;
+    this.onGoldReward = null;
     this.nextProjectileId = 1;
     this.towerLookup = towerLookup;
+  }
+
+  setOnGoldReward(callback: OnGoldRewardCallback | null): void {
+    this.onGoldReward = callback;
   }
 
   setTowerLookup(callback: ((towerId: string) => Tower | null) | null): void {
@@ -153,6 +170,14 @@ export class ProjectileManager {
     marksman?: boolean;
     knockback?: boolean;
     variant?: "A" | "B" | null;
+    critChance?: number;
+    goldOnCrit?: number;
+    bounceShot?: boolean;
+    splashStun?: number;
+    antiAir?: boolean;
+    trueShot?: number;
+    markTarget?: number;
+    antiHeal?: boolean;
   }): void {
     const projectile: ProjectileGame = {
       id: this.nextProjectileId++,
@@ -175,13 +200,27 @@ export class ProjectileManager {
       burnDps: 0,
       burnDuration: 0,
       critMultiplier: 2,
-      isCrit: Math.random() < CRIT_CHANCE,
+      isCrit: false,
       marksman: false,
       active: true,
       age: 0,
       hitCount: 0,
       towerId: opts.towerId ?? "",
+      critChance: opts.critChance ?? 0,
+      goldOnCrit: opts.goldOnCrit ?? 0,
+      bounceShot: opts.bounceShot ?? false,
+      splashStun: opts.splashStun ?? 0,
+      antiAir: opts.antiAir ?? false,
+      trueShot: opts.trueShot ?? 0,
+      markTarget: opts.markTarget ?? 0,
+      antiHeal: opts.antiHeal ?? false,
+      burnCircuit: false,
     };
+
+    // Roll crit only if tower has crit ability
+    if (projectile.critChance > 0 && Math.random() < projectile.critChance) {
+      projectile.isCrit = true;
+    }
 
     this.applyProjectileEffects(
       projectile,
@@ -337,7 +376,25 @@ export class ProjectileManager {
       applyStun?(duration: number): void;
     },
   ): void {
-    const finalDamage = projectile.isCrit ? projectile.damage * projectile.critMultiplier : projectile.damage;
+    let finalDamage = projectile.isCrit ? projectile.damage * projectile.critMultiplier : projectile.damage;
+
+    // True Shot: 20% chance to instant-kill non-boss enemies
+    if (projectile.trueShot > 0 && enemy.type !== "boss" && Math.random() < projectile.trueShot) {
+      const instantKillDamage = enemy.hp + 1;
+      enemy.takeDamage(instantKillDamage);
+      if (projectile.towerId) {
+        const tower = this.towerLookup?.(projectile.towerId);
+        if (tower) {
+          tower.totalDamageDealt += instantKillDamage;
+          tower.waveDamage += instantKillDamage;
+        }
+      }
+      if (this.particles) {
+        this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, { speed: 30, life: 0.2 });
+      }
+      this.removeProjectile(projectile, "hit");
+      return;
+    }
 
     if (projectile.marksman && enemy.type !== "boss") {
       const instantKillDamage = enemy.hp + 1;
@@ -356,6 +413,11 @@ export class ProjectileManager {
       return;
     }
 
+    // Mark Target: target takes +25% damage (applied multiplicatively)
+    if (projectile.markTarget > 0) {
+      finalDamage *= 1 + projectile.markTarget;
+    }
+
     enemy.takeDamage(finalDamage);
 
     if (projectile.towerId) {
@@ -364,6 +426,11 @@ export class ProjectileManager {
         tower.totalDamageDealt += finalDamage;
         tower.waveDamage += finalDamage;
       }
+    }
+
+    // Gold Rush: grant gold on critical hit
+    if (projectile.isCrit && projectile.goldOnCrit > 0 && this.onGoldReward) {
+      this.onGoldReward(projectile.goldOnCrit);
     }
 
     if (projectile.burnDps > 0 && enemy.applyBurn) {
@@ -422,7 +489,24 @@ export class ProjectileManager {
               tower.waveDamage += splashDamage;
             }
           }
+          // Stun Shell: splash damage applies stun
+          if (projectile.splashStun > 0) {
+            const splashEnemyWithStun = splashEnemy as unknown as { applyStun?: (duration: number) => void };
+            if (splashEnemyWithStun.applyStun) {
+              splashEnemyWithStun.applyStun(projectile.splashStun);
+            }
+          }
         }
+      }
+    }
+
+    // Bounce Shot: redirect projectile to 1 nearby enemy
+    if (projectile.bounceShot) {
+      const bounceTarget = this.findNearestEnemy(projectile.x, projectile.y, projectile.range, enemy.id);
+      if (bounceTarget) {
+        projectile.targetId = bounceTarget.id;
+        projectile.damage *= 0.8;
+        return;
       }
     }
 
@@ -441,6 +525,8 @@ export class ProjectileManager {
     targetId: number;
     stunDuration: number;
     towerId?: string;
+    doubleDischarge?: number;
+    antiAir?: boolean;
   }): void {
     let current: LightningTarget | null = this.enemyManager.getEnemyById(opts.targetId);
     if (!current || current.removed) return;
@@ -502,6 +588,33 @@ export class ProjectileManager {
       }
       if (this.onLightningFlash) {
         this.onLightningFlash(opts.originX, opts.originY, current.x, current.y);
+      }
+    }
+
+    // Double Discharge: 10% chance to fire a second bolt to a different target
+    if (opts.doubleDischarge && opts.doubleDischarge > 0 && Math.random() < opts.doubleDischarge) {
+      const secondTarget = this.findNearestEnemy(
+        opts.originX,
+        opts.originY,
+        CHAIN_RANGE * (this.grid?.tileSize ?? 1),
+        opts.targetId,
+      );
+      if (secondTarget) {
+        const secondDamage = finalDamage * 0.5;
+        secondTarget.takeDamage(secondDamage);
+        if (opts.towerId) {
+          const tower = this.towerLookup?.(opts.towerId);
+          if (tower) {
+            tower.totalDamageDealt += secondDamage;
+            tower.waveDamage += secondDamage;
+          }
+        }
+        if (opts.stunDuration > 0 && secondTarget.applyStun) {
+          secondTarget.applyStun(opts.stunDuration);
+        }
+        if (this.onLightningFlash) {
+          this.onLightningFlash(opts.originX, opts.originY, secondTarget.x, secondTarget.y);
+        }
       }
     }
   }

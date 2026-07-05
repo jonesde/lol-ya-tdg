@@ -93,6 +93,40 @@ export const NAPALM_BURN_DPS_RATIO = 0.2;
 export const NAPALM_BURN_DURATION = 2;
 // basic tower with addon 0 crits CRIT_CHANCE of the time for bonus damage (ProjectileManager.js)
 export const CRIT_CHANCE = 0.15;
+// gold granted per critical hit when basic tower has Gold Rush addon (GameEngine.js)
+export const GOLD_PER_CRIT = 1;
+// ice tower Deep Freeze addon: increases slow strength by this factor
+export const DEEP_FREEZE_SLOW_MULT = 1.25;
+// ice tower Ice Burst addon: stun duration in seconds
+export const ICE_BURST_STUN_DURATION = 0.5;
+// ice tower Ice Burst addon: interval between bursts in seconds
+export const ICE_BURST_INTERVAL = 3;
+// ice tower Ice Burst addon: burst range in tiles
+export const ICE_BURST_RANGE = 2;
+// cannon tower Stun Shell addon: stun duration applied by splash damage
+export const STUN_SHELL_DURATION = 0.3;
+// lightning tower Static Field addon: slow amount (15%)
+export const STATIC_FIELD_SLOW_AMT = 0.15;
+// lightning tower Static Field addon: slow duration in seconds
+export const STATIC_FIELD_SLOW_DUR = 0.5;
+// lightning tower Static Field addon: field range in tiles
+export const STATIC_FIELD_RANGE = 2;
+// lightning tower Double Discharge addon: chance for second bolt
+export const DOUBLE_DISCHARGE_CHANCE = 0.1;
+// lightning tower Burn Circuit addon: burn damage multiplier on chained targets
+export const BURN_CIRCUIT_DMG_MULT = 1.2;
+// lightning tower Burn Circuit addon: burn duration in seconds
+export const BURN_CIRCUIT_DURATION = 2;
+// sniper tower True Shot addon: instant-kill chance on non-boss enemies
+export const TRUE_SHOT_CHANCE = 0.2;
+// sniper tower Mark Target addon: damage increase percentage for marked target
+export const MARK_TARGET_DMG_PCT = 0.25;
+// railgun tower Charge Shot addon: damage multiplier on charged shot
+export const CHARGE_SHOT_MULT = 3;
+// railgun tower Charge Shot addon: shot count required for charge
+export const CHARGE_SHOT_COUNT = 5;
+// railgun tower Multi-Pierce addon: additional pierce count
+export const MULTI_PIERCE_COUNT = 2;
 // marksman variant instant-kill chance (ProjectileManager.js)
 export const MARKSMAN_CHANCE = 0.2;
 // marksman knockback multiplier for railgun variant A (ProjectileManager.js)
@@ -149,4 +183,90 @@ export const TOWER_VARIANTS: Record<TowerId, { A: TowerVariantConfig; B: TowerVa
     A: { name: "Knockback", apply: (s, _t) => ({ ...s, knockback: true }) },
     B: { name: "Rail Lance", apply: (s, _t) => ({ ...s, pierceFalloff: 0 }) },
   },
+};
+
+// ===== Tower Addon Effects =====
+// Data-driven definitions for all tower addon effects. Each addon maps to stat
+// modifiers and/or behavior flags applied in Tower._computeStats. Effects that
+// require per-frame behavior (frostAura, staticField, iceBurst) are flagged here
+// and handled in Tower.update(). Effects that modify projectile behavior are
+// flagged here and passed to ProjectileManager via Tower.fire().
+
+export interface TowerAddonEffect {
+  // Stat multipliers (applied multiplicatively after base stats)
+  damageMult?: number;
+  splashMult?: number;
+  slowMult?: number;
+  // Stat additions
+  rangeAdd?: number;
+  chainAdd?: number;
+  stunAdd?: number;
+  pierceAdd?: number;
+  // Behavior flags (handled in Tower.fire() or ProjectileManager)
+  critChance?: number;
+  goldOnCrit?: number;
+  bounceShot?: boolean;
+  splashStun?: number;
+  antiAir?: boolean;
+  doubleDischarge?: number;
+  burnCircuit?: boolean;
+  trueShot?: number;
+  markTarget?: number;
+  chargeShot?: boolean;
+  antiHeal?: boolean;
+  // Per-frame behavior flags (handled in Tower.update())
+  frostAura?: boolean;
+  staticField?: boolean;
+  iceBurst?: boolean;
+}
+
+export const TOWER_ADDON_EFFECTS: Record<TowerId, TowerAddonEffect[]> = {
+  basic: [
+    // 0: Critical Hit - 15% chance for ×2 damage
+    { critChance: CRIT_CHANCE },
+    // 1: Gold Rush - +1 gold per crit
+    { goldOnCrit: GOLD_PER_CRIT },
+    // 2: Bounce Shot - bullets bounce to 1 nearby enemy
+    { bounceShot: true },
+  ],
+  ice: [
+    // 0: Frost Aura - permanent slow aura on adjacent tiles
+    { frostAura: true },
+    // 1: Deep Freeze - +25% slow strength
+    { slowMult: DEEP_FREEZE_SLOW_MULT },
+    // 2: Ice Burst - periodic freeze burst stuns nearby enemies
+    { iceBurst: true },
+  ],
+  sniper: [
+    // 0: True Shot - 20% chance to instant-kill non-boss enemies
+    { trueShot: TRUE_SHOT_CHANCE },
+    // 1: Mark Target - target takes +25% damage from all sources
+    { markTarget: MARK_TARGET_DMG_PCT },
+    // 2: Long Range - +2 range
+    { rangeAdd: 2 },
+  ],
+  cannon: [
+    // 0: Wide Blast - +50% splash radius
+    { splashMult: 1.5 },
+    // 1: Stun Shell - splash damage applies 0.3s stun
+    { splashStun: STUN_SHELL_DURATION },
+    // 2: Anti-Air - shots hit air units and ignore shields
+    { antiAir: true },
+  ],
+  lightning: [
+    // 0: Static Field - slows nearby enemies by 15%
+    { staticField: true },
+    // 1: Double Discharge - 10% chance to fire a second bolt
+    { doubleDischarge: DOUBLE_DISCHARGE_CHANCE },
+    // 2: Burn Circuit - chained enemies take +20% damage for 2s
+    { burnCircuit: true },
+  ],
+  railgun: [
+    // 0: Charge Shot - every 5th shot deals ×3 damage
+    { chargeShot: true },
+    // 1: Anti-Heal - disables enemy healer auras for 2s
+    { antiHeal: true },
+    // 2: Multi-Pierce - beams pierce 2 additional enemies
+    { pierceAdd: MULTI_PIERCE_COUNT },
+  ],
 };
