@@ -408,11 +408,6 @@ export function isGeneralAvailable(save: SaveData, key: string, index: number): 
   if (!def) return false;
   const cost = def.costs[index]!;
   if (save.gems < cost) return false;
-  if (key === "sellOption") {
-    const generalAddons = save.generalAddons || {};
-    if (!generalAddons.sellRefundUnlocked && !generalAddons.sellDiscountUnlocked) return false;
-    return true;
-  }
   if (index >= 1) {
     const prevUnlocked = isGeneralUnlocked(save, key, index - 1);
     if (!prevUnlocked) return false;

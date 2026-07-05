@@ -244,7 +244,6 @@ export class Enemy {
     else this.recalcSlow();
     if (this.stunTimer > 0) {
       this.stunTimer -= dt;
-      return;
     }
     if (this.burnTimer > 0 && !this.removed) {
       this.burnTimer -= dt;
@@ -272,6 +271,9 @@ export class Enemy {
       }
     }
 
+    if (this.stunTimer > 0) {
+      return;
+    }
     if (!this.path || this.pathIdx >= this.path.length - 1) {
       this.reachedBase = true;
       return;

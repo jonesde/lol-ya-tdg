@@ -36,10 +36,10 @@ export class ProjectileManager {
       circle.setAttribute("fill", proj.color || "#ffffff");
     }
 
+    const activeIds = new Set(projectiles.map((p) => p.id));
     for (const [id, index] of this.idToIndex) {
       const circle = this.pool[index]!;
-      const stillActive = projectiles.some((p) => p.id === id);
-      if (!stillActive) {
+      if (!activeIds.has(id)) {
         circle.style.visibility = "hidden";
         this.freeIndexStack.push(index);
         this.idToIndex.delete(id);
