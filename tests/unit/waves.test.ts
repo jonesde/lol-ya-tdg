@@ -286,12 +286,31 @@ describe("WaveManager", () => {
   });
 
   describe("reportBossKill", () => {
-    it("increments bossesKilledThisWave", () => {
+    it("is a no-op (bossesKilledThisWave was dead code, removed)", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       waveManager.startNextWave();
       waveManager.reportBossKill();
       waveManager.reportBossKill();
-      expect(waveManager.bossesKilledThisWave).toBe(2);
+      expect(waveManager.bossesReachedBaseThisWave).toBe(0);
+    });
+  });
+
+  describe("reportBossReachedBase", () => {
+    it("increments bossesReachedBaseThisWave", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.startNextWave();
+      waveManager.reportBossReachedBase();
+      waveManager.reportBossReachedBase();
+      expect(waveManager.bossesReachedBaseThisWave).toBe(2);
+    });
+
+    it("resets on startNextWave", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.startNextWave();
+      waveManager.reportBossReachedBase();
+      expect(waveManager.bossesReachedBaseThisWave).toBe(1);
+      waveManager.startNextWave();
+      expect(waveManager.bossesReachedBaseThisWave).toBe(0);
     });
   });
 

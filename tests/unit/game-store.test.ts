@@ -67,9 +67,10 @@ describe("GameStore", () => {
       expect(store.milestoneRewardsClaimed).toEqual({});
     });
 
-    it("starts with zero runGemsEarned and bossesKilledThisRun", () => {
+    it("starts with zero runGemsEarned, bossesKilledThisRun, and bossesReachedBaseThisRun", () => {
       expect(store.runGemsEarned).toBe(0);
       expect(store.bossesKilledThisRun).toBe(0);
+      expect(store.bossesReachedBaseThisRun).toBe(0);
     });
 
     it("starts with null endScreenData and randomMapParams", () => {
@@ -269,10 +270,12 @@ describe("GameStore", () => {
     it("resets run rewards and milestones", () => {
       store.runGemsEarned = 100;
       store.bossesKilledThisRun = 5;
+      store.bossesReachedBaseThisRun = 3;
       store.claimMilestone(15);
       store.initMap(0, { regionId: 0 } as unknown as GeneratedMap, null);
       expect(store.runGemsEarned).toBe(0);
       expect(store.bossesKilledThisRun).toBe(0);
+      expect(store.bossesReachedBaseThisRun).toBe(0);
       expect(store.hasClaimedMilestone(15)).toBe(false);
     });
 
@@ -390,6 +393,7 @@ describe("GameStore", () => {
       store.timeScale = 8;
       store.runGemsEarned = 200;
       store.bossesKilledThisRun = 10;
+      store.bossesReachedBaseThisRun = 4;
       store.claimMilestone(15);
       store.gemBreakdown.bossKills.base = 10;
       store.setHoverUpgradeBtn(true);
@@ -400,6 +404,7 @@ describe("GameStore", () => {
       expect(store.timeScale).toBe(1);
       expect(store.runGemsEarned).toBe(0);
       expect(store.bossesKilledThisRun).toBe(0);
+      expect(store.bossesReachedBaseThisRun).toBe(0);
       expect(store.hasClaimedMilestone(15)).toBe(false);
       expect(store.gemBreakdown.bossKills.base).toBe(0);
       expect(store.hoverUpgradeBtn).toBe(false);

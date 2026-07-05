@@ -117,7 +117,8 @@ function replayRun(entry: Record<string, unknown>) {
         <div class="card-stats">
           <div class="stat-item"><span class="stat-label">Wave</span><span class="stat-value">{{ entry.wave }}</span></div>
           <div class="stat-item"><span class="stat-label">Gems</span><span class="stat-value gem">{{ entry.gems }} 💎</span></div>
-          <div class="stat-item"><span class="stat-label">Bosses</span><span class="stat-value">{{ entry.bossesKilled }}</span></div>
+          <div class="stat-item"><span class="stat-label">Dead Bosses</span><span class="stat-value stat-dead">{{ entry.bossesKilled }}</span></div>
+          <div class="stat-item"><span class="stat-label">Based Bosses</span><span class="stat-value stat-based">{{ entry.bossesReachedBase || 0 }}</span></div>
         </div>
 
         <div v-if="entry.gemBreakdown" class="card-breakdown">
@@ -301,6 +302,14 @@ function replayRun(entry: Record<string, unknown>) {
 
 .stat-value.gem {
   color: var(--color-gem);
+}
+
+.stat-value.stat-dead {
+  color: var(--color-success);
+}
+
+.stat-value.stat-based {
+  color: var(--color-danger);
 }
 
 .card-breakdown {

@@ -35,7 +35,7 @@ export class WaveManager {
   betweenTimer: number;
   betweenWaves: boolean;
   bossesThisWave: number;
-  bossesKilledThisWave: number;
+  bossesReachedBaseThisWave: number;
   baseReached: boolean;
   waveComposition: Record<string, number>;
   rng: () => number;
@@ -57,7 +57,7 @@ export class WaveManager {
     this.betweenTimer = 0;
     this.betweenWaves = true;
     this.bossesThisWave = 0;
-    this.bossesKilledThisWave = 0;
+    this.bossesReachedBaseThisWave = 0;
     this.baseReached = false;
     this.waveComposition = {};
     this._waveGameTime = 0;
@@ -73,7 +73,7 @@ export class WaveManager {
     this._waveGameTime = 0;
     this.countdownActive = false;
     this.countdownTimer = 0;
-    this.bossesKilledThisWave = 0;
+    this.bossesReachedBaseThisWave = 0;
     this.bossesThisWave = this.queue.filter((entry) => entry.type === "boss").length;
     this.active = true;
     this.waveComposition = this._countTypes(this.queue);
@@ -169,10 +169,10 @@ export class WaveManager {
   }
 
   reportBossKill() {
-    this.bossesKilledThisWave++;
+    // No-op: bossesKilledThisWave was dead code, removed
   }
 
   reportBossReachedBase() {
-    this.bossesKilledThisWave++;
+    this.bossesReachedBaseThisWave++;
   }
 }

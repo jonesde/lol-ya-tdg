@@ -62,6 +62,8 @@ const livesLost = computed(() => Math.max(0, startingLives.value - gameStore.liv
 const healingReceived = computed(() => engine.value?.totalHealingReceived || 0);
 const goldEarned = computed(() => engine.value?.totalGoldEarned || 0);
 const gemsEarned = computed(() => gameStore.runGemsEarned);
+const deadBosses = computed(() => gameStore.bossesKilledThisRun);
+const basedBosses = computed(() => gameStore.bossesReachedBaseThisRun);
 
 function formatNumber(number: number) {
   return number.toLocaleString();
@@ -151,6 +153,16 @@ function hpPercent(enemy: EnemyStat) {
               <div class="stat-card-icon">💚</div>
               <div class="stat-card-value">{{ healingReceived }}</div>
               <div class="stat-card-label">Healing Received</div>
+            </div>
+            <div class="stat-card" v-if="deadBosses > 0">
+              <div class="stat-card-icon">💀</div>
+              <div class="stat-card-value stat-dead">{{ deadBosses }}</div>
+              <div class="stat-card-label">Dead Bosses</div>
+            </div>
+            <div class="stat-card" v-if="basedBosses > 0">
+              <div class="stat-card-icon">👑</div>
+              <div class="stat-card-value stat-based">{{ basedBosses }}</div>
+              <div class="stat-card-label">Based Bosses</div>
             </div>
           </div>
         </div>
@@ -375,6 +387,14 @@ function hpPercent(enemy: EnemyStat) {
 }
 
 .stat-card-value.critical {
+  color: var(--color-danger);
+}
+
+.stat-card-value.stat-dead {
+  color: var(--color-success);
+}
+
+.stat-card-value.stat-based {
   color: var(--color-danger);
 }
 

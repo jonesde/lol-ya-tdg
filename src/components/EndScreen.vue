@@ -17,6 +17,8 @@ const titleColor = computed(() => (props.won ? "var(--color-success)" : "var(--c
 const sectionBreakdown = computed(() => gameStore.endScreenData?.gemBreakdown || {});
 const totalGems = computed(() => gameStore.endScreenData?.gems || 0);
 const finalWave = computed(() => gameStore.endScreenData?.wave || 0);
+const deadBosses = computed(() => gameStore.bossesKilledThisRun);
+const basedBosses = computed(() => gameStore.bossesReachedBaseThisRun);
 
 function navigate(to: string) {
   gameStore.resetToMenu();
@@ -76,6 +78,8 @@ function formatBreakdown(section: string) {
       <div class="stat-summary">
         <div class="stat-item"><span class="stat-label">Waves Cleared</span><span class="stat-value">{{ finalWave }}</span></div>
         <div class="stat-item"><span class="stat-label">Gems Earned</span><span class="stat-value gem">{{ totalGems }} 💎</span></div>
+        <div class="stat-item" v-if="deadBosses > 0"><span class="stat-label">Dead Bosses</span><span class="stat-value stat-dead">{{ deadBosses }}</span></div>
+        <div class="stat-item" v-if="basedBosses > 0"><span class="stat-label">Based Bosses</span><span class="stat-value stat-based">{{ basedBosses }}</span></div>
       </div>
 
       <div v-if="sectionBreakdown.bossKills?.base" class="breakdown-section">
@@ -172,6 +176,14 @@ function formatBreakdown(section: string) {
 
 .stat-value.gem {
   color: var(--color-gem);
+}
+
+.stat-value.stat-dead {
+  color: var(--color-success);
+}
+
+.stat-value.stat-based {
+  color: var(--color-danger);
 }
 
 .breakdown-section {

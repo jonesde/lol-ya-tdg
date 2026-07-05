@@ -272,7 +272,10 @@ export class GameEngine {
         this.gameStore.loseLives(enemy.type === "boss" ? BOSS_LIFE_LOSS : 1);
         enemy.removed = true;
         this.waveManager!.baseReached = true;
-        if (enemy.type === "boss") this.waveManager!.reportBossReachedBase();
+        if (enemy.type === "boss") {
+          this.gameStore.bossesReachedBaseThisRun++;
+          this.waveManager!.reportBossReachedBase();
+        }
         this.sound.play("base_hit");
         if (this.gameStore.lives <= 0) {
           this.shouldEndGame = true;
@@ -418,10 +421,12 @@ export class GameEngine {
       const diffMult = this.persistStore.difficultyMultiplier;
       const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
       const mapMult = gameStore.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[gameStore.mapIndex] || 1 : 1;
-      const afterRegion = Math.ceil(Math.ceil(totalBonus * gemMult) * mapMult);
+      const afterDiff = Math.ceil(totalBonus * gemMult);
+      const afterRegion = Math.ceil(afterDiff * mapMult);
 
       const breakdown = gameStore.gemBreakdown.waveCompletion;
       breakdown.base += totalBonus;
+      breakdown.afterDiff += afterDiff;
       breakdown.afterRegion += afterRegion;
       breakdown.afterFirstTime += afterRegion;
 
@@ -452,6 +457,7 @@ export class GameEngine {
       wave: this.waveManager!.currentWave,
       gems: gameStore.runGemsEarned,
       bossesKilled: gameStore.bossesKilledThisRun,
+      bossesReachedBase: gameStore.bossesReachedBaseThisRun,
       gemBreakdown: gameStore.gemBreakdown,
       date: Date.now(),
     };

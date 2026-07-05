@@ -84,6 +84,7 @@ interface GameStateShape {
   upgradeBtnClickAnim: number;
   runGemsEarned: number;
   bossesKilledThisRun: number;
+  bossesReachedBaseThisRun: number;
   milestoneRewardsClaimed: MilestoneRewardsClaimed;
   gemBreakdown: GemBreakdown;
   endScreenData: EndScreenPayload | null;
@@ -114,6 +115,7 @@ export const useGameStore = defineStore("game", {
     upgradeBtnClickAnim: 0,
     runGemsEarned: 0,
     bossesKilledThisRun: 0,
+    bossesReachedBaseThisRun: 0,
     milestoneRewardsClaimed: {},
     gemBreakdown: {
       bossKills: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
@@ -202,6 +204,7 @@ export const useGameStore = defineStore("game", {
       this.currentWave = 0;
       this.runGemsEarned = 0;
       this.bossesKilledThisRun = 0;
+      this.bossesReachedBaseThisRun = 0;
       this.milestoneRewardsClaimed = {};
       this.gemBreakdown = {
         bossKills: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
@@ -272,6 +275,7 @@ export const useGameStore = defineStore("game", {
       this.upgradeBtnClickAnim = 0;
       this.runGemsEarned = 0;
       this.bossesKilledThisRun = 0;
+      this.bossesReachedBaseThisRun = 0;
       this.milestoneRewardsClaimed = {};
       this.gemBreakdown = {
         bossKills: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },

@@ -136,6 +136,11 @@ describe("GameEngine", () => {
       expect(gameStore.bossesKilledThisRun).toBe(1);
     });
 
+    it("does not increment bossesReachedBaseThisRun", () => {
+      engine.onBossKilled();
+      expect(gameStore.bossesReachedBaseThisRun).toBe(0);
+    });
+
     it("records gem breakdown", () => {
       engine.onBossKilled();
       expect(gameStore.gemBreakdown.bossKills.base).toBe(1);
