@@ -261,4 +261,147 @@ describe("PersistStore", () => {
       expect(store.gems).toBe(0);
     });
   });
+
+  describe("nested array merge on load", () => {
+    it("fills missing levels indices with false when save has fewer than 7 entries", () => {
+      const oldData = {
+        gems: 10,
+        unlocked: {
+          basic: {
+            levels: [true, true, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+        },
+      };
+      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(oldData));
+      store.load();
+      expect(store.unlocked.basic.levels.length).toBe(7);
+      expect(store.unlocked.basic.levels[0]).toBe(true);
+      expect(store.unlocked.basic.levels[1]).toBe(true);
+      expect(store.unlocked.basic.levels[2]).toBe(false);
+      expect(store.unlocked.basic.levels[3]).toBe(false);
+      expect(store.unlocked.basic.levels[6]).toBe(false);
+    });
+
+    it("preserves levels beyond default length when save has more than 7 entries", () => {
+      const data = {
+        gems: 10,
+        unlocked: {
+          basic: {
+            levels: [true, true, true, true, true, true, true, true],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+        },
+      };
+      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(data));
+      store.load();
+      expect(store.unlocked.basic.levels.length).toBe(8);
+      expect(store.unlocked.basic.levels[7]).toBe(true);
+    });
+
+    it("fills missing variantA/variantB/addons indices with false", () => {
+      const data = {
+        gems: 10,
+        unlocked: {
+          basic: {
+            levels: [true, true, false, false, false, false, false],
+            variantA: [true],
+            variantB: [false, false],
+            addons: [false, true, false],
+          },
+        },
+      };
+      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(data));
+      store.load();
+      expect(store.unlocked.basic.variantA.length).toBe(3);
+      expect(store.unlocked.basic.variantA[0]).toBe(true);
+      expect(store.unlocked.basic.variantA[1]).toBe(false);
+      expect(store.unlocked.basic.variantA[2]).toBe(false);
+      expect(store.unlocked.basic.variantB.length).toBe(3);
+      expect(store.unlocked.basic.variantB[0]).toBe(false);
+      expect(store.unlocked.basic.variantB[1]).toBe(false);
+      expect(store.unlocked.basic.variantB[2]).toBe(false);
+      expect(store.unlocked.basic.addons[0]).toBe(false);
+      expect(store.unlocked.basic.addons[1]).toBe(true);
+      expect(store.unlocked.basic.addons[2]).toBe(false);
+    });
+
+    it("preserves saved unlock values over defaults", () => {
+      const data = {
+        gems: 10,
+        unlocked: {
+          basic: {
+            levels: [false, false, true, true, true, true, true],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+        },
+      };
+      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(data));
+      store.load();
+      expect(store.unlocked.basic.levels[0]).toBe(false);
+      expect(store.unlocked.basic.levels[1]).toBe(false);
+      expect(store.unlocked.basic.levels[2]).toBe(true);
+    });
+
+    it("merges arrays element-by-element across all tower types", () => {
+      const data = {
+        gems: 10,
+        unlocked: {
+          basic: {
+            levels: [true, true, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+          ice: {
+            levels: [true, true, true, true, true, true, true],
+            variantA: [true, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+          sniper: {
+            levels: [true, true, false, false, false, false, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+          cannon: {
+            levels: [true, true, false, false, false, false, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+          lightning: {
+            levels: [true, true, false, false, false, false, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+          railgun: {
+            levels: [true, true, false, false, false, false, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+        },
+      };
+      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(data));
+      store.load();
+      expect(store.unlocked.basic.levels.length).toBe(7);
+      expect(store.unlocked.ice.levels.length).toBe(7);
+      expect(store.unlocked.ice.levels[6]).toBe(true);
+      for (const towerId of Object.keys(store.unlocked)) {
+        expect(store.unlocked[towerId].levels.length).toBe(7);
+        expect(store.unlocked[towerId].variantA.length).toBe(3);
+        expect(store.unlocked[towerId].variantB.length).toBe(3);
+        expect(store.unlocked[towerId].addons.length).toBe(3);
+      }
+    });
+  });
 });

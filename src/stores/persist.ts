@@ -51,6 +51,20 @@ function blankTower(): TowerUnlocks {
   };
 }
 
+function mergeTowerUnlocks(saved: TowerUnlocks): TowerUnlocks {
+  const base = blankTower();
+  const merged: TowerUnlocks = { levels: [], variantA: [], variantB: [], addons: [] };
+  for (const key of ["levels", "variantA", "variantB", "addons"] as const) {
+    const baseArr = base[key];
+    const savedArr = saved[key] ?? [];
+    const length = Math.max(baseArr.length, savedArr.length);
+    for (let i = 0; i < length; i++) {
+      merged[key][i] = savedArr[i] ?? baseArr[i] ?? false;
+    }
+  }
+  return merged;
+}
+
 function defaultUnlocked(): Record<string, TowerUnlocks> {
   return {
     basic: blankTower(),
@@ -132,7 +146,7 @@ export const usePersistStore = defineStore("persist", {
           this.unlocked = { ...defaults.unlocked, ...this.unlocked };
           for (const towerId of Object.keys(defaults.unlocked)) {
             if (this.unlocked[towerId]) {
-              this.unlocked[towerId] = { ...blankTower(), ...this.unlocked[towerId] };
+              this.unlocked[towerId] = mergeTowerUnlocks(this.unlocked[towerId]);
             }
           }
           return;
