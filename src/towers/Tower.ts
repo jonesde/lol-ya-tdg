@@ -69,6 +69,7 @@ interface EnemyManagerRef {
     hp: number;
     id: number;
     applySlow(amount: number, duration: number): void;
+    applyStun?(duration: number): void;
   }[];
 }
 
@@ -620,24 +621,17 @@ export class Tower {
     // Data-driven frost aura (ice addon 0)
     if (stats.frostAura) {
       const tileSize = this.grid?.tileSize || 36;
-      const r2 = (ICE_AURA_RANGE * tileSize) ** 2;
-      for (const enemy of enemyManager.enemies) {
-        const deltaX = enemy.x - this.x;
-        const deltaY = enemy.y - this.y;
-        if (deltaX * deltaX + deltaY * deltaY <= r2)
-          enemy.applySlow(stats.slowAmt * ICE_AURA_SLOW_MULT, ICE_AURA_DURATION);
-      }
+      const frostRangePx = ICE_AURA_RANGE * tileSize;
+      for (const enemy of enemyManager.getEnemiesInRange(this.x, this.y, frostRangePx))
+        enemy.applySlow(stats.slowAmt * ICE_AURA_SLOW_MULT, ICE_AURA_DURATION);
     }
 
     // Data-driven static field (lightning addon 0)
     if (stats.staticField) {
       const tileSize = this.grid?.tileSize || 36;
-      const r2 = (STATIC_FIELD_RANGE * tileSize) ** 2;
-      for (const enemy of enemyManager.enemies) {
-        const deltaX = enemy.x - this.x;
-        const deltaY = enemy.y - this.y;
-        if (deltaX * deltaX + deltaY * deltaY <= r2) enemy.applySlow(STATIC_FIELD_SLOW_AMT, STATIC_FIELD_SLOW_DUR);
-      }
+      const staticFieldRangePx = STATIC_FIELD_RANGE * tileSize;
+      for (const enemy of enemyManager.getEnemiesInRange(this.x, this.y, staticFieldRangePx))
+        enemy.applySlow(STATIC_FIELD_SLOW_AMT, STATIC_FIELD_SLOW_DUR);
     }
 
     // Data-driven ice burst (ice addon 2)
@@ -646,12 +640,9 @@ export class Tower {
       if (this.iceBurstTimer >= ICE_BURST_INTERVAL) {
         this.iceBurstTimer = 0;
         const tileSize = this.grid?.tileSize || 36;
-        const r2 = (ICE_BURST_RANGE * tileSize) ** 2;
-        for (const enemy of enemyManager.enemies) {
-          const deltaX = enemy.x - this.x;
-          const deltaY = enemy.y - this.y;
-          if (deltaX * deltaX + deltaY * deltaY <= r2 && enemy.applyStun) enemy.applyStun(ICE_BURST_STUN_DURATION);
-        }
+        const iceBurstRangePx = ICE_BURST_RANGE * tileSize;
+        for (const enemy of enemyManager.getEnemiesInRange(this.x, this.y, iceBurstRangePx))
+          if (enemy.applyStun) enemy.applyStun(ICE_BURST_STUN_DURATION);
       }
     }
 
