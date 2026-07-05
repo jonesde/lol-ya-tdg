@@ -147,7 +147,7 @@ export class GameEngine {
     );
     this.projectileManager.setTowerLookup((towerId) => this.towerManager?.getTowerById(towerId) ?? null);
     this.projectileManager.setOnGoldReward((amount) => {
-      this.gameStore.addGold(amount);
+      this.earnGold(amount);
     });
     this.waveManager = new WaveManager(mapData, this.enemyManager);
 
@@ -270,7 +270,7 @@ export class GameEngine {
         this.onEnemyKill(enemy);
       } else if (enemy.onPathBlocked) {
         const bounty = Math.ceil((ENEMY_TYPES[enemy.type]?.bounty || 1) * BOUNTY_BLOCKED_RATIO);
-        this.gameStore.addGold(bounty);
+        this.earnGold(bounty);
       } else {
         this.onEnemyKill(enemy);
       }
@@ -376,8 +376,12 @@ export class GameEngine {
 
   onEnemyKill(enemy: Enemy): void {
     const bounty = ENEMY_TYPES[enemy.type]?.bounty || 1;
-    this.gameStore.addGold(bounty);
-    this.totalGoldEarned += bounty;
+    this.earnGold(bounty);
+  }
+
+  earnGold(amount: number): void {
+    this.totalGoldEarned += amount;
+    this.gameStore.addGold(amount);
   }
 
   endGame(victory: boolean): void {
