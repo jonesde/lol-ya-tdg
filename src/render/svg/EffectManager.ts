@@ -154,11 +154,12 @@ export class EffectManager {
     buildTilePos: { tileX: number; tileY: number } | null,
     selectedTowerType: string | null,
     selectedTower: { x: number; y: number; type: string; level: number } | null,
+    buildValid: boolean,
     dt: number,
   ): void {
     this.syncLightning(dt);
     this.syncStun(dt);
-    this.syncBuildPreview(buildTilePos, selectedTowerType);
+    this.syncBuildPreview(buildTilePos, selectedTowerType, buildValid);
     this.syncUpgradeButton(selectedTower);
   }
 
@@ -313,6 +314,7 @@ export class EffectManager {
   private syncBuildPreview(
     buildTilePos: { tileX: number; tileY: number } | null,
     selectedTowerType: string | null,
+    buildValid: boolean,
   ): void {
     if (selectedTowerType && buildTilePos) {
       const tileX = buildTilePos.tileX * TILE_SIZE;
@@ -325,7 +327,7 @@ export class EffectManager {
         this.buildPreviewEl.setAttribute("transform", `translate(${tileX}, ${tileY})`);
         this.buildPreviewEl.setAttribute("width", String(TILE_SIZE));
         this.buildPreviewEl.setAttribute("height", String(TILE_SIZE));
-        this.buildPreviewEl.setAttribute("fill", "rgba(0,255,0,0.3)");
+        this.buildPreviewEl.setAttribute("fill", buildValid ? "rgba(0,255,0,0.3)" : "rgba(255,0,0,0.3)");
       }
 
       if (this.buildRangeCircleEl) {
@@ -336,7 +338,7 @@ export class EffectManager {
         const rangeTiles = towerBase?.range ?? 3.5;
         const rangePx = rangeTiles * TILE_SIZE;
         this.buildRangeCircleEl.setAttribute("r", String(rangePx));
-        this.buildRangeCircleEl.setAttribute("stroke", "rgba(0,255,0,0.6)");
+        this.buildRangeCircleEl.setAttribute("stroke", buildValid ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)");
       }
     } else {
       if (this.buildPreviewEl) {
