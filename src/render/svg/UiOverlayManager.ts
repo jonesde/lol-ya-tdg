@@ -9,6 +9,16 @@ export class UiOverlayManager {
   private shieldBarPool: SVGRectElement[] = [];
   private bossTextPool: SVGTextElement[] = [];
   private pendingTextPool: SVGTextElement[] = [];
+  // Dirty-check caches: parallel arrays indexed by bar group (every 3 elements = 1 bar)
+  private hpLastTransform: string[] = [];
+  private hpLastWidth: string[] = [];
+  private hpLastFill: string[] = [];
+  private shieldLastTransform: string[] = [];
+  private shieldLastWidth: string[] = [];
+  private bossLastTransform: string[] = [];
+  private bossLastText: string[] = [];
+  private pendingLastTransform: string[] = [];
+  private pendingLastText: string[] = [];
 
   init(layer: SVGGElement): void {
     for (let i = 0; i < HP_BAR_POOL_SIZE; i++) {
@@ -37,6 +47,9 @@ export class UiOverlayManager {
       layer.appendChild(fg);
 
       this.hpBarPool.push(bg, border, fg);
+      this.hpLastTransform.push("");
+      this.hpLastWidth.push("");
+      this.hpLastFill.push("");
     }
 
     for (let i = 0; i < SHIELD_BAR_POOL_SIZE; i++) {
@@ -65,6 +78,8 @@ export class UiOverlayManager {
       layer.appendChild(fg);
 
       this.shieldBarPool.push(bg, border, fg);
+      this.shieldLastTransform.push("");
+      this.shieldLastWidth.push("");
     }
 
     for (let i = 0; i < BOSS_TEXT_POOL_SIZE; i++) {
@@ -78,6 +93,8 @@ export class UiOverlayManager {
       text.setAttribute("dominant-baseline", "central");
       layer.appendChild(text);
       this.bossTextPool.push(text);
+      this.bossLastTransform.push("");
+      this.bossLastText.push("");
     }
 
     for (let i = 0; i < 4; i++) {
@@ -91,6 +108,8 @@ export class UiOverlayManager {
       text.setAttribute("dominant-baseline", "central");
       layer.appendChild(text);
       this.pendingTextPool.push(text);
+      this.pendingLastTransform.push("");
+      this.pendingLastText.push("");
     }
   }
 
@@ -98,6 +117,9 @@ export class UiOverlayManager {
     let barIndex = 0;
     let shieldIndex = 0;
     let bossIndex = 0;
+    let hpBarGroup = 0;
+    let shieldBarGroup = 0;
+    let bossGroup = 0;
 
     for (const enemy of enemies) {
       if (barIndex + 2 >= this.hpBarPool.length) break;
@@ -109,17 +131,30 @@ export class UiOverlayManager {
 
       const barX = enemy.x - 12;
       const barY = enemy.y - 12;
+      const barTransform = `translate(${barX}, ${barY})`;
 
-      bg.setAttribute("transform", `translate(${barX}, ${barY})`);
-      border.setAttribute("transform", `translate(${barX}, ${barY})`);
+      const hpGroupIdx = hpBarGroup;
+      if (this.hpLastTransform[hpGroupIdx] !== barTransform) {
+        bg.setAttribute("transform", barTransform);
+        border.setAttribute("transform", barTransform);
+        fg.setAttribute("transform", barTransform);
+        this.hpLastTransform[hpGroupIdx] = barTransform;
+      }
       border.style.visibility = "visible";
-
       fg.style.visibility = "visible";
-      fg.setAttribute("transform", `translate(${barX}, ${barY})`);
 
       const hpPercent = Math.max(0, enemy.hp / enemy.maxHp);
-      fg.setAttribute("width", `${24 * hpPercent}`);
-      fg.setAttribute("fill", hpPercent > 0.5 ? "#00ff00" : hpPercent > 0.25 ? "#ffff00" : "#ff0000");
+      const hpWidth = `${24 * hpPercent}`;
+      const hpFill = hpPercent > 0.5 ? "#00ff00" : hpPercent > 0.25 ? "#ffff00" : "#ff0000";
+      if (this.hpLastWidth[hpGroupIdx] !== hpWidth) {
+        fg.setAttribute("width", hpWidth);
+        this.hpLastWidth[hpGroupIdx] = hpWidth;
+      }
+      if (this.hpLastFill[hpGroupIdx] !== hpFill) {
+        fg.setAttribute("fill", hpFill);
+        this.hpLastFill[hpGroupIdx] = hpFill;
+      }
+      hpBarGroup++;
 
       if (enemy.shield > 0 && enemy.maxShield > 0 && shieldIndex + 2 < this.shieldBarPool.length) {
         const shieldBg = this.shieldBarPool[shieldIndex]!;
@@ -129,35 +164,57 @@ export class UiOverlayManager {
 
         const shieldBarX = enemy.x - 12;
         const shieldBarY = enemy.y - 16;
+        const shieldTransform = `translate(${shieldBarX}, ${shieldBarY})`;
 
+        const shGroupIdx = shieldBarGroup;
+        if (this.shieldLastTransform[shGroupIdx] !== shieldTransform) {
+          shieldBg.setAttribute("transform", shieldTransform);
+          shieldBorder.setAttribute("transform", shieldTransform);
+          shieldFg.setAttribute("transform", shieldTransform);
+          this.shieldLastTransform[shGroupIdx] = shieldTransform;
+        }
         shieldBg.style.visibility = "visible";
-        shieldBg.setAttribute("transform", `translate(${shieldBarX}, ${shieldBarY})`);
         shieldBorder.style.visibility = "visible";
-        shieldBorder.setAttribute("transform", `translate(${shieldBarX}, ${shieldBarY})`);
-
         shieldFg.style.visibility = "visible";
-        shieldFg.setAttribute("transform", `translate(${shieldBarX}, ${shieldBarY})`);
 
         const shieldPercent = Math.max(0, enemy.shield / enemy.maxShield);
-        shieldFg.setAttribute("width", `${24 * shieldPercent}`);
+        const shieldWidth = `${24 * shieldPercent}`;
+        if (this.shieldLastWidth[shGroupIdx] !== shieldWidth) {
+          shieldFg.setAttribute("width", shieldWidth);
+          this.shieldLastWidth[shGroupIdx] = shieldWidth;
+        }
+        shieldBarGroup++;
       }
 
       if (enemy.type === "boss" && bossIndex < this.bossTextPool.length) {
         const text = this.bossTextPool[bossIndex]!;
         bossIndex++;
         text.style.visibility = "visible";
-        text.setAttribute("transform", `translate(${enemy.x}, ${enemy.y - 20})`);
-        text.textContent = Math.ceil(enemy.hp).toLocaleString();
+        const bossTransform = `translate(${enemy.x}, ${enemy.y - 20})`;
+        if (this.bossLastTransform[bossGroup] !== bossTransform) {
+          text.setAttribute("transform", bossTransform);
+          this.bossLastTransform[bossGroup] = bossTransform;
+        }
+        const bossHpText = Math.ceil(enemy.hp).toLocaleString();
+        if (this.bossLastText[bossGroup] !== bossHpText) {
+          text.textContent = bossHpText;
+          this.bossLastText[bossGroup] = bossHpText;
+        }
+        bossGroup++;
       }
     }
 
-    for (let i = barIndex; i < this.hpBarPool.length; i++) {
-      this.hpBarPool[i]!.style.visibility = "hidden";
+    for (let g = hpBarGroup; g < this.hpLastTransform.length; g++) {
+      this.hpBarPool[g * 3]!.style.visibility = "hidden";
+      this.hpBarPool[g * 3 + 1]!.style.visibility = "hidden";
+      this.hpBarPool[g * 3 + 2]!.style.visibility = "hidden";
     }
-    for (let i = shieldIndex; i < this.shieldBarPool.length; i++) {
-      this.shieldBarPool[i]!.style.visibility = "hidden";
+    for (let g = shieldBarGroup; g < this.shieldLastTransform.length; g++) {
+      this.shieldBarPool[g * 3]!.style.visibility = "hidden";
+      this.shieldBarPool[g * 3 + 1]!.style.visibility = "hidden";
+      this.shieldBarPool[g * 3 + 2]!.style.visibility = "hidden";
     }
-    for (let i = bossIndex; i < this.bossTextPool.length; i++) {
+    for (let i = bossGroup; i < this.bossTextPool.length; i++) {
       this.bossTextPool[i]!.style.visibility = "hidden";
     }
   }
@@ -170,12 +227,20 @@ export class UiOverlayManager {
       if (textIndex >= this.pendingTextPool.length) break;
 
       const text = this.pendingTextPool[textIndex]!;
-      textIndex++;
       const spawnTile = grid.spawns[spawnIndex]!;
       const worldPos = grid.tileToWorld(spawnTile.x, spawnTile.y);
+      const pendingTransform = `translate(${worldPos.x}, ${worldPos.y})`;
+      const pendingText = `+${pendingCount}`;
       text.style.visibility = "visible";
-      text.setAttribute("transform", `translate(${worldPos.x}, ${worldPos.y})`);
-      text.textContent = `+${pendingCount}`;
+      if (this.pendingLastTransform[textIndex] !== pendingTransform) {
+        text.setAttribute("transform", pendingTransform);
+        this.pendingLastTransform[textIndex] = pendingTransform;
+      }
+      if (this.pendingLastText[textIndex] !== pendingText) {
+        text.textContent = pendingText;
+        this.pendingLastText[textIndex] = pendingText;
+      }
+      textIndex++;
     }
 
     for (let i = textIndex; i < this.pendingTextPool.length; i++) {

@@ -211,17 +211,9 @@ function buildTileSymbols(activeTheme: MapThemeData | null): string {
 
 /**
  * Ported from Shapes.ts drawTile() — returns SVG elements for a single tile
- * using the theme's tile image via <use>, plus overlays for border, height
- * number, spawn marker, and blocked indicator.
+ * using the theme's tile image via <use>.
  */
-function getTileSvg(
-  tile: TileInfo,
-  x: number,
-  y: number,
-  isBlocked: boolean,
-  regionId: number,
-  rotation: number,
-): string {
+function getTileSvg(tile: TileInfo, x: number, y: number, regionId: number, rotation: number): string {
   const size = TILE_SIZE;
   const tileSymbolId =
     tile.type === "path" || tile.type === "spawn"
@@ -237,27 +229,8 @@ function getTileSvg(
   // Tile image (from theme, rendered at tile size via <use>)
   svg += `<use href="#${tileSymbolId}" width="${size}" height="${size}" />`;
 
-  // Subtle border (overlay)
-  svg += `<rect x="0.5" y="0.5" width="${size - 1}" height="${size - 1}" fill="none" stroke="rgba(0,0,0,0.15)" stroke-width="1" />`;
-
-  // Spawn: red center square
-  if (tile.type === "spawn") {
-    svg += `<rect x="${size * 0.3}" y="${size * 0.3}" width="${size * 0.4}" height="${size * 0.4}" fill="#ff5a6e" />`;
-  }
-
-  // Blocked path tiles: white cross-hatch indicator
-  if (isBlocked) {
-    svg += `<path d="M6,6 L30,30 M30,6 L6,30" stroke="rgba(255,255,255,0.2)" stroke-width="1" />`;
-  }
-
   if (rotation !== 0) {
     svg += `</g>`;
-  }
-
-  // Terrain: height number (rendered outside rotation so it stays upright)
-  if (tile.type === "terrain") {
-    const h = tile.height;
-    svg += `<text x="${size / 2}" y="${size / 2}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="rgba(0,0,0,0.35)">${h}</text>`;
   }
 
   svg += `</g>`;
@@ -332,18 +305,30 @@ export function useSvgStaticContent(
     let svg = "";
 
     // Background rect
-    svg += `<rect x="0" y="0" width="${map.width * TILE_SIZE}" height="${map.height * TILE_SIZE}" fill="#0a0d12" />`;
+    const BACKGROUND_RGB = "40,40,40";
+    svg += `<rect x="0" y="0" width="${map.width * TILE_SIZE}" height="${map.height * TILE_SIZE}" fill="rgba(${BACKGROUND_RGB},1)" />`;
 
-    // Tiles — iterate 2D array, check blocked status from Grid.blocked Set
+    // Tiles — iterate 2D array
     const tileRng = mulberry32(map.seed);
     for (let ty = 0; ty < map.height; ty++) {
       for (let tx = 0; tx < map.width; tx++) {
         const tile = map.tiles[ty]![tx] as TileInfo;
-        const isBlocked = grid?.blocked.has(`${tx},${ty}`) ?? false;
         const rotation = Math.floor(tileRng() * 4) * 90;
-        svg += getTileSvg(tile, tx * TILE_SIZE, ty * TILE_SIZE, isBlocked, regionId, rotation);
+        svg += getTileSvg(tile, tx * TILE_SIZE, ty * TILE_SIZE, regionId, rotation);
       }
     }
+
+    // Grid lines — single <path> with full-height vertical + full-width horizontal lines
+    const gridMapW = map.width * TILE_SIZE;
+    const gridMapH = map.height * TILE_SIZE;
+    let gridD = "";
+    for (let i = 0; i <= map.width; i++) {
+      gridD += `M${i * TILE_SIZE},0 L${i * TILE_SIZE},${gridMapH} `;
+    }
+    for (let j = 0; j <= map.height; j++) {
+      gridD += `M0,${j * TILE_SIZE} L${gridMapW},${j * TILE_SIZE} `;
+    }
+    svg += `<path d="${gridD}" fill="none" stroke="rgba(${BACKGROUND_RGB},0.8)" stroke-width="0.7" />`;
 
     // Spawn markers
     for (const spawn of map.spawns) {

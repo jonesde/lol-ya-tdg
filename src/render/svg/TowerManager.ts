@@ -5,6 +5,7 @@ export class TowerManager {
   private layer: SVGGElement | null = null;
   private towerMap: Map<string, TowerRenderProxy> = new Map();
   private pipMap: Map<string, SVGCircleElement[]> = new Map();
+  private activeIds: Set<string> = new Set();
   init(layer: SVGGElement): void {
     this.layer = layer;
   }
@@ -12,7 +13,8 @@ export class TowerManager {
   syncFromGameEngine(towers: Tower[], dt: number): void {
     if (!this.layer) return;
 
-    const activeIds = new Set<string>();
+    this.activeIds.clear();
+    const activeIds = this.activeIds;
 
     for (const tower of towers) {
       const towerId = tower.id;
@@ -50,13 +52,19 @@ export class TowerManager {
         }
       }
 
+      const pipFill = tower.level >= 5 ? "#ffd700" : "#c0c0c0";
       for (let p = 0; p < pips.length; p++) {
         const pip = pips[p]!;
         pip.style.visibility = "visible";
         const pipX = tower.x + (p - (pipCount - 1) / 2) * 5;
         const pipY = tower.y + 12;
-        pip.setAttribute("transform", `translate(${pipX}, ${pipY})`);
-        pip.setAttribute("fill", tower.level >= 5 ? "#ffd700" : "#c0c0c0");
+        const pipTransform = `translate(${pipX}, ${pipY})`;
+        if (pip.getAttribute("transform") !== pipTransform) {
+          pip.setAttribute("transform", pipTransform);
+        }
+        if (pip.getAttribute("fill") !== pipFill) {
+          pip.setAttribute("fill", pipFill);
+        }
       }
     }
 
@@ -118,6 +126,10 @@ class TowerRenderProxy {
   private lastSeenFireAnimTime: number = 0;
   private animStartElapsed: number = 0;
   private animConfig: { duration: number; referenceImages?: unknown[] } | null = null;
+  private lastTransform: string = "";
+  private lastWidth: string = "";
+  private lastHeight: string = "";
+  private lastColor: string = "";
 
   constructor(el: SVGUseElement) {
     this.el = el;
@@ -129,7 +141,10 @@ class TowerRenderProxy {
 
   sync(tower: Tower, dt: number): void {
     this.el.style.visibility = "visible";
-    this.el.style.color = tower.color;
+    if (tower.color !== this.lastColor) {
+      this.el.style.color = tower.color;
+      this.lastColor = tower.color;
+    }
 
     const fireAnimTime = (tower as unknown as { fireAnimTime: number }).fireAnimTime;
     if (fireAnimTime > 0 && fireAnimTime !== this.lastSeenFireAnimTime) {
@@ -158,15 +173,24 @@ class TowerRenderProxy {
       this.lastSpriteId = spriteId;
     }
 
-    this.el.setAttribute("width", String(TOWER_SCALED_SIZE));
-    this.el.setAttribute("height", String(TOWER_SCALED_SIZE));
+    const widthStr = String(TOWER_SCALED_SIZE);
+    const heightStr = String(TOWER_SCALED_SIZE);
+    if (widthStr !== this.lastWidth) {
+      this.el.setAttribute("width", widthStr);
+      this.lastWidth = widthStr;
+    }
+    if (heightStr !== this.lastHeight) {
+      this.el.setAttribute("height", heightStr);
+      this.lastHeight = heightStr;
+    }
 
     const rotationDeg = (tower.angle || 0) * (180 / Math.PI);
     const halfSize = TOWER_SCALED_SIZE / 2;
-    this.el.setAttribute(
-      "transform",
-      `translate(${tower.x - halfSize}, ${tower.y - halfSize}) rotate(${rotationDeg}, ${halfSize}, ${halfSize})`,
-    );
+    const transform = `translate(${tower.x - halfSize}, ${tower.y - halfSize}) rotate(${rotationDeg}, ${halfSize}, ${halfSize})`;
+    if (transform !== this.lastTransform) {
+      this.el.setAttribute("transform", transform);
+      this.lastTransform = transform;
+    }
   }
 
   dispose(): void {
@@ -174,5 +198,9 @@ class TowerRenderProxy {
       this.el.parentNode.removeChild(this.el);
     }
     this.lastSpriteId = "";
+    this.lastTransform = "";
+    this.lastWidth = "";
+    this.lastHeight = "";
+    this.lastColor = "";
   }
 }

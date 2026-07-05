@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import type { Enemy } from "@/enemies/Enemy.js";
 import { GameState } from "@/game/Constants.js";
 import { TOWER_META } from "@/game/ConstantsTower.js";
@@ -105,16 +105,56 @@ let uiOverlayManager!: UiOverlayManager;
 
 let cameraTransformString = "translate(0,0) scale(1)";
 
-const onMouseMove = (e: MouseEvent): void => {
-  if (!svgRoot.value || !worldLayer.value) return;
+// Cached inverse CTM -- only recomputed when camera or view size changes
+let cachedInverseCtm: DOMMatrix | null = null;
+let cachedCameraX: number = 0;
+let cachedCameraY: number = 0;
+let cachedCameraZoom: number = 1;
+let cachedViewW: number = 0;
+let cachedViewH: number = 0;
+
+const updateCachedCtm = (): void => {
+  if (!worldLayer.value) return;
+  const cam = gameStore.camera;
+  if (
+    cam.x === cachedCameraX &&
+    cam.y === cachedCameraY &&
+    cam.zoom === cachedCameraZoom &&
+    viewSize.value.w === cachedViewW &&
+    viewSize.value.h === cachedViewH
+  ) {
+    return;
+  }
+  cachedCameraX = cam.x;
+  cachedCameraY = cam.y;
+  cachedCameraZoom = cam.zoom;
+  cachedViewW = viewSize.value.w;
+  cachedViewH = viewSize.value.h;
+  cachedInverseCtm = worldLayer.value.getScreenCTM()?.inverse() ?? null;
+};
+
+// rAF-throttled hover coordinates
+let pendingHoverX: number = 0;
+let pendingHoverY: number = 0;
+let pendingHoverScheduled: boolean = false;
+
+const scheduleHover = (clientX: number, clientY: number): void => {
+  pendingHoverX = clientX;
+  pendingHoverY = clientY;
+  if (!pendingHoverScheduled) {
+    pendingHoverScheduled = true;
+    requestAnimationFrame(flushHover);
+  }
+};
+
+const flushHover = (): void => {
+  pendingHoverScheduled = false;
+  if (!svgRoot.value || !cachedInverseCtm) return;
 
   const pt = svgRoot.value.createSVGPoint();
-  pt.x = e.clientX;
-  pt.y = e.clientY;
-
-  const ctm = worldLayer.value.getScreenCTM()?.inverse();
-  if (!ctm) return;
-  const worldPos = pt.matrixTransform(ctm);
+  pt.x = pendingHoverX;
+  pt.y = pendingHoverY;
+  const worldPos = pt.matrixTransform(cachedInverseCtm);
 
   mouseWorldPos.value = worldPos;
 
@@ -123,16 +163,21 @@ const onMouseMove = (e: MouseEvent): void => {
   }
 };
 
+const onMouseMove = (e: MouseEvent): void => {
+  updateCachedCtm();
+  scheduleHover(e.clientX, e.clientY);
+};
+
 const onClick = (e: MouseEvent): void => {
   if (!svgRoot.value || !worldLayer.value || !engine.value) return;
+
+  updateCachedCtm();
+  if (!cachedInverseCtm) return;
 
   const pt = svgRoot.value.createSVGPoint();
   pt.x = e.clientX;
   pt.y = e.clientY;
-
-  const ctm = worldLayer.value.getScreenCTM()?.inverse();
-  if (!ctm) return;
-  const worldPos = pt.matrixTransform(ctm);
+  const worldPos = pt.matrixTransform(cachedInverseCtm);
 
   engine.value.handleClick(worldPos.x, worldPos.y);
 };
@@ -183,6 +228,7 @@ onMounted(async () => {
     const initialCam = fitToGrid(mapWidth, mapHeight, viewSize.value.w, viewSize.value.h - 104);
     cameraTransformString = `translate(${initialCam.x}, ${initialCam.y}) scale(${initialCam.zoom})`;
     worldLayer.value?.setAttribute("transform", cameraTransformString);
+    gameStore.setCamera(initialCam.x, initialCam.y, initialCam.zoom);
   }
 
   if (svgRoot.value) {
@@ -194,6 +240,22 @@ onMounted(async () => {
     });
     resizeObserver.value.observe(svgRoot.value);
   }
+
+  // Invalidate cached CTM when camera or view size changes
+  watch(
+    () => gameStore.camera,
+    () => {
+      cachedInverseCtm = null;
+    },
+    { deep: true },
+  );
+  watch(
+    () => viewSize.value,
+    () => {
+      cachedInverseCtm = null;
+    },
+    { deep: true },
+  );
 
   engine.value.renderCallback = () => {
     const cam = gameStore.camera;
@@ -254,6 +316,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  pendingHoverScheduled = false;
   engine.value?.dispose();
   resizeObserver.value?.disconnect();
   resizeObserver.value = null;

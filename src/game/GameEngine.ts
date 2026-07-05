@@ -466,11 +466,29 @@ export class GameEngine {
     return worldX >= buildX && worldX <= buildX + 10 && worldY >= buildY && worldY <= buildY + 10;
   }
 
+  private lastHoverTileX: number | null = null;
+  private lastHoverTileY: number | null = null;
+  private lastHoverUpgradeBtn: boolean = false;
+
   setHover(worldX: number, worldY: number): void {
-    const tileSize = this.grid?.tileSize || 36;
-    const tile = { tileX: Math.floor(worldX / tileSize), tileY: Math.floor(worldY / tileSize) };
-    this.gameStore.setHoverTile(this.grid?.inBounds(tile.tileX, tile.tileY) ? tile : null);
-    this.gameStore.setHoverUpgradeBtn(this.isUpgradeBtnAt(worldX, worldY));
+    const grid = this.grid;
+    if (!grid) return;
+
+    const tileSize = grid.tileSize;
+    const tileX = Math.floor(worldX / tileSize);
+    const tileY = Math.floor(worldY / tileSize);
+
+    if (tileX !== this.lastHoverTileX || tileY !== this.lastHoverTileY) {
+      this.lastHoverTileX = tileX;
+      this.lastHoverTileY = tileY;
+      this.gameStore.setHoverTile(grid.inBounds(tileX, tileY) ? { tileX, tileY } : null);
+    }
+
+    const hoverUpgradeBtn = this.isUpgradeBtnAt(worldX, worldY);
+    if (hoverUpgradeBtn !== this.lastHoverUpgradeBtn) {
+      this.lastHoverUpgradeBtn = hoverUpgradeBtn;
+      this.gameStore.setHoverUpgradeBtn(hoverUpgradeBtn);
+    }
   }
 
   handleClick(worldX: number, worldY: number): void {

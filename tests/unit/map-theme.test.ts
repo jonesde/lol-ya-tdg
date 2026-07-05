@@ -258,8 +258,6 @@ describe("SVG Static Content Render Placement", () => {
 
       expect(svg).toContain('<use href="#tile-r0-terrain2"');
       expect(svg).toContain('<use href="#tile-r0-path"');
-      expect(svg).toContain('stroke="rgba(0,0,0,0.15)"');
-      expect(svg).toContain(">2</text>");
     });
   });
 

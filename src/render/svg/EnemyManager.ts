@@ -56,6 +56,10 @@ class EnemyRenderProxy {
   private walkingScaledElapsed: number = 0;
   private hitReactionStartElapsed: number = 0;
   private lastHitAnimTime: number = 0;
+  private lastTransform: string = "";
+  private lastWidth: string = "";
+  private lastHeight: string = "";
+  private lastFilter: string = "";
 
   constructor(el: SVGUseElement) {
     this.el = el;
@@ -97,7 +101,10 @@ class EnemyRenderProxy {
     } else {
       transform = `translate(${posX}, ${posY}) rotate(${angleDeg}, ${halfSize}, ${halfSize})`;
     }
-    this.el.setAttribute("transform", transform);
+    if (transform !== this.lastTransform) {
+      this.el.setAttribute("transform", transform);
+      this.lastTransform = transform;
+    }
 
     const hitReaction = (enemy as unknown as { hitReaction?: { duration: number; referenceImages?: unknown[] } | null })
       .hitReaction;
@@ -132,14 +139,29 @@ class EnemyRenderProxy {
       }
     }
 
-    this.el.setAttribute("width", String(spriteSize));
-    this.el.setAttribute("height", String(spriteSize));
+    const widthStr = String(spriteSize);
+    const heightStr = String(spriteSize);
+    if (widthStr !== this.lastWidth) {
+      this.el.setAttribute("width", widthStr);
+      this.lastWidth = widthStr;
+    }
+    if (heightStr !== this.lastHeight) {
+      this.el.setAttribute("height", heightStr);
+      this.lastHeight = heightStr;
+    }
 
     if (enemy.slowFactor < 1) {
       const filterLevel = Math.ceil((1 - enemy.slowFactor) * 10);
-      this.el.setAttribute("filter", `url(#slow-${filterLevel})`);
+      const filterValue = `url(#slow-${filterLevel})`;
+      if (filterValue !== this.lastFilter) {
+        this.el.setAttribute("filter", filterValue);
+        this.lastFilter = filterValue;
+      }
     } else {
-      this.el.removeAttribute("filter");
+      if (this.lastFilter !== "") {
+        this.el.removeAttribute("filter");
+        this.lastFilter = "";
+      }
     }
   }
 
@@ -151,6 +173,10 @@ class EnemyRenderProxy {
       this.walkingScaledElapsed = 0;
       this.hitReactionStartElapsed = 0;
       this.lastHitAnimTime = 0;
+      this.lastTransform = "";
+      this.lastWidth = "";
+      this.lastHeight = "";
+      this.lastFilter = "";
     }
   }
 }
