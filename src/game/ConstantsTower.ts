@@ -121,6 +121,8 @@ export const BURN_CIRCUIT_DURATION = 2;
 export const TRUE_SHOT_CHANCE = 0.2;
 // sniper tower Mark Target addon: damage increase percentage for marked target
 export const MARK_TARGET_DMG_PCT = 0.25;
+// sniper tower Mark Target addon: duration of the mark in seconds
+export const MARK_TARGET_DURATION = 3;
 // railgun tower Charge Shot addon: damage multiplier on charged shot
 export const CHARGE_SHOT_MULT = 3;
 // railgun tower Charge Shot addon: shot count required for charge

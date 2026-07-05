@@ -7,7 +7,7 @@ import {
   BURN_CIRCUIT_DURATION,
   CHAIN_DAMAGE_FALLOFF,
   CHAIN_RANGE,
-  CRIT_CHANCE,
+  MARK_TARGET_DURATION,
   MARKSMAN_CHANCE,
   NAPALM_BURN_DPS_RATIO,
   NAPALM_BURN_DURATION,
@@ -50,6 +50,7 @@ export interface ProjectileGame {
   critChance: number;
   goldOnCrit: number;
   bounceShot: boolean;
+  bounceCount: number;
   splashStun: number;
   antiAir: boolean;
   trueShot: number;
@@ -214,6 +215,7 @@ export class ProjectileManager {
       critChance: opts.critChance ?? 0,
       goldOnCrit: opts.goldOnCrit ?? 0,
       bounceShot: opts.bounceShot ?? false,
+      bounceCount: 0,
       splashStun: opts.splashStun ?? 0,
       antiAir: opts.antiAir ?? false,
       trueShot: opts.trueShot ?? 0,
@@ -422,7 +424,7 @@ export class ProjectileManager {
 
     // Mark Target: target takes +25% damage from all sources
     if (projectile.markTarget > 0 && enemy.applyMarkTarget) {
-      enemy.applyMarkTarget(projectile.markTarget, BURN_CIRCUIT_DURATION);
+      enemy.applyMarkTarget(projectile.markTarget, MARK_TARGET_DURATION);
     }
 
     // Anti-Air: ignore shields
@@ -513,12 +515,13 @@ export class ProjectileManager {
       }
     }
 
-    // Bounce Shot: redirect projectile to 1 nearby enemy
-    if (projectile.bounceShot) {
+    // Bounce Shot: redirect projectile to 1 nearby enemy (max 1 bounce)
+    if (projectile.bounceShot && projectile.bounceCount < 1) {
       const bounceTarget = this.findNearestEnemy(projectile.x, projectile.y, projectile.range, enemy.id);
       if (bounceTarget) {
         projectile.targetId = bounceTarget.id;
         projectile.damage *= BOUNCE_DAMAGE_FALLOFF;
+        projectile.bounceCount++;
         return;
       }
     }
@@ -541,13 +544,17 @@ export class ProjectileManager {
     doubleDischarge?: number;
     antiAir?: boolean;
     burnCircuit?: boolean;
+    critChance?: number;
+    goldOnCrit?: number;
+    range?: number;
   }): void {
     let current: LightningTarget | null = this.enemyManager.getEnemyById(opts.targetId);
     if (!current || current.removed) return;
 
     const tier = Math.max(0, opts.towerLevel - 4);
     let remainingChains = 2 + tier;
-    const isCrit = Math.random() < CRIT_CHANCE;
+    const critChance = opts.critChance ?? 0;
+    const isCrit = critChance > 0 && Math.random() < critChance;
     const finalDamage = isCrit ? opts.damage * 2 : opts.damage;
 
     // Lightning strikes instantly: the initial target takes full damage, each
@@ -562,6 +569,10 @@ export class ProjectileManager {
         tower.totalDamageDealt += finalDamage;
         tower.waveDamage += finalDamage;
       }
+    }
+    // Gold Rush: grant gold on critical hit
+    if (isCrit && (opts.goldOnCrit ?? 0) > 0 && this.onGoldReward) {
+      this.onGoldReward(opts.goldOnCrit ?? 0);
     }
     chainTargets.push(current);
     if (this.particles) {
@@ -614,7 +625,7 @@ export class ProjectileManager {
       const secondTarget = this.findNearestEnemy(
         opts.originX,
         opts.originY,
-        CHAIN_RANGE * (this.grid?.tileSize ?? 1),
+        (opts.range ?? CHAIN_RANGE) * (this.grid?.tileSize ?? 1),
         opts.targetId,
       );
       if (secondTarget) {

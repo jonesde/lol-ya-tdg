@@ -109,6 +109,9 @@ interface ProjectileManagerRef {
     doubleDischarge?: number;
     antiAir?: boolean;
     burnCircuit?: boolean;
+    critChance?: number;
+    goldOnCrit?: number;
+    range?: number;
   }): void;
   setOnLightningFlash(callback: (startX: number, startY: number, endX: number, endY: number) => void): void;
 }
@@ -722,6 +725,9 @@ export class Tower {
         doubleDischarge: stats.doubleDischarge,
         antiAir: stats.antiAir,
         burnCircuit: stats.burnCircuit,
+        critChance: stats.critChance,
+        goldOnCrit: stats.goldOnCrit,
+        range: stats.range,
       });
       this.fireAnimTime = performance.now() / 1000;
       if (sound) sound.play(`shoot_${this.type}`);

@@ -104,7 +104,7 @@ const ADDON_INFO: Record<string, { name: string; desc: string }[]> = {
   lightning: [
     { name: "Static Field", desc: "Tower emits a field that slows nearby enemies by 15%." },
     { name: "Double Discharge", desc: "10% chance to fire a second bolt instantly." },
-    { name: "Burn Circuit", desc: "Chained enemies take +20% damage for 2 seconds." },
+    { name: "Burn Circuit", desc: "Chained enemies are burned for chain damage x 1.2 DPS over 2 seconds." },
   ],
   railgun: [
     { name: "Charge Shot", desc: "Every 5th shot deals ×3 damage." },

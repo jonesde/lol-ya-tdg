@@ -345,7 +345,7 @@ describe("ProjectileManager", () => {
           lightningSparks.push({ x1, y1, x2, y2 });
         },
         null,
-        { tileSize: 36 } as any,
+        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
       );
 
       // Force non-crit so damage values are deterministic
@@ -375,7 +375,7 @@ describe("ProjectileManager", () => {
           lightningSparks.push({ x1, y1, x2, y2 });
         },
         null,
-        { tileSize: 36 } as any,
+        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
       );
 
       manager.fireLightning({ originX: 100, originY: 200, damage: 20, towerLevel: 5, targetId: 1, stunDuration: 0.1 });
