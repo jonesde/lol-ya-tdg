@@ -196,13 +196,13 @@ function replayRun(entry: Record<string, unknown>) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 600px;
+  max-width: 960px;
   width: 100%;
   margin: 0 auto;
 }
 
 .history-card {
-  padding: 16px;
+  padding: 10px 16px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -218,7 +218,7 @@ function replayRun(entry: Record<string, unknown>) {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .card-title {
@@ -274,8 +274,8 @@ function replayRun(entry: Record<string, unknown>) {
 .card-stats {
   display: flex;
   gap: 24px;
-  margin-bottom: 12px;
-  padding: 10px;
+  margin-bottom: 6px;
+  padding: 6px 10px;
   background: rgba(255, 255, 255, 0.03);
   border-radius: 6px;
 }
@@ -313,19 +313,19 @@ function replayRun(entry: Record<string, unknown>) {
 }
 
 .card-breakdown {
-  margin-bottom: 12px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .breakdown-section {
-  margin-top: 8px;
-  padding: 8px 12px;
+  margin-top: 0;
+  padding: 6px 12px;
   background: rgba(255, 255, 255, 0.02);
   border-radius: 4px;
   text-align: left;
-}
-
-.breakdown-section:first-child {
-  margin-top: 0;
+  flex: 1 1 auto;
+  min-width: 140px;
 }
 
 .breakdown-section h3 {
