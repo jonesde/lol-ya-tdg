@@ -184,6 +184,7 @@ export class ProjectileManager {
     trueShot?: number;
     markTarget?: number;
     antiHeal?: boolean;
+    pierce?: number;
   }): void {
     const projectile: ProjectileGame = {
       id: this.nextProjectileId++,
@@ -237,6 +238,7 @@ export class ProjectileManager {
       opts.marksman ?? false,
       opts.knockback ?? false,
       opts.variant,
+      opts.pierce,
     );
 
     this.projectiles.push(projectile);
@@ -250,6 +252,7 @@ export class ProjectileManager {
     marksman: boolean,
     knockback: boolean,
     variant?: "A" | "B" | null,
+    pierce?: number,
   ): void {
     const tier = Math.max(0, towerLevel - 4);
 
@@ -263,7 +266,7 @@ export class ProjectileManager {
     }
 
     if (towerType === "railgun") {
-      projectile.pierceCount = 1 + tier;
+      projectile.pierceCount = 1 + tier + (pierce ?? 0);
       projectile.knockback = RAILGUN_KNOCKBASE + RAILGUN_KNOCK_SCALE * tier;
       if (knockback) {
         projectile.knockback *= RAILGUN_KNOCKBACK_MULT;
@@ -276,7 +279,7 @@ export class ProjectileManager {
     }
 
     if (towerType === "sniper" && towerLevel >= 5 && variant === "B") {
-      projectile.pierceCount = 1;
+      projectile.pierceCount = (pierce ?? 0) - 1;
       projectile.stunDuration = TOWER_BASE.sniper!.stun ?? 0;
     }
   }
