@@ -176,10 +176,6 @@ export class WaveManager {
     }
   }
 
-  reportBossKill() {
-    // No-op: bossesKilledThisWave was dead code, removed
-  }
-
   reportBossReachedBase() {
     this.bossesReachedBaseThisWave++;
   }

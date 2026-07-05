@@ -95,10 +95,10 @@ describe("useInput", () => {
 
     it("closes pause menu and unpauses when menu is open", () => {
       gameStore.setState(GameState.PAUSED);
-      uiStore.openMenuFromGame();
+      uiStore.openPauseMenu();
       useInput(gameStore, engine, uiStore);
       triggerInput(" ");
-      expect(uiStore.showMainMenu).toBe(false);
+      expect(uiStore.showPauseMenu).toBe(false);
     });
   });
 
@@ -127,19 +127,19 @@ describe("useInput", () => {
       expect(gameStore.selectedTower).toBeNull();
     });
 
-    it("opens menu when no dialog is open and no tower is selected", () => {
+    it("opens pause menu when no dialog is open and no tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
       useInput(gameStore, engine, uiStore);
       triggerInput("Escape");
-      expect(uiStore.showMainMenu).toBe(true);
+      expect(uiStore.showPauseMenu).toBe(true);
     });
 
-    it("closes menu on second press", () => {
+    it("closes pause menu on second press", () => {
       gameStore.setState(GameState.PAUSED);
-      uiStore.openMenuFromGame();
+      uiStore.openPauseMenu();
       useInput(gameStore, engine, uiStore);
       triggerInput("Escape");
-      expect(uiStore.showMainMenu).toBe(false);
+      expect(uiStore.showPauseMenu).toBe(false);
     });
 
     it("closes debug panel when visible", () => {

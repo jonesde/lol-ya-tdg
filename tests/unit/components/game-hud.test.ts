@@ -73,7 +73,7 @@ describe("GameHud", () => {
     const wrapper = mount(GameHud, { global: { plugins: [pinia] } });
     const menuBtn = wrapper.find("#menuBtn");
     await menuBtn.trigger("click");
-    expect(uiStore.showMainMenu).toBe(true);
+    expect(uiStore.showPauseMenu).toBe(true);
   });
 
   it("cycles time scale on speed button", async () => {

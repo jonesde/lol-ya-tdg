@@ -41,7 +41,7 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
 
     switch (event.key) {
       case " ":
-        if (uiStore.showMainMenu) {
+        if (uiStore.showPauseMenu) {
           uiStore.closeAllDialogs();
         } else {
           engine?.togglePause?.();
@@ -50,7 +50,7 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
         break;
       case "Escape":
         if (
-          uiStore.showMainMenu ||
+          uiStore.showPauseMenu ||
           uiStore.showSkillTree ||
           uiStore.showStatsPanel ||
           uiStore.showHelpDialog ||
@@ -63,7 +63,7 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
         } else if (gs.selectedTower) {
           gs.selectedTower = null;
         } else {
-          uiStore.openMenuFromGame();
+          uiStore.openPauseMenu();
         }
         break;
       case "Tab":

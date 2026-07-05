@@ -115,7 +115,7 @@ watch(
         </button>
         <button class="hud-btn stats-btn" @click="uiStore.toggleStatsPanel()">∑</button>
         <button class="hud-btn" id="helpBtn" @click="uiStore.toggleHelpDialog()">🛈</button>
-        <button class="hud-btn" id="menuBtn" @click="uiStore.openMenuFromGame()">☰</button>
+        <button class="hud-btn" id="menuBtn" @click="uiStore.openPauseMenu()">☰</button>
       </div>
     </div>
     <transition name="notification">

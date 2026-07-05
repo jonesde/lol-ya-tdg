@@ -2,12 +2,15 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK } from "@/game/Constants.js";
+import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
+import { useUiStore } from "@/stores/ui.js";
 
 const router = useRouter();
 const gameStore = useGameStore();
 const persistStore = usePersistStore();
+const uiStore = useUiStore();
 
 const diffTick = computed(() => persistStore.difficulty?.multiplierTick || 0);
 const diffMult = computed(() => diffTick.value * DIFFICULTY_MULT_TICK + 1);
@@ -19,30 +22,40 @@ function onDiffSliderInput(event: Event) {
   persistStore.setDifficultyTick(tickValue);
 }
 
-function newGame() {
-  gameStore.resetToMenu();
-  router.push("/map-select");
+function closeMenu() {
+  uiStore.closePauseMenu();
+}
+
+function endRun() {
+  uiStore.showConfirm({
+    title: "End Run",
+    message: "End the current run and return to the main menu?",
+    confirmLabel: "End Run",
+    cancelLabel: "Cancel",
+    onConfirm: () => {
+      getGameEngine()?.endGame(false);
+      router.push("/game-over");
+    },
+  });
 }
 
 function openSkillTree() {
-  router.push("/skill-tree");
+  uiStore.openSkillTreeFromGame();
 }
 </script>
 
 <template>
-  <div class="main-menu">
+  <div class="pause-menu" @click.self="closeMenu()">
     <div class="menu-content">
-      <h1 class="game-title">Lo! Yet Another TDG</h1>
-
       <div class="menu-buttons">
-        <button class="menu-btn primary" @click="newGame()">
-          New Game
+        <button class="menu-btn primary" @click="closeMenu()">
+          Resume
+        </button>
+        <button class="menu-btn" @click="endRun()">
+          End Run
         </button>
         <button class="menu-btn" @click="openSkillTree()">
           Upgrades!
-        </button>
-        <button class="menu-btn" @click="router.push('/history')">
-          Run History
         </button>
       </div>
 
@@ -68,7 +81,7 @@ function openSkillTree() {
 </template>
 
 <style scoped>
-.main-menu {
+.pause-menu {
   position: absolute;
   inset: 0;
   display: flex;
@@ -88,12 +101,6 @@ function openSkillTree() {
   border: 1px solid var(--color-border);
   border-radius: 16px;
   min-width: 360px;
-}
-
-.game-title {
-  font-size: 32px;
-  color: var(--color-accent);
-  text-shadow: 0 0 20px rgba(95, 208, 255, 0.3);
 }
 
 .menu-buttons {

@@ -9,7 +9,7 @@ import DebugPanel from "./DebugPanel.vue";
 import GameHud from "./GameHud.vue";
 import GameShop from "./GameShop.vue";
 import HelpDialog from "./HelpDialog.vue";
-import MainMenu from "./MainMenu.vue";
+import PauseMenu from "./PauseMenu.vue";
 import SkillTree from "./SkillTree.vue";
 import StatsPanel from "./StatsPanel.vue";
 import SvgGameRoot from "./SvgGameRoot.vue";
@@ -85,8 +85,8 @@ onUnmounted(() => {
     <!-- Wave countdown overlay -->
     <WaveCountdown v-if="gameStore.waveCountdown" />
 
-    <!-- MainMenu overlay -->
-    <MainMenu v-if="uiStore.showMainMenu" />
+    <!-- PauseMenu overlay -->
+    <PauseMenu v-if="uiStore.showPauseMenu" />
 
     <!-- SkillTree overlay -->
     <SkillTree v-if="uiStore.showSkillTree" />

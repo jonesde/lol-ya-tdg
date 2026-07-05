@@ -21,7 +21,7 @@ describe("UiStore", () => {
 
   describe("initial state", () => {
     it("starts with all dialogs hidden", () => {
-      expect(store.showMainMenu).toBe(false);
+      expect(store.showPauseMenu).toBe(false);
       expect(store.showMapSelect).toBe(false);
       expect(store.showSkillTree).toBe(false);
       expect(store.showEndScreen).toBe(false);
@@ -40,8 +40,8 @@ describe("UiStore", () => {
       expect(store.randomMapPanelVisible).toBe(false);
     });
 
-    it("starts with wasPlayingWhenMenuOpened = false", () => {
-      expect(store.wasPlayingWhenMenuOpened).toBe(false);
+    it("starts with wasPlayingWhenPauseOpened = false", () => {
+      expect(store.wasPlayingWhenPauseOpened).toBe(false);
     });
 
     it("starts with wasPlayingWhenSkillTreeOpened = false", () => {
@@ -125,58 +125,58 @@ describe("UiStore", () => {
     });
   });
 
-  describe("openMenuFromGame / closeMenuResume", () => {
-    it("openMenuFromGame records wasPlayingWhenMenuOpened", () => {
+  describe("openPauseMenu / closePauseMenu", () => {
+    it("openPauseMenu records wasPlayingWhenPauseOpened", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
-      stores.ui.openMenuFromGame();
-      expect(stores.ui.wasPlayingWhenMenuOpened).toBe(true);
-      expect(stores.ui.showMainMenu).toBe(true);
+      stores.ui.openPauseMenu();
+      expect(stores.ui.wasPlayingWhenPauseOpened).toBe(true);
+      expect(stores.ui.showPauseMenu).toBe(true);
     });
 
-    it("openMenuFromGame does not toggle pause when engine is null", () => {
+    it("openPauseMenu does not toggle pause when engine is null", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
       vi.mocked(getGameEngine).mockReturnValue(null);
-      stores.ui.openMenuFromGame();
+      stores.ui.openPauseMenu();
       expect(stores.game.state).toBe(GameState.PLAYING);
     });
 
-    it("openMenuFromGame toggles pause when engine exists", () => {
+    it("openPauseMenu toggles pause when engine exists", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
       const togglePauseMock = vi.fn();
       vi.mocked(getGameEngine).mockReturnValue({ togglePause: togglePauseMock } as unknown as TogglePauseEngine);
-      stores.ui.openMenuFromGame();
+      stores.ui.openPauseMenu();
       expect(togglePauseMock).toHaveBeenCalled();
     });
 
-    it("closeMenuResume hides menu and restores playing state", () => {
+    it("closePauseMenu hides menu and restores playing state", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
-      stores.ui.openMenuFromGame();
-      stores.ui.closeMenuResume();
-      expect(stores.ui.showMainMenu).toBe(false);
-      expect(stores.ui.wasPlayingWhenMenuOpened).toBe(false);
+      stores.ui.openPauseMenu();
+      stores.ui.closePauseMenu();
+      expect(stores.ui.showPauseMenu).toBe(false);
+      expect(stores.ui.wasPlayingWhenPauseOpened).toBe(false);
       expect(stores.game.state).toBe(GameState.PLAYING);
     });
 
-    it("closeMenuResume does not toggle when was not playing", () => {
+    it("closePauseMenu does not toggle when was not playing", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.MENU);
-      stores.ui.openMenuFromGame();
-      stores.ui.closeMenuResume();
+      stores.ui.openPauseMenu();
+      stores.ui.closePauseMenu();
       expect(stores.game.state).toBe(GameState.MENU);
     });
   });
 
   describe("openSkillTreeFromGame / closeSkillTree", () => {
-    it("openSkillTreeFromGame sets showSkillTree and closes main menu", () => {
+    it("openSkillTreeFromGame sets showSkillTree and closes pause menu", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
       stores.ui.openSkillTreeFromGame();
       expect(stores.ui.showSkillTree).toBe(true);
-      expect(stores.ui.showMainMenu).toBe(false);
+      expect(stores.ui.showPauseMenu).toBe(false);
     });
 
     it("openSkillTreeFromGame does not toggle pause when engine is null", () => {
@@ -224,12 +224,12 @@ describe("UiStore", () => {
   });
 
   describe("closeAllDialogs", () => {
-    it("closes main menu", () => {
+    it("closes pause menu", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
-      stores.ui.openMenuFromGame();
+      stores.ui.openPauseMenu();
       stores.ui.closeAllDialogs();
-      expect(stores.ui.showMainMenu).toBe(false);
+      expect(stores.ui.showPauseMenu).toBe(false);
     });
 
     it("closes skill tree", () => {
@@ -257,9 +257,9 @@ describe("UiStore", () => {
 
   describe("initForRun", () => {
     it("resets to default state when no savedState", () => {
-      store.showMainMenu = true;
+      store.showPauseMenu = true;
       store.initForRun(null);
-      expect(store.showMainMenu).toBe(false);
+      expect(store.showPauseMenu).toBe(false);
     });
 
     it("overrides defaults with savedState fields", () => {
@@ -271,7 +271,7 @@ describe("UiStore", () => {
     it("preserves saved fields while resetting unsaved ones", () => {
       store.initForRun({ showMapSelect: true });
       expect(store.showMapSelect).toBe(true);
-      expect(store.showMainMenu).toBe(false);
+      expect(store.showPauseMenu).toBe(false);
     });
   });
 });

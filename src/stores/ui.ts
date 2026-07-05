@@ -4,7 +4,7 @@ import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "./game";
 
 export interface UiStoreLike {
-  showMainMenu: boolean;
+  showPauseMenu: boolean;
   showSkillTree: boolean;
   showStatsPanel: boolean;
   showHelpDialog: boolean;
@@ -12,7 +12,7 @@ export interface UiStoreLike {
   confirmDialog: ConfirmDialogState | null;
   closeAllDialogs: () => void;
   executeConfirm: () => void;
-  openMenuFromGame: () => void;
+  openPauseMenu: () => void;
 }
 
 interface ConfirmDialogConfig {
@@ -39,7 +39,7 @@ interface NotificationState {
 }
 
 interface UiStateShape {
-  showMainMenu: boolean;
+  showPauseMenu: boolean;
   showMapSelect: boolean;
   showSkillTree: boolean;
   showEndScreen: boolean;
@@ -49,14 +49,14 @@ interface UiStateShape {
   notification: NotificationState | null;
   debugPanelVisible: boolean;
   randomMapPanelVisible: boolean;
-  wasPlayingWhenMenuOpened: boolean;
+  wasPlayingWhenPauseOpened: boolean;
   wasPlayingWhenSkillTreeOpened: boolean;
   wasPlayingWhenHelpOpened: boolean;
 }
 
 function defaultUiState(): UiStateShape {
   return {
-    showMainMenu: false,
+    showPauseMenu: false,
     showMapSelect: false,
     showSkillTree: false,
     showEndScreen: false,
@@ -66,7 +66,7 @@ function defaultUiState(): UiStateShape {
     notification: null,
     debugPanelVisible: false,
     randomMapPanelVisible: false,
-    wasPlayingWhenMenuOpened: false,
+    wasPlayingWhenPauseOpened: false,
     wasPlayingWhenSkillTreeOpened: false,
     wasPlayingWhenHelpOpened: false,
   };
@@ -111,30 +111,30 @@ export const useUiStore = defineStore("ui", {
       this.confirmDialog = null;
     },
 
-    openMenuFromGame() {
+    openPauseMenu() {
       const gameStore = useGameStore();
-      this.wasPlayingWhenMenuOpened = gameStore.isPlaying;
+      this.wasPlayingWhenPauseOpened = gameStore.isPlaying;
       if (gameStore.isPlaying) {
         getGameEngine()?.togglePause();
       }
-      this.showMainMenu = true;
+      this.showPauseMenu = true;
     },
 
-    closeMenuResume() {
-      if (this.wasPlayingWhenMenuOpened) {
+    closePauseMenu() {
+      if (this.wasPlayingWhenPauseOpened) {
         getGameEngine()?.togglePause();
       }
-      this.showMainMenu = false;
-      this.wasPlayingWhenMenuOpened = false;
+      this.showPauseMenu = false;
+      this.wasPlayingWhenPauseOpened = false;
     },
 
     openSkillTreeFromGame() {
       const gameStore = useGameStore();
-      this.wasPlayingWhenSkillTreeOpened = this.wasPlayingWhenMenuOpened || gameStore.isPlaying;
+      this.wasPlayingWhenSkillTreeOpened = this.wasPlayingWhenPauseOpened || gameStore.isPlaying;
       if (gameStore.isPlaying) {
         getGameEngine()?.togglePause();
       }
-      this.showMainMenu = false;
+      this.showPauseMenu = false;
       this.showSkillTree = true;
     },
 
@@ -176,7 +176,7 @@ export const useUiStore = defineStore("ui", {
 
     closeAllDialogs() {
       const _gameStore = useGameStore();
-      if (this.showMainMenu) this.closeMenuResume();
+      if (this.showPauseMenu) this.closePauseMenu();
       if (this.showSkillTree) this.closeSkillTree();
       if (this.showStatsPanel) this.closeStatsPanel();
       if (this.showHelpDialog) this.closeHelpDialog();

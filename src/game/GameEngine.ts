@@ -47,7 +47,6 @@ interface WaveManagerRef {
     onWaveCleared: ((wave: number) => void) | null,
     onWaveStart: ((wave: number) => void) | null,
   ): void;
-  reportBossKill(): void;
   reportBossReachedBase(): void;
   startNextWave(): void;
 }
@@ -181,7 +180,6 @@ export class GameEngine {
 
   onBossKilled(): void {
     this.gameStore.bossesKilledThisRun++;
-    this.waveManager?.reportBossKill();
 
     const base = 1;
     const diffMult = this.persistStore.difficultyMultiplier;
