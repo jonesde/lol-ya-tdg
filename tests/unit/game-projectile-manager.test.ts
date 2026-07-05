@@ -211,7 +211,7 @@ describe("ProjectileManager", () => {
 
       manager.update(0.016);
 
-      expect(takeDamage).toHaveBeenCalledWith(10);
+      expect(takeDamage).toHaveBeenCalledWith(10, false);
       expect(manager.getRenderData()).toHaveLength(0);
     });
 
@@ -263,7 +263,7 @@ describe("ProjectileManager", () => {
 
       manager.update(0.016);
 
-      expect(takeDamage).toHaveBeenCalledWith(20);
+      expect(takeDamage).toHaveBeenCalledWith(20, false);
     });
 
     it("pierces to next target when pierceCount > 0", () => {
@@ -294,7 +294,7 @@ describe("ProjectileManager", () => {
 
       manager.update(0.016);
 
-      expect(takeDamage1).toHaveBeenCalledWith(10);
+      expect(takeDamage1).toHaveBeenCalledWith(10, false);
       expect(proj.targetId).toBe(2);
       expect(manager.getRenderData()).toHaveLength(1);
     });
@@ -324,7 +324,7 @@ describe("ProjectileManager", () => {
 
       manager.update(0.016);
 
-      expect(takeDamage1).toHaveBeenCalledWith(10);
+      expect(takeDamage1).toHaveBeenCalledWith(10, false);
       expect(manager.getRenderData()).toHaveLength(0);
     });
   });

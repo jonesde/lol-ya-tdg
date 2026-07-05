@@ -11,6 +11,7 @@ import {
   ICE_AURA_DURATION,
   ICE_AURA_RANGE,
   ICE_AURA_SLOW_MULT,
+  ICE_BURST_INTERVAL,
   ICE_BURST_RANGE,
   ICE_BURST_STUN_DURATION,
   SELL_VALUE_RATIO,
@@ -107,6 +108,7 @@ interface ProjectileManagerRef {
     towerId?: string;
     doubleDischarge?: number;
     antiAir?: boolean;
+    burnCircuit?: boolean;
   }): void;
   setOnLightningFlash(callback: (startX: number, startY: number, endX: number, endY: number) => void): void;
 }
@@ -638,7 +640,7 @@ export class Tower {
     // Data-driven ice burst (ice addon 2)
     if (stats.iceBurst) {
       this.iceBurstTimer += dt;
-      if (this.iceBurstTimer >= 3) {
+      if (this.iceBurstTimer >= ICE_BURST_INTERVAL) {
         this.iceBurstTimer = 0;
         const tileSize = this.grid?.tileSize || 36;
         const r2 = (ICE_BURST_RANGE * tileSize) ** 2;
@@ -719,6 +721,7 @@ export class Tower {
         towerId: this.id,
         doubleDischarge: stats.doubleDischarge,
         antiAir: stats.antiAir,
+        burnCircuit: stats.burnCircuit,
       });
       this.fireAnimTime = performance.now() / 1000;
       if (sound) sound.play(`shoot_${this.type}`);

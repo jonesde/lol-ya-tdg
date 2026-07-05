@@ -89,7 +89,21 @@ class EnemyRenderProxy {
     this.el.style.visibility = "visible";
 
     const spriteSize = enemy.radius * 4;
-    this.el.setAttribute("transform", `translate(${enemy.x - spriteSize / 2}, ${enemy.y - spriteSize / 2})`);
+    const halfSize = spriteSize / 2;
+    const angleDeg = enemy.moveAngle * (180 / Math.PI);
+    const posX = enemy.x - halfSize;
+    const posY = enemy.y - halfSize;
+    const facingLeft = Math.cos(enemy.moveAngle) < 0;
+    let transform: string;
+    if (facingLeft) {
+      const adjustDeg = 180 - angleDeg;
+      // Inversion for facing left so rotation doesn't turn image upside-down
+      // Note the negated translation with posX broken down to adjust by halfSize in the opposite direction.
+      transform = `scale(-1, 1) translate(${-enemy.x - halfSize}, ${posY}) rotate(${adjustDeg}, ${halfSize}, ${halfSize})`;
+    } else {
+      transform = `translate(${posX}, ${posY}) rotate(${angleDeg}, ${halfSize}, ${halfSize})`;
+    }
+    this.el.setAttribute("transform", transform);
 
     const hitReaction = (enemy as unknown as { hitReaction?: { duration: number; referenceImages?: unknown[] } | null })
       .hitReaction;

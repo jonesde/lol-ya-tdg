@@ -1,6 +1,10 @@
 import type { Tower } from "@/towers/Tower.js";
 import { PROJECTILE_HIT_THRESHOLD } from "./Constants.js";
 import {
+  ANTI_HEAL_DURATION,
+  BOUNCE_DAMAGE_FALLOFF,
+  BURN_CIRCUIT_DMG_MULT,
+  BURN_CIRCUIT_DURATION,
   CHAIN_DAMAGE_FALLOFF,
   CHAIN_RANGE,
   CRIT_CHANCE,
@@ -61,6 +65,7 @@ interface LightningTarget {
   removed?: boolean;
   takeDamage(dmg: number): void;
   applyStun?(duration: number): void;
+  applyBurn?(dps: number, duration: number): void;
 }
 
 interface GridRef {
@@ -370,13 +375,15 @@ export class ProjectileManager {
       y: number;
       hp: number;
       maxHp: number;
-      takeDamage(dmg: number): void;
+      takeDamage(dmg: number, armorPiercing?: boolean): void;
       applyBurn?(dps: number, duration: number): void;
       applySlow?(factor: number, duration: number): void;
       applyStun?(duration: number): void;
+      applyMarkTarget?(mult: number, duration: number): void;
+      applyAntiHeal?(duration: number): void;
     },
   ): void {
-    let finalDamage = projectile.isCrit ? projectile.damage * projectile.critMultiplier : projectile.damage;
+    const finalDamage = projectile.isCrit ? projectile.damage * projectile.critMultiplier : projectile.damage;
 
     // True Shot: 20% chance to instant-kill non-boss enemies
     if (projectile.trueShot > 0 && enemy.type !== "boss" && Math.random() < projectile.trueShot) {
@@ -413,12 +420,18 @@ export class ProjectileManager {
       return;
     }
 
-    // Mark Target: target takes +25% damage (applied multiplicatively)
-    if (projectile.markTarget > 0) {
-      finalDamage *= 1 + projectile.markTarget;
+    // Mark Target: target takes +25% damage from all sources
+    if (projectile.markTarget > 0 && enemy.applyMarkTarget) {
+      enemy.applyMarkTarget(projectile.markTarget, BURN_CIRCUIT_DURATION);
     }
 
-    enemy.takeDamage(finalDamage);
+    // Anti-Air: ignore shields
+    enemy.takeDamage(finalDamage, projectile.antiAir);
+
+    // Anti-Heal: disable enemy healer auras
+    if (projectile.antiHeal && enemy.applyAntiHeal) {
+      enemy.applyAntiHeal(ANTI_HEAL_DURATION);
+    }
 
     if (projectile.towerId) {
       const tower = this.towerLookup?.(projectile.towerId);
@@ -505,7 +518,7 @@ export class ProjectileManager {
       const bounceTarget = this.findNearestEnemy(projectile.x, projectile.y, projectile.range, enemy.id);
       if (bounceTarget) {
         projectile.targetId = bounceTarget.id;
-        projectile.damage *= 0.8;
+        projectile.damage *= BOUNCE_DAMAGE_FALLOFF;
         return;
       }
     }
@@ -527,6 +540,7 @@ export class ProjectileManager {
     towerId?: string;
     doubleDischarge?: number;
     antiAir?: boolean;
+    burnCircuit?: boolean;
   }): void {
     let current: LightningTarget | null = this.enemyManager.getEnemyById(opts.targetId);
     if (!current || current.removed) return;
@@ -572,6 +586,10 @@ export class ProjectileManager {
       chainTargets.push(nextTarget);
       if (this.particles) {
         this.particles.spawn(nextTarget.x, nextTarget.y, "#ffcf4d", 3, { speed: 30, life: 0.2 });
+      }
+      // Burn Circuit: chained enemies take burn damage over time
+      if (opts.burnCircuit && nextTarget.applyBurn) {
+        nextTarget.applyBurn(chainDamage * BURN_CIRCUIT_DMG_MULT, BURN_CIRCUIT_DURATION);
       }
       if (this.onLightningFlash) {
         this.onLightningFlash(current.x, current.y, nextTarget.x, nextTarget.y);

@@ -127,6 +127,10 @@ export const CHARGE_SHOT_MULT = 3;
 export const CHARGE_SHOT_COUNT = 5;
 // railgun tower Multi-Pierce addon: additional pierce count
 export const MULTI_PIERCE_COUNT = 2;
+// basic tower Bounce Shot addon: damage multiplier per bounce
+export const BOUNCE_DAMAGE_FALLOFF = 0.8;
+// railgun tower Anti-Heal addon: duration in seconds
+export const ANTI_HEAL_DURATION = 2;
 // marksman variant instant-kill chance (ProjectileManager.js)
 export const MARKSMAN_CHANCE = 0.2;
 // marksman knockback multiplier for railgun variant A (ProjectileManager.js)

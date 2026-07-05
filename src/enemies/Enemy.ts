@@ -85,6 +85,10 @@ export class Enemy {
   burnDps!: number;
   hitAnimTime!: number;
   onPathBlocked!: boolean;
+  moveAngle!: number;
+  markTargetMult!: number;
+  markTargetTimer!: number;
+  antiHealTimer!: number;
 
   constructor(
     type: string,
@@ -132,6 +136,10 @@ export class Enemy {
     this.burnTimer = 0;
     this.burnDps = 0;
     this.hitAnimTime = 0;
+    this.moveAngle = 0;
+    this.markTargetMult = 0;
+    this.markTargetTimer = 0;
+    this.antiHealTimer = 0;
     this.path = grid.getPathFor(spawnIndex);
     this.pathIdx = 0;
     if (!this.path || this.path.length === 0) {
@@ -178,6 +186,15 @@ export class Enemy {
     this.burnTimer = Math.max(this.burnTimer, duration);
   }
 
+  applyMarkTarget(mult: number, duration: number) {
+    this.markTargetMult = Math.max(this.markTargetMult, mult);
+    this.markTargetTimer = Math.max(this.markTargetTimer, duration);
+  }
+
+  applyAntiHeal(duration: number) {
+    this.antiHealTimer = Math.max(this.antiHealTimer, duration);
+  }
+
   takeDamage(amount: number, armorPiercing: boolean = false) {
     if (this.shield > 0 && !armorPiercing) {
       const absorbed = Math.min(this.shield, amount);
@@ -185,7 +202,10 @@ export class Enemy {
       amount -= absorbed;
     }
     if (amount <= 0) return 0;
-    const dmg = amount * (1 - this.resist);
+    let dmg = amount * (1 - this.resist);
+    if (this.markTargetMult > 0) {
+      dmg *= 1 + this.markTargetMult;
+    }
     this.hp -= dmg;
     this.hitAnimTime = performance.now();
     if (this.hp <= 0) this.removed = true;
@@ -229,8 +249,21 @@ export class Enemy {
       this.burnTimer -= dt;
       this.takeDamage(this.burnDps * dt, true);
     }
+    if (this.markTargetTimer > 0) {
+      this.markTargetTimer -= dt;
+      if (this.markTargetTimer <= 0) {
+        this.markTargetTimer = 0;
+        this.markTargetMult = 0;
+      }
+    }
+    if (this.antiHealTimer > 0) {
+      this.antiHealTimer -= dt;
+      if (this.antiHealTimer <= 0) {
+        this.antiHealTimer = 0;
+      }
+    }
 
-    if (this.heal > 0 && enemyManager) {
+    if (this.heal > 0 && this.antiHealTimer <= 0 && enemyManager) {
       const nearbyAllies = enemyManager.getEnemiesInRange(this.x, this.y, this.healRange);
       for (const ally of nearbyAllies) {
         if (ally === this) continue;
@@ -274,6 +307,7 @@ export class Enemy {
     } else {
       this.x += (deltaX / dist) * step;
       this.y += (deltaY / dist) * step;
+      this.moveAngle = Math.atan2(deltaY, deltaX);
     }
     this.worldPos = { x: this.x, y: this.y };
   }

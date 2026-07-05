@@ -151,6 +151,9 @@ export class GameEngine {
     this.projectileManager.setTowerLookup((towerId) => {
       return this.towerManager?.towers.find((t) => t.id === towerId) || null;
     });
+    this.projectileManager.setOnGoldReward((amount) => {
+      this.gameStore.addGold(amount);
+    });
     this.waveManager = new WaveManager(mapData, this.enemyManager);
 
     this.gameStore.setManagers(this.towerManager, this.enemyManager, this.projectileManager, this.particleManager);
