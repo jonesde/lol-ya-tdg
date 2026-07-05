@@ -84,6 +84,8 @@ export class TowerManager {
   sound: SoundManagerRef;
   towers: Tower[];
   private nextTowerId: number = 0;
+  private towerMap: Map<string, Tower> = new Map();
+  private tileMap: Map<string, Tower> = new Map();
   theme: MapThemeData | null;
 
   constructor(
@@ -103,6 +105,8 @@ export class TowerManager {
 
   clear(): void {
     this.towers = [];
+    this.towerMap.clear();
+    this.tileMap.clear();
   }
 
   build(type: string, tileX: number, tileY: number, save: SaveData | undefined, grid: GridRef): Tower | null {
@@ -111,6 +115,8 @@ export class TowerManager {
     tower.id = `tower-${++this.nextTowerId}`;
     if (!this.grid.registerTower(tileX, tileY)) return null;
     this.towers.push(tower);
+    this.towerMap.set(tower.id, tower);
+    this.tileMap.set(`${tileX},${tileY}`, tower);
     this.particles.spawn(tower.x, tower.y, tower.color, 10, { speed: 50, life: 0.4 });
     this.sound.play("place");
     return tower;
@@ -119,16 +125,18 @@ export class TowerManager {
   sell(tower: Tower, _save: SaveData | undefined): number {
     const val = tower.sellValue();
     this.grid.unregisterTower(tower.tileX, tower.tileY);
-    const index = this.towers.findIndex((t) => t.id === tower.id);
-    if (index >= 0) this.towers.splice(index, 1);
+    this.towers = this.towers.filter((t) => t.id !== tower.id);
+    this.towerMap.delete(tower.id);
+    this.tileMap.delete(`${tower.tileX},${tower.tileY}`);
     this.particles.spawn(tower.x, tower.y, "#ffcf4d", 14, { speed: 70, life: 0.5 });
     return val;
   }
 
   cancelBuild(tower: Tower): number {
     this.grid.unregisterTower(tower.tileX, tower.tileY);
-    const index = this.towers.findIndex((t) => t.id === tower.id);
-    if (index >= 0) this.towers.splice(index, 1);
+    this.towers = this.towers.filter((t) => t.id !== tower.id);
+    this.towerMap.delete(tower.id);
+    this.tileMap.delete(`${tower.tileX},${tower.tileY}`);
     this.particles.spawn(tower.x, tower.y, "#88ff88", 14, { speed: 70, life: 0.5 });
     return tower.totalInvested;
   }
@@ -137,7 +145,11 @@ export class TowerManager {
     for (const tower of this.towers) tower.update(dt, enemyManager, this.projectiles, this.sound);
   }
 
+  getTowerById(id: string): Tower | undefined {
+    return this.towerMap.get(id);
+  }
+
   towerAt(tileX: number, tileY: number): Tower | undefined {
-    return this.towers.find((tower) => tower.tileX === tileX && tower.tileY === tileY);
+    return this.tileMap.get(`${tileX},${tileY}`);
   }
 }

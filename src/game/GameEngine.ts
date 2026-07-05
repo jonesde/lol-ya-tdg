@@ -145,9 +145,7 @@ export class GameEngine {
       this.sound,
       this.theme,
     );
-    this.projectileManager.setTowerLookup((towerId) => {
-      return this.towerManager?.towers.find((t) => t.id === towerId) || null;
-    });
+    this.projectileManager.setTowerLookup((towerId) => this.towerManager?.getTowerById(towerId) ?? null);
     this.projectileManager.setOnGoldReward((amount) => {
       this.gameStore.addGold(amount);
     });
