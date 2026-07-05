@@ -54,6 +54,7 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
           uiStore.showSkillTree ||
           uiStore.showStatsPanel ||
           uiStore.showHelpDialog ||
+          uiStore.debugPanelVisible ||
           uiStore.confirmDialog
         ) {
           uiStore.closeAllDialogs();

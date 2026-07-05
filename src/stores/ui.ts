@@ -8,6 +8,7 @@ export interface UiStoreLike {
   showSkillTree: boolean;
   showStatsPanel: boolean;
   showHelpDialog: boolean;
+  debugPanelVisible: boolean;
   confirmDialog: ConfirmDialogState | null;
   closeAllDialogs: () => void;
   executeConfirm: () => void;
@@ -179,7 +180,16 @@ export const useUiStore = defineStore("ui", {
       if (this.showSkillTree) this.closeSkillTree();
       if (this.showStatsPanel) this.closeStatsPanel();
       if (this.showHelpDialog) this.closeHelpDialog();
+      if (this.debugPanelVisible) this.closeDebugPanel();
       if (this.confirmDialog) this.hideConfirm();
+    },
+
+    openDebugPanel() {
+      this.debugPanelVisible = true;
+    },
+
+    closeDebugPanel() {
+      this.debugPanelVisible = false;
     },
 
     initForRun(savedState: Partial<UiStateShape> | null) {

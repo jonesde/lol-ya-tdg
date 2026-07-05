@@ -29,18 +29,31 @@ describe("DebugPanel", () => {
     setActivePinia(createPinia());
   });
 
-  it("renders when visible", () => {
+  it("renders with hidden class when debugPanelVisible is false", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountDebugPanel();
-    const wrapper = mount(DebugPanel, { global: { plugins: [pinia] } });
-    expect(wrapper.find(".debug-panel").exists()).toBe(true);
-  });
-
-  it("does not render when hidden", () => {
-    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore } = mountDebugPanel();
+    uiStore.debugPanelVisible = false;
     const wrapper = mount(DebugPanel, { global: { plugins: [pinia] } });
     expect(wrapper.find(".debug-panel.hidden").exists()).toBe(true);
+  });
+
+  it("renders without hidden class when debugPanelVisible is true", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountDebugPanel();
+    uiStore.debugPanelVisible = true;
+    const wrapper = mount(DebugPanel, { global: { plugins: [pinia] } });
+    expect(wrapper.find(".debug-panel.hidden").exists()).toBe(false);
+  });
+
+  it("closes panel when X button is clicked", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountDebugPanel();
+    uiStore.debugPanelVisible = true;
+    const wrapper = mount(DebugPanel, { global: { plugins: [pinia] } });
+    const closeBtn = wrapper.find(".debug-close");
+    expect(closeBtn.exists()).toBe(true);
+    await closeBtn.trigger("click");
+    expect(uiStore.debugPanelVisible).toBe(false);
   });
 
   it("injects gold on click", async () => {

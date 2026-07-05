@@ -1,13 +1,56 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onUnmounted, ref } from "vue";
 import { GameState } from "@/game/Constants.js";
 import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
+import { useUiStore } from "@/stores/ui.js";
 
 const gameStore = useGameStore();
 const persistStore = usePersistStore();
-const visible = ref(false);
+const uiStore = useUiStore();
+
+const panelPos = ref({ x: 8, y: 48 });
+
+let dragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let panelStartX = 0;
+let panelStartY = 0;
+let currentOnMove: ((event: MouseEvent) => void) | null = null;
+let currentOnUp: (() => void) | null = null;
+
+function onHeaderMouseDown(event: MouseEvent) {
+  if (event.button !== 0) return;
+  dragging = true;
+  dragStartX = event.clientX;
+  dragStartY = event.clientY;
+  panelStartX = panelPos.value.x;
+  panelStartY = panelPos.value.y;
+
+  currentOnMove = (event: MouseEvent) => {
+    if (!dragging) return;
+    panelPos.value = { x: panelStartX + (event.clientX - dragStartX), y: panelStartY + (event.clientY - dragStartY) };
+  };
+  currentOnUp = () => {
+    dragging = false;
+    cleanupDragListeners();
+  };
+  document.addEventListener("mousemove", currentOnMove);
+  document.addEventListener("mouseup", currentOnUp);
+  event.preventDefault();
+}
+
+function cleanupDragListeners() {
+  if (currentOnMove) document.removeEventListener("mousemove", currentOnMove);
+  if (currentOnUp) document.removeEventListener("mouseup", currentOnUp);
+  currentOnMove = null;
+  currentOnUp = null;
+}
+
+onUnmounted(() => {
+  cleanupDragListeners();
+});
 
 function dbgGold() {
   gameStore.addGold(1000);
@@ -58,36 +101,34 @@ function dbgSpeed() {
 </script>
 
 <template>
-  <div class="debug-panel" :class="{ hidden: !visible }">
-    <div class="debug-header">Debug</div>
-    <button @click="dbgGold">+1000 Gold</button>
-    <button @click="dbgGems">+100 Gems</button>
-    <button @click="dbgLives">+10 Lives</button>
-    <button @click="dbgSkipWave">Skip Wave</button>
-    <button @click="dbgKillAll">Kill All</button>
-    <button @click="dbgWave">Set Wave 50</button>
-    <button @click="dbgUnlockAll">Unlock All Maps</button>
-    <button @click="dbgSpeed">Toggle 8x Speed</button>
-    <label class="debug-toggle">
-      <input type="checkbox" v-model="visible" />
-      Show Debug Panel
-    </label>
+  <div class="debug-panel" :class="{ hidden: !uiStore.debugPanelVisible }" :style="{ top: panelPos.y + 'px', left: panelPos.x + 'px' }">
+    <div class="debug-header" @mousedown="onHeaderMouseDown">
+      <span class="header-icon">⚙️</span>
+      Debug
+      <button class="debug-close" @click="uiStore.closeDebugPanel()" aria-label="Close debug panel">✕</button>
+    </div>
+    <button @click="dbgGold">🪙 +1000 Gold</button>
+    <button @click="dbgGems">💎 +100 Gems</button>
+    <button @click="dbgLives">❤️ +10 Lives</button>
+    <button @click="dbgSkipWave">⏭️ Skip Wave</button>
+    <button @click="dbgKillAll">💀 Kill All</button>
+    <button @click="dbgWave">🎯 Set Wave 50</button>
+    <button @click="dbgUnlockAll">🔓 Unlock All Maps</button>
+    <button @click="dbgSpeed">⚡ Toggle 8x Speed</button>
   </div>
 </template>
 
 <style scoped>
 .debug-panel {
   position: absolute;
-  top: 48px;
-  left: 8px;
-  padding: 8px;
+  padding: 4px;
   background: var(--color-panel);
   border: 1px solid rgba(255, 68, 68, 0.3);
   border-radius: 8px;
   z-index: 20;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   font-size: 11px;
 }
 
@@ -96,29 +137,59 @@ function dbgSpeed() {
 }
 
 .debug-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-weight: bold;
   color: var(--color-danger);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  cursor: grab;
+  user-select: none;
+  padding: 2px 4px;
+}
+
+.debug-header:active {
+  cursor: grabbing;
+}
+
+.header-icon {
+  font-size: 12px;
+}
+
+.debug-close {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--color-text);
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+
+.debug-close:hover {
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .debug-panel button {
-  padding: 4px 8px;
+  padding: 3px 6px;
   background: rgba(255, 68, 68, 0.1);
   border: 1px solid rgba(255, 68, 68, 0.2);
   color: var(--color-text);
   border-radius: 4px;
   cursor: pointer;
   font-size: 11px;
+  text-align: left;
 }
 
 .debug-panel button:hover {
   background: rgba(255, 68, 68, 0.2);
-}
-
-.debug-toggle {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--color-text-dim);
-  cursor: pointer;
 }
 </style>

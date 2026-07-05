@@ -126,8 +126,10 @@ export class WaveManager {
     if (this.betweenWaves) {
       this.betweenTimer -= dt;
       if (this.betweenTimer <= 0) {
-        this.startNextWave();
-        if (onWaveStart) onWaveStart(this.currentWave);
+        if (this.currentWave < VICTORY_WAVE) {
+          this.startNextWave();
+          if (onWaveStart) onWaveStart(this.currentWave);
+        }
       }
       return;
     }
@@ -138,8 +140,10 @@ export class WaveManager {
       this.countdownTimer -= dt;
       if (this.countdownTimer <= 0) {
         this.countdownActive = false;
-        this.startNextWave();
-        if (onWaveStart) onWaveStart(this.currentWave);
+        if (this.currentWave < VICTORY_WAVE) {
+          this.startNextWave();
+          if (onWaveStart) onWaveStart(this.currentWave);
+        }
       }
       return;
     }
@@ -147,8 +151,12 @@ export class WaveManager {
     if (!this.queue.length) {
       if (this.enemyManager.enemies.length === 0 || this._waveGameTime >= PRE_EMPTIVE_WAVE_TIMER) {
         if (onWaveCleared) onWaveCleared(this.currentWave);
-        this.countdownActive = true;
-        this.countdownTimer = BETWEEN_WAVES_TIMER;
+        if (this.currentWave >= VICTORY_WAVE) {
+          this.betweenWaves = true;
+        } else {
+          this.countdownActive = true;
+          this.countdownTimer = BETWEEN_WAVES_TIMER;
+        }
       }
       return;
     }

@@ -93,6 +93,12 @@ const uiStore = useUiStore();
             </tbody>
           </table>
         </div>
+
+        <button
+          class="debug-bug"
+          @click="uiStore.openDebugPanel(); uiStore.closeHelpDialog()"
+          aria-label="Open debug panel"
+        >🐞</button>
       </div>
     </div>
   </Teleport>
@@ -117,6 +123,7 @@ const uiStore = useUiStore();
   width: 520px;
   max-height: 85vh;
   overflow-y: auto;
+  position: relative;
 }
 
 .help-header {
@@ -208,5 +215,23 @@ kbd {
   padding: 2px 6px;
   border-radius: 4px;
   color: var(--color-text);
+}
+
+.debug-bug {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 0.15s;
+  padding: 4px;
+  line-height: 1;
+}
+
+.debug-bug:hover {
+  opacity: 0.8;
 }
 </style>

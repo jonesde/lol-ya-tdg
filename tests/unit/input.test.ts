@@ -141,6 +141,14 @@ describe("useInput", () => {
       triggerInput("Escape");
       expect(uiStore.showMainMenu).toBe(false);
     });
+
+    it("closes debug panel when visible", () => {
+      gameStore.setState(GameState.PLAYING);
+      uiStore.debugPanelVisible = true;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("Escape");
+      expect(uiStore.debugPanelVisible).toBe(false);
+    });
   });
 
   describe("u key (upgrade)", () => {
