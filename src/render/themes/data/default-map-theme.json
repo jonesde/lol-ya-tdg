@@ -3,7 +3,7 @@
   "label": "Polymath",
   "towers": {
     "basic": {
-      "name": "Rifle Tower",
+      "name": "Rifle Bot",
       "color": "#8fbc8f",
       "icon": "\u2500",
       "animation": {
@@ -27,7 +27,7 @@
       }
     },
     "ice": {
-      "name": "Frost Pylon",
+      "name": "Ice Turret",
       "color": "#9be7ff",
       "icon": "\u2744",
       "animation": {
@@ -51,7 +51,7 @@
       }
     },
     "sniper": {
-      "name": "Sniper Nest",
+      "name": "Sniper Bot",
       "color": "#ffd84d",
       "icon": "\u25CE",
       "animation": {
@@ -75,7 +75,7 @@
       }
     },
     "cannon": {
-      "name": "Mortar Launcher",
+      "name": "Grenade Cannon",
       "color": "#ff8a4d",
       "icon": "\u25CF",
       "animation": {
@@ -123,7 +123,7 @@
       }
     },
     "railgun": {
-      "name": "Rail Cannon",
+      "name": "Rail Gun",
       "color": "#c98aff",
       "icon": "\u2550",
       "animation": {
