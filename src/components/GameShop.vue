@@ -54,8 +54,8 @@ let prevWidth = window.innerWidth;
 let prevHeight = window.innerHeight;
 
 function setInitialPosition() {
-  // NOTE: 80 is width of button as per CSS; 84 = 20 (header/hud) + 64 (footer)
-  gameStore.gameShopPos = { x: (window.innerWidth - towerList.length * 80) / 2, y: window.innerHeight - 84 };
+  // NOTE: 160 is width per button as per CSS; 84 = 20 (header/hud) + 64 (footer)
+  gameStore.gameShopPos = { x: (window.innerWidth - towerList.length * 160) / 2, y: window.innerHeight - 84 };
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -186,33 +186,19 @@ onUnmounted(() => {
 
 <template>
   <div class="build-bar" :style="barStyle" ref="barRef">
-    <div
-      class="build-bar-header"
-      @mousedown="onHeaderMouseDown"
-      @touchstart="onHeaderTouchStart"
-    >
+    <div class="build-bar-header" @mousedown="onHeaderMouseDown" @touchstart="onHeaderTouchStart">
       <span>Build Bar</span>
     </div>
     <div class="shop-bar">
-      <div
-        v-for="id in towerList"
-        :key="id"
-        class="shop-tower"
-        :class="{
-          selected: gameStore.selectedTowerType === id,
-          disabled: gameStore.gold < getCost(id),
-        }"
+      <div v-for="id in towerList" :key="id" class="shop-tower"
+        :class="{ selected: gameStore.selectedTowerType === id, disabled: gameStore.gold < getCost(id), }"
         @click="gameStore.gold >= getCost(id) && toggleBuild(id)"
       >
-        <span class="tower-icon" :style="{ color: getTowerDisplayColor(id) }">
-          {{ getTowerDisplayIcon(id) }}
-        </span>
+        <span class="tower-icon" :style="{ color: getTowerDisplayColor(id) }">{{ getTowerDisplayIcon(id) }}</span>
         <div class="tower-name-wrap">
-          <div v-for="word in getTowerDisplayName(id).split(' ')" :key="word" class="tower-name">
-            {{ word }}
-          </div>
+          <div v-for="word in getTowerDisplayName(id).split(' ')" :key="word" class="tower-name">{{ word }}</div>
         </div>
-        <span class="tower-cost">{{ getCost(id) }}g</span>
+        <span class="tower-cost">🪙 {{ getCost(id) }}</span>
       </div>
     </div>
   </div>
@@ -222,7 +208,8 @@ onUnmounted(() => {
 .build-bar {
   position: absolute;
   z-index: 99;
-  border-radius: 8px;
+  background: rgba(20, 24, 50, 0.7);
+  border-radius: 6px 6px 0 0;
   border: 1px solid var(--color-border);
   overflow: visible;
 }
@@ -233,8 +220,6 @@ onUnmounted(() => {
   justify-content: center;
   height: 20px;
   padding: 0 8px;
-  background: rgba(20, 24, 50, 0.7);
-  border-radius: 7px 7px 0 0;
   cursor: grab;
   user-select: none;
 }
@@ -258,7 +243,6 @@ onUnmounted(() => {
   justify-content: center;
   gap: 6px;
   padding: 0 12px;
-  background: rgba(20, 24, 50, 0.7);
   border-top: 1px solid var(--color-border);
   z-index: 19;
   overflow-x: auto;
@@ -266,21 +250,23 @@ onUnmounted(() => {
 
 .shop-tower {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  gap: 10px;
   align-items: center;
-  justify-content: center;
-  min-width: 72px;
-  padding: 4px 8px;
+  justify-content: space-between;
+  width: 150px;
+  height: 48px;
+  padding: 0 10px;
   border-radius: 6px;
-  border: 2px solid transparent;
-  background: rgba(20, 24, 50, 0.7);
+  border: 2px solid rgba(20, 40, 50, 1);
+  background: rgba(20, 40, 50, 0.5);
   cursor: pointer;
   transition: all 0.15s;
   user-select: none;
 }
 
 .shop-tower:hover {
-  background: rgba(40, 48, 100, 1);
+  background: rgba(40, 80, 100, 1);
 }
 
 .shop-tower.selected {
@@ -305,14 +291,14 @@ onUnmounted(() => {
 }
 
 .tower-name {
-  font-size: 9px;
-  color: var(--color-text-dim);
+  font-size: 12px;
+  color: var(--color-text);
   text-align: center;
   line-height: 1.2;
 }
 
 .tower-cost {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--color-gold);
 }

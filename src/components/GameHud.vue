@@ -91,7 +91,7 @@ watch(
           <span class="hud-value">{{ gameStore.lives }}</span>
         </span>
         <span class="hud-stat gold">
-          <span class="hud-icon">⛃</span>
+          <span class="hud-icon">🪙</span>
           <span class="hud-value">{{ gameStore.gold }}</span>
         </span>
         <span class="hud-stat gems">
@@ -216,17 +216,17 @@ watch(
 }
 
 .hud-stat.gold {
-  color: #ffd84d;
+  color: var(--color-gold);
 }
 
 .hud-stat.gems {
-  color: #9be7ff;
+  color: var(--color-gem);
 }
 
 .hud-btn.wave-counter {
-  font-size: 16px;
-  font-weight: 700;
-  color: #ffd84d;
+  font-size: 18px;
+  font-weight: 500;
+  color: #d0d0ff;
   gap: 6px;
   height: 28px;
   padding: 4px 10px;
@@ -237,12 +237,12 @@ watch(
 }
 
 .hud-btn.wave-counter .hud-value {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 700;
 }
 
 .hud-btn.wave-counter .hud-icon {
-  font-size: 14px;
+  font-size: 24px;
 }
 
 .hud-icon {

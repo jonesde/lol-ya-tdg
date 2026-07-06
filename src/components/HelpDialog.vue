@@ -404,12 +404,12 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 }
 
 .help-section .gold {
-  color: #ffd84d;
+  color: var(--color-gold);
   font-weight: bold;
 }
 
 .help-section .gems {
-  color: #9be7ff;
+  color: var(--color-gem);
   font-weight: bold;
 }
 

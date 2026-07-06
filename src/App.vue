@@ -11,16 +11,16 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
 
 <style>
 :root {
-  --color-bg: #1a1d2e;
-  --color-panel: rgba(20, 24, 40, 0.95);
+  --color-bg: rgba(20, 23, 30, 1);
+  --color-panel: rgba(20, 26, 40, 0.95);
   --color-border: rgba(95, 208, 255, 0.3);
   --color-accent: #5fd0ff;
-  --color-gold: #ffd700;
-  --color-gem: #c084fc;
+  --color-gold: #ffd84d;
+  --color-gem: #9be7ff;
   --color-danger: #ff4444;
   --color-success: #44ff44;
-  --color-text: #e0e0e0;
-  --color-text-dim: #8892a4;
+  --color-text: #e0f0ff;
+  --color-text-dim: #80d8e0;
   --font-main: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
