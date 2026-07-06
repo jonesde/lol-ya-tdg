@@ -75,6 +75,54 @@ describe("Map Theme System", () => {
       expect(normalized.regions[0]!.name).toBe("Forest");
     });
 
+    it("should normalize spawn visuals", async () => {
+      const rawTheme = {
+        id: "test",
+        label: "Test Theme",
+        towers: { basic: { name: "Basic Tower", color: "#ffffff", icon: "🔧", animation: null } },
+        enemies: {
+          skeleton: {
+            name: "Skeleton",
+            color: "#cccccc",
+            shape: "circle",
+            walking: { duration: 400, frames: [{ image: "<svg></svg>" }] },
+          },
+        },
+        regions: [],
+        spawns: {
+          closed: "<svg viewBox='0 0 36 36'><rect width='36' height='36' fill='red'/></svg>",
+          open: "<svg viewBox='0 0 36 36'><rect width='36' height='36' fill='green'/></svg>",
+          transition: "<svg viewBox='0 0 36 36'><rect width='36' height='36' fill='blue'/></svg>",
+        },
+      };
+
+      const normalized = await normalizeThemeImages(rawTheme as never);
+      expect(normalized.spawns).toBeDefined();
+      expect(normalized.spawns!.closed).toContain("fill='red'");
+      expect(normalized.spawns!.open).toContain("fill='green'");
+      expect(normalized.spawns!.transition).toContain("fill='blue'");
+    });
+
+    it("should handle missing spawns gracefully", async () => {
+      const rawTheme = {
+        id: "test",
+        label: "Test Theme",
+        towers: { basic: { name: "Basic Tower", color: "#ffffff", icon: "🔧", animation: null } },
+        enemies: {
+          skeleton: {
+            name: "Skeleton",
+            color: "#cccccc",
+            shape: "circle",
+            walking: { duration: 400, frames: [{ image: "<svg></svg>" }] },
+          },
+        },
+        regions: [],
+      };
+
+      const normalized = await normalizeThemeImages(rawTheme as never);
+      expect(normalized.spawns).toBeUndefined();
+    });
+
     it("should handle null animations", async () => {
       const rawTheme = {
         id: "test",
@@ -148,6 +196,11 @@ function buildCustomTheme(overrides?: {
   return {
     id: "custom",
     label: "Custom Theme",
+    spawns: {
+      closed: "<svg viewBox='0 0 36 36'><rect width='36' height='36' fill='red'/></svg>",
+      open: "<svg viewBox='0 0 36 36'><rect width='36' height='36' fill='green'/></svg>",
+      transition: "<svg viewBox='0 0 36 36'><rect width='36' height='36' fill='blue'/></svg>",
+    },
     towers: {
       basic: {
         name: "Basic Tower",
@@ -196,7 +249,8 @@ function buildCustomTheme(overrides?: {
   };
 }
 
-function makeMinimalMap(baseX: number, baseY: number) {
+function makeMinimalMap(baseX: number, baseY: number, spawnCount: number = 0) {
+  const spawns = Array.from({ length: spawnCount }, (_, i) => ({ x: i, y: 0 }));
   return {
     width: 2,
     height: 1,
@@ -206,9 +260,10 @@ function makeMinimalMap(baseX: number, baseY: number) {
         { type: "path" as const, height: 0 },
       ],
     ],
-    spawns: [],
+    spawns,
     base: { x: baseX, y: baseY },
     regionId: 0,
+    seed: 42,
   };
 }
 
@@ -217,6 +272,25 @@ function makeFakeGrid(): Grid {
 }
 
 describe("SVG Static Content Render Placement", () => {
+  describe("Spawn symbol ID generation", () => {
+    it("should generate spawn symbol IDs from theme", () => {
+      const store = createTestMapThemeStore();
+      const customTheme = buildCustomTheme();
+      store.activeTheme = customTheme;
+      store.defaultTheme = customTheme;
+
+      const mapRef = { value: null };
+      const gridRef = { value: null };
+      const { staticDefsContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const defs = staticDefsContent.value;
+
+      expect(defs).toContain('<symbol id="spawn-closed"');
+      expect(defs).toContain('<symbol id="spawn-open"');
+      expect(defs).toContain('<symbol id="spawn-transition"');
+      expect(defs).toContain('viewBox="0 0 36 36"');
+    });
+  });
+
   describe("Symbol ID generation", () => {
     it("should generate symbol IDs matching the frame counts in the theme", () => {
       const store = createTestMapThemeStore();
@@ -261,6 +335,24 @@ describe("SVG Static Content Render Placement", () => {
     });
   });
 
+  describe("Spawn placement", () => {
+    it("renders spawn <use> elements with correct IDs and positions", () => {
+      const store = createTestMapThemeStore();
+      const customTheme = buildCustomTheme();
+      store.activeTheme = customTheme;
+      store.defaultTheme = customTheme;
+
+      const mapRef = { value: makeMinimalMap(1, 1, 3) };
+      const gridRef = { value: makeFakeGrid() };
+      const { gridContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const svg = gridContent.value;
+
+      expect(svg).toContain('<use id="spawn-0" href="#spawn-closed" x="0" y="0" width="36" height="36"/>');
+      expect(svg).toContain('<use id="spawn-1" href="#spawn-closed" x="36" y="0" width="36" height="36"/>');
+      expect(svg).toContain('<use id="spawn-2" href="#spawn-closed" x="72" y="0" width="36" height="36"/>');
+    });
+  });
+
   describe("Base placement", () => {
     it("places themed base SVG inside base-structure group when region.base is non-empty", () => {
       const store = createTestMapThemeStore();
@@ -298,6 +390,64 @@ describe("SVG Static Content Render Placement", () => {
       const groupEnd = svg.indexOf("</g>", groupStart);
       const groupContent = svg.slice(groupStart, groupEnd);
       expect(groupContent).toContain("url(#base-gradient)");
+    });
+  });
+
+  describe("Path highlights", () => {
+    it("renders path polylines in pathContent", () => {
+      const store = createTestMapThemeStore();
+      const customTheme = buildCustomTheme();
+      store.activeTheme = customTheme;
+      store.defaultTheme = customTheme;
+
+      const mapRef = { value: makeMinimalMap(1, 1) };
+      const gridRef = {
+        value: {
+          regionId: 0,
+          blocked: new Set<string>(),
+          paths: [
+            [
+              { x: 0, y: 0 },
+              { x: 1, y: 0 },
+            ],
+          ],
+        } as unknown as Grid,
+      };
+      const { pathContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const svg = pathContent.value;
+
+      expect(svg).toContain(
+        '<polyline points="18,18 54,18" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4" />',
+      );
+    });
+
+    it("returns empty string when grid is null", () => {
+      const store = createTestMapThemeStore();
+      const customTheme = buildCustomTheme();
+      store.activeTheme = customTheme;
+      store.defaultTheme = customTheme;
+
+      const mapRef = { value: makeMinimalMap(1, 1) };
+      const gridRef = { value: null };
+      const { pathContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      expect(pathContent.value).toBe("");
+    });
+
+    it("skips null paths in the array", () => {
+      const store = createTestMapThemeStore();
+      const customTheme = buildCustomTheme();
+      store.activeTheme = customTheme;
+      store.defaultTheme = customTheme;
+
+      const mapRef = { value: makeMinimalMap(1, 1) };
+      const gridRef = {
+        value: { regionId: 0, blocked: new Set<string>(), paths: [null, [{ x: 0, y: 0 }]] } as unknown as Grid,
+      };
+      const { pathContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const svg = pathContent.value;
+
+      expect(svg).toContain('<polyline points="18,18"');
+      expect(svg).not.toContain("null");
     });
   });
 });

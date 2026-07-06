@@ -167,6 +167,15 @@ function buildSymbolsFromConstants(themeOverride?: MapThemeData | null): string 
     }
   }
 
+  // Spawn symbols — use theme SVGs if available, otherwise fallback red rect
+  const spawnFallback = `<rect x="2" y="2" width="32" height="32" fill="rgba(255,50,50,0.5)"/>`;
+  const spawnClosed = activeTheme.spawns?.closed ?? spawnFallback;
+  const spawnOpen = activeTheme.spawns?.open ?? spawnFallback;
+  const spawnTransition = activeTheme.spawns?.transition ?? spawnFallback;
+  symbolParts.push(`<symbol id="spawn-closed" viewBox="0 0 36 36">${stripSvgWrapper(spawnClosed)}</symbol>`);
+  symbolParts.push(`<symbol id="spawn-open" viewBox="0 0 36 36">${stripSvgWrapper(spawnOpen)}</symbol>`);
+  symbolParts.push(`<symbol id="spawn-transition" viewBox="0 0 36 36">${stripSvgWrapper(spawnTransition)}</symbol>`);
+
   return symbolParts.join("\n");
 }
 
@@ -274,23 +283,14 @@ export function useSvgStaticContent(
     );
   });
 
-  // Grid.blocked is a Set<string> mutated directly (via registerTower /
-  // unregisterTower), NOT a reactive ref. Vue's computed won't track Set
-  // mutations. This computed signal forces gridContent to re-evaluate when
-  // towers are placed or removed.
-  const gridBlockCount = computed(() => currentGrid.value?.blocked?.size ?? 0);
-
+  // Static grid layer: background, tiles, grid lines, spawn markers, base.
+  // Depends only on currentMap — does NOT re-render when towers are placed.
   const gridContent = computed(() => {
     const map = currentMap.value;
     if (!map) return "";
 
-    // Depend on gridBlockCount to invalidate when blocked set changes size.
-    const _invalidate = gridBlockCount.value;
-    void _invalidate;
-
-    const grid = currentGrid.value;
     const activeTheme = currentTheme?.value ?? useMapThemeStore().activeTheme;
-    const regionId = grid?.regionId ?? 0;
+    const regionId = map.regionId ?? 0;
     const regionVisual = activeTheme?.regions.find((r) => r.id === regionId);
     const region: RegionInfo = {
       pathImage: regionVisual?.tiles.path || "",
@@ -331,8 +331,9 @@ export function useSvgStaticContent(
     svg += `<path d="${gridD}" fill="none" stroke="rgba(${BACKGROUND_RGB},0.8)" stroke-width="0.7" />`;
 
     // Spawn markers
-    for (const spawn of map.spawns) {
-      svg += `<rect x="${spawn.x * TILE_SIZE + 4}" y="${spawn.y * TILE_SIZE + 4}" width="28" height="28" fill="rgba(255,50,50,0.5)" />`;
+    for (let spawnIndex = 0; spawnIndex < map.spawns.length; spawnIndex++) {
+      const spawn = map.spawns[spawnIndex]!;
+      svg += `<use id="spawn-${spawnIndex}" href="#spawn-closed" x="${spawn.x * TILE_SIZE}" y="${spawn.y * TILE_SIZE}" width="${TILE_SIZE}" height="${TILE_SIZE}"/>`;
     }
 
     // Base structure (port of drawBase from Shapes.ts)
@@ -340,8 +341,29 @@ export function useSvgStaticContent(
       svg += renderBaseStructure(map.base, region.base);
     }
 
+    return svg;
+  });
+
+  // Grid.blocked is a Set<string> mutated directly (via registerTower /
+  // unregisterTower), NOT a reactive ref. Vue's computed won't track Set
+  // mutations. This computed signal forces pathContent to re-evaluate when
+  // towers are placed or removed.
+  const gridBlockCount = computed(() => currentGrid.value?.blocked?.size ?? 0);
+
+  // Reactive path layer: only path highlight polylines. Re-renders when
+  // blocked set changes (tower placement on path tiles).
+  const pathContent = computed(() => {
+    const grid = currentGrid.value;
+    if (!grid) return "";
+
+    // Depend on gridBlockCount to invalidate when blocked set changes size.
+    const _invalidate = gridBlockCount.value;
+    void _invalidate;
+
+    let svg = "";
+
     // Path highlights — Grid.paths is (Point[] | null)[], each path IS a Point[]
-    for (const path of grid?.paths ?? []) {
+    for (const path of grid.paths ?? []) {
       if (!path) continue;
       const points = path.map((t) => `${t.x * TILE_SIZE + TILE_SIZE / 2},${t.y * TILE_SIZE + TILE_SIZE / 2}`).join(" ");
       svg += `<polyline points="${points}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4" />`;
@@ -350,5 +372,5 @@ export function useSvgStaticContent(
     return svg;
   });
 
-  return { staticDefsContent, mapDefsContent, gridContent };
+  return { staticDefsContent, mapDefsContent, gridContent, pathContent };
 }

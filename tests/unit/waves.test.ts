@@ -36,6 +36,25 @@ function makeWaveManager(mapData: ReturnType<typeof makeBastionMap>) {
   const enemyManager = new EnemyManager(grid, particles, 0);
   return new WaveManager(mapData, enemyManager);
 }
+
+function makeMultiSpawnMap() {
+  const map = makeBastionMap();
+  map.spawns = [
+    { x: 0, y: 3 },
+    { x: 1, y: 3 },
+    { x: 2, y: 3 },
+  ];
+  return map;
+}
+
+function makeMultiSpawnWaveManager() {
+  const map = makeMultiSpawnMap();
+  resetEnemyId();
+  const grid = new Grid(map);
+  const particles = makeParticleSystem();
+  const enemyManager = new EnemyManager(grid, particles, 0);
+  return new WaveManager(map, enemyManager);
+}
 describe("WaveManager", () => {
   describe("constructor", () => {
     it("initializes with wave 0 and betweenWaves = true", () => {
@@ -313,6 +332,148 @@ describe("WaveManager", () => {
       // Should have at least one type
       const total = Object.values(waveManager.waveComposition).reduce((sum, value) => sum + value, 0);
       expect(total).toBeGreaterThan(0);
+    });
+  });
+
+  describe("spawn state tracking", () => {
+    it("initializes all spawn states as closed", () => {
+      const map = makeBastionMap();
+      const waveManager = makeWaveManager(map);
+      expect(waveManager.spawnStates).toHaveLength(map.spawns.length);
+      for (const state of waveManager.spawnStates) {
+        expect(state.visualState).toBe("closed");
+        expect(state.closeTransitionTimer).toBe(0);
+      }
+    });
+
+    it("markSpawnUsed sets spawn to open", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.markSpawnUsed(0);
+      expect(waveManager.spawnStates[0]!.visualState).toBe("open");
+      expect(waveManager.spawnStates[0]!.closeTransitionTimer).toBe(0);
+    });
+
+    it("markSpawnUsed ignores out-of-range indices", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.markSpawnUsed(999);
+      expect(waveManager.spawnStates[0]!.visualState).toBe("closed");
+    });
+
+    it("updateSpawnTimers decrements closeTransitionTimer", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.spawnStates[0]!.visualState = "transition";
+      waveManager.spawnStates[0]!.closeTransitionTimer = 1;
+      waveManager.updateSpawnTimers(0.4);
+      expect(waveManager.spawnStates[0]!.closeTransitionTimer).toBeCloseTo(0.6);
+    });
+
+    it("updateSpawnTimers transitions to closed when timer reaches zero", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.spawnStates[0]!.visualState = "transition";
+      waveManager.spawnStates[0]!.closeTransitionTimer = 0.5;
+      waveManager.updateSpawnTimers(0.6);
+      expect(waveManager.spawnStates[0]!.visualState).toBe("closed");
+      expect(waveManager.spawnStates[0]!.closeTransitionTimer).toBeLessThanOrEqual(0);
+    });
+
+    it("updateSpawnTimers does not affect closed or open spawns", () => {
+      const waveManager = makeMultiSpawnWaveManager();
+      waveManager.spawnStates[0]!.visualState = "closed";
+      waveManager.spawnStates[0]!.closeTransitionTimer = 0.5;
+      waveManager.spawnStates[1]!.visualState = "open";
+      waveManager.spawnStates[1]!.closeTransitionTimer = 0.5;
+      waveManager.updateSpawnTimers(1);
+      expect(waveManager.spawnStates[0]!.visualState).toBe("closed");
+      expect(waveManager.spawnStates[0]!.closeTransitionTimer).toBe(0.5);
+      expect(waveManager.spawnStates[1]!.visualState).toBe("open");
+      expect(waveManager.spawnStates[1]!.closeTransitionTimer).toBe(0.5);
+    });
+
+    it("saveActiveSpawns captures open spawns", () => {
+      const waveManager = makeMultiSpawnWaveManager();
+      waveManager.markSpawnUsed(0);
+      waveManager.markSpawnUsed(1);
+      waveManager.saveActiveSpawns();
+      expect(waveManager.prevWaveSpawnIndices.has(0)).toBe(true);
+      expect(waveManager.prevWaveSpawnIndices.has(1)).toBe(true);
+      expect(waveManager.prevWaveSpawnIndices.has(2)).toBe(false);
+    });
+
+    it("transitionActiveSpawnsToTransition sets open spawns to transition", () => {
+      const waveManager = makeMultiSpawnWaveManager();
+      waveManager.markSpawnUsed(0);
+      waveManager.markSpawnUsed(1);
+      waveManager.saveActiveSpawns();
+      waveManager.transitionActiveSpawnsToTransition();
+      expect(waveManager.spawnStates[0]!.visualState).toBe("transition");
+      expect(waveManager.spawnStates[0]!.closeTransitionTimer).toBe(1);
+      expect(waveManager.spawnStates[1]!.visualState).toBe("transition");
+      expect(waveManager.spawnStates[2]!.visualState).toBe("closed");
+    });
+
+    it("closeAllSpawns resets tracked spawns to closed", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.markSpawnUsed(0);
+      waveManager.saveActiveSpawns();
+      waveManager.transitionActiveSpawnsToTransition();
+      waveManager.closeAllSpawns();
+      expect(waveManager.spawnStates[0]!.visualState).toBe("closed");
+      expect(waveManager.spawnStates[0]!.closeTransitionTimer).toBe(0);
+      expect(waveManager.prevWaveSpawnIndices.size).toBe(0);
+    });
+
+    it("natural wave clear keeps spawns open and starts countdown", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.startNextWave();
+      waveManager.markSpawnUsed(0);
+      waveManager.queue = [];
+      let waveCleared = false;
+      waveManager.update(
+        0.1,
+        () => {
+          waveCleared = true;
+        },
+        null,
+      );
+      expect(waveCleared).toBe(true);
+      expect(waveManager.countdownActive).toBe(true);
+      expect(waveManager.betweenWaves).toBe(true);
+      expect(waveManager.spawnStates[0]!.visualState).toBe("open");
+    });
+
+    it("pre-emptive wave keeps spawns open", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.startNextWave();
+      waveManager.markSpawnUsed(0);
+      waveManager.enemyManager.spawn("minion", 1, 0, 1);
+      waveManager.queue = [];
+      waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, null, null);
+      expect(waveManager.currentWave).toBe(2);
+      expect(waveManager.spawnStates[0]!.visualState).toBe("open");
+    });
+
+    it("between-waves close transitions to closed then starts next wave", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.startNextWave();
+      waveManager.markSpawnUsed(0);
+      waveManager.queue = [];
+      waveManager.update(0.1, () => {}, null);
+      // Spawns stay open immediately after wave clear
+      expect(waveManager.spawnStates[0]!.visualState).toBe("open");
+      expect(waveManager.betweenWaves).toBe(true);
+      expect(waveManager.countdownActive).toBe(true);
+
+      // Advance to 1s before next wave — transition triggers
+      waveManager.update(BETWEEN_WAVES_TIMER - 1, null, null);
+      expect(waveManager.spawnStates[0]!.visualState).toBe("transition");
+
+      // Advance remaining time to trigger next wave (closes spawns first)
+      let startedWave: number | null = null;
+      waveManager.update(1.1, null, (wave) => {
+        startedWave = wave;
+      });
+      expect(startedWave).toBe(2);
+      expect(waveManager.spawnStates[0]!.visualState).toBe("closed");
     });
   });
 });

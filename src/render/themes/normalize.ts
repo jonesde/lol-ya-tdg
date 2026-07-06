@@ -4,6 +4,7 @@ import type {
   MapThemeData,
   MapThemeFrame,
   RegionVisualMeta,
+  SpawnPointVisualMeta,
   TowerVisualMeta,
 } from "./index.js";
 
@@ -91,6 +92,17 @@ async function normalizeRegionVisual(raw: {
   return { id: raw.id, name: raw.name, tiles: { path, terrain1, terrain2, terrain3, terrain4 }, base };
 }
 
+async function normalizeSpawnVisuals(raw: {
+  closed: string;
+  open: string;
+  transition: string;
+}): Promise<SpawnPointVisualMeta> {
+  const closed = stripSvgWrapper(await resolveImage(raw.closed));
+  const open = stripSvgWrapper(await resolveImage(raw.open));
+  const transition = stripSvgWrapper(await resolveImage(raw.transition));
+  return { closed, open, transition };
+}
+
 export async function normalizeThemeImages(raw: {
   id: string;
   label: string;
@@ -120,6 +132,7 @@ export async function normalizeThemeImages(raw: {
     tiles: { path: string; terrain1: string; terrain2: string; terrain3: string; terrain4: string };
     base: string;
   }>;
+  spawns?: { closed: string; open: string; transition: string };
 }): Promise<MapThemeData> {
   const normalizedTowers: Record<string, TowerVisualMeta> = {};
   for (const [key, tower] of Object.entries(raw.towers)) {
@@ -133,11 +146,24 @@ export async function normalizeThemeImages(raw: {
 
   const normalizedRegions: RegionVisualMeta[] = await Promise.all(raw.regions.map(normalizeRegionVisual));
 
-  return {
+  const normalizedSpawns = raw.spawns ? await normalizeSpawnVisuals(raw.spawns) : undefined;
+
+  const result: {
+    id: string;
+    label: string;
+    towers: Record<string, TowerVisualMeta>;
+    enemies: Record<string, EnemyVisualMeta>;
+    regions: RegionVisualMeta[];
+    spawns?: SpawnPointVisualMeta;
+  } = {
     id: raw.id,
     label: raw.label,
     towers: normalizedTowers,
     enemies: normalizedEnemies,
     regions: normalizedRegions,
   };
+  if (normalizedSpawns) {
+    result.spawns = normalizedSpawns;
+  }
+  return result;
 }

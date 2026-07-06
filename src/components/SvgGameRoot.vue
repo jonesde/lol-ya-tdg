@@ -5,6 +5,7 @@
       <defs ref="defsLayer"></defs>
 
       <g class="grid-layer" v-html="gridContent"></g>
+      <g class="path-layer" v-html="pathContent"></g>
 
       <g ref="worldLayer" class="camera-wrapper">
         <g ref="entityLayer" class="entity-layer"></g>
@@ -17,7 +18,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import type { Enemy } from "@/enemies/Enemy.js";
 import { GameState } from "@/game/Constants.js";
 import { TOWER_META } from "@/game/ConstantsTower.js";
@@ -28,6 +29,7 @@ import { EffectManager } from "@/render/svg/EffectManager.js";
 import { EnemyManager } from "@/render/svg/EnemyManager.js";
 import { ParticleManager } from "@/render/svg/ParticleManager.js";
 import { ProjectileManager } from "@/render/svg/ProjectileManager.js";
+import { SpawnManager } from "@/render/svg/SpawnManager.js";
 import { TowerManager } from "@/render/svg/TowerManager.js";
 import type { Particle, Projectile } from "@/render/svg/types.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
@@ -51,7 +53,7 @@ const persistStore = usePersistStore();
 const uiStore = useUiStore();
 const themeStore = useMapThemeStore();
 
-const { staticDefsContent, mapDefsContent, gridContent } = useSvgStaticContent(
+const { staticDefsContent, mapDefsContent, gridContent, pathContent } = useSvgStaticContent(
   computed(() => gameStore.map),
   computed(() => gameStore.grid),
   themeStore.activeTheme,
@@ -107,6 +109,7 @@ let projectileManager!: ProjectileManager;
 let particleManager!: ParticleManager;
 let effectManager!: EffectManager;
 let uiOverlayManager!: UiOverlayManager;
+let spawnManager!: SpawnManager;
 
 let cameraTransformString = "translate(0,0) scale(1)";
 
@@ -220,6 +223,7 @@ onMounted(async () => {
   particleManager = new ParticleManager();
   effectManager = new EffectManager();
   uiOverlayManager = new UiOverlayManager();
+  spawnManager = new SpawnManager();
 
   enemyManager.init(el);
   towerManager.init(el);
@@ -228,11 +232,10 @@ onMounted(async () => {
   particleManager.init(ef);
   effectManager.init(ef);
 
-  const map = gameStore.map;
-  if (map) {
-    const mapWidth = map.width;
-    const mapHeight = map.height;
-    const initialCam = fitToGrid(mapWidth, mapHeight, viewSize.value.w, viewSize.value.h - 104);
+  const initialMap = gameStore.map;
+
+  if (initialMap) {
+    const initialCam = fitToGrid(initialMap.width, initialMap.height, viewSize.value.w, viewSize.value.h - 104);
     cameraTransformString = `translate(${initialCam.x}, ${initialCam.y}) scale(${initialCam.zoom})`;
     worldLayer.value?.setAttribute("transform", cameraTransformString);
     gameStore.setCamera(initialCam.x, initialCam.y, initialCam.zoom);
@@ -291,6 +294,9 @@ onMounted(async () => {
       if (gameStore.grid && gameStore.enemyManager) {
         uiOverlayManager.syncPendingQueueOverlays(gameStore.grid, gameStore.enemyManager);
       }
+      if (engine.value?.waveManager?.spawnStates) {
+        spawnManager.sync(engine.value.waveManager.spawnStates);
+      }
     }
   };
 
@@ -306,6 +312,12 @@ onMounted(async () => {
     engine.value.loadRandomMap(p.width, p.height, p.level, p.style, p.regionId, p.seed);
   } else {
     engine.value.loadMap(gameStore.mapIndex);
+  }
+
+  await nextTick();
+  const postLoadMap = gameStore.map;
+  if (svgRoot.value && postLoadMap) {
+    spawnManager.init(svgRoot.value, postLoadMap.spawns.length);
   }
 
   if (engine.value.projectileManager) {
@@ -333,6 +345,7 @@ onUnmounted(() => {
   particleManager.dispose();
   effectManager.dispose();
   uiOverlayManager.dispose();
+  spawnManager.dispose();
 });
 </script>
 

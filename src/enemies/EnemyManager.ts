@@ -84,6 +84,14 @@ export class EnemyManager {
     return queue ? queue.length : 0;
   }
 
+  getActiveEnemyCountForSpawn(spawnIndex: number): number {
+    let count = 0;
+    for (const enemy of this.enemies) {
+      if (enemy.spawnIndex === spawnIndex) count++;
+    }
+    return count;
+  }
+
   update(dt: number, onEnemyKill: ((enemy: Enemy) => void) | null): void {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];

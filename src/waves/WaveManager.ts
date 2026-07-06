@@ -1,6 +1,7 @@
 import { BETWEEN_WAVES_TIMER, PRE_EMPTIVE_WAVE_TIMER, VICTORY_WAVE } from "../game/Constants.js";
 import { ENEMY_TYPES, WAVE_COUNT_BASE, WAVE_COUNT_SCALE } from "../game/ConstantsEnemy.js";
 import { mulberry32 } from "../grid/Map.js";
+import type { SpawnState } from "../render/themes/index.js";
 
 interface MapRef {
   regionId: number;
@@ -17,6 +18,7 @@ interface EnemyManagerRef {
   releaseOnePending(spawnIndex: number): void;
   hasPendingEnemies(): boolean;
   getPendingCountForSpawn(spawnIndex: number): number;
+  getActiveEnemyCountForSpawn(spawnIndex: number): number;
   getEnemiesInRange(x: number, y: number, range: number): unknown[];
 }
 
@@ -27,6 +29,8 @@ interface WaveEntry {
 }
 
 export class WaveManager {
+  spawnStates: SpawnState[];
+  prevWaveSpawnIndices: Set<number>;
   map: MapRef;
   regionId: number;
   enemyManager: EnemyManagerRef;
@@ -67,6 +71,38 @@ export class WaveManager {
     this._waveGameTime = 0;
     this.countdownActive = false;
     this.countdownTimer = 0;
+    this.spawnStates = map.spawns.map(() => ({ visualState: "closed" as const, closeTransitionTimer: 0 }));
+    this.prevWaveSpawnIndices = new Set();
+  }
+
+  markSpawnUsed(spawnIndex: number): void {
+    if (spawnIndex >= 0 && spawnIndex < this.spawnStates.length) {
+      this.spawnStates[spawnIndex]!.visualState = "open";
+      this.spawnStates[spawnIndex]!.closeTransitionTimer = 0;
+    }
+  }
+
+  updateSpawnTimers(dt: number): void {
+    for (let i = 0; i < this.spawnStates.length; i++) {
+      const state = this.spawnStates[i]!;
+      if (state.visualState === "transition" && state.closeTransitionTimer > 0) {
+        state.closeTransitionTimer -= dt;
+        if (state.closeTransitionTimer <= 0) {
+          state.visualState = "closed";
+          state.closeTransitionTimer = 0;
+        }
+      }
+    }
+  }
+
+  transitionSpawnToClosed(spawnIndex: number): void {
+    if (spawnIndex >= 0 && spawnIndex < this.spawnStates.length) {
+      const state = this.spawnStates[spawnIndex]!;
+      if (state.visualState === "open") {
+        state.visualState = "transition";
+        state.closeTransitionTimer = 1;
+      }
+    }
   }
 
   startNextWave() {
@@ -82,6 +118,32 @@ export class WaveManager {
     this.bossesThisWave = this.queue.filter((entry) => entry.type === "boss").length;
     this.active = true;
     this.waveComposition = this._countTypes(this.queue);
+  }
+
+  saveActiveSpawns(): void {
+    for (let i = 0; i < this.spawnStates.length; i++) {
+      if (this.spawnStates[i]!.visualState === "open") {
+        this.prevWaveSpawnIndices.add(i);
+      }
+    }
+  }
+
+  transitionActiveSpawnsToTransition(): void {
+    for (const spawnIndex of this.prevWaveSpawnIndices) {
+      const state = this.spawnStates[spawnIndex]!;
+      if (state.visualState === "open") {
+        state.visualState = "transition";
+        state.closeTransitionTimer = 1;
+      }
+    }
+  }
+
+  closeAllSpawns(): void {
+    for (const spawnIndex of this.prevWaveSpawnIndices) {
+      this.spawnStates[spawnIndex]!.visualState = "closed";
+      this.spawnStates[spawnIndex]!.closeTransitionTimer = 0;
+    }
+    this.prevWaveSpawnIndices.clear();
   }
 
   _countTypes(queue: WaveEntry[]): Record<string, number> {
@@ -128,10 +190,30 @@ export class WaveManager {
   }
 
   update(dt: number, onWaveCleared: ((wave: number) => void) | null, onWaveStart: ((wave: number) => void) | null) {
+    this.updateSpawnTimers(dt);
+
+    if (!(!this.queue.length && !this.enemyManager.hasPendingEnemies() && this.enemyManager.enemies.length === 0)) {
+      for (let i = 0; i < this.spawnStates.length; i++) {
+        if (this.spawnStates[i]!.visualState === "open") {
+          if (
+            this.enemyManager.getActiveEnemyCountForSpawn(i) === 0 &&
+            this.enemyManager.getPendingCountForSpawn(i) === 0
+          ) {
+            this.transitionSpawnToClosed(i);
+          }
+        }
+      }
+    }
+
     if (this.betweenWaves) {
       this.betweenTimer -= dt;
+      this.countdownTimer -= dt;
+      if (this.betweenTimer <= 1) {
+        this.transitionActiveSpawnsToTransition();
+      }
       if (this.betweenTimer <= 0) {
         if (this.currentWave < VICTORY_WAVE) {
+          this.closeAllSpawns();
           this.startNextWave();
           if (onWaveStart) onWaveStart(this.currentWave);
         }
@@ -141,24 +223,13 @@ export class WaveManager {
 
     this._waveGameTime += dt;
 
-    if (this.countdownActive) {
-      this.countdownTimer -= dt;
-      if (this.countdownTimer <= 0) {
-        this.countdownActive = false;
-        if (this.currentWave < VICTORY_WAVE) {
-          this.startNextWave();
-          if (onWaveStart) onWaveStart(this.currentWave);
-        }
-      }
-      return;
-    }
-
     // Timer expiry: force next wave without clearing (enemies accumulate)
     if (this._waveGameTime >= PRE_EMPTIVE_WAVE_TIMER) {
       if (this.currentWave >= VICTORY_WAVE) {
         this.betweenWaves = true;
         return;
       }
+      this.saveActiveSpawns();
       this.startNextWave();
       if (onWaveStart) onWaveStart(this.currentWave);
       return;
@@ -170,8 +241,11 @@ export class WaveManager {
       if (this.currentWave >= VICTORY_WAVE) {
         this.betweenWaves = true;
       } else {
+        this.saveActiveSpawns();
         this.countdownActive = true;
         this.countdownTimer = BETWEEN_WAVES_TIMER;
+        this.betweenWaves = true;
+        this.betweenTimer = BETWEEN_WAVES_TIMER;
       }
       return;
     }
@@ -186,6 +260,7 @@ export class WaveManager {
         return;
       }
       const spawnIdx = Math.floor(this.rng() * this.map.spawns.length);
+      this.markSpawnUsed(spawnIdx);
       this.enemyManager.enqueueOrSpawn(next.type, next.level, spawnIdx, this.currentWave);
       this.spawnTimer = next.delay;
     }

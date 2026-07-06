@@ -47,16 +47,30 @@ export interface RegionVisualMeta {
   base: string;
 }
 
+export interface SpawnPointVisualMeta {
+  closed: string;
+  open: string;
+  transition: string;
+}
+
 export interface MapThemeData {
   id: string;
   label: string;
   towers: Record<string, TowerVisualMeta>;
   enemies: Record<string, EnemyVisualMeta>;
   regions: RegionVisualMeta[];
+  spawns?: SpawnPointVisualMeta;
 }
 
 export interface MapThemeLoader {
   load(): Promise<MapThemeData>;
+}
+
+export type SpawnVisualState = "closed" | "transition" | "open";
+
+export interface SpawnState {
+  visualState: SpawnVisualState;
+  closeTransitionTimer: number;
 }
 
 export function registerThemeLoader(themeId: string, loaderFn: () => Promise<MapThemeData>): void {

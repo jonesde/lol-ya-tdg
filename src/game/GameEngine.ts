@@ -7,7 +7,7 @@ import { WaveGraphTracker } from "@/game/WaveGraphTracker.js";
 import { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
 import { generateRandomMap, getMap } from "@/grid/Map.js";
-import type { MapThemeData } from "@/render/themes/index.js";
+import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
 import { SoundManager } from "@/sound/SoundManager.js";
 import type { GameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -43,6 +43,7 @@ interface WaveManagerRef {
   countdownTimer: number;
   baseReached: boolean;
   _waveGameTime: number;
+  spawnStates: SpawnState[];
   update(
     dt: number,
     onWaveCleared: ((wave: number) => void) | null,

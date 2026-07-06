@@ -49,6 +49,7 @@ export const mockDefaultTheme: MapThemeData = {
       },
     },
   },
+  spawns: { closed: "<svg></svg>", open: "<svg></svg>", transition: "<svg></svg>" },
   regions: [
     {
       id: 0,
