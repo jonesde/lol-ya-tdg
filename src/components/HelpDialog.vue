@@ -42,7 +42,7 @@ const row1 = buildRow(1, [
   ...["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"].map((label) => ({
     label,
     width: KEY_SIZE,
-    highlighted: label === "W",
+    highlighted: label === "W" || label === "U",
   })),
   { label: "[", width: KEY_SIZE },
   { label: "]", width: KEY_SIZE },
@@ -71,7 +71,7 @@ const row3 = buildRow(3, [
 ]);
 
 const row3Arrows = buildRow(3, [{ label: "↑", width: KEY_SIZE, highlighted: true }], true);
-row3Arrows[0].x = 480;
+row3Arrows[0].x = 450;
 
 const row4 = buildRow(4, [
   { label: "Ctrl", width: 42 },
@@ -92,9 +92,9 @@ const row4Arrows = buildRow(
   ],
   true,
 );
-row4Arrows[0].x = 480;
-row4Arrows[1].x = 510;
-row4Arrows[2].x = 540;
+row4Arrows[0].x = 420;
+row4Arrows[1].x = 450;
+row4Arrows[2].x = 480;
 
 const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4, ...row4Arrows];
 </script>
@@ -111,15 +111,20 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
         <div class="help-section">
           <div class="help-section-title">How to Play</div>
           <p class="help-description">
-            Defend your base against 100 waves of enemies across 36 procedurally-generated maps.
-            Place towers from the shop bar, upgrade them with specializations, and earn gems
-            for permanent skill tree upgrades.
+            Defend your base against waves of enemies on procedurally generated maps.
+            Enemies award gold for the resources they leave behind on defeat.
+            Use gold to build towers from the shop bar, then upgrade and specialize them for maximum effect.
+            Reach high waves and defeat bosses to earn gems to unlock upgrades. You won't get far without them!
           </p>
         </div>
 
         <div class="help-section keyboard-layout-section">
           <div class="help-section-title">Keyboard Layout</div>
-          <svg class="keyboard-diagram" viewBox="0 0 732 330" xmlns="http://www.w3.org/2000/svg">
+          <p class="help-description">
+            Use only mouse, only keyboard, or mouse + keyboard.
+            Fully playable by keyboard alone. Friend mode is a future feature.
+          </p>
+          <svg class="keyboard-diagram" viewBox="0 0 580 300" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <marker id="kb-arrow" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
                 <path d="M0,0 L6,2 L0,4" fill="var(--color-text-dim)" />
@@ -128,135 +133,127 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 
             <g class="kb-keys">
               <g v-for="(key, idx) in keyboardKeys" :key="idx">
-                <rect
-                  :x="key.x"
-                  :y="key.y"
-                  :width="key.width"
-                  :height="28"
-                  :class="{ 'kb-key': true, 'kb-key-hl': key.highlighted }"
-                  rx="2"
-                />
-                <text
-                  :x="key.x + key.width / 2"
-                  :y="key.y + 17"
-                  class="kb-key-text"
-                  text-anchor="middle"
+                <rect :x="key.x" :y="key.y" :width="key.width" :height="28"
+                  :class="{ 'kb-key': true, 'kb-key-hl': key.highlighted }" rx="2" />
+                <text :x="key.x + key.width / 2" :y="key.y + 17" class="kb-key-text" text-anchor="middle"
                 >{{ key.label }}</text>
               </g>
             </g>
 
             <g class="kb-brackets">
-              <path class="kb-bracket" d="M 44,52 L 44,46 L 298,46 L 298,52" />
-              <path class="kb-bracket" d="M 520,170 L 526,170 L 526,232 L 520,232" />
+              <path class="kb-bracket" d="M 30,62 L 30,56 L 299,56 L 299,62" />
+              <!-- <path class="kb-bracket" d="M 520,170 L 526,170 L 526,232 L 520,232" /> -->
             </g>
 
             <g class="kb-labels">
               <g class="kb-label-group">
-                <text x="60" y="20" class="kb-label-text">
-                  <tspan class="kb-label-key">Esc/X</tspan>
+                <text x="0" y="40" class="kb-label-text">
+                  <tspan class="kb-label-key">Esc|X</tspan>
                   <tspan class="kb-label-desc"> Close/Pause</tspan>
                 </text>
-                <polyline class="kb-line" points="40,30 14,30 14,70" marker-end="url(#kb-arrow)" />
-                <polyline class="kb-line" points="80,30 382,30 382,166" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="40,30 14,30 14,70" marker-end="url(#kb-arrow)" /> -->
+                <!-- <polyline class="kb-line" points="80,30 382,30 382,166" marker-end="url(#kb-arrow)" /> -->
               </g>
 
               <g class="kb-label-group">
-                <text x="180" y="16" class="kb-label-text">
+                <text x="139" y="24" class="kb-label-text">
                   <tspan class="kb-label-key">Tab</tspan>
-                  <tspan class="kb-label-desc"> Speed↑ / Build→</tspan>
+                  <tspan class="kb-label-desc"> Speed↑ ( Build Bar → )</tspan>
                 </text>
-                <polyline class="kb-line" points="170,22 6,22 6,102 34,102" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="170,22 6,22 6,102 34,102" marker-end="url(#kb-arrow)" /> -->
               </g>
 
               <g class="kb-label-group">
-                <text x="180" y="36" class="kb-label-text">
+                <text x="110" y="40" class="kb-label-text">
                   <tspan class="kb-label-key">Shift+Tab</tspan>
-                  <tspan class="kb-label-desc"> Speed↓ / ←Build</tspan>
+                  <tspan class="kb-label-desc"> Speed↓ ( Build Bar ← )</tspan>
                 </text>
-                <polyline class="kb-line" points="170,42 10,42 10,134 34,134" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="170,42 10,42 10,134 34,134" marker-end="url(#kb-arrow)" /> -->
               </g>
 
               <g class="kb-label-group">
-                <text x="171" y="38" class="kb-label-text" text-anchor="middle">
+                <text x="340" y="58" class="kb-label-text" text-anchor="middle">
                   <tspan class="kb-label-key">1-9</tspan>
-                  <tspan class="kb-label-desc"> Tower Build Selection</tspan>
+                  <tspan class="kb-label-desc"> Tower Build</tspan>
                 </text>
-                <polyline class="kb-line" points="171,44 171,52" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="171,44 171,52" marker-end="url(#kb-arrow)" /> -->
               </g>
 
               <g class="kb-label-group">
-                <text x="60" y="270" class="kb-label-text">
+                <text x="30" y="270" class="kb-label-text">
                   <tspan class="kb-label-key">A</tspan>
                   <tspan class="kb-label-desc"> Speed↓</tspan>
                 </text>
-                <polyline class="kb-line" points="60,260 60,210 106,210 106,194" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="60,260 60,210 106,210 106,194" marker-end="url(#kb-arrow)" /> -->
               </g>
 
               <g class="kb-label-group">
-                <text x="150" y="260" class="kb-label-text">
-                  <tspan class="kb-label-key">W/U</tspan>
+                <text x="78" y="250" class="kb-label-text">
+                  <tspan class="kb-label-key">W|U</tspan>
                   <tspan class="kb-label-desc"> Upgrade</tspan>
                 </text>
-                <polyline class="kb-line" points="150,250 150,200 136,200 136,166" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="150,250 150,200 136,200 136,166" marker-end="url(#kb-arrow)" /> -->
               </g>
 
               <g class="kb-label-group">
-                <text x="150" y="285" class="kb-label-text">
+                <text x="88" y="270" class="kb-label-text">
                   <tspan class="kb-label-key">S</tspan>
                   <tspan class="kb-label-desc"> Downgrade/Sell</tspan>
                 </text>
-                <polyline class="kb-line" points="160,278 160,220 166,220 166,194" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="160,278 160,220 166,220 166,194" marker-end="url(#kb-arrow)" /> -->
               </g>
 
               <g class="kb-label-group">
-                <text x="230" y="270" class="kb-label-text">
+                <text x="184" y="270" class="kb-label-text">
                   <tspan class="kb-label-key">D</tspan>
                   <tspan class="kb-label-desc"> Speed↑</tspan>
                 </text>
-                <polyline class="kb-line" points="230,260 230,210 196,210 196,194" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="230,260 230,210 196,210 196,194" marker-end="url(#kb-arrow)" /> -->
               </g>
 
               <g class="kb-label-group">
-                <text x="280" y="285" class="kb-label-text">
+                <text x="242" y="270" class="kb-label-text">
                   <tspan class="kb-label-key">F</tspan>
                   <tspan class="kb-label-desc"> Cycle Targeting</tspan>
                 </text>
-                <polyline class="kb-line" points="280,278 280,220 226,220 226,194" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="280,278 280,220 226,220 226,194" marker-end="url(#kb-arrow)" /> -->
               </g>
 
               <g class="kb-label-group">
-                <text x="400" y="280" class="kb-label-text">
+                <text x="200" y="246" class="kb-label-text">
                   <tspan class="kb-label-key">Space</tspan>
                   <tspan class="kb-label-desc"> Pause/Resume</tspan>
                 </text>
-                <polyline class="kb-line" points="400,270 400,240 311,240 311,230" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="400,270 400,240 311,240 311,230" marker-end="url(#kb-arrow)" /> -->
               </g>
 
               <g class="kb-label-group">
-                <text x="580" y="120" class="kb-label-text">
+                <text x="490" y="150" class="kb-label-text">
                   <tspan class="kb-label-key">Enter</tspan>
                   <tspan class="kb-label-desc"> Confirm</tspan>
                 </text>
-                <polyline class="kb-line" points="570,116 540,116 540,182 462,182" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="570,116 540,116 540,182 462,182" marker-end="url(#kb-arrow)" /> -->
               </g>
 
               <g class="kb-label-group">
-                <text x="580" y="200" class="kb-label-text">
-                  <tspan class="kb-label-key">Arrows</tspan>
-                  <tspan class="kb-label-desc"> Navigate</tspan>
+                <text x="490" y="182" class="kb-label-text">
+                  <tspan class="kb-label-desc">Select Tower</tspan>
                 </text>
-                <polyline class="kb-line" points="570,196 526,196" marker-end="url(#kb-arrow)" />
+                <!-- <polyline class="kb-line" points="570,196 526,196" marker-end="url(#kb-arrow)" /> -->
+              </g>
+              <g class="kb-label-group">
+                <text x="490" y="194" class="kb-label-text">
+                  <tspan class="kb-label-desc">( Select Build Tile )</tspan>
+                </text>
               </g>
             </g>
           </svg>
-        </div>
 
-        <div class="help-section">
-          <div class="help-section-title">Keyboard Controls</div>
+          <!-- <div class="help-section-title">Keyboard Controls</div> -->
           <table class="help-table">
             <tbody>
               <tr>
-                <td><kbd>Esc</kbd> / <kbd>x</kbd></td>
+                <td><kbd>Esc</kbd> / <kbd>X</kbd></td>
                 <td>Close menus and dialogs; otherwise cancel build mode, deselect your tower, or open the pause menu</td>
               </tr>
               <tr>
@@ -269,11 +266,11 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
               </tr>
               <tr>
                 <td><kbd>Tab</kbd></td>
-                <td>Speed up time (1x → 2x → 4x → 8x). In build mode: cycle to the next tower type</td>
+                <td>Speed up time (1x → 2x → 4x → 8x → 1x). In build mode: cycle to the next tower type</td>
               </tr>
               <tr>
                 <td><kbd>Shift</kbd> + <kbd>Tab</kbd></td>
-                <td>Slow down time (8x → 4x → 2x → 1x). In build mode: cycle to the previous tower type</td>
+                <td>Slow down time (8x → 4x → 2x → 1x → 8x). In build mode: cycle to the previous tower type</td>
               </tr>
               <tr>
                 <td><kbd>1</kbd>-<kbd>9</kbd></td>
@@ -289,7 +286,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
               </tr>
               <tr>
                 <td><kbd>A</kbd></td>
-                <td>Slow down time (8x → 4x → 2x → 1x)</td>
+                <td>Slow down time (8x → 4x → 2x → 1x → 8x)</td>
               </tr>
               <tr>
                 <td><kbd>S</kbd></td>
@@ -297,11 +294,11 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
               </tr>
               <tr>
                 <td><kbd>D</kbd></td>
-                <td>Speed up time (1x → 2x → 4x → 8x)</td>
+                <td>Speed up time (1x → 2x → 4x → 8x → 1x)</td>
               </tr>
               <tr>
                 <td><kbd>F</kbd></td>
-                <td>Cycle targeting mode on the selected tower (first → last → closest → strong → furthest)</td>
+                <td>Cycle targeting mode on the selected tower (first → last → etc)</td>
               </tr>
               <tr>
                 <td>Click empty tile</td>
@@ -315,11 +312,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
           </table>
         </div>
 
-        <button
-          class="debug-bug"
-          @click="uiStore.openDebugPanel(); uiStore.closeHelpDialog()"
-          aria-label="Open debug panel"
-        >🐞</button>
+        <button class="debug-bug" @click="uiStore.openDebugPanel();" aria-label="Open Debug Panel">🐞</button>
       </div>
     </div>
   </Teleport>
@@ -379,7 +372,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 }
 
 .help-section {
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .help-section:last-child {
@@ -438,26 +431,8 @@ kbd {
   color: var(--color-text);
 }
 
-.debug-bug {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  background: transparent;
-  border: none;
-  font-size: 18px;
-  cursor: pointer;
-  opacity: 0.35;
-  transition: opacity 0.15s;
-  padding: 4px;
-  line-height: 1;
-}
-
-.debug-bug:hover {
-  opacity: 0.8;
-}
-
 .keyboard-layout-section {
-  padding: 24px;
+  padding: 16px 24px;
   margin: 0 -24px 16px -24px;
 }
 
@@ -509,5 +484,22 @@ kbd {
   fill: none;
   stroke: var(--color-text-dim);
   stroke-width: 1;
+}
+
+.debug-bug {
+  background: transparent;
+  width: 100%;
+  text-align: right;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0.3;
+  transition: opacity 0.15s;
+  padding: 4px;
+  line-height: 1;
+}
+
+.debug-bug:hover {
+  opacity: 0.8;
 }
 </style>
