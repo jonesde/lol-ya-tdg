@@ -27,6 +27,7 @@ import {
   MAX_ACCUM,
   MILESTONE_GEMS,
   MILESTONE_WAVES,
+  SELL_VALUE_RATIO,
   SLOW_HEALING_PER_ROUND,
   STARTING_GOLD_BONUS,
   STARTING_HEALTH_BONUS,
@@ -654,6 +655,25 @@ export class GameEngine {
     gameStore.setGold(gameStore.gold + refund);
     this.totalGoldEarned += refund;
     gameStore.selectTower(null);
+  }
+
+  downgradeSelected(): void {
+    const gameStore = this.gameStore;
+    if (!gameStore.selectedTower) return;
+    if (gameStore.selectedTower.level <= 1) return;
+    this.executeDowngrade();
+  }
+
+  executeDowngrade(): void {
+    const gameStore = this.gameStore;
+    const tower = gameStore.selectedTower;
+    if (tower === null) return;
+
+    const delta = this.towerManager!.downgradeTower(tower);
+    const isRefund = this.persistStore.$state.generalAddons?.sellActive === "refund";
+    const refund = isRefund ? delta : Math.round(delta * SELL_VALUE_RATIO);
+
+    gameStore.setGold(gameStore.gold + refund);
   }
 
   setTargeting(mode: string): void {

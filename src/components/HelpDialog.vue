@@ -27,7 +27,7 @@ const uiStore = useUiStore();
           <table class="help-table">
             <tbody>
               <tr>
-                <td><kbd>Esc</kbd></td>
+                <td><kbd>Esc</kbd> / <kbd>x</kbd></td>
                 <td>Close menus and dialogs; otherwise cancel build mode, deselect your tower, or open the pause menu</td>
               </tr>
               <tr>
@@ -40,43 +40,35 @@ const uiStore = useUiStore();
               </tr>
               <tr>
                 <td><kbd>Tab</kbd></td>
-                <td>Cycle to the next tower type in build mode, or select the next placed tower</td>
+                <td>Speed up time (1x → 2x → 4x → 8x). In build mode: cycle to the next tower type</td>
               </tr>
               <tr>
                 <td><kbd>Shift</kbd> + <kbd>Tab</kbd></td>
-                <td>Cycle to the previous tower type in build mode, or select the previous placed tower</td>
-              </tr>
-              <tr>
-                <td><kbd>&rarr;</kbd></td>
-                <td>Speed up time (1x to 2x to 4x to 8x)</td>
-              </tr>
-              <tr>
-                <td><kbd>&larr;</kbd></td>
-                <td>Slow down time (8x to 4x to 2x to 1x)</td>
+                <td>Slow down time (8x → 4x → 2x → 1x). In build mode: cycle to the previous tower type</td>
               </tr>
               <tr>
                 <td><kbd>1</kbd>-<kbd>9</kbd></td>
                 <td>Select a tower type to build (matches the shop panel order)</td>
               </tr>
               <tr>
-                <td><kbd>U</kbd> or <kbd>&uarr;</kbd></td>
-                <td>Upgrade the selected tower (in build mode: move build position up)</td>
+                <td><kbd>&uarr;</kbd> / <kbd>&darr;</kbd> / <kbd>&larr;</kbd> / <kbd>&rarr;</kbd></td>
+                <td>Move tower selection in that direction. In build mode: move build position</td>
               </tr>
               <tr>
-                <td><kbd>&darr;</kbd></td>
-                <td>Move build position down (only in build mode)</td>
+                <td><kbd>W</kbd> / <kbd>U</kbd></td>
+                <td>Upgrade the selected tower</td>
               </tr>
               <tr>
-                <td><kbd>&larr;</kbd> / <kbd>&rarr;</kbd></td>
-                <td>Cycle time speed (outside build mode) or move build position left/right (in build mode)</td>
+                <td><kbd>A</kbd></td>
+                <td>Slow down time (8x → 4x → 2x → 1x)</td>
               </tr>
               <tr>
                 <td><kbd>S</kbd></td>
-                <td>Sell the selected tower for a partial gold refund</td>
+                <td>Downgrade selected tower (level &gt;1) or sell it (level 1)</td>
               </tr>
               <tr>
                 <td><kbd>D</kbd></td>
-                <td>Deselect the selected tower</td>
+                <td>Speed up time (1x → 2x → 4x → 8x)</td>
               </tr>
               <tr>
                 <td><kbd>F</kbd></td>

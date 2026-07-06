@@ -52,6 +52,10 @@ interface MilestoneRewardsClaimed {
   [wave: number]: boolean;
 }
 
+interface TowerManagerLike {
+  towers: Tower[];
+}
+
 export interface GameStoreLike {
   state: GameStateValue;
   timeScale: number;
@@ -59,6 +63,7 @@ export interface GameStoreLike {
   selectedTowerType: TowerId | null;
   hoverTile: HoverTile | null;
   camera: CameraState;
+  towerManager: TowerManagerLike | null;
   cycleSpeed(): number;
   cycleSpeedReverse(): number;
   selectBuildType(type: TowerId | null): void;

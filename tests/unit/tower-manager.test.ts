@@ -196,6 +196,58 @@ describe("TowerManager", () => {
     });
   });
 
+  describe("downgradeTower", () => {
+    it("reduces tower level by 1", () => {
+      const tower = manager.build("basic", 0, 0, makeSave(), grid) as Tower;
+      // Upgrade to level 2 first
+      tower.doUpgrade(makeSave(), tower.upgradeCost(2));
+      expect(tower.level).toBe(2);
+      const beforeInvested = tower.totalInvested;
+      const delta = manager.downgradeTower(tower);
+      expect(tower.level).toBe(1);
+      expect(delta).toBe(beforeInvested - tower.totalInvested);
+    });
+
+    it("resets variant when downgrading from specialized tower (level 5)", () => {
+      const tower = manager.build("basic", 0, 0, makeSave(), grid) as Tower;
+      for (let i = 0; i < 3; i++) {
+        tower.doUpgrade(makeSave(), tower.upgradeCost(i + 2));
+      }
+      tower.specialize("A", makeSave(), tower.upgradeCost(5));
+      expect(tower.level).toBe(5);
+      expect(tower.variant).toBe("A");
+      const beforeInvested = tower.totalInvested;
+      const delta = manager.downgradeTower(tower);
+      expect(tower.level).toBe(4);
+      expect(tower.variant).toBeNull();
+      expect(delta).toBe(beforeInvested - tower.totalInvested);
+    });
+
+    it("returns the upgrade cost delta", () => {
+      const tower = manager.build("basic", 0, 0, makeSave(), grid) as Tower;
+      const costToLevel2 = tower.upgradeCost(2);
+      tower.doUpgrade(makeSave(), costToLevel2);
+      expect(tower.level).toBe(2);
+      const delta = manager.downgradeTower(tower);
+      expect(delta).toBe(costToLevel2);
+    });
+
+    it("spawns downgrade particles", () => {
+      const tower = manager.build("basic", 0, 0, makeSave(), grid) as Tower;
+      tower.doUpgrade(makeSave(), tower.upgradeCost(2));
+      manager.downgradeTower(tower);
+      expect(particles.spawns.length).toBeGreaterThan(0);
+      expect(particles.spawns[particles.spawns.length - 1].color).toBe("#ffd060");
+    });
+
+    it("does not go below totalInvested zero", () => {
+      const tower = manager.build("basic", 0, 0, makeSave(), grid) as Tower;
+      expect(tower.level).toBe(1);
+      manager.downgradeTower(tower);
+      expect(tower.totalInvested).toBeGreaterThanOrEqual(0);
+    });
+  });
+
   describe("towerAt", () => {
     it("returns the tower at the given grid coords", () => {
       const tower = manager.build("basic", 3, 2, makeSave(), grid);

@@ -275,6 +275,75 @@ describe("GameEngine", () => {
       expect(gameStore.gold).toBe(goldBefore);
     });
 
+    it("downgradeSelected reduces level without confirmation", () => {
+      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      const cost = engine.getUpgradeCost(tower!);
+      gameStore.gold -= cost;
+      tower.doUpgrade(persistStore.$state, cost);
+      gameStore.selectTower(tower);
+      engine.downgradeSelected();
+      expect(tower.level).toBe(1);
+    });
+
+    it("downgradeSelected returns early when tower is level 1", () => {
+      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      gameStore.selectTower(tower);
+      const goldBefore = gameStore.gold;
+      engine.downgradeSelected();
+      expect(gameStore.gold).toBe(goldBefore);
+    });
+
+    it("executeDowngrade reduces level and refunds gold (discount mode)", () => {
+      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      const cost = engine.getUpgradeCost(tower!);
+      gameStore.gold -= cost;
+      tower.doUpgrade(persistStore.$state, cost);
+      const expectedRefund = Math.round(tower.upgradeCost(2) * SELL_VALUE_RATIO);
+      const goldBefore = gameStore.gold;
+      gameStore.selectTower(tower);
+      engine.executeDowngrade();
+      expect(gameStore.gold).toBe(goldBefore + expectedRefund);
+      expect(tower.level).toBe(1);
+    });
+
+    it("executeDowngrade refunds full amount in refund mode", () => {
+      persistStore.generalAddons.sellActive = "refund";
+      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      const cost = engine.getUpgradeCost(tower!);
+      gameStore.gold -= cost;
+      tower.doUpgrade(persistStore.$state, cost);
+      const expectedRefund = tower.upgradeCost(2);
+      const goldBefore = gameStore.gold;
+      gameStore.selectTower(tower);
+      engine.executeDowngrade();
+      expect(gameStore.gold).toBe(goldBefore + expectedRefund);
+      expect(tower.level).toBe(1);
+    });
+
+    it("executeDowngrade resets variant when downgrading specialized tower", () => {
+      persistStore.unlocked.basic.levels[2] = true;
+      persistStore.unlocked.basic.levels[3] = true;
+      persistStore.unlocked.basic.variantA[0] = true;
+      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      for (let i = 0; i < 3; i++) {
+        const cost = engine.getUpgradeCost(tower!);
+        gameStore.gold -= cost;
+        tower.doUpgrade(persistStore.$state, cost);
+      }
+      const specCost = tower.upgradeCost(5);
+      gameStore.gold -= specCost;
+      tower.specialize("A", persistStore.$state, specCost);
+      expect(tower.level).toBe(5);
+      expect(tower.variant).toBe("A");
+      const goldBefore = gameStore.gold;
+      gameStore.selectTower(tower);
+      engine.executeDowngrade();
+      expect(tower.level).toBe(4);
+      expect(tower.variant).toBeNull();
+      const expectedRefund = Math.round(specCost * SELL_VALUE_RATIO);
+      expect(gameStore.gold).toBe(goldBefore + expectedRefund);
+    });
+
     it("getUpgradeCost applies upgradeCostReduction addon", () => {
       persistStore.generalAddons.upgradeCostReduction = 0;
       const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);

@@ -141,6 +141,28 @@ export class TowerManager {
     return tower.totalInvested;
   }
 
+  downgradeTower(tower: Tower): number {
+    if (tower.level <= 1) return 0;
+    let removedCost = 0;
+    if (tower.variant) {
+      removedCost = tower.levelCosts[4] ?? 0;
+      tower.levelCosts.pop();
+      tower.totalInvested -= removedCost;
+      tower.variant = null;
+      tower.level = 4;
+    } else {
+      const levelIndex = tower.level - 1;
+      removedCost = tower.levelCosts[levelIndex] ?? 0;
+      tower.levelCosts.pop();
+      tower.totalInvested -= removedCost;
+      tower.level--;
+    }
+    if (tower.totalInvested < 0) tower.totalInvested = 0;
+    tower._statsCache = null;
+    this.particles.spawn(tower.x, tower.y, "#ffd060", 10, { speed: 50, life: 0.4 });
+    return removedCost;
+  }
+
   update(dt: number, enemyManager: EnemyManagerRef): void {
     for (const tower of this.towers) tower.update(dt, enemyManager, this.projectiles, this.sound);
   }

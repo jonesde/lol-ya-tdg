@@ -36,11 +36,13 @@ interface MockTower {
   canCancel: () => boolean;
   cancelRemainingMs: () => number;
   totalInvested: number;
+  levelCosts: number[];
 }
 
 interface EngineMock extends GameEngine {
   upgradeSelected: Mock;
   sellSelected: Mock;
+  downgradeSelected: Mock;
   specializeSelected: Mock;
   setTargeting: Mock;
   getUpgradeCost: () => number;
@@ -48,9 +50,11 @@ interface EngineMock extends GameEngine {
 }
 
 function makeMockTower(overrides: Partial<MockTower> = {}): MockTower {
+  const level = overrides.level ?? 1;
+  const levelCosts = overrides.levelCosts ?? Array.from({ length: level }, (_, i) => 20 + i * 10);
   return {
     type: "basic",
-    level: 1,
+    level,
     color: "#8fbc8f",
     targeting: "first",
     variant: null,
@@ -64,6 +68,7 @@ function makeMockTower(overrides: Partial<MockTower> = {}): MockTower {
     canCancel: () => false,
     cancelRemainingMs: () => 0,
     totalInvested: 20,
+    levelCosts,
     ...overrides,
   };
 }
@@ -104,6 +109,7 @@ function mountTowerPanel(tower: MockTower | null = null): MountResult {
   const engineMock = {
     upgradeSelected: vi.fn(),
     sellSelected: vi.fn(),
+    downgradeSelected: vi.fn(),
     specializeSelected: vi.fn(),
     setTargeting: vi.fn(),
     getUpgradeCost: () => 20,
@@ -173,6 +179,33 @@ describe("TowerPanel", () => {
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.text()).toContain("Sell");
     expect(wrapper.text()).toContain("12g");
+  });
+
+  it("shows downgrade button with level info and refund", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ level: 3 }));
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    expect(wrapper.text()).toContain("Downgrade");
+    expect(wrapper.text()).toContain("Lv 3");
+    expect(wrapper.text()).toContain("Lv 2");
+  });
+
+  it("disables downgrade button when tower is level 1", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ level: 1 }));
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    const downgradeBtn = wrapper.findAll("button.action-btn").find((btn) => btn.text().includes("Downgrade"));
+    expect(downgradeBtn).toBeDefined();
+    expect(downgradeBtn!.attributes("disabled")).toBeDefined();
+  });
+
+  it("calls engine.downgradeSelected when downgrade button is clicked", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, engineMock } = mountTowerPanel(makeMockTower({ level: 3 }));
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    const downgradeBtn = wrapper.findAll("button.action-btn").find((btn) => btn.text().includes("Downgrade"));
+    await downgradeBtn?.trigger("click");
+    expect(engineMock.downgradeSelected).toHaveBeenCalled();
   });
 
   it("shows specialization options at level 4", () => {

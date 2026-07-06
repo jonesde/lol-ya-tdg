@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch, watchEffect } from "vue";
 import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
-import { TOWER_META } from "@/game/ConstantsTower.js";
+import { SELL_VALUE_RATIO, TOWER_META } from "@/game/ConstantsTower.js";
 import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -137,6 +137,10 @@ function handleCancelBuild() {
   getGameEngine()?.cancelSelected();
 }
 
+function handleDowngrade() {
+  getGameEngine()?.downgradeSelected();
+}
+
 function getUpgradeCost() {
   if (!tower.value) return 0;
   return getGameEngine()?.getUpgradeCost(tower.value) || 0;
@@ -147,6 +151,13 @@ const canAffordUpgrade = computed(() => {
 });
 
 const sellDisabled = computed(() => persistStore.generalAddons && persistStore.generalAddons.sellActive === "discount");
+
+const downgradeRefund = computed(() => {
+  if (!tower.value || tower.value.level <= 1) return 0;
+  const delta = tower.value.levelCosts[tower.value.level - 1] || 0;
+  const isRefund = persistStore.generalAddons?.sellActive === "refund";
+  return isRefund ? delta : Math.round(delta * SELL_VALUE_RATIO);
+});
 
 const variantInfo = computed(() => {
   if (tower.value) return VARIANT_INFO[tower.value.type];
@@ -264,6 +275,10 @@ function handleFixedAim(dir: string | null) {
       Cancel Build — {{ tower.totalInvested }}g ({{ cancelRemaining }}s)
     </button>
 
+    <button class="action-btn downgrade-btn" :disabled="tower.level <= 1" @click="handleDowngrade">
+      Downgrade (Lv {{ tower.level }} → Lv {{ tower.level - 1 }}) (+{{ downgradeRefund }}g)
+    </button>
+
     <button class="action-btn sell-btn" :disabled="sellDisabled" @click="handleSell">
       {{ sellDisabled ? 'Selling disabled (discount mode)' : `Sell (+${sellValue}g)` }}
     </button>
@@ -372,6 +387,11 @@ function handleFixedAim(dir: string | null) {
 .cancel-btn {
   color: var(--color-success);
   border-color: rgba(68, 255, 68, 0.3);
+}
+
+.downgrade-btn {
+  color: var(--color-accent);
+  border-color: rgba(95, 208, 255, 0.3);
 }
 
 .fixed-aim-section {

@@ -14,6 +14,7 @@ function makeEngine() {
     togglePause: vi.fn(),
     upgradeSelected: vi.fn(),
     sellSelected: vi.fn(),
+    downgradeSelected: vi.fn(),
     cancelBuildMode: vi.fn(),
     setTargeting: vi.fn(),
     handleClick: vi.fn(),
@@ -169,23 +170,7 @@ describe("useInput", () => {
     });
   });
 
-  describe("Up Arrow (upgrade)", () => {
-    it("calls engine.upgradeSelected when tower is selected", () => {
-      gameStore.setState(GameState.PLAYING);
-      gameStore.selectedTower = { id: 1 } as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
-      triggerInput("ArrowUp");
-      expect(engine.upgradeSelected).toHaveBeenCalled();
-    });
-
-    it("does nothing when no tower is selected", () => {
-      gameStore.setState(GameState.PLAYING);
-      gameStore.selectedTower = null;
-      useInput(gameStore, engine, uiStore);
-      triggerInput("ArrowUp");
-      expect(engine.upgradeSelected).not.toHaveBeenCalled();
-    });
-
+  describe("Up Arrow (tower selection / build position)", () => {
     it("moves build position up when in build mode", () => {
       gameStore.setState(GameState.PLAYING);
       const grid = {
@@ -215,15 +200,53 @@ describe("useInput", () => {
       triggerInput("ArrowUp");
       expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 0 });
     });
+
+    it("selects tower above when not in build mode", () => {
+      gameStore.setState(GameState.PLAYING);
+      const below = { tileX: 3, tileY: 4, id: "t-below" };
+      const above = { tileX: 3, tileY: 2, id: "t-above" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [below, above] };
+      gameStore.selectedTower = below as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowUp");
+      expect(gameStore.selectedTower).toEqual(above);
+    });
+
+    it("selects topmost tower when no tower selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      const t1 = { tileX: 3, tileY: 4, id: "t1" };
+      const t2 = { tileX: 5, tileY: 1, id: "t2" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [t1, t2] };
+      gameStore.selectedTower = null;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowUp");
+      expect(gameStore.selectedTower).toEqual(t2);
+    });
   });
 
-  describe("s key (sell)", () => {
-    it("calls engine.sellSelected when tower is selected", () => {
+  describe("s key (downgrade/sell)", () => {
+    it("calls engine.downgradeSelected when tower level > 1", () => {
       gameStore.setState(GameState.PLAYING);
-      gameStore.selectedTower = { id: 1 } as unknown as Tower;
+      gameStore.selectedTower = { id: 1, level: 3 } as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("s");
+      expect(engine.downgradeSelected).toHaveBeenCalled();
+      expect(engine.sellSelected).not.toHaveBeenCalled();
+    });
+
+    it("calls engine.sellSelected when tower level === 1", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = { id: 1, level: 1 } as unknown as Tower;
       useInput(gameStore, engine, uiStore);
       triggerInput("s");
       expect(engine.sellSelected).toHaveBeenCalled();
+      expect(engine.downgradeSelected).not.toHaveBeenCalled();
     });
 
     it("does nothing when no tower is selected", () => {
@@ -232,10 +255,11 @@ describe("useInput", () => {
       useInput(gameStore, engine, uiStore);
       triggerInput("s");
       expect(engine.sellSelected).not.toHaveBeenCalled();
+      expect(engine.downgradeSelected).not.toHaveBeenCalled();
     });
   });
 
-  describe("ArrowDown (build position)", () => {
+  describe("ArrowDown (tower selection / build position)", () => {
     it("moves build position down when in build mode", () => {
       gameStore.setState(GameState.PLAYING);
       const grid = {
@@ -266,40 +290,36 @@ describe("useInput", () => {
       expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 9 });
     });
 
-    it("does nothing when not in build mode", () => {
+    it("selects tower below when not in build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      const grid = {
-        width: 10,
-        height: 10,
-        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      const above = { tileX: 3, tileY: 2, id: "t-above" };
+      const below = { tileX: 3, tileY: 4, id: "t-below" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
       };
-      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
-      gameStore.selectedTower = null;
-      gameStore.selectedTowerType = null;
-      gameStore.hoverTile = { tileX: 5, tileY: 5 };
+      storeRecord.towerManager = { towers: [above, below] };
+      gameStore.selectedTower = above as unknown as Tower;
       useInput(gameStore, engine, uiStore);
       triggerInput("ArrowDown");
-      expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 5 });
+      expect(gameStore.selectedTower).toEqual(below);
+    });
+
+    it("selects bottommost tower when no tower selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      const t1 = { tileX: 3, tileY: 4, id: "t1" };
+      const t2 = { tileX: 5, tileY: 1, id: "t2" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [t1, t2] };
+      gameStore.selectedTower = null;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowDown");
+      expect(gameStore.selectedTower).toEqual(t1);
     });
   });
 
-  describe("Right Arrow (cycle speed forward)", () => {
-    it("cycles timeScale forward", () => {
-      gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 1;
-      useInput(gameStore, engine, uiStore);
-      triggerInput("ArrowRight");
-      expect(gameStore.timeScale).toBe(2);
-    });
-
-    it("cycles from 8 back to 1", () => {
-      gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 8;
-      useInput(gameStore, engine, uiStore);
-      triggerInput("ArrowRight");
-      expect(gameStore.timeScale).toBe(1);
-    });
-
+  describe("Right Arrow (tower selection / build position)", () => {
     it("moves build position right when in build mode", () => {
       gameStore.setState(GameState.PLAYING);
       const grid = {
@@ -330,7 +350,7 @@ describe("useInput", () => {
       expect(gameStore.hoverTile).toEqual({ tileX: 9, tileY: 5 });
     });
 
-    it("starts from map center when hoverTile is null", () => {
+    it("starts from map center when hoverTile is null in build mode", () => {
       gameStore.setState(GameState.PLAYING);
       const grid = {
         width: 10,
@@ -344,25 +364,52 @@ describe("useInput", () => {
       triggerInput("ArrowRight");
       expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 5 });
     });
+
+    it("selects tower to the right when not in build mode", () => {
+      gameStore.setState(GameState.PLAYING);
+      const left = { tileX: 2, tileY: 3, id: "t-left" };
+      const right = { tileX: 4, tileY: 3, id: "t-right" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [left, right] };
+      gameStore.selectedTower = left as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.selectedTower).toEqual(right);
+    });
+
+    it("selects rightmost tower when no tower selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      const t1 = { tileX: 2, tileY: 3, id: "t1" };
+      const t2 = { tileX: 5, tileY: 1, id: "t2" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [t1, t2] };
+      gameStore.selectedTower = null;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.selectedTower).toEqual(t2);
+    });
+
+    it("prefers same row over diagonal when moving right", () => {
+      gameStore.setState(GameState.PLAYING);
+      const center = { tileX: 3, tileY: 3, id: "center" };
+      const diagonal = { tileX: 4, tileY: 2, id: "diag" };
+      const sameRow = { tileX: 5, tileY: 3, id: "sameRow" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [center, diagonal, sameRow] };
+      gameStore.selectedTower = center as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.selectedTower).toEqual(sameRow);
+    });
   });
 
-  describe("Left Arrow (cycle speed reverse)", () => {
-    it("cycles timeScale reverse", () => {
-      gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 1;
-      useInput(gameStore, engine, uiStore);
-      triggerInput("ArrowLeft");
-      expect(gameStore.timeScale).toBe(8);
-    });
-
-    it("cycles from 1 back to 1", () => {
-      gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 2;
-      useInput(gameStore, engine, uiStore);
-      triggerInput("ArrowLeft");
-      expect(gameStore.timeScale).toBe(1);
-    });
-
+  describe("Left Arrow (tower selection / build position)", () => {
     it("moves build position left when in build mode", () => {
       gameStore.setState(GameState.PLAYING);
       const grid = {
@@ -391,6 +438,34 @@ describe("useInput", () => {
       useInput(gameStore, engine, uiStore);
       triggerInput("ArrowLeft");
       expect(gameStore.hoverTile).toEqual({ tileX: 0, tileY: 5 });
+    });
+
+    it("selects tower to the left when not in build mode", () => {
+      gameStore.setState(GameState.PLAYING);
+      const left = { tileX: 2, tileY: 3, id: "t-left" };
+      const right = { tileX: 4, tileY: 3, id: "t-right" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [left, right] };
+      gameStore.selectedTower = right as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowLeft");
+      expect(gameStore.selectedTower).toEqual(left);
+    });
+
+    it("selects leftmost tower when no tower selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      const t1 = { tileX: 2, tileY: 3, id: "t1" };
+      const t2 = { tileX: 5, tileY: 1, id: "t2" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [t1, t2] };
+      gameStore.selectedTower = null;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowLeft");
+      expect(gameStore.selectedTower).toEqual(t1);
     });
   });
 
@@ -447,7 +522,7 @@ describe("useInput", () => {
       expect(gameStore.selectedTowerType).toBe(TowerIds.ICE);
     });
 
-    it("cycles from last tower back to first", () => {
+    it("cycles from last tower back to first in build mode", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTowerType = TowerIds.RAILGUN;
       useInput(gameStore, engine, uiStore);
@@ -455,83 +530,46 @@ describe("useInput", () => {
       expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
     });
 
-    it("selects first tower when no tower selected", () => {
+    it("cycles speed forward outside build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = {
-        towers: [
-          { tileX: 3, tileY: 2, id: "tower-1" },
-          { tileX: 5, tileY: 2, id: "tower-2" },
-        ],
-      };
+      gameStore.timeScale = 1;
       useInput(gameStore, engine, uiStore);
       triggerInput("Tab");
-      expect(gameStore.selectedTower).toEqual({ tileX: 3, tileY: 2, id: "tower-1" });
+      expect(gameStore.timeScale).toBe(2);
     });
 
-    it("selects next tower when one is selected", () => {
+    it("cycles speed from 8x back to 1x outside build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      gameStore.selectedTower = { tileX: 3, tileY: 2, id: "tower-1" } as unknown as Tower;
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = {
-        towers: [
-          { tileX: 3, tileY: 2, id: "tower-1" },
-          { tileX: 5, tileY: 2, id: "tower-2" },
-        ],
-      };
+      gameStore.timeScale = 8;
       useInput(gameStore, engine, uiStore);
       triggerInput("Tab");
-      expect(gameStore.selectedTower).toEqual({ tileX: 5, tileY: 2, id: "tower-2" });
+      expect(gameStore.timeScale).toBe(1);
+    });
+  });
+
+  describe("Shift+Tab key (reverse cycle)", () => {
+    it("cycles build mode to previous tower type", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTowerType = TowerIds.ICE;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("Tab", { shiftKey: true });
+      expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
     });
 
-    it("wraps from last tower back to first", () => {
+    it("cycles speed reverse outside build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      gameStore.selectedTower = { tileX: 5, tileY: 2, id: "tower-2" } as unknown as Tower;
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = {
-        towers: [
-          { tileX: 3, tileY: 2, id: "tower-1" },
-          { tileX: 5, tileY: 2, id: "tower-2" },
-        ],
-      };
+      gameStore.timeScale = 1;
       useInput(gameStore, engine, uiStore);
-      triggerInput("Tab");
-      expect(gameStore.selectedTower).toEqual({ tileX: 3, tileY: 2, id: "tower-1" });
+      triggerInput("Tab", { shiftKey: true });
+      expect(gameStore.timeScale).toBe(8);
     });
 
-    it("does nothing when no towers have been built", () => {
+    it("cycles speed reverse from 2x to 1x", () => {
       gameStore.setState(GameState.PLAYING);
-      gameStore.selectedTower = null;
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [] };
+      gameStore.timeScale = 2;
       useInput(gameStore, engine, uiStore);
-      triggerInput("Tab");
-      expect(gameStore.selectedTower).toBeNull();
-    });
-
-    it("selects first tower in row-major order (right then down)", () => {
-      gameStore.setState(GameState.PLAYING);
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = {
-        towers: [
-          { tileX: 5, tileY: 3, id: "tower-right" },
-          { tileX: 2, tileY: 1, id: "tower-first" },
-          { tileX: 4, tileY: 1, id: "tower-second" },
-        ],
-      };
-      useInput(gameStore, engine, uiStore);
-      triggerInput("Tab");
-      expect(gameStore.selectedTower).toEqual({ tileX: 2, tileY: 1, id: "tower-first" });
+      triggerInput("Tab", { shiftKey: true });
+      expect(gameStore.timeScale).toBe(1);
     });
   });
 
@@ -585,21 +623,57 @@ describe("useInput", () => {
     });
   });
 
-  describe("d key (deselect tower)", () => {
-    it("deselects tower when one is selected", () => {
+  describe("d key (cycle speed forward)", () => {
+    it("cycles timeScale forward", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.timeScale = 1;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("d");
+      expect(gameStore.timeScale).toBe(2);
+    });
+
+    it("cycles from 8x back to 1x", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.timeScale = 8;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("d");
+      expect(gameStore.timeScale).toBe(1);
+    });
+  });
+
+  describe("w key (upgrade)", () => {
+    it("calls engine.upgradeSelected when tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTower = { id: 1 } as unknown as Tower;
       useInput(gameStore, engine, uiStore);
-      triggerInput("d");
-      expect(gameStore.selectedTower).toBeNull();
+      triggerInput("w");
+      expect(engine.upgradeSelected).toHaveBeenCalled();
     });
 
     it("does nothing when no tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTower = null;
       useInput(gameStore, engine, uiStore);
-      triggerInput("d");
-      expect(gameStore.selectedTower).toBeNull();
+      triggerInput("w");
+      expect(engine.upgradeSelected).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("a key (cycle speed reverse)", () => {
+    it("cycles timeScale reverse", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.timeScale = 1;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("a");
+      expect(gameStore.timeScale).toBe(8);
+    });
+
+    it("cycles from 2x to 1x", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.timeScale = 2;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("a");
+      expect(gameStore.timeScale).toBe(1);
     });
   });
 
@@ -657,6 +731,7 @@ describe("useInput", () => {
       expect(engine.togglePause).not.toHaveBeenCalled();
       expect(engine.upgradeSelected).not.toHaveBeenCalled();
       expect(engine.sellSelected).not.toHaveBeenCalled();
+      expect(engine.downgradeSelected).not.toHaveBeenCalled();
     });
   });
 });

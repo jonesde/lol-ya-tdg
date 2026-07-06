@@ -31,19 +31,17 @@ Defend your base against 100 waves of enemies across 36 procedurally-generated m
 
 | Key | Action |
 |---|---|
-| `Escape` | Close open dialogs (equivalent to Cancel/Resume/etc button in dialog), or if none then exit build mode if active, or if not then deselect selected tower if one selected, or if none then toggle pause menu dialog |
+| `Escape` / `x` | Close open dialogs (equivalent to Cancel/Resume/etc button in dialog), or if none then exit build mode if active, or if not then deselect selected tower if one selected, or if none then toggle pause menu dialog |
 | `Enter` | If dialog open and has default/active button (like OK) then same as button press |
 | `Spacebar` | Toggle pause state (state change only, do not open pause menu dialog; if pause menu dialog open then do same as Escape: close and unpause) |
-| `Tab` | If build mode active then cycle tower type (next to the right in the shop menu, from last loop back to first), or if no build mode then select the next tower or select the first tower if no tower was selected (search going right until end of tile row in map, then go to next row), or if no towers have been built do nothing |
-| `Shift` + `Tab` | Same as `Tab` but in reverse order (previous tower type in build mode, or previous placed tower) |
-| `Right Arrow` | Cycle time scale (1× --> 2× --> 4× --> 8× --> 1×) |
-| `Left Arrow` | Reverse cycle time scale (1× --> 8× --> 4× --> 2× --> 1×) |
+| `Tab` | If build mode active then cycle tower type (next to the right in the shop menu, from last loop back to first), or if no build mode then cycle time scale forward (1× → 2× → 4× → 8×) |
+| `Shift` + `Tab` | Same as `Tab` but in reverse (previous tower type in build mode, or reverse cycle time scale 8× → 4× → 2× → 1×) |
 | `1`–`9` | Build mode for corresponding tower type (use current shop panel order; support up to 9 even though there are only 6 towers now) |
-| `u` or `Up Arrow` | Upgrade the selected tower, nothing if no tower selected (in build mode: move build position up) |
-| `Down Arrow` | Move build position down (only in build mode) |
-| `Left Arrow` / `Right Arrow` | Cycle time speed outside build mode; move build position left/right in build mode |
-| `s` | Sell the selected tower, nothing if no tower selected |
-| `d` | Deselect the selected tower |
+| `Up Arrow` / `Down Arrow` / `Left Arrow` / `Right Arrow` | Move tower selection in that direction (direction-priority search); in build mode: move build position |
+| `w` or `u` | Upgrade the selected tower, nothing if no tower selected |
+| `a` | Reverse cycle time scale (8× → 4× → 2× → 1×) |
+| `s` | Downgrade the selected tower if level >1, otherwise sell it; nothing if no tower selected |
+| `d` | Cycle time scale forward (1× → 2× → 4× → 8×) |
 | `f` | Cycle targeting mode on the selected tower (first → last → closest → strong → furthest) |
 | Click on empty tile (build mode) | Place selected tower |
 | Click on tower | Select tower for upgrade/sell |

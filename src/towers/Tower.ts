@@ -195,6 +195,7 @@ export class Tower {
   theme: MapThemeData | null;
   level: number;
   totalInvested: number;
+  levelCosts: number[];
   totalDamageDealt: number;
   waveDamage: number;
   targeting: string;
@@ -244,6 +245,7 @@ export class Tower {
 
     this.level = 1;
     this.totalInvested = this.meta.cost;
+    this.levelCosts = [this.meta.cost];
     this.totalDamageDealt = 0;
     this.waveDamage = 0;
     this.targeting = type === "sniper" ? "strong" : "first";
@@ -539,7 +541,9 @@ export class Tower {
     if (!arr[0]) return false;
     this.variant = variant;
     this.level = 5;
-    this.totalInvested += actualCost ?? this.upgradeCost(5);
+    const cost = actualCost ?? this.upgradeCost(5);
+    this.totalInvested += cost;
+    this.levelCosts.push(cost);
     this._statsCache = null;
     return true;
   }
@@ -548,7 +552,9 @@ export class Tower {
     const check = this.canUpgrade(save);
     if (!check.ok) return check;
     this.level++;
-    this.totalInvested += actualCost ?? check.cost ?? 0;
+    const cost = actualCost ?? check.cost ?? 0;
+    this.totalInvested += cost;
+    this.levelCosts.push(cost);
     this._statsCache = null;
     return { ok: true };
   }
