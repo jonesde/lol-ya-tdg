@@ -112,7 +112,7 @@ const uiStore = useUiStore();
   border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 20px 24px;
-  width: 520px;
+  width: 780px;
   max-height: 85vh;
   overflow-y: auto;
   position: relative;

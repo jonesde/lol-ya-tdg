@@ -163,10 +163,10 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
         const digit = parseInt(event.key, 10);
         if (digit >= 1 && digit <= 9) {
           const towerIndex = (digit - 1) % towerIdList.length;
-          if (gs.selectedTower) {
+          gs.selectBuildType(towerIdList[towerIndex]!);
+          if (gs.selectedTower && !gs.hoverTile) {
             gs.setHoverTile({ tileX: gs.selectedTower.tileX, tileY: gs.selectedTower.tileY });
           }
-          gs.selectBuildType(towerIdList[towerIndex]!);
         }
         break;
       }
@@ -237,10 +237,7 @@ function moveBuildPosition(gameStore: GameStoreLike, dx: number, dy: number): vo
   tileY = Math.max(0, Math.min(tileY, grid.height - 1));
 
   const towerAtNewPos = gameStore.towerManager?.towerAt(tileX, tileY);
-  if (towerAtNewPos) {
-    // do not clear build mode, ie calling: gameStore.selectBuildType(null);
-    gameStore.selectTower(towerAtNewPos);
-  }
+  if (towerAtNewPos) gameStore.selectTower(towerAtNewPos);
 
   gameStore.setHoverTile({ tileX, tileY });
 }
