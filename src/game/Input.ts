@@ -244,13 +244,68 @@ function moveBuildPosition(gameStore: GameStoreLike, dx: number, dy: number): vo
 
 type Direction = "up" | "down" | "left" | "right";
 
+function buildSearchOrder(direction: Direction): Array<{ dx: number; dy: number }> {
+  const searchOrder: Array<{ dx: number; dy: number }> = [];
+  const maxDist = 100;
+
+  if (direction === "up") {
+    for (let dist = 1; dist <= maxDist; dist++) searchOrder.push({ dx: 0, dy: -dist });
+    for (let dist = 1; dist <= maxDist; dist++) {
+      for (let perp = 1; perp <= dist; perp++) {
+        searchOrder.push({ dx: -perp, dy: -dist });
+        searchOrder.push({ dx: perp, dy: -dist });
+      }
+    }
+  } else if (direction === "down") {
+    for (let dist = 1; dist <= maxDist; dist++) searchOrder.push({ dx: 0, dy: dist });
+    for (let dist = 1; dist <= maxDist; dist++) {
+      for (let perp = 1; perp <= dist; perp++) {
+        searchOrder.push({ dx: -perp, dy: dist });
+        searchOrder.push({ dx: perp, dy: dist });
+      }
+    }
+  } else if (direction === "left") {
+    for (let dist = 1; dist <= maxDist; dist++) searchOrder.push({ dx: -dist, dy: 0 });
+    for (let dist = 1; dist <= maxDist; dist++) {
+      for (let perp = 1; perp <= dist; perp++) {
+        searchOrder.push({ dx: -dist, dy: -perp });
+        searchOrder.push({ dx: -dist, dy: perp });
+      }
+    }
+  } else {
+    for (let dist = 1; dist <= maxDist; dist++) searchOrder.push({ dx: dist, dy: 0 });
+    for (let dist = 1; dist <= maxDist; dist++) {
+      for (let perp = 1; perp <= dist; perp++) {
+        searchOrder.push({ dx: dist, dy: -perp });
+        searchOrder.push({ dx: dist, dy: perp });
+      }
+    }
+  }
+
+  return searchOrder;
+}
+
+function searchTowers(
+  searchOrder: Array<{ dx: number; dy: number }>,
+  originX: number,
+  originY: number,
+  towerSet: Map<string, Tower>,
+): Tower | null {
+  for (const offset of searchOrder) {
+    const target = towerSet.get(`${originX + offset.dx},${originY + offset.dy}`);
+    if (target) {
+      return target;
+    }
+  }
+  return null;
+}
+
 function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): void {
   const towerManager = gameStore.towerManager;
   if (!towerManager || towerManager.towers.length === 0) return;
 
   const selected = gameStore.selectedTower;
   if (!selected) {
-    // No tower selected: pick the most extreme tower in the given direction
     const sorted = [...towerManager.towers].sort((a, b) => {
       if (direction === "up") return a.tileY - b.tileY || a.tileX - b.tileX;
       if (direction === "down") return b.tileY - a.tileY || a.tileX - b.tileX;
@@ -270,56 +325,31 @@ function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): voi
     }
   }
 
-  // Direction-priority BFS: search by direction priority first, then distance
-  const searchOrder: Array<{ dx: number; dy: number }> = [];
+  const searchOrder = buildSearchOrder(direction);
+  let target = searchTowers(searchOrder, originX, originY, towerSet);
 
-  if (direction === "up") {
-    for (let dist = 1; dist <= 100; dist++) searchOrder.push({ dx: 0, dy: -dist });
-    for (let dist = 1; dist <= 100; dist++) {
-      searchOrder.push({ dx: -dist, dy: -dist });
-      searchOrder.push({ dx: dist, dy: -dist });
-    }
-    for (let dist = 1; dist <= 100; dist++) {
-      searchOrder.push({ dx: -dist, dy: 0 });
-      searchOrder.push({ dx: dist, dy: 0 });
-    }
-  } else if (direction === "down") {
-    for (let dist = 1; dist <= 100; dist++) searchOrder.push({ dx: 0, dy: dist });
-    for (let dist = 1; dist <= 100; dist++) {
-      searchOrder.push({ dx: -dist, dy: dist });
-      searchOrder.push({ dx: dist, dy: dist });
-    }
-    for (let dist = 1; dist <= 100; dist++) {
-      searchOrder.push({ dx: -dist, dy: 0 });
-      searchOrder.push({ dx: dist, dy: 0 });
-    }
-  } else if (direction === "left") {
-    for (let dist = 1; dist <= 100; dist++) searchOrder.push({ dx: -dist, dy: 0 });
-    for (let dist = 1; dist <= 100; dist++) {
-      searchOrder.push({ dx: -dist, dy: -dist });
-      searchOrder.push({ dx: -dist, dy: dist });
-    }
-    for (let dist = 1; dist <= 100; dist++) {
-      searchOrder.push({ dx: 0, dy: -dist });
-      searchOrder.push({ dx: 0, dy: dist });
-    }
-  } else {
-    for (let dist = 1; dist <= 100; dist++) searchOrder.push({ dx: dist, dy: 0 });
-    for (let dist = 1; dist <= 100; dist++) {
-      searchOrder.push({ dx: dist, dy: -dist });
-      searchOrder.push({ dx: dist, dy: dist });
-    }
-    for (let dist = 1; dist <= 100; dist++) {
-      searchOrder.push({ dx: 0, dy: -dist });
-      searchOrder.push({ dx: 0, dy: dist });
+  // If no tower found, wrap around to the opposite edge
+  if (!target) {
+    const grid = (gameStore as unknown as { grid: { width: number; height: number } | null }).grid;
+    if (grid) {
+      let wrapOriginX = originX;
+      let wrapOriginY = originY;
+
+      if (direction === "right") {
+        wrapOriginX = -1;
+      } else if (direction === "left") {
+        wrapOriginX = grid.width;
+      } else if (direction === "up") {
+        wrapOriginY = grid.height;
+      } else {
+        wrapOriginY = -1;
+      }
+
+      target = searchTowers(searchOrder, wrapOriginX, wrapOriginY, towerSet);
     }
   }
 
-  for (const offset of searchOrder) {
-    const target = towerSet.get(`${originX + offset.dx},${originY + offset.dy}`);
-    if (target) {
-      gameStore.selectTower(target);
-      return;
-    }
+  if (target) {
+    gameStore.selectTower(target);
   }
 }

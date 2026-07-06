@@ -716,6 +716,7 @@ export class GameEngine {
   cancelBuildMode(): void {
     if (this.gameStore.selectedTowerType) {
       this.gameStore.selectBuildType(null);
+      this.gameStore.setHoverTile(null);
     }
   }
 }

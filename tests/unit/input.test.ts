@@ -469,6 +469,128 @@ describe("useInput", () => {
     });
   });
 
+  describe("Arrow key wrap-around (tower selection)", () => {
+    it("wraps right from rightmost tower to leftmost tower on same row", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 20,
+        height: 15,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      const rightmost = { tileX: 18, tileY: 5, id: "t-right" };
+      const leftmost = { tileX: 2, tileY: 5, id: "t-left" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [rightmost, leftmost] };
+      gameStore.selectedTower = rightmost as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.selectedTower).toEqual(leftmost);
+    });
+
+    it("wraps left from leftmost tower to rightmost tower on same row", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 20,
+        height: 15,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      const rightmost = { tileX: 18, tileY: 5, id: "t-right" };
+      const leftmost = { tileX: 2, tileY: 5, id: "t-left" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [rightmost, leftmost] };
+      gameStore.selectedTower = leftmost as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowLeft");
+      expect(gameStore.selectedTower).toEqual(rightmost);
+    });
+
+    it("wraps up from topmost tower to bottommost tower on same column", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 20,
+        height: 15,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      const topmost = { tileX: 5, tileY: 1, id: "t-top" };
+      const bottommost = { tileX: 5, tileY: 13, id: "t-bottom" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [topmost, bottommost] };
+      gameStore.selectedTower = topmost as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowUp");
+      expect(gameStore.selectedTower).toEqual(bottommost);
+    });
+
+    it("wraps down from bottommost tower to topmost tower on same column", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 20,
+        height: 15,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      const topmost = { tileX: 5, tileY: 1, id: "t-top" };
+      const bottommost = { tileX: 5, tileY: 13, id: "t-bottom" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [topmost, bottommost] };
+      gameStore.selectedTower = bottommost as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowDown");
+      expect(gameStore.selectedTower).toEqual(topmost);
+    });
+
+    it("finds tower at x+1,y-2 when pressing down from (x,y)", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 20,
+        height: 15,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      const origin = { tileX: 5, tileY: 5, id: "t-origin" };
+      const offAxis = { tileX: 6, tileY: 3, id: "t-offaxis" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [origin, offAxis] };
+      gameStore.selectedTower = origin as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowDown");
+      expect(gameStore.selectedTower).toEqual(offAxis);
+    });
+
+    it("finds tower at x-2,y+1 when pressing left from (x,y)", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 20,
+        height: 15,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      const origin = { tileX: 10, tileY: 7, id: "t-origin" };
+      const offAxis = { tileX: 8, tileY: 8, id: "t-offaxis" };
+      const storeRecord = gameStore as unknown as {
+        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
+      };
+      storeRecord.towerManager = { towers: [origin, offAxis] };
+      gameStore.selectedTower = origin as unknown as Tower;
+      useInput(gameStore, engine, uiStore);
+      triggerInput("ArrowLeft");
+      expect(gameStore.selectedTower).toEqual(offAxis);
+    });
+  });
+
   describe("number keys 1-9 (build mode)", () => {
     it("key 1 activates first tower build mode", () => {
       gameStore.setState(GameState.PLAYING);
