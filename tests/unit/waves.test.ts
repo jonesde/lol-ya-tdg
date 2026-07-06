@@ -422,7 +422,36 @@ describe("WaveManager", () => {
       expect(waveManager.prevWaveSpawnIndices.size).toBe(0);
     });
 
-    it("natural wave clear keeps spawns open and starts countdown", () => {
+    it("queue empty transitions all open spawns to transition", () => {
+      const waveManager = makeMultiSpawnWaveManager();
+      waveManager.startNextWave();
+      waveManager.markSpawnUsed(0);
+      waveManager.markSpawnUsed(1);
+      waveManager.queue = [];
+      waveManager.update(0.1, null, null);
+      expect(waveManager.spawnStates[0]!.visualState).toBe("transition");
+      expect(waveManager.spawnStates[0]!.closeTransitionTimer).toBe(1);
+      expect(waveManager.spawnStates[1]!.visualState).toBe("transition");
+      expect(waveManager.spawnStates[1]!.closeTransitionTimer).toBe(1);
+      expect(waveManager.spawnStates[2]!.visualState).toBe("closed");
+    });
+
+    it("queue empty does not re-transition already-transitioning spawns", () => {
+      const waveManager = makeMultiSpawnWaveManager();
+      waveManager.startNextWave();
+      waveManager.markSpawnUsed(0);
+      waveManager.markSpawnUsed(1);
+      waveManager.transitionSpawnToClosed(0);
+      waveManager.queue = [];
+      waveManager.update(0.1, null, null);
+      expect(waveManager.spawnStates[0]!.visualState).toBe("transition");
+      expect(waveManager.spawnStates[0]!.closeTransitionTimer).toBeCloseTo(0.9);
+      expect(waveManager.spawnStates[1]!.visualState).toBe("transition");
+      expect(waveManager.spawnStates[1]!.closeTransitionTimer).toBe(1);
+      expect(waveManager.spawnStates[2]!.visualState).toBe("closed");
+    });
+
+    it("natural wave clear transitions open spawns to transition when queue is empty", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       waveManager.startNextWave();
       waveManager.markSpawnUsed(0);
@@ -438,10 +467,10 @@ describe("WaveManager", () => {
       expect(waveCleared).toBe(true);
       expect(waveManager.countdownActive).toBe(true);
       expect(waveManager.betweenWaves).toBe(true);
-      expect(waveManager.spawnStates[0]!.visualState).toBe("open");
+      expect(waveManager.spawnStates[0]!.visualState).toBe("transition");
     });
 
-    it("pre-emptive wave keeps spawns open", () => {
+    it("pre-emptive wave transitions open spawns to transition when queue is empty", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       waveManager.startNextWave();
       waveManager.markSpawnUsed(0);
@@ -449,7 +478,7 @@ describe("WaveManager", () => {
       waveManager.queue = [];
       waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, null, null);
       expect(waveManager.currentWave).toBe(2);
-      expect(waveManager.spawnStates[0]!.visualState).toBe("open");
+      expect(waveManager.spawnStates[0]!.visualState).toBe("transition");
     });
 
     it("between-waves close transitions to closed then starts next wave", () => {
@@ -458,18 +487,14 @@ describe("WaveManager", () => {
       waveManager.markSpawnUsed(0);
       waveManager.queue = [];
       waveManager.update(0.1, () => {}, null);
-      // Spawns stay open immediately after wave clear
-      expect(waveManager.spawnStates[0]!.visualState).toBe("open");
+      // Queue was empty, so spawn transitions to "transition" immediately
+      expect(waveManager.spawnStates[0]!.visualState).toBe("transition");
       expect(waveManager.betweenWaves).toBe(true);
       expect(waveManager.countdownActive).toBe(true);
 
-      // Advance to 1s before next wave — transition triggers
-      waveManager.update(BETWEEN_WAVES_TIMER - 1, null, null);
-      expect(waveManager.spawnStates[0]!.visualState).toBe("transition");
-
-      // Advance remaining time to trigger next wave (closes spawns first)
+      // Advance past both the 1s transition timer and the between-waves timer
       let startedWave: number | null = null;
-      waveManager.update(1.1, null, (wave) => {
+      waveManager.update(BETWEEN_WAVES_TIMER + 0.1, null, (wave) => {
         startedWave = wave;
       });
       expect(startedWave).toBe(2);
