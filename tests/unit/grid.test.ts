@@ -177,6 +177,19 @@ describe("Grid", () => {
       expect(grid.blocked.has(`${pathTile!.x},${pathTile!.y}`)).toBe(false);
     });
 
+    it("recalculates path when a path tower is removed, restoring the original route", () => {
+      const map = makeSplitMap();
+      const splitGrid = new Grid(map);
+      const pathTile = { x: 5, y: 2 };
+      const originalPath = [...splitGrid.paths![0]!];
+      expect(originalPath.some((tile) => tile.x === pathTile.x && tile.y === pathTile.y)).toBe(true);
+      splitGrid.registerTower(pathTile.x, pathTile.y);
+      expect(splitGrid.paths![0]!).not.toEqual(originalPath);
+      splitGrid.unregisterTower(pathTile.x, pathTile.y);
+      expect(splitGrid.blocked.has(`${pathTile.x},${pathTile.y}`)).toBe(false);
+      expect(splitGrid.paths![0]!).toEqual(originalPath);
+    });
+
     it("getPathFor returns null for invalid spawn index", () => {
       expect(grid.getPathFor(-1)).toBeNull();
       expect(grid.getPathFor(99)).toBeNull();

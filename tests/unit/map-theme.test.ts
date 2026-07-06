@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { Grid } from "@/grid/Grid.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
 import { DEFAULT_THEME_ID, MAP_THEME_MANIFEST, type MapThemeData } from "@/render/themes/index.js";
 import { normalizeThemeImages } from "@/render/themes/normalize.js";
@@ -267,10 +266,6 @@ function makeMinimalMap(baseX: number, baseY: number, spawnCount: number = 0) {
   };
 }
 
-function makeFakeGrid(): Grid {
-  return { regionId: 0, blocked: new Set<string>(), paths: [] } as unknown as Grid;
-}
-
 describe("SVG Static Content Render Placement", () => {
   describe("Spawn symbol ID generation", () => {
     it("should generate spawn symbol IDs from theme", () => {
@@ -280,8 +275,7 @@ describe("SVG Static Content Render Placement", () => {
       store.defaultTheme = customTheme;
 
       const mapRef = { value: null };
-      const gridRef = { value: null };
-      const { staticDefsContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const { staticDefsContent } = useSvgStaticContent(mapRef as never);
       const defs = staticDefsContent.value;
 
       expect(defs).toContain('<symbol id="spawn-closed"');
@@ -299,8 +293,7 @@ describe("SVG Static Content Render Placement", () => {
       store.defaultTheme = customTheme;
 
       const mapRef = { value: null };
-      const gridRef = { value: null };
-      const { staticDefsContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const { staticDefsContent } = useSvgStaticContent(mapRef as never);
       const defs = staticDefsContent.value;
 
       expect(defs).toContain('<symbol id="tower-basic-f0"');
@@ -326,8 +319,7 @@ describe("SVG Static Content Render Placement", () => {
       store.defaultTheme = customTheme;
 
       const mapRef = { value: makeMinimalMap(1, 1) };
-      const gridRef = { value: makeFakeGrid() };
-      const { gridContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const { gridContent } = useSvgStaticContent(mapRef as never);
       const svg = gridContent.value;
 
       expect(svg).toContain('<use href="#tile-r0-terrain2"');
@@ -343,8 +335,7 @@ describe("SVG Static Content Render Placement", () => {
       store.defaultTheme = customTheme;
 
       const mapRef = { value: makeMinimalMap(1, 1, 3) };
-      const gridRef = { value: makeFakeGrid() };
-      const { gridContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const { gridContent } = useSvgStaticContent(mapRef as never);
       const svg = gridContent.value;
 
       expect(svg).toContain('<use id="spawn-0" href="#spawn-closed" x="0" y="0" width="36" height="36"/>');
@@ -362,8 +353,7 @@ describe("SVG Static Content Render Placement", () => {
       store.defaultTheme = customTheme;
 
       const mapRef = { value: makeMinimalMap(1, 1) };
-      const gridRef = { value: makeFakeGrid() };
-      const { gridContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const { gridContent } = useSvgStaticContent(mapRef as never);
       const svg = gridContent.value;
 
       expect(svg).toContain('<g id="base-structure"');
@@ -381,8 +371,7 @@ describe("SVG Static Content Render Placement", () => {
       store.defaultTheme = customTheme;
 
       const mapRef = { value: makeMinimalMap(1, 1) };
-      const gridRef = { value: makeFakeGrid() };
-      const { gridContent } = useSvgStaticContent(mapRef as never, gridRef as never);
+      const { gridContent } = useSvgStaticContent(mapRef as never);
       const svg = gridContent.value;
 
       expect(svg).toContain('<g id="base-structure"');
@@ -390,64 +379,6 @@ describe("SVG Static Content Render Placement", () => {
       const groupEnd = svg.indexOf("</g>", groupStart);
       const groupContent = svg.slice(groupStart, groupEnd);
       expect(groupContent).toContain("url(#base-gradient)");
-    });
-  });
-
-  describe("Path highlights", () => {
-    it("renders path polylines in pathContent", () => {
-      const store = createTestMapThemeStore();
-      const customTheme = buildCustomTheme();
-      store.activeTheme = customTheme;
-      store.defaultTheme = customTheme;
-
-      const mapRef = { value: makeMinimalMap(1, 1) };
-      const gridRef = {
-        value: {
-          regionId: 0,
-          blocked: new Set<string>(),
-          paths: [
-            [
-              { x: 0, y: 0 },
-              { x: 1, y: 0 },
-            ],
-          ],
-        } as unknown as Grid,
-      };
-      const { pathContent } = useSvgStaticContent(mapRef as never, gridRef as never);
-      const svg = pathContent.value;
-
-      expect(svg).toContain(
-        '<polyline points="18,18 54,18" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4" />',
-      );
-    });
-
-    it("returns empty string when grid is null", () => {
-      const store = createTestMapThemeStore();
-      const customTheme = buildCustomTheme();
-      store.activeTheme = customTheme;
-      store.defaultTheme = customTheme;
-
-      const mapRef = { value: makeMinimalMap(1, 1) };
-      const gridRef = { value: null };
-      const { pathContent } = useSvgStaticContent(mapRef as never, gridRef as never);
-      expect(pathContent.value).toBe("");
-    });
-
-    it("skips null paths in the array", () => {
-      const store = createTestMapThemeStore();
-      const customTheme = buildCustomTheme();
-      store.activeTheme = customTheme;
-      store.defaultTheme = customTheme;
-
-      const mapRef = { value: makeMinimalMap(1, 1) };
-      const gridRef = {
-        value: { regionId: 0, blocked: new Set<string>(), paths: [null, [{ x: 0, y: 0 }]] } as unknown as Grid,
-      };
-      const { pathContent } = useSvgStaticContent(mapRef as never, gridRef as never);
-      const svg = pathContent.value;
-
-      expect(svg).toContain('<polyline points="18,18"');
-      expect(svg).not.toContain("null");
     });
   });
 });

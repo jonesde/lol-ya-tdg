@@ -1,5 +1,4 @@
 import { computed } from "vue";
-import type { Grid } from "@/grid/Grid.js";
 import { mulberry32 } from "@/grid/Map.js";
 import type { MapThemeData } from "@/render/themes/index.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -262,7 +261,6 @@ function renderBaseStructure(base: { x: number; y: number }, regionBaseSvg: stri
 
 export function useSvgStaticContent(
   currentMap: { value: MapInfo | null },
-  currentGrid: { value: Grid | null },
   currentTheme?: { value: MapThemeData | null },
 ) {
   const staticFiltersContent = computed(() => buildStaticFiltersContent());
@@ -344,33 +342,5 @@ export function useSvgStaticContent(
     return svg;
   });
 
-  // Grid.blocked is a Set<string> mutated directly (via registerTower /
-  // unregisterTower), NOT a reactive ref. Vue's computed won't track Set
-  // mutations. This computed signal forces pathContent to re-evaluate when
-  // towers are placed or removed.
-  const gridBlockCount = computed(() => currentGrid.value?.blocked?.size ?? 0);
-
-  // Reactive path layer: only path highlight polylines. Re-renders when
-  // blocked set changes (tower placement on path tiles).
-  const pathContent = computed(() => {
-    const grid = currentGrid.value;
-    if (!grid) return "";
-
-    // Depend on gridBlockCount to invalidate when blocked set changes size.
-    const _invalidate = gridBlockCount.value;
-    void _invalidate;
-
-    let svg = "";
-
-    // Path highlights — Grid.paths is (Point[] | null)[], each path IS a Point[]
-    for (const path of grid.paths ?? []) {
-      if (!path) continue;
-      const points = path.map((t) => `${t.x * TILE_SIZE + TILE_SIZE / 2},${t.y * TILE_SIZE + TILE_SIZE / 2}`).join(" ");
-      svg += `<polyline points="${points}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4" />`;
-    }
-
-    return svg;
-  });
-
-  return { staticDefsContent, mapDefsContent, gridContent, pathContent };
+  return { staticDefsContent, mapDefsContent, gridContent };
 }

@@ -127,7 +127,7 @@ export class Grid {
       if (!this.blocked.has(towerKey)) return false;
       this.blocked.delete(towerKey);
       this._blockCount--;
-      this.recomputePathsForTile(x, y);
+      this.recomputePaths();
       return true;
     } else {
       const towerKey = `${x},${y}`;

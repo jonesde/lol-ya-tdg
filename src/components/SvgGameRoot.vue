@@ -5,7 +5,6 @@
       <defs ref="defsLayer"></defs>
 
       <g class="grid-layer" v-html="gridContent"></g>
-      <g class="path-layer" v-html="pathContent"></g>
 
       <g ref="worldLayer" class="camera-wrapper">
         <g ref="entityLayer" class="entity-layer"></g>
@@ -53,9 +52,8 @@ const persistStore = usePersistStore();
 const uiStore = useUiStore();
 const themeStore = useMapThemeStore();
 
-const { staticDefsContent, mapDefsContent, gridContent, pathContent } = useSvgStaticContent(
+const { staticDefsContent, mapDefsContent, gridContent } = useSvgStaticContent(
   computed(() => gameStore.map),
-  computed(() => gameStore.grid),
   themeStore.activeTheme,
 );
 
@@ -110,6 +108,7 @@ let particleManager!: ParticleManager;
 let effectManager!: EffectManager;
 let uiOverlayManager!: UiOverlayManager;
 let spawnManager!: SpawnManager;
+let pathHighlightsGroup: SVGGElement | null = null;
 
 let cameraTransformString = "translate(0,0) scale(1)";
 
@@ -297,6 +296,26 @@ onMounted(async () => {
       if (engine.value?.waveManager?.spawnStates) {
         spawnManager.sync(engine.value.waveManager.spawnStates);
       }
+
+      // Imperative path highlights — appended to grid-layer, not Vue-managed
+      const grid = gameStore.grid;
+      const gridLayer = svgRoot.value?.querySelector(".grid-layer") as SVGGElement | null;
+      if (gridLayer && grid?.paths) {
+        if (!pathHighlightsGroup?.parentNode) {
+          pathHighlightsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          pathHighlightsGroup.setAttribute("id", "path-highlights");
+          gridLayer.appendChild(pathHighlightsGroup);
+        }
+        let pathSvg = "";
+        for (const path of grid.paths) {
+          if (!path) continue;
+          const points = path
+            .map((t) => `${t.x * mapTileSize + mapTileSize / 2},${t.y * mapTileSize + mapTileSize / 2}`)
+            .join(" ");
+          pathSvg += `<polyline points="${points}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4" />`;
+        }
+        pathHighlightsGroup.innerHTML = pathSvg;
+      }
     }
   };
 
@@ -346,6 +365,7 @@ onUnmounted(() => {
   effectManager.dispose();
   uiOverlayManager.dispose();
   spawnManager.dispose();
+  pathHighlightsGroup = null;
 });
 </script>
 
