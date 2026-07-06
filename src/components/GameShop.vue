@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, onBeforeUpdate } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { FOOTER_HEIGHT, HEADER_HEIGHT, SELL_DISCOUNT_PCT } from "@/game/Constants.js";
 import type { TowerId } from "@/game/ConstantsTower.js";
 import { TOWER_META, TowerIds } from "@/game/ConstantsTower.js";
@@ -47,16 +47,71 @@ let currentOnUp: (() => void) | null = null;
 let currentTouchMove: ((event: TouchEvent) => void) | null = null;
 let currentTouchEnd: (() => void) | null = null;
 
+const barRef = ref<HTMLElement | null>(null);
 const barStyle = computed(() => ({ top: `${gameStore.gameShopPos.y}px`, left: `${gameStore.gameShopPos.x}px` }));
+
+let prevWidth = window.innerWidth;
+let prevHeight = window.innerHeight;
 
 function setInitialPosition() {
   // NOTE: 80 is width of button as per CSS; 84 = 20 (header/hud) + 64 (footer)
   gameStore.gameShopPos = { x: (window.innerWidth - towerList.length * 80) / 2, y: window.innerHeight - 84 };
 }
-onMounted(() => {
-  setTimeout(() => { setInitialPosition(); }, 20);
-});
 
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function onResize() {
+  const el = barRef.value;
+  if (!el) return;
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  if (w === 0 || h === 0) return;
+
+  const innerWidth = window.innerWidth;
+  const innerHeight = window.innerHeight;
+  let { x, y } = gameStore.gameShopPos;
+
+  const pinnedLeft = x <= 20;
+  const pinnedTop = y <= 20;
+  const pinnedRight = x + w >= prevWidth - 20;
+  const pinnedBottom = y + h >= prevHeight - 20;
+
+  let newX = x;
+  let newY = y;
+
+  if (pinnedLeft) {
+    newX = clamp(x, 0, innerWidth - w);
+  } else if (pinnedRight) {
+    const offsetRight = prevWidth - (x + w);
+    newX = innerWidth - w - clamp(offsetRight, 0, innerWidth - w);
+  } else {
+    newX = clamp(x, 0, innerWidth - w);
+  }
+
+  if (pinnedTop) {
+    newY = clamp(y, 0, innerHeight - h);
+  } else if (pinnedBottom) {
+    const offsetBottom = prevHeight - (y + h);
+    newY = innerHeight - h - clamp(offsetBottom, 0, innerHeight - h);
+  } else {
+    newY = clamp(y, 0, innerHeight - h);
+  }
+
+  gameStore.gameShopPos = { x: newX, y: newY };
+
+  prevWidth = innerWidth;
+  prevHeight = innerHeight;
+}
+
+onMounted(() => {
+  setTimeout(() => {
+    setInitialPosition();
+    onResize();
+    window.addEventListener("resize", onResize);
+  }, 20);
+});
 
 function onHeaderMouseDown(event: MouseEvent) {
   if (event.button !== 0) return;
@@ -123,13 +178,14 @@ function cleanupTouchListeners() {
 }
 
 onUnmounted(() => {
+  window.removeEventListener("resize", onResize);
   cleanupDragListeners();
   cleanupTouchListeners();
 });
 </script>
 
 <template>
-  <div class="build-bar" :style="barStyle">
+  <div class="build-bar" :style="barStyle" ref="barRef">
     <div
       class="build-bar-header"
       @mousedown="onHeaderMouseDown"
