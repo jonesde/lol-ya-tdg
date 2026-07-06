@@ -316,14 +316,14 @@ export const MILESTONE_THRESHOLD = 1000000;
 
 // Wave Graph — real-time metric chart overlay
 export const WAVE_GRAPH_INTERVAL_SECONDS = 5;
-export const WAVE_GRAPH_HEIGHT = 100;
+export const WAVE_GRAPH_HEIGHT = 60;
 export const WAVE_GRAPH_DOT_SIZE = 2;
 export const WAVE_GRAPH_DOT_SPACING = 8;
 export const WAVE_GRAPH_DOT_OPACITY = 0.2;
-export const WAVE_GRAPH_DOT_OPACITY_WAVE_START = 0.8;
-export const WAVE_GRAPH_MAIN_OPACITY = 0.5;
+export const WAVE_GRAPH_DOT_OPACITY_WAVE_START = 0.5;
+export const WAVE_GRAPH_MAIN_OPACITY = 0.3;
 
-export const WAVE_GRAPH_COLOR_DAMAGE = "#5fff8a";
+export const WAVE_GRAPH_COLOR_DAMAGE = "#aaaaff";
 export const WAVE_GRAPH_COLOR_MAX_ENEMY_HEALTH = "#ff4444";
 export const WAVE_GRAPH_COLOR_GOLD_EARNED = "#ffd700";
 export const WAVE_GRAPH_COLOR_GEMS_EARNED = "#4488ff";

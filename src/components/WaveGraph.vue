@@ -10,6 +10,7 @@ import {
   WAVE_GRAPH_DOT_SIZE,
   WAVE_GRAPH_DOT_SPACING,
   WAVE_GRAPH_HEIGHT,
+  WAVE_GRAPH_INTERVAL_SECONDS,
 } from "@/game/Constants.js";
 import { getGameEngine } from "@/game/GameEngine.js";
 import type { WaveGraphDot } from "@/game/WaveGraphTracker.js";
@@ -38,6 +39,25 @@ const tooltipX = ref(0);
 const tooltipY = ref(0);
 
 const tooltipPositionStyle = computed(() => ({ left: `${tooltipX.value}px`, top: `${tooltipY.value}px` }));
+
+const hoveredDotIndex = ref<number | null>(null);
+
+const timeAgo = computed(() => {
+  const engineRef = getGameEngine();
+  const tracker = engineRef?.waveGraphTracker;
+  if (!tracker || !tooltipDot.value || hoveredDotIndex.value === null) return "";
+
+  const dots = tracker.getDots();
+  if (dots.length === 0) return "";
+
+  const intervalsAgo = dots.length - 1 - hoveredDotIndex.value;
+  const totalSeconds = intervalsAgo * WAVE_GRAPH_INTERVAL_SECONDS;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const mm = String(minutes).padStart(2, "0");
+  const ss = String(seconds).padStart(2, "0");
+  return `-${mm}:${ss}`;
+});
 
 interface PathData {
   d: string;
@@ -189,6 +209,7 @@ function onMouseMove(event: MouseEvent): void {
   if (actualIndex >= 0 && actualIndex < dots.length) {
     const dot = dots[actualIndex];
     tooltipDot.value = dot;
+    hoveredDotIndex.value = actualIndex;
     tooltipVisible.value = true;
 
     let posX = event.clientX - rect.left;
@@ -203,6 +224,7 @@ function onMouseMove(event: MouseEvent): void {
   } else {
     tooltipVisible.value = false;
     tooltipDot.value = null;
+    hoveredDotIndex.value = null;
   }
 }
 
@@ -216,6 +238,7 @@ watch(
   () => {
     tooltipVisible.value = false;
     tooltipDot.value = null;
+    hoveredDotIndex.value = null;
   },
 );
 
@@ -288,6 +311,9 @@ onUnmounted(() => {
       class="wave-graph-tooltip"
       :style="tooltipPositionStyle"
     >
+      <div class="wg-row wg-title">
+        <span class="wg-title-label">{{ timeAgo }}</span>
+      </div>
       <div class="wg-row" :style="{ color: WAVE_GRAPH_COLOR_DAMAGE }">
         <span class="wg-label">Damage</span><span class="wg-value">{{ tooltipDot.damage }}</span>
       </div>
@@ -310,10 +336,10 @@ onUnmounted(() => {
 <style scoped>
 .wave-graph-overlay {
   position: absolute;
-  bottom: 64px;
+  bottom: 2px;
   left: 0;
   right: 0;
-  z-index: 5;
+  z-index: 9;
   pointer-events: all;
 }
 
@@ -334,7 +360,7 @@ onUnmounted(() => {
   color: var(--color-text);
   pointer-events: none;
   white-space: nowrap;
-  z-index: 6;
+  z-index: 12;
 }
 
 .wg-row {
@@ -342,6 +368,20 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 12px;
   line-height: 1.5;
+}
+
+.wg-title {
+  justify-content: center;
+  padding-bottom: 2px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.wg-title-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
 }
 
 .wg-label {

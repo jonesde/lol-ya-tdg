@@ -74,7 +74,7 @@ function getTowerDisplayIcon(type: TowerId): string {
   justify-content: center;
   gap: 6px;
   padding: 0 12px;
-  background: var(--color-panel);
+  background: rgba(0,0,0,0);
   border-top: 1px solid var(--color-border);
   z-index: 10;
   overflow-x: auto;
@@ -89,14 +89,14 @@ function getTowerDisplayIcon(type: TowerId): string {
   padding: 4px 8px;
   border-radius: 6px;
   border: 2px solid transparent;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(20, 24, 50, 0.7);
   cursor: pointer;
   transition: all 0.15s;
   user-select: none;
 }
 
 .shop-tower:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(40, 48, 100, 1);
 }
 
 .shop-tower.selected {
