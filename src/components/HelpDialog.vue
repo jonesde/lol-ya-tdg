@@ -111,18 +111,29 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
         <div class="help-section">
           <div class="help-section-title">How to Play</div>
           <p class="help-description">
-            Defend your base against waves of enemies on procedurally generated maps.
-            Enemies award gold for the resources they leave behind on defeat.
-            Use gold to build towers from the shop bar, then upgrade and specialize them for maximum effect.
-            Reach high waves and defeat bosses to earn gems to unlock upgrades. You won't get far without them!
+            • Defend your base against waves of enemies on generated maps
+          </p>
+          <p class="help-description">
+            • Enemies drop <span class="gold">gold</span> for the resources they leave behind on defeat
+          </p>
+          <p class="help-description">
+            • Use <span class="gold">gold</span> to build towers from the Build Bar, then upgrade and specialize them for maximum effect
+          </p>
+          <p class="help-description">
+            • Earn <span class="gems">gems</span> by reaching high waves and defeating bosses
+          </p>
+          <p class="help-description">
+            • Use <span class="gems">gems</span> to unlock upgrades. You won't get far without them!
           </p>
         </div>
 
         <div class="help-section keyboard-layout-section">
           <div class="help-section-title">Keyboard Layout</div>
           <p class="help-description">
-            Use only mouse, only keyboard, or mouse + keyboard.
-            Fully playable by keyboard alone. Friend mode is a future feature.
+            • Use only mouse, only keyboard, or mouse + keyboard
+          </p>
+          <p class="help-description">
+            • Fully playable by keyboard alone (friend mode is a future feature)
           </p>
           <svg class="keyboard-diagram" viewBox="0 0 580 300" xmlns="http://www.w3.org/2000/svg">
             <defs>
@@ -391,6 +402,17 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
   color: var(--color-text);
   line-height: 1.5;
 }
+
+.help-section .gold {
+  color: #ffd84d;
+  font-weight: bold;
+}
+
+.help-section .gems {
+  color: #9be7ff;
+  font-weight: bold;
+}
+
 
 .help-table {
   width: 100%;
