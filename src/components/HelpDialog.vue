@@ -2,6 +2,101 @@
 import { useUiStore } from "@/stores/ui.js";
 
 const uiStore = useUiStore();
+
+const KEYBOARD_Y = 70;
+const KEY_SIZE = 28;
+const KEY_STEP = 30;
+const ROW_STEP = 32;
+
+const buildRow = (
+  rowIndex: number,
+  keys: Array<{ label: string; width: number; highlighted?: boolean }>,
+  arrowOffset = false,
+) => {
+  const baseY = KEYBOARD_Y + rowIndex * ROW_STEP + (arrowOffset ? 8 : 0);
+  let currentX = 0;
+  return keys.map((key) => {
+    const keyData = {
+      label: key.label,
+      width: key.width,
+      x: currentX,
+      y: baseY,
+      highlighted: key.highlighted ?? false,
+    };
+    currentX += key.width + 2;
+    return keyData;
+  });
+};
+
+const row0 = buildRow(0, [
+  { label: "Esc", width: KEY_SIZE, highlighted: true },
+  ...Array.from({ length: 9 }, (_, i) => ({ label: String(i + 1), width: KEY_SIZE, highlighted: true })),
+  { label: "0", width: KEY_SIZE },
+  { label: "-", width: KEY_SIZE },
+  { label: "=", width: KEY_SIZE },
+  { label: "⌫", width: 88 },
+]);
+
+const row1 = buildRow(1, [
+  { label: "Tab", width: 42, highlighted: true },
+  ...["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"].map((label) => ({
+    label,
+    width: KEY_SIZE,
+    highlighted: label === "W",
+  })),
+  { label: "[", width: KEY_SIZE },
+  { label: "]", width: KEY_SIZE },
+  { label: "\\", width: 74 },
+]);
+
+const row2 = buildRow(2, [
+  { label: "Caps", width: 58 },
+  ...["A", "S", "D", "F", "G", "H", "J", "K", "L"].map((label) => ({
+    label,
+    width: KEY_SIZE,
+    highlighted: ["A", "S", "D", "F"].includes(label),
+  })),
+  { label: ";", width: KEY_SIZE },
+  { label: "'", width: KEY_SIZE },
+  { label: "Enter", width: 88, highlighted: true },
+]);
+
+const row3 = buildRow(3, [
+  { label: "Shift", width: 74, highlighted: true },
+  ...["Z", "X", "C", "V", "B", "N", "M"].map((label) => ({ label, width: KEY_SIZE, highlighted: label === "X" })),
+  { label: ",", width: KEY_SIZE },
+  { label: ".", width: KEY_SIZE },
+  { label: "/", width: KEY_SIZE },
+  { label: "Shift", width: 58 },
+]);
+
+const row3Arrows = buildRow(3, [{ label: "↑", width: KEY_SIZE, highlighted: true }], true);
+row3Arrows[0].x = 480;
+
+const row4 = buildRow(4, [
+  { label: "Ctrl", width: 42 },
+  { label: "Meta", width: 42 },
+  { label: "Alt", width: 42 },
+  { label: "Space", width: 182, highlighted: true },
+  { label: "Alt", width: KEY_SIZE },
+  { label: "Fn", width: KEY_SIZE },
+  { label: "Ctrl", width: KEY_SIZE },
+]);
+
+const row4Arrows = buildRow(
+  4,
+  [
+    { label: "←", width: KEY_SIZE, highlighted: true },
+    { label: "↓", width: KEY_SIZE, highlighted: true },
+    { label: "→", width: KEY_SIZE, highlighted: true },
+  ],
+  true,
+);
+row4Arrows[0].x = 480;
+row4Arrows[1].x = 510;
+row4Arrows[2].x = 540;
+
+const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4, ...row4Arrows];
 </script>
 
 <template>
@@ -20,6 +115,140 @@ const uiStore = useUiStore();
             Place towers from the shop bar, upgrade them with specializations, and earn gems
             for permanent skill tree upgrades.
           </p>
+        </div>
+
+        <div class="help-section keyboard-layout-section">
+          <div class="help-section-title">Keyboard Layout</div>
+          <svg class="keyboard-diagram" viewBox="0 0 732 330" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="kb-arrow" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+                <path d="M0,0 L6,2 L0,4" fill="var(--color-text-dim)" />
+              </marker>
+            </defs>
+
+            <g class="kb-keys">
+              <g v-for="(key, idx) in keyboardKeys" :key="idx">
+                <rect
+                  :x="key.x"
+                  :y="key.y"
+                  :width="key.width"
+                  :height="28"
+                  :class="{ 'kb-key': true, 'kb-key-hl': key.highlighted }"
+                  rx="2"
+                />
+                <text
+                  :x="key.x + key.width / 2"
+                  :y="key.y + 17"
+                  class="kb-key-text"
+                  text-anchor="middle"
+                >{{ key.label }}</text>
+              </g>
+            </g>
+
+            <g class="kb-brackets">
+              <path class="kb-bracket" d="M 44,52 L 44,46 L 298,46 L 298,52" />
+              <path class="kb-bracket" d="M 520,170 L 526,170 L 526,232 L 520,232" />
+            </g>
+
+            <g class="kb-labels">
+              <g class="kb-label-group">
+                <text x="60" y="20" class="kb-label-text">
+                  <tspan class="kb-label-key">Esc/X</tspan>
+                  <tspan class="kb-label-desc"> Close/Pause</tspan>
+                </text>
+                <polyline class="kb-line" points="40,30 14,30 14,70" marker-end="url(#kb-arrow)" />
+                <polyline class="kb-line" points="80,30 382,30 382,166" marker-end="url(#kb-arrow)" />
+              </g>
+
+              <g class="kb-label-group">
+                <text x="180" y="16" class="kb-label-text">
+                  <tspan class="kb-label-key">Tab</tspan>
+                  <tspan class="kb-label-desc"> Speed↑ / Build→</tspan>
+                </text>
+                <polyline class="kb-line" points="170,22 6,22 6,102 34,102" marker-end="url(#kb-arrow)" />
+              </g>
+
+              <g class="kb-label-group">
+                <text x="180" y="36" class="kb-label-text">
+                  <tspan class="kb-label-key">Shift+Tab</tspan>
+                  <tspan class="kb-label-desc"> Speed↓ / ←Build</tspan>
+                </text>
+                <polyline class="kb-line" points="170,42 10,42 10,134 34,134" marker-end="url(#kb-arrow)" />
+              </g>
+
+              <g class="kb-label-group">
+                <text x="171" y="38" class="kb-label-text" text-anchor="middle">
+                  <tspan class="kb-label-key">1-9</tspan>
+                  <tspan class="kb-label-desc"> Tower Build Selection</tspan>
+                </text>
+                <polyline class="kb-line" points="171,44 171,52" marker-end="url(#kb-arrow)" />
+              </g>
+
+              <g class="kb-label-group">
+                <text x="60" y="270" class="kb-label-text">
+                  <tspan class="kb-label-key">A</tspan>
+                  <tspan class="kb-label-desc"> Speed↓</tspan>
+                </text>
+                <polyline class="kb-line" points="60,260 60,210 106,210 106,194" marker-end="url(#kb-arrow)" />
+              </g>
+
+              <g class="kb-label-group">
+                <text x="150" y="260" class="kb-label-text">
+                  <tspan class="kb-label-key">W/U</tspan>
+                  <tspan class="kb-label-desc"> Upgrade</tspan>
+                </text>
+                <polyline class="kb-line" points="150,250 150,200 136,200 136,166" marker-end="url(#kb-arrow)" />
+              </g>
+
+              <g class="kb-label-group">
+                <text x="150" y="285" class="kb-label-text">
+                  <tspan class="kb-label-key">S</tspan>
+                  <tspan class="kb-label-desc"> Downgrade/Sell</tspan>
+                </text>
+                <polyline class="kb-line" points="160,278 160,220 166,220 166,194" marker-end="url(#kb-arrow)" />
+              </g>
+
+              <g class="kb-label-group">
+                <text x="230" y="270" class="kb-label-text">
+                  <tspan class="kb-label-key">D</tspan>
+                  <tspan class="kb-label-desc"> Speed↑</tspan>
+                </text>
+                <polyline class="kb-line" points="230,260 230,210 196,210 196,194" marker-end="url(#kb-arrow)" />
+              </g>
+
+              <g class="kb-label-group">
+                <text x="280" y="285" class="kb-label-text">
+                  <tspan class="kb-label-key">F</tspan>
+                  <tspan class="kb-label-desc"> Cycle Targeting</tspan>
+                </text>
+                <polyline class="kb-line" points="280,278 280,220 226,220 226,194" marker-end="url(#kb-arrow)" />
+              </g>
+
+              <g class="kb-label-group">
+                <text x="400" y="280" class="kb-label-text">
+                  <tspan class="kb-label-key">Space</tspan>
+                  <tspan class="kb-label-desc"> Pause/Resume</tspan>
+                </text>
+                <polyline class="kb-line" points="400,270 400,240 311,240 311,230" marker-end="url(#kb-arrow)" />
+              </g>
+
+              <g class="kb-label-group">
+                <text x="580" y="120" class="kb-label-text">
+                  <tspan class="kb-label-key">Enter</tspan>
+                  <tspan class="kb-label-desc"> Confirm</tspan>
+                </text>
+                <polyline class="kb-line" points="570,116 540,116 540,182 462,182" marker-end="url(#kb-arrow)" />
+              </g>
+
+              <g class="kb-label-group">
+                <text x="580" y="200" class="kb-label-text">
+                  <tspan class="kb-label-key">Arrows</tspan>
+                  <tspan class="kb-label-desc"> Navigate</tspan>
+                </text>
+                <polyline class="kb-line" points="570,196 526,196" marker-end="url(#kb-arrow)" />
+              </g>
+            </g>
+          </svg>
         </div>
 
         <div class="help-section">
@@ -225,5 +454,60 @@ kbd {
 
 .debug-bug:hover {
   opacity: 0.8;
+}
+
+.keyboard-layout-section {
+  padding: 24px;
+  margin: 0 -24px 16px -24px;
+}
+
+.keyboard-diagram {
+  width: 732px;
+  height: auto;
+  display: block;
+}
+
+.kb-key {
+  fill: rgba(255, 255, 255, 0.06);
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 1;
+}
+
+.kb-key-hl {
+  fill: rgba(95, 208, 255, 0.12);
+  stroke: var(--color-accent);
+}
+
+.kb-key-text {
+  font-size: 10px;
+  fill: var(--color-text);
+  font-family: var(--font-main);
+  pointer-events: none;
+}
+
+.kb-bracket {
+  fill: none;
+  stroke: var(--color-text-dim);
+  stroke-width: 1;
+}
+
+.kb-label-text {
+  font-size: 10px;
+  font-family: var(--font-main);
+}
+
+.kb-label-key {
+  fill: var(--color-text-dim);
+  font-weight: bold;
+}
+
+.kb-label-desc {
+  fill: var(--color-text);
+}
+
+.kb-line {
+  fill: none;
+  stroke: var(--color-text-dim);
+  stroke-width: 1;
 }
 </style>
