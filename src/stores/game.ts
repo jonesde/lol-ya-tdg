@@ -54,6 +54,7 @@ interface MilestoneRewardsClaimed {
 
 interface TowerManagerLike {
   towers: Tower[];
+  towerAt(tileX: number, tileY: number): Tower | undefined;
 }
 
 export interface GameStoreLike {

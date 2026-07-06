@@ -20,7 +20,7 @@ const targetingModes = ["first", "last", "closest", "strong", "furthest"] as con
 
 /**
  * Keyboard input handler as a Vue composable.
- * Dispatches actions to Pinia stores and game engine.
+ * Dispatches actions to Pinia datastores and game engine.
  */
 const KEY_REPEAT_INTERVAL = 500;
 
@@ -163,6 +163,9 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
         const digit = parseInt(event.key, 10);
         if (digit >= 1 && digit <= 9) {
           const towerIndex = (digit - 1) % towerIdList.length;
+          if (gs.selectedTower) {
+            gs.setHoverTile({ tileX: gs.selectedTower.tileX, tileY: gs.selectedTower.tileY });
+          }
           gs.selectBuildType(towerIdList[towerIndex]!);
         }
         break;
@@ -232,6 +235,12 @@ function moveBuildPosition(gameStore: GameStoreLike, dx: number, dy: number): vo
 
   tileX = Math.max(0, Math.min(tileX, grid.width - 1));
   tileY = Math.max(0, Math.min(tileY, grid.height - 1));
+
+  const towerAtNewPos = gameStore.towerManager?.towerAt(tileX, tileY);
+  if (towerAtNewPos) {
+    // do not clear build mode, ie calling: gameStore.selectBuildType(null);
+    gameStore.selectTower(towerAtNewPos);
+  }
 
   gameStore.setHoverTile({ tileX, tileY });
 }
