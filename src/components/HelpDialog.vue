@@ -190,7 +190,7 @@ const uiStore = useUiStore();
 }
 
 .help-table td:first-child {
-  width: 140px;
+  width: 160px;
   color: var(--color-text-dim);
   padding-right: 12px;
 }
