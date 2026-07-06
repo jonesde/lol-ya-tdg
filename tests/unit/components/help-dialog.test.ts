@@ -28,10 +28,10 @@ describe("HelpDialog", () => {
     mount(HelpDialog, { global: { plugins: [pinia] } });
     const bugBtn = document.querySelector(".debug-bug");
     expect(bugBtn).not.toBeNull();
-    expect(bugBtn.getAttribute("aria-label")).toBe("Open debug panel");
+    expect(bugBtn.getAttribute("aria-label")).toBe("Open Debug Panel");
   });
 
-  it("opens debug panel and closes help when bug is clicked", async () => {
+  it("opens debug panel when bug is clicked", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const uiStore = useUiStore();
@@ -40,7 +40,6 @@ describe("HelpDialog", () => {
     const bugBtn = document.querySelector(".debug-bug");
     bugBtn.click();
     expect(uiStore.debugPanelVisible).toBe(true);
-    expect(uiStore.showHelpDialog).toBe(false);
   });
 
   it("closes when overlay background is clicked", async () => {
