@@ -85,6 +85,7 @@ interface GameStateShape {
   selectedTower: Tower | null;
   selectedTowerType: TowerId | null;
   towerPanelPos: TowerPanelPos;
+  gameShopPos: TowerPanelPos;
   hoverTile: HoverTile | null;
   hoverUpgradeBtn: boolean;
   upgradeBtnClickAnim: number;
@@ -116,6 +117,7 @@ export const useGameStore = defineStore("game", {
     selectedTower: null,
     selectedTowerType: null,
     towerPanelPos: { x: 0, y: 48 },
+    gameShopPos: { x: 0, y: 0 },
     hoverTile: null,
     hoverUpgradeBtn: false,
     upgradeBtnClickAnim: 0,
@@ -221,6 +223,7 @@ export const useGameStore = defineStore("game", {
       this.selectedTower = null;
       this.selectedTowerType = null;
       this.towerPanelPos = { x: 0, y: 48 };
+      this.gameShopPos = { x: 0, y: 0 };
       this.hoverTile = null;
       this.upgradeBtnClickAnim = 0;
       this.endScreenData = null;
@@ -276,6 +279,7 @@ export const useGameStore = defineStore("game", {
       this.selectedTower = null;
       this.selectedTowerType = null;
       this.towerPanelPos = { x: 0, y: 48 };
+      this.gameShopPos = { x: 0, y: 0 };
       this.hoverTile = null;
       this.hoverUpgradeBtn = false;
       this.upgradeBtnClickAnim = 0;

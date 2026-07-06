@@ -27,6 +27,7 @@ import {
   MAX_ACCUM,
   MILESTONE_GEMS,
   MILESTONE_WAVES,
+  SELL_DISCOUNT_PCT,
   SELL_VALUE_RATIO,
   SLOW_HEALING_PER_ROUND,
   STARTING_GOLD_BONUS,
@@ -533,7 +534,7 @@ export class GameEngine {
         gameStore.selectTower(existing);
       } else {
         const meta = TOWER_META[gameStore.selectedTowerType]!;
-        const discount = this.persistStore.generalAddons?.sellActive === "discount" ? 0.75 : 1;
+        const discount = this.persistStore.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
         const cost = Math.floor(meta.cost * discount);
         if (gameStore.gold >= cost && this.grid.canBuild(tx, ty)) {
           const tower = this.towerManager?.build(

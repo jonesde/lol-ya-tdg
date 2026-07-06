@@ -312,6 +312,13 @@ export const MILESTONE_BONUS_PCT = [
 // total damage threshold for each milestone tier (1M, 2M, 3M...)
 export const MILESTONE_THRESHOLD = 1000000;
 
+// ===== UI Layout =====
+
+// build bar header height in pixels (GameShop.vue)
+export const HEADER_HEIGHT = 20;
+// build bar shop/footer height in pixels (GameShop.vue)
+export const FOOTER_HEIGHT = 64;
+
 // ===== Wave Graph =====
 
 // Wave Graph — real-time metric chart overlay

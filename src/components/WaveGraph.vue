@@ -287,6 +287,7 @@ onUnmounted(() => {
     @mousemove="onMouseMove"
     @mouseleave="tooltipVisible = false"
   >
+    <div class="wave-graph-separator"></div>
     <svg
       ref="svgRef"
       class="wave-graph-svg"
@@ -341,6 +342,16 @@ onUnmounted(() => {
   right: 0;
   z-index: 9;
   pointer-events: all;
+}
+
+.wave-graph-separator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.15);
+  pointer-events: none;
 }
 
 .wave-graph-svg {

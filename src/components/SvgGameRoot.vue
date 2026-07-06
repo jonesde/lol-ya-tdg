@@ -19,7 +19,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import type { Enemy } from "@/enemies/Enemy.js";
-import { GameState } from "@/game/Constants.js";
+import { GameState, SELL_DISCOUNT_PCT } from "@/game/Constants.js";
 import { TOWER_META } from "@/game/ConstantsTower.js";
 import { GameEngine } from "@/game/GameEngine.js";
 import { useInput } from "@/game/Input.js";
@@ -78,7 +78,7 @@ const buildPreviewValid = computed(() => {
   if (!gameStore.selectedTowerType) return false;
   const meta = TOWER_META[gameStore.selectedTowerType];
   if (!meta) return false;
-  const discount = persistStore.generalAddons?.sellActive === "discount" ? 0.75 : 1;
+  const discount = persistStore.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
   const cost = Math.floor(meta.cost * discount);
   return gameStore.grid.canBuild(pos.tileX, pos.tileY) && gameStore.gold >= cost;
 });
