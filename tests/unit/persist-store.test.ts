@@ -431,7 +431,7 @@ describe("PersistStore", () => {
       store.load();
       expect(store.gems).toBe(100);
       expect(store.highestUnlockedMap).toBe(5);
-      expect((localStorage.setItem as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("lol_ya_tdg_save");
+      expect((localStorage.setItem as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("lol_ya_tdg_save_1");
       expect((localStorage.removeItem as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("gempath_save_v1");
     });
 
