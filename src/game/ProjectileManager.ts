@@ -444,6 +444,12 @@ export class ProjectileManager {
     const dy = enemy.y - projectile.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
+    const maxRange = projectile.range * (this.grid?.tileSize ?? GRID_TILE_SIZE) * 2;
+    if (dist > maxRange) {
+      this.removeProjectile(projectile, "out-of-range");
+      return;
+    }
+
     if (dist < projectile.radius + PROJECTILE_HIT_THRESHOLD) {
       this.hitCircleProjectile(projectile, enemy);
       return;

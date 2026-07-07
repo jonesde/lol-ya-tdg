@@ -327,6 +327,92 @@ describe("ProjectileManager", () => {
       expect(takeDamage1).toHaveBeenCalledWith(10, false);
       expect(manager.getRenderData()).toHaveLength(0);
     });
+
+    it("removes projectile when target is beyond max range (no grid)", () => {
+      const enemy = createMockEnemy({ id: 1, x: 5000, y: 200, hp: 100, maxHp: 100 });
+      enemyManager = createMockEnemyManager([enemy]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 100,
+        range: 5,
+        towerType: "arrow",
+        towerLevel: 1,
+        targetId: 1,
+      });
+
+      manager.update(0.016);
+      expect(manager.getRenderData()).toHaveLength(0);
+    });
+
+    it("removes projectile when target is beyond max range (with grid)", () => {
+      const enemy = createMockEnemy({ id: 1, x: 5000, y: 200, hp: 100, maxHp: 100 });
+      enemyManager = createMockEnemyManager([enemy]);
+      manager = new ProjectileManager(enemyManager, particles, null, null, {
+        width: 20,
+        height: 20,
+        tileSize: 36,
+        tiles: [],
+        blocked: new Set(),
+      });
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 100,
+        range: 5,
+        towerType: "arrow",
+        towerLevel: 1,
+        targetId: 1,
+      });
+
+      manager.update(0.016);
+      expect(manager.getRenderData()).toHaveLength(0);
+    });
+
+    it("keeps projectile when target is within max range", () => {
+      const enemy = createMockEnemy({ id: 1, x: 350, y: 200, hp: 100, maxHp: 100 });
+      enemyManager = createMockEnemyManager([enemy]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 100,
+        range: 5,
+        towerType: "arrow",
+        towerLevel: 1,
+        targetId: 1,
+      });
+
+      manager.update(0.016);
+      expect(manager.getRenderData()).toHaveLength(1);
+    });
+
+    it("keeps projectile when target is exactly at max range boundary", () => {
+      const enemy = createMockEnemy({ id: 1, x: 360, y: 200, hp: 100, maxHp: 100 });
+      enemyManager = createMockEnemyManager([enemy]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 100,
+        range: 5,
+        towerType: "arrow",
+        towerLevel: 1,
+        targetId: 1,
+      });
+
+      manager.update(0.016);
+      expect(manager.getRenderData()).toHaveLength(1);
+    });
   });
 
   describe("lightning chain", () => {
