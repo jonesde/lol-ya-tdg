@@ -462,10 +462,7 @@ describe("Tower", () => {
 
       expect(statsAbove.damage).toBeGreaterThan(statsBelow.damage);
       const baseDamage = TOWER_BASE.basic.damage;
-      expect(statsAbove.damage).toBeCloseTo(
-        baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 1),
-        4,
-      );
+      expect(statsAbove.damage).toBeCloseTo(baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 1), 4);
     });
 
     it("invalidates cache when totalDamageDealt crosses a second milestone threshold", () => {
@@ -481,10 +478,7 @@ describe("Tower", () => {
 
       expect(statsAt2M.damage).toBeGreaterThan(statsAt1M.damage);
       const baseDamage = TOWER_BASE.basic.damage;
-      expect(statsAt2M.damage).toBeCloseTo(
-        baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 2),
-        4,
-      );
+      expect(statsAt2M.damage).toBeCloseTo(baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 2), 4);
     });
   });
 
