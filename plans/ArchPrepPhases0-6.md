@@ -1,10 +1,18 @@
 # Architecture Prep — Phases 0–6
 
-**Scope:** implementation notes for the behavior-preserving restructuring described in `plans/ArchitecturePlan.md`. Phases 0–6 leave the simulation on the **main thread** but reshape it so the worker migration (Phases 7–9) becomes a localized swap, not a rewrite. At every phase boundary the test suite must stay green.
+**Scope:** implementation notes for the behavior-preserving restructuring described in `plans/ArchitecturePlan.md`. Phases 0–6 leave the simulation on the **main thread** but reshape it so the worker migration (Phases 7–9) becomes a localized swap, not a rewrite. **The app may be broken during intermediate phases; it is fully functional again by the end of Phase 6.**
 
 **Audience:** developer with strong general software background. Game-specific terms (`requestAnimationFrame`, fixed-timestep accumulator, entity component system, sprite, `postMessage`, structured clone, `SharedArrayBuffer`) are used without softening; look them up as needed. Code examples are illustrative of shape and contract, not literal drop-in patches — surrounding imports and existing line context should be respected.
 
 **Reading order:** Phase 0 (`HostBindings`) is the load-bearing prerequisite. Every subsequent phase depends on it. Phases 1–6 are largely independent of each other but follow the listed order for lowest risk.
+
+---
+
+## Design decision: direct plain-state replacement (no parallel mirror)
+
+The original plan maintained parallel Pinia stores and plain-state mirrors through Phase 6, with dual-write helpers (`RunStateSync.ts`), a `persistDirty` flag, and dual-read sites in `WaveGraphTracker`. That machinery existed solely to keep all ~710 tests green at every phase boundary.
+
+This version **replaces Pinia stores with plain state directly in Phase 1.** No parallel mirror, no dual writes, no `RunStateSync.ts`, no `persistDirty`. The cost is that Vue components reading from Pinia's `gameStore` show stale/zero values from Phase 1 through Phase 4. The snapshot → gameStore projection in Phase 5 restores Vue component rendering. This trades ~40% of the plan's mechanical complexity for a temporary broken UI that is fully restored by the end of Phase 6.
 
 ---
 
@@ -17,7 +25,6 @@ src/sim/
 ├── HostBindings.ts             # Phase 0 — the host interface (SoundName, SoundPlayer, HostBindings, ThemeBundle)
 ├── GameRunState.ts             # Phase 1 — plain run-state interface + pure helpers
 ├── PersistState.ts             # Phase 1 — plain persist-state interface + pure logic
-├── RunStateSync.ts             # Phase 1 — centralized dual-write helpers (gameStore + runState)
 ├── Command.ts                  # Phase 5 — discriminated-union command schema
 ├── CommandDispatcher.ts        # Phase 6 — the dispatcher interface
 ├── SimulationSnapshot.ts       # Phase 5 — DTO schema + entity snapshot types
@@ -42,8 +49,8 @@ This is what prevents accidental transitive coupling to Pinia — see Risk §7.5
 
 `src/game/`, `src/towers/`, `src/enemies/` are the **migration targets** — they will eventually run inside the worker. They do not move into `src/sim/` immediately; they are reshaped in place across Phases 0–6. Their import policy is staged:
 
-- **During Phases 0–6:** these directories may import `src/stores/` *types* (`import type { GameStore }`) for the parallel-mirror period (Phase 1) and for remaining constructor parameters that haven't yet been swapped. **Runtime** calls to `useXxxStore()` must reach zero by end of Phase 2 (Pinia-elimination phase). Type-only imports are permitted through Phase 6 and removed in Phase 7 when the constructor signatures drop the Pinia args entirely.
-- **`src/game/WaveGraphTracker.ts`** is in `src/game/` and follows the `src/game/` policy — it is not part of the `src/sim/` strict boundary during Phases 0–6, but its Pinia store imports become type-only in Phase 1 and are removed in Phase 7.
+- **During Phases 0–2:** these directories may import `src/stores/` *types* (`import type { GameStore }`). **Runtime** calls to `useXxxStore()` must reach zero by end of Phase 2 (Pinia-elimination phase). Phase 1 eliminates all Pinia runtime imports from `GameEngine` and `WaveGraphTracker`; Phase 2 eliminates them from `Enemy`, `Tower`, and `SkillTree`.
+- **Phase 3 (deleted):** the original plan's Phase 3 was pure cleanup verifying Phase 0's sound routing — all sound routing is done in Phase 0, and the cleanup is folded into Phase 0's completion checklist.
 - **End of Phase 7:** the worker entry imports only from `src/sim/`, `src/game/`, `src/towers/`, `src/enemies/`, `src/grid/`, `src/waves/`, `src/render/themes/` (for theme types). No `src/stores/` imports transitively reachable from the worker entry.
 
 ---
@@ -58,7 +65,8 @@ Replace every direct call from the simulation into UI/sound/persistence modules 
 `src/sim/HostBindings.ts`:
 
 ```ts
-import type { MapThemeData } from "@/render/themes/index.js";
+import type { MapThemeData, TowerVisualMeta, EnemyVisualMeta } from "@/render/themes/index.js";
+import type { TowerId } from "@/game/ConstantsTower.js";
 
 // A UiEvent is anything the sim needs to ask the host to do that isn't a
 // sound, a persistence flush, or a confirm dialog. Today this covers
@@ -88,14 +96,14 @@ export interface ConfirmPayload {
 
 export interface PersistStateSlice {
   // The subset of PersistState the host needs to write to localStorage.
-  // Phase 1 defines the full PersistState; this is a view of it.
+  // Full PersistState is defined in Phase 1; this is a forward declaration.
+  // In Phase 1, PersistState IS this type (the engine holds the full state).
   gems: number;
   bestWaves: Record<string, number>;
   activeWaves: Record<string, number>;
   firstTimeMilestones: Record<string, boolean>;
   firstClears: Record<string, boolean>;
   runHistory: unknown[];
-  // ... (full slice enumerated in Phase 1)
 }
 
 // The central interface. Every method is fire-and-forget except requestConfirm,
@@ -128,10 +136,14 @@ export interface HostBindings extends SoundPlayer {
 // implementation; HostBindings owns the contract type that crosses the sim
 // boundary. No "re-export" is involved — the type literally moves from
 // SoundManager.ts to HostBindings.ts.
-export type SoundName =
-  | "shoot_basic" | "shoot_sniper" | "shoot_cannon"
-  | "shoot_ice" | "shoot_lightning" | "shoot_railgun"
-  | "place" | "base_hit" | "boss_die" | "sell" | "cancel";
+//
+// SoundName uses a template-literal for tower shoot sounds to give
+// compile-time safety against typos (e.g., `shoot_basic` vs `shoot_basc`):
+export type ShootSoundName = `shoot_${TowerId}`;
+export type SoundName = ShootSoundName | "place" | "base_hit" | "boss_die" | "sell" | "cancel";
+// The template-literal improvement means `Tower.ts:808,841` can drop the
+// `as SoundName` cast — `host.playSound(`shoot_${this.type}`)` is now
+// type-safe when `this.type` is a `TowerId`.
 ```
 
 ### Main-thread adapter
@@ -150,8 +162,7 @@ export class MainThreadHostBindings implements HostBindings {
   private sound: SoundManager;
   // Stores are fetched lazily inside each method — Pinia stores must be
   // accessed after createPinia() has run, which may be later than adapter
-  // construction if the adapter is built early. This mirrors the current
-  // pattern in GameEngine.ts where useUiStore() is called inside methods.
+  // construction if the adapter is built early.
 
   constructor(sound: SoundManager) {
     this.sound = sound;
@@ -174,10 +185,6 @@ export class MainThreadHostBindings implements HostBindings {
         uiStore.showNotification(event.message);
         break;
       case "endGame": {
-        // Route to gameStore.triggerEnd. The payload is the full
-        // EndScreenPayload (includes victory, wave, gems, gemBreakdown).
-        // gameStore.triggerEnd signature is (victoryFlag, data: Omit<EndScreenPayload, "victory">),
-        // so split the payload: pass victory as the flag, rest as data.
         const gameStore = useGameStore();
         const { victory, ...data } = event.payload;
         gameStore.triggerEnd(victory, data);
@@ -188,12 +195,11 @@ export class MainThreadHostBindings implements HostBindings {
 
   schedulePersistSave(state: PersistStateSlice): void {
     const persistStore = usePersistStore();
-    // Field-by-field assignment (not Object.assign on $state) to preserve
-    // Pinia's fine-grained reactivity — Object.assign on $state can bypass
-    // reactivity tracking in some Pinia versions. Phase 7+ will replace
-    // the body with a worker → main postMessage handler that does the same
-    // field-by-field write. Phase 9 enumerates the full field set; this
-    // Phase 0 version covers the slice fields defined so far.
+    // Phase 1: the engine holds plain PersistState and calls localStorage
+    // directly (main-thread only). This method is unused during Phases 0–6
+    // but stays in the interface for the worker era (Phase 7+), when the
+    // worker sends persistSave messages via postMessage and this adapter
+    // writes to the Pinia persistStore + localStorage.
     persistStore.gems = state.gems;
     if (state.bestWaves)      persistStore.bestWaves = { ...state.bestWaves };
     if (state.activeWaves)    persistStore.activeWaves = { ...state.activeWaves };
@@ -280,7 +286,7 @@ Two consistent positions were considered:
 - (a) Phase 0 is purely additive — `HostBindings` exists but is unused; Phase 3 does all routing in one pass.
 - (b) Phase 0 routes all sound through `HostBindings` immediately; Phase 3 only deletes dead code (the `SoundManagerRef` interface, the `this.sound` field on `TowerManager`/`Tower`).
 
-**Adopted: (b).** A larger Phase 0 diff, but it establishes the "sound is fully decoupled" property at the seam rather than half-routing and leaving the other half for later. Phase 3 becomes a trivial cleanup phase. The "no behavior change" claim still holds — `MainThreadHostBindings.playSound` just forwards to `SoundManager.play`, which is what the direct calls did.
+**Adopted: (b).** A larger Phase 0 diff, but it establishes the "sound is fully decoupled" property at the seam rather than half-routing and leaving the other half for later. With the simplified plan, Phase 3 is eliminated entirely — all cleanup happens in Phase 0.
 
 ### Sound propagation through `TowerManager` and `Tower`
 
@@ -300,23 +306,27 @@ This is the part the earlier plan missed. The sound interface flows through thre
    - **Delete both `SoundManagerRef` interface definitions** (`TowerManager.ts:78-80` and `Tower.ts:137-139`).
    - **Add `import type { SoundPlayer } from "@/sim/HostBindings.js";`** to both `TowerManager.ts` and `Tower.ts`.
    - **Re-type 4 annotations**: `TowerManager.ts:99` (field `sound: SoundManagerRef` → `SoundPlayer`), `:110` (constructor param), `Tower.ts:664` (`soundManager: SoundManagerRef` param → `SoundPlayer`), `:776` (`sound: SoundManagerRef` param → `SoundPlayer`).
-   - **Rename the method at 5 call sites**: `TowerManager.ts:136,147,157` (`this.sound.play("place"|"sell"|"cancel")` → `this.sound.playSound(...)`) and `Tower.ts:808,841` (`sound.play(\`shoot_${this.type}\`)` → `sound.playSound(\`shoot_${this.type}\` as SoundName)`).
+   - **Rename the method at 5 call sites**: `TowerManager.ts:136,147,157` (`this.sound.play("place"|"sell"|"cancel")` → `this.sound.playSound(...)`) and `Tower.ts:808,841` (`sound.play(\`shoot_${this.type}\`)` → `sound.playSound(\`shoot_${this.type}\`)`).
 
-3. `TowerManager.ts:184` calls `tower.update(dt, enemyManager, this.projectiles, this.sound)`. The `Tower.update` method has TWO sound parameter declarations — `Tower.ts:664` (`soundManager: SoundManagerRef`) and `:776` (`sound: SoundManagerRef`) — both re-typed to `SoundPlayer` (covered in step 2 above; these are **parameter declarations**, not call sites). The **call sites** that invoke the method are `Tower.ts:808,841` (`if (sound) sound.play(\`shoot_${this.type}\`)`) — these become `if (sound) sound.playSound(\`shoot_${this.type}\` as SoundName)`. To disambiguate which line gets which change:
-   - **`:664, :776`** — parameter type annotations: `SoundManagerRef` → `SoundPlayer` (type change only, no call-site rename).
-   - **`:808, :841`** — method invocations: `sound.play(...)` → `sound.playSound(...)` (rename, with `as SoundName` cast).
-   The cast is because template-literal types don't narrow to the union; see Phase 3's implementation note about making `SoundName` a template-literal type (which eliminates the cast).
+3. `TowerManager.ts:184` calls `tower.update(dt, enemyManager, this.projectiles, this.sound)`. The `Tower.update` method has TWO sound parameter declarations — `Tower.ts:664` (`soundManager: SoundManagerRef`) and `:776` (`sound: SoundManagerRef`) — both re-typed to `SoundPlayer` (covered in step 2 above; these are **parameter declarations**, not call sites). The **call sites** that invoke the method are `Tower.ts:808,841` (`if (sound) sound.play(\`shoot_${this.type}\`)`) — these become `if (sound) sound.playSound(\`shoot_${this.type}\`)`.
+
+### Verification checklist (Phase 0 completion)
+
+- [ ] Grep for any remaining `this.sound` references in `GameEngine.ts` — there should be none.
+- [ ] Grep for any remaining `SoundManagerRef` references across `src/` — there should be none. If any remain, delete them and switch to `SoundPlayer`.
+- [ ] Grep for any remaining `.play(` calls in `TowerManager.ts` and `Tower.ts` — all should be `.playSound(`.
+- [ ] `SoundManager.ts`'s local `type SoundName` declaration deleted; `import type { SoundName }` added.
 
 ### What stays the same in Phase 0
 
 - `GameEngine.ts:91` (`this.sound = new SoundManager()`) — **deleted** in Phase 0 (the host owns the SoundManager now).
-- `GameEngine.ts:204,267` direct `this.sound.play(...)` calls — **routed through `this.host.playSound(...)` in Phase 0** (not deferred to Phase 3).
+- `GameEngine.ts:204,267` direct `this.sound.play(...)` calls — **routed through `this.host.playSound(...)` in Phase 0**.
 - `GameEngine.ts:125` `useUiStore().initForRun(null)` — leave for Phase 2.
-- `GameEngine.ts:202,443` `this.persistStore.save()` — leave for Phase 7.
+- `GameEngine.ts:202,443` `this.persistStore.save()` — leave for Phase 1 (replaced by direct localStorage write).
 - `GameEngine.ts:610-623` `useUiStore().showConfirm(...)` + `useMapThemeStore()` — leave for Phase 4.
 - `GameEngine.dispose()` at `GameEngine.ts:701` calls `this.sound.dispose()` — **deleted** in Phase 0; the host owns disposal now.
 
-Phase 0 adds the seam and routes all sound through it. UI, persistence, and confirm stay direct until their respective phases. This keeps the sound-decoupling property established at the seam while leaving the other couplings for their dedicated phases.
+Phase 0 adds the seam and routes all sound through it. UI, persistence, and confirm stay direct until their respective phases.
 
 ### Test impact
 
@@ -344,12 +354,11 @@ Existing tests that don't assert on sound/UI/persist behavior pass a `MockHostBi
 
 ---
 
-## Phase 1 — Plain state objects
+## Phase 1 — Direct plain-state replacement
 
 ### Goal
-Introduce `GameRunState` and `PersistState` as plain TypeScript interfaces. `GameEngine` (and `WaveGraphTracker`) hold references to these *in addition to* (not yet *instead of*) the Pinia stores during this phase. Each method that currently writes `this.gameStore.gold += x` adds a parallel write to `this.runState.gold`. The Pinia store remains the source of truth for Vue reactivity; the plain state is a parallel mirror that becomes authoritative in Phase 7.
 
-The phase is behavior-preserving because nothing reads from the plain state yet. We are only establishing the data structure and proving that every mutation site is reachable.
+Replace the Pinia `gameStore` and `persistStore` with plain `GameRunState` and `PersistState` objects directly on `GameEngine`. No parallel mirror, no dual writes. The plain objects ARE the authoritative state. All mutation sites write directly to these plain objects. Vue components reading from Pinia's `gameStore` will show stale/zero values through Phase 4 — this is acceptable; the snapshot → gameStore projection in Phase 5 restores them.
 
 ### `GameRunState`
 
@@ -361,10 +370,11 @@ import type { TowerId } from "@/game/ConstantsTower.js";
 import type { GeneratedMap } from "@/grid/Map.js";
 import type { Grid } from "@/grid/Grid.js";
 
-// Mirrors GameStateShape in src/stores/game.ts:76-106. The Pinia store
-// remains the source of truth in Phase 1; this is a parallel plain mirror.
-// In Phase 7, this becomes authoritative and the Pinia store becomes a
-// projection of the snapshot produced from it.
+// Authoritative run state for the simulation. Formerly the Pinia gameStore's
+// GameStateShape (src/stores/game.ts:76-106). In Phase 1 this replaces
+// the Pinia store entirely on the engine — there is no parallel mirror.
+// In Phase 7 the worker constructs this object directly; the main-thread
+// gameStore becomes a reactive projection of the snapshot's meta.
 export interface GameRunState {
   state: GameState;
   mapIndex: number;
@@ -375,7 +385,7 @@ export interface GameRunState {
   currentWave: number;
   waveCountdown: { remaining: number; nextWave: number } | null;
   timeScale: number;
-  selectedTowerId: string | null;       // NOTE: id, not Tower ref — Phase 5
+  selectedTowerId: string | null;       // id, not Tower ref — Phase 5
   selectedTowerType: TowerId | null;
   hoverTile: { tileX: number; tileY: number } | null;
   hoverUpgradeBtn: boolean;
@@ -411,7 +421,7 @@ export interface EndScreenPayload {
   gemBreakdown: GemBreakdown;
 }
 
-// Pure helpers — these are the bodies of the corresponding gameStore actions
+// Pure helpers — the bodies of the corresponding gameStore actions
 // (src/stores/game.ts:153-281), extracted as free functions so the worker
 // can call them without a Pinia instance.
 export function applyGold(state: GameRunState, amount: number): void {
@@ -443,7 +453,7 @@ export function togglePause(state: GameRunState): void {
 `src/sim/PersistState.ts`:
 
 ```ts
-import type { GeneralAddons, TowerUnlocks } from "@/stores/persist.js";  // re-export the existing interfaces
+import type { GeneralAddons, TowerUnlocks } from "@/stores/persist.js";
 // NOTE: GeneralAddons is already exported (persist.ts:15). TowerUnlocks is
 // currently module-private (persist.ts:8 — `interface TowerUnlocks` with no
 // `export`). Phase 1 ADDS `export` to that interface so PersistState.ts can
@@ -451,13 +461,10 @@ import type { GeneralAddons, TowerUnlocks } from "@/stores/persist.js";  // re-e
 // the boundary policy through Phase 6; removed in Phase 7 when TowerUnlocks
 // is re-homed into src/sim/ or a shared types module.)
 
-// Mirrors PersistStateShape in src/stores/persist.ts:28-47 — ALL 16 fields
-// enumerated explicitly (no ellipsis). The randomMap* / lastSelectedThemeId
-// fields aren't touched by the engine, but they MUST be present on the plain
-// state so that `structuredClone(this.persistStore.$state)` (Phase 1's
-// snapshotPersistState) produces a complete copy — otherwise those fields
-// would be `undefined` on the plain mirror and would overwrite the Pinia
-// values when the host flushes the plain state back to localStorage in Phase 7+.
+// Authoritative persist state — ALL 16 fields enumerated explicitly (no
+// ellipsis). The randomMap* / lastSelectedThemeId fields aren't written by
+// the engine, but they MUST be present so the full PersistState round-trips
+// through localStorage correctly.
 export interface PersistState {
   saveVersion: number;
   gems: number;
@@ -481,15 +488,15 @@ export interface PersistState {
 
 // Pure functions extracted from persist.ts:191-298. These currently mutate
 // `this` on the Pinia store and call this.save(); the pure versions mutate
-// the plain state and return a "dirty" flag the caller uses to decide
-// whether to schedule a persist save via HostBindings.
+// the plain state and return a boolean indicating whether a save is needed.
+// During Phase 1, the caller calls localStorage.setItem directly.
 
 export function updateBestWave(state: PersistState, mapIndex: number, wave: number): boolean {
   const key = `best_${mapIndex}`;
   const prev = typeof state.bestWaves[key] === "number" ? state.bestWaves[key] : 0;
   if (wave > prev) {
     state.bestWaves[key] = wave;
-    return true;  // dirty
+    return true;
   }
   return false;
 }
@@ -540,25 +547,41 @@ export function difficultyMultiplier(state: PersistState): number {
 
 ### `GameEngine` changes
 
-Add two fields, construct them at init, and pair every `gameStore`/`persistStore` write with a plain-state write:
+Replace the `gameStore` and `persistStore` fields with `runState` and `persistState` plain objects. The engine no longer imports or references any Pinia store:
 
 ```ts
+import { STORAGE_KEY } from "@/stores/persist.js";  // type-only re-export; permitted under boundary policy
+
 export class GameEngine {
   runState!: GameRunState;
   persistState!: PersistState;
-  // Set to true whenever a persist-state mutation occurs (gems, bestWaves,
-  // firstTimeMilestones, firstClears, runHistory, activeWaves, highestUnlockedMap).
-  // The SnapshotSerializer (Phase 5) reads this; the host (Phase 7+) flushes
-  // localStorage when the snapshot's persistDirty is true. Reset to false
-  // after each snapshot is built (Phase 5) or after the host flushes (Phase 7+).
-  // Phase 1 adds the field and sets it true at every persist mutation site
-  // (onBossKilled, onWaveCleared, endGame, etc.) — concretely, in the same
-  // lines that call syncAddPersistGems or other persist-mutating sync helpers.
-  persistDirty: boolean = false;
-  // ... existing fields ...
+  host: HostBindings;
+  theme: MapThemeData | null;
 
-  _initMap(mapIndex: number, mapData: GeneratedMap): void {
-    // Build the plain-state mirrors alongside the existing Pinia writes.
+  // Private helper for saving persist state to localStorage.
+  // Engine is on the main thread during Phases 0–6; this is safe.
+  // Phase 7+ replaces this with host.schedulePersistSave via postMessage.
+  private _savePersistState(): void {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.persistState));
+    } catch {
+      this.host.notifyUi({ type: "showNotification", message: "Save failed." });
+    }
+  }
+
+  constructor(
+    theme: MapThemeData | null,
+    host: HostBindings,
+  ) {
+    this.theme = theme ?? null;
+    this.host = host;
+    // ... existing defaults for non-store fields ...
+    // NO gameStore / persistStore fields
+    // NO sound field (Phase 0)
+  }
+
+  _initMap(mapIndex: number, mapData: GeneratedMap, persistState: PersistState): void {
+    // Construct runState directly — no cloning from Pinia.
     this.runState = {
       state: GameState.PLAYING,
       mapIndex,
@@ -566,238 +589,148 @@ export class GameEngine {
       grid: null,  // set after Grid construction below
       lives: 20,
       gold: StartingGold[mapData.regionId]!,
-      // ... initialize all fields per gameStore.initMap at game.ts:209-238
+      currentWave: 0,
+      waveCountdown: null,
+      timeScale: 1,
+      selectedTowerId: null,
+      selectedTowerType: null,
+      hoverTile: null,
+      hoverUpgradeBtn: false,
+      upgradeBtnClickAnim: 0,
+      runGemsEarned: 0,
+      bossesKilledThisRun: 0,
+      bossesReachedBaseThisRun: 0,
+      milestoneRewardsClaimed: {},
+      gemBreakdown: { /* fresh breakdown */ },
+      endScreenData: null,
+      randomMapParams: null,
     };
-    this.persistState = this.snapshotPersistState();  // copy from persistStore.$state
+    this.persistState = persistState;
 
-    this.host.notifyUi({ type: "initForRun", mapIndex });   // still also call useUiStore().initForRun() for now
-    this.gameStore.initMap(mapIndex, mapData, null);
-    // ... existing _initMap body ...
+    this.host.notifyUi({ type: "initForRun", mapIndex });
+    // ... existing _initMap body (Grid, EnemyManager, etc.) ...
     this.runState.grid = this.grid;
   }
 
-   // Helper: deep-copy the persistStore.$state into a plain PersistState.
-   // Used at init and at any point the persist state is known to have been
-   // mutated externally (rare; mainly for safety).
-   // structuredClone is available in all target environments (Node 18+,
-   // Chrome 98+, Firefox 94+, Safari 15.4+) — no polyfill needed.
-   //
-   // Test compatibility: persistStore.$state is a Pinia reactive proxy.
-   // structuredClone on a Pinia proxy works (Pinia proxies are plain objects
-   // under the hood), but test fixtures that mock persistStore with partial
-   // objects (not full Pinia stores created via createPinia() + usePersistStore())
-   // may have missing fields. Verify all test fixtures in tests/helpers/mock-stores.ts
-   // construct a complete persist store state — either via the real Pinia store
-   // or via a complete plain object matching PersistStateShape (persist.ts:28-47).
-   private snapshotPersistState(): PersistState {
-     return structuredClone(this.persistStore.$state) as PersistState;
-   }
+  // ... all mutation methods now write directly to this.runState / this.persistState ...
 }
 ```
 
-Then, for each existing mutation, add the parallel write. Examples:
+**Every existing mutation** switches from `this.gameStore.<field> += x` / `this.persistStore.<field> += x` to `this.runState.<field> += x` / `this.persistState.<field> += x`. Examples:
 
-| Current code | Add |
+| Current code | Phase 1 |
 |---|---|
-| `this.gameStore.lives += STARTING_HEALTH_BONUS[ehTier]` (`GameEngine.ts:172`) | `this.runState.lives += STARTING_HEALTH_BONUS[ehTier]` |
-| `this.gameStore.gold += STARTING_GOLD_BONUS[sgTier]` (`GameEngine.ts:179`) | `this.runState.gold += STARTING_GOLD_BONUS[sgTier]` |
-| `this.gameStore.bossesKilledThisRun++` (`GameEngine.ts:184`) | `this.runState.bossesKilledThisRun++` |
-| `this.persistStore.gems += afterRegion` (`GameEngine.ts:200`) | `this.persistState.gems += afterRegion` |
-| `this.gameStore.addGold(amount)` (`GameEngine.ts:393`, via `earnGold`) | `applyGold(this.runState, amount)` |
+| `this.gameStore.lives += STARTING_HEALTH_BONUS[ehTier]` (:172) | `this.runState.lives += STARTING_HEALTH_BONUS[ehTier]` |
+| `this.gameStore.gold += STARTING_GOLD_BONUS[sgTier]` (:179) | `this.runState.gold += STARTING_GOLD_BONUS[sgTier]` |
+| `this.gameStore.bossesKilledThisRun++` (:184) | `this.runState.bossesKilledThisRun++` |
+| `this.persistStore.gems += afterRegion` (:200) | `this.persistState.gems += afterRegion; this._savePersistState()` |
+| `this.gameStore.addGold(amount)` (:393) | `applyGold(this.runState, amount)` |
+| `this.gameStore.loseLives(amount)` (:260) | `applyLivesLoss(this.runState, amount)` |
+| `this.gameStore.cycleSpeed()` (:687) | `cycleTimeScale(this.runState, 1)` |
+| `this.persistStore.save()` (:202,443) | `this._savePersistState()` |
 
-**New method needed — `GameEngine.cycleSpeedReverse()`:** `cycleSpeed()` already exists on `GameEngine` (`GameEngine.ts:687-689`) as a thin delegation to `this.gameStore.cycleSpeed()`. `cycleSpeedReverse()` does **not** exist on `GameEngine` today — it exists only on the Pinia `gameStore` (`src/stores/game.ts:170-182`). Phase 1 must add the mirror method to `GameEngine` (same delegation pattern as `cycleSpeed()`) so Phase 6's `applyCommand` at line 1563 can call `engine.cycleSpeedReverse()` for the reverse direction case. The method body delegates to `this.gameStore.cycleSpeedReverse()` and writes the parallel `runState.timeScale` afterward (via `syncSetTimeScale` from `RunStateSync` once available, or directly for now).
+**Persist mutation pattern:** every site that mutates `this.persistState` (gems, bestWaves, firstTimeMilestones, etc.) calls `this._savePersistState()` immediately after the mutation. This is the simplest pattern — no dirty flag, no deferred flush. The engine is on the main thread, so the localStorage write is synchronous and cheap. Phase 7 replaces `_savePersistState` with `this.host.schedulePersistSave(...)`.
 
-**Do not yet remove the Pinia writes.** Phase 1 is additive. The plain-state mirror is unused on the read path; it exists only to prove the mutation surface is fully covered.
-
-### Drift prevention
-
-The parallel-mirror pattern is fragile: a developer adding a new gold mutation might write `this.gameStore.gold += x` and forget the paired `this.runState.gold += x`, causing the plain state to drift from the Pinia state. Phase 7's cutover would then surface the drift as a regression (the plain state becomes authoritative; missed mutations show as missing gold/lives/etc.).
-
-**Recommended mitigation:** centralize the dual-write in a helper and lint against direct field writes outside it.
-
-```ts
-// src/sim/RunStateSync.ts
-import type { GameRunState, GemBreakdown, EndScreenPayload } from "./GameRunState.js";
-import type { GameStore } from "@/stores/game.js";
-import type { PersistState } from "./PersistState.js";
-import type { PersistStore } from "@/stores/persist.js";
-import type { Tower } from "@/towers/Tower.js";  // for syncSelectTower below
-
-// Every dual-write goes through one of these. A custom check (either a
-// small script similar to the sim-boundary check, or a Biome-specific
-// approach) flags `this.gameStore.<field> =` or
-// `this.runState.<field> =` outside this module.
-//
-// Full enumeration of dual-written fields, derived from auditing every
-// mutation site in GameEngine (_initMap, _applyStartingBonuses, onBossKilled,
-// onWaveCleared, onWaveStart, onEnemyKill, earnGold, endGame, loop, handleClick,
-// upgradeSelected, specializeSelected, executeSellById, cancelSelected,
-// downgradeSelected, setHover, togglePause, cycleSpeed, etc.):
-
-// --- Gold (mutation sites: _applyStartingBonuses, earnGold, handleClick,
-//     upgradeSelected, specializeSelected, executeSellById, cancelSelected,
-//     downgradeSelected) ---
-export function syncAddGold(gs: GameStore, rs: GameRunState, amount: number): void {
-  gs.gold += amount; rs.gold += amount;
-}
-export function syncSetGold(gs: GameStore, rs: GameRunState, value: number): void {
-  gs.gold = value; rs.gold = value;
-}
-
-// --- Lives (mutation sites: _applyStartingBonuses, loop via loseLives,
-//     onWaveStart slow healing) ---
-export function syncAddLives(gs: GameStore, rs: GameRunState, delta: number): void {
-  gs.lives += delta; rs.lives += delta;
-}
-export function syncSetLives(gs: GameStore, rs: GameRunState, value: number): void {
-  gs.lives = value; rs.lives = value;
-}
-
-// --- Bosses killed/reached (mutation sites: onBossKilled, loop) ---
-export function syncIncBossesKilled(gs: GameStore, rs: GameRunState): void {
-  gs.bossesKilledThisRun++; rs.bossesKilledThisRun++;
-}
-export function syncIncBossesReached(gs: GameStore, rs: GameRunState): void {
-  gs.bossesReachedBaseThisRun++; rs.bossesReachedBaseThisRun++;
-}
-
-// --- Run gems earned (mutation sites: onBossKilled, onWaveCleared, endGame) ---
-export function syncAddRunGems(gs: GameStore, rs: GameRunState, amount: number): void {
-  gs.runGemsEarned += amount; rs.runGemsEarned += amount;
-}
-
-// --- Persist gems (mutation sites: onBossKilled, onWaveCleared, endGame) ---
-// NOTE: every call site that calls this helper MUST also set
-// `this.persistDirty = true` on the engine (the helper itself has no engine
-// reference). Same for any other persist-mutating sync helper. The engine's
-// persistDirty field (added in Phase 1 — see GameEngine changes below) is
-// read by the Phase 5 SnapshotSerializer and reset to false after each
-// snapshot build.
-export function syncAddPersistGems(ps: PersistStore, pstate: PersistState, amount: number): void {
-  ps.gems += amount; pstate.gems += amount;
-}
-
-// --- Wave (mutation sites: onWaveCleared, onWaveStart, _initMap) ---
-export function syncSetWave(gs: GameStore, rs: GameRunState, wave: number): void {
-  gs.currentWave = wave; rs.currentWave = wave;
-}
-
-// --- Time scale (mutation sites: cycleSpeed, cycleSpeedReverse) ---
-export function syncSetTimeScale(gs: GameStore, rs: GameRunState, value: number): void {
-  gs.timeScale = value; rs.timeScale = value;
-}
-
-// --- Game state (mutation sites: togglePause, stop, endGame) ---
-export function syncSetState(gs: GameStore, rs: GameRunState, value: GameState): void {
-  gs.setState(value); rs.state = value;
-}
-
-// --- Selection (mutation sites: handleClick, selectTower, executeSellById,
-//     cancelSelected, endGame, cancelBuildMode) ---
-// The helper takes a live `Tower | null` reference (the same value the
-// existing gameStore.selectTower(tower) call sites pass today) and derives
-// the id from it internally — the sim side stores the id, not the ref. No
-// call site needs to pass (ref, id) together; the id is read off the ref.
-// When `tower` is null, both sides clear selection.
-export function syncSelectTower(gs: GameStore, rs: GameRunState, tower: Tower | null): void {
-  gs.selectedTower = tower;                       // Pinia side keeps the live ref
-  rs.selectedTowerId = tower ? tower.id : null;   // plain mirror keeps the id only
-}
-
-// --- Milestone rewards claimed (mutation sites: onWaveCleared) ---
-export function syncClaimMilestone(gs: GameStore, rs: GameRunState, wave: number): void {
-  gs.claimMilestone(wave); rs.milestoneRewardsClaimed[wave] = true;
-}
-
-// --- Gem breakdown (mutation sites: onBossKilled, onWaveCleared, endGame) ---
-export function syncGemBreakdown(gs: GameStore, rs: GameRunState, breakdown: GemBreakdown): void {
-  gs.gemBreakdown = breakdown; rs.gemBreakdown = breakdown;
-}
-
-// --- End screen data (mutation sites: endGame) ---
-export function syncTriggerEnd(gs: GameStore, rs: GameRunState, payload: EndScreenPayload): void {
-  gs.triggerEnd(payload.victory, { wave: payload.wave, gems: payload.gems, gemBreakdown: payload.gemBreakdown });
-  rs.endScreenData = payload;
-}
-
-// --- Wave countdown (mutation sites: loop) ---
-export function syncSetWaveCountdown(gs: GameStore, rs: GameRunState, value: { remaining: number; nextWave: number } | null): void {
-  gs.waveCountdown = value; rs.waveCountdown = value;
-}
-
-// --- Hover (mutation sites: setHover) ---
-export function syncSetHoverTile(gs: GameStore, rs: GameRunState, tile: { tileX: number; tileY: number } | null): void {
-  gs.setHoverTile(tile); rs.hoverTile = tile;
-}
-
-// --- Upgrade btn click anim (mutation sites: handleClick) ---
-export function syncSetUpgradeBtnAnim(gs: GameStore, rs: GameRunState, value: number): void {
-  gs.upgradeBtnClickAnim = value; rs.upgradeBtnClickAnim = value;
-}
-
-// Fields NOT needing helpers (single mutation site, or pure UI):
-//   camera — main-thread-authoritative, excluded from GameRunState entirely
-//   mapIndex, map, grid — set once at _initMap, can be a direct dual-write there
-//   randomMapParams — set once at init
-```
-
-Engine call sites become `syncGold(this.gameStore, this.runState, amount)` instead of two separate writes. The drift-detection check makes drift a lint-time error rather than a runtime regression. If the check is too much investment for Phase 1, the fallback is a code-review checklist item and the knowledge that Phase 7's cutover will surface any drift immediately — but recommend the helper approach for any field with more than two mutation sites.
+**New method — `GameEngine.cycleSpeedReverse()`:** `cycleSpeed()` already exists on `GameEngine` (`GameEngine.ts:687-689`) as a thin delegation to `this.gameStore.cycleSpeed()`. `cycleSpeedReverse()` does **not** exist on `GameEngine` today — it exists only on the Pinia `gameStore` (`src/stores/game.ts:170-182`). Phase 1 must add the reverse method to `GameEngine` so Phase 6's `applyCommand` can call it. The method body calls `cycleTimeScale(this.runState, -1)`.
 
 ### `WaveGraphTracker`
 
-The current constructor at `src/game/WaveGraphTracker.ts:50-55` is `(gameStore, persistStore, towerManager, enemyManager)` — 4 params. Add `runState` and `persistState` as the **5th and 6th params** (at the end) to avoid breaking the existing call site at `GameEngine.ts:153-158`:
+The current constructor at `src/game/WaveGraphTracker.ts:50-55` is `(gameStore, persistStore, towerManager, enemyManager)` — 4 params. Replace `gameStore` and `persistStore` with `runState` and `persistState`:
 
 ```ts
-constructor(
-  gameStore: GameStore,
-  persistStore: PersistStore,
-  towerManager: TowerManagerRef,
-  enemyManager: EnemyManagerRef,
-  runState: GameRunState,        // NEW — 5th param
-  persistState: PersistState,    // NEW — 6th param
-) { ... }
+import type { GameRunState } from "@/sim/GameRunState.js";
+import type { PersistState } from "@/sim/PersistState.js";
+
+export class WaveGraphTracker {
+  private runState: GameRunState;
+  private persistState: PersistState;
+  private towerManager: TowerManagerRef;
+  private enemyManager: EnemyManagerRef;
+
+  constructor(
+    runState: GameRunState,
+    persistState: PersistState,
+    towerManager: TowerManagerRef,
+    enemyManager: EnemyManagerRef,
+  ) {
+    this.runState = runState;
+    this.persistState = persistState;
+    this.towerManager = towerManager;
+    this.enemyManager = enemyManager;
+
+    this._prevGems = persistState.gems;         // was persistStore.gems
+    this._intervalMinLives = runState.lives;     // was gameStore.lives
+    // ... rest unchanged ...
+  }
+
+  update(dt: number): void {
+    // ...
+    const currentGems = this.persistState.gems;   // was this.persistStore.gems
+    // ...
+    if (this.runState.lives < this._intervalMinLives) {  // was this.gameStore.lives
+      this._intervalMinLives = this.runState.lives;
+    }
+    // ...
+  }
+
+  private _flushInterval(): void {
+    // ...
+    this._intervalMinLives = this.runState.lives;  // was this.gameStore.lives
+    // ...
+  }
+}
 ```
 
-Update the `new WaveGraphTracker(...)` call at `GameEngine.ts:153-158` to pass `this.runState` and `this.persistState` as the 5th and 6th args. The same additive pattern applies to every read. **Full read inventory** (audit of `src/game/WaveGraphTracker.ts` — every `this.gameStore.<field>` and `this.persistStore.<field>` read must get a paired `this.runState.<field>` / `this.persistState.<field>` read):
+All four read sites (`:64, :65, :81, :88-89, :147`) switch from `this.gameStore.<field>` / `this.persistStore.<field>` to `this.runState.<field>` / `this.persistState.<field>`. No dual-reads, no dual fields, no in-code documentation block needed — there is exactly one source of truth.
 
-| Line | Current read | Add paired plain-state read |
-|---|---|---|
-| `:64-65` (constructor) | `persistStore.gems` → `_prevGems`; `gameStore.lives` → `_intervalMinLives` | `persistState.gems` → `_prevGemsPlain`; `runState.lives` → `_intervalMinLivesPlain` |
-| `:81` | `this.persistStore.gems` (current gems snapshot) | `this.persistState.gems` |
-| `:88` | `this.gameStore.lives` (interval min check) | `this.runState.lives` |
-| `:89,147` | `this.gameStore.lives` (write to internal `_intervalMinLives`) | `this.runState.lives` (paired read) |
+Update the `new WaveGraphTracker(...)` call at `GameEngine.ts:153-158` to pass `this.runState` and `this.persistState` instead of stores.
 
-The plan stores both the Pinia value and the plain-mirror value in separate internal fields during Phase 1 (e.g., `_prevGems` and `_prevGemsPlain`) and reads both at each site. Phase 7 drops the Pinia fields; the `_plain` fields become the only ones. If a future read site is added, the same dual-read pattern applies — the boundary script does not catch reads (it catches imports only), so this is a code-review checklist item for `WaveGraphTracker` specifically.
+### `SvgGameRoot.vue` wiring
 
-**Required in-code documentation:** add a comment block at the top of `src/game/WaveGraphTracker.ts` listing every dual-read site, so a future developer adding a new read sees the pattern and doesn't miss the paired plain-state read. Concretely:
+The caller (SvgGameRoot.vue) reads persist state from localStorage and passes it to `_initMap`:
 
 ```ts
-// ─── DUAL-READ SITES (Phase 1 parallel-mirror pattern) ──────────────────
-// Every this.gameStore.<field> / this.persistStore.<field> read below has a
-// paired this.runState.<field> / this.persistState.<field> read. When adding
-// a new read, add the paired plain-state read in the same block. Phase 7
-// drops the Pinia reads; the plain-state reads become authoritative.
-//
-// Current dual-read sites:
-//   :64-65  constructor — persistStore.gems→_prevGems / persistState.gems→_prevGemsPlain
-//                        gameStore.lives→_intervalMinLives / runState.lives→_intervalMinLivesPlain
-//   :81     this.persistStore.gems  /  this.persistState.gems
-//   :88     this.gameStore.lives    /  this.runState.lives
-//   :89,147 this.gameStore.lives    /  this.runState.lives  (write to _intervalMinLives[_Plain])
-// ────────────────────────────────────────────────────────────────────────
+// src/components/SvgGameRoot.vue (Phase 1 wiring)
+import { STORAGE_KEY } from "@/stores/persist.js";
+
+const soundManager = new SoundManager();
+const host = new MainThreadHostBindings(soundManager);
+engine.value = new GameEngine(themeStore.activeTheme, host);
+
+function loadPersistState(): PersistState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as PersistState;
+  } catch { /* corrupt save — use defaults */ }
+  return defaultPersistState();
+}
+
+// When starting a new game:
+engine.value._initMap(mapIndex, mapData, loadPersistState());
 ```
 
-This comment is the lightweight enforcement mechanism (since the boundary script can't catch read drift). Keep it in sync with the actual read sites whenever a new one is added.
+### Deleted machinery
+
+The following constructs from the original plan's Phase 1 are **not created**:
+
+- `src/sim/RunStateSync.ts` — no dual-write helpers needed
+- `persistDirty` flag on GameEngine — no divergence to track
+- `snapshotPersistState()` method — no cloning from Pinia needed
+- Drift-prevention lint check — no parallel fields to drift
+- WaveGraphTracker dual-read documentation block — single source of truth
 
 ### Test impact
 
-No test bodies change. `mock-stores.ts` adds construction of the plain-state objects (a fresh `GameRunState` initialized to defaults; a deep clone of the mock persist state). Tests that construct `GameEngine` directly need the plain-state arguments added — mechanical, low risk.
+Tests that construct `GameEngine` directly need the new constructor signature (no Pinia stores). `mock-stores.ts` provides a `defaultPersistState()` helper that returns a fresh `PersistState` object initialized to defaults. Tests that previously inspected `gameStore.lives` / `gameStore.gold` now inspect `engine.runState.lives` / `engine.runState.gold`.
+
+The `STORAGE_KEY` constant must be exported from `src/stores/persist.ts` (add `export` to the existing `const STORAGE_KEY = "lol_ya_tdg_save_1";` at persist.ts:5). Both the engine and `SvgGameRoot.vue` import this value. Runtime imports from `src/stores/` are permitted for migration-target directories through Phase 6. Tests that exercise persist save/load use the real localStorage mock (`tests/setup.ts` already provides in-memory localStorage).
 
 ---
 
 ## Phase 2 — Eliminate Pinia imports from the logic layer
 
 ### Goal
+
 Remove direct `useUiStore()` and `useMapThemeStore()` calls from `GameEngine`, `Enemy`, `Tower`, and `SkillTree`. Route through `HostBindings` (for UI) or constructor-injected theme data (for visuals). After this phase, the `src/sim/` boundary has zero imports from `src/stores/`.
 
 ### Call site inventory
@@ -821,8 +754,8 @@ Both constructors already accept a `theme: MapThemeData | null` parameter and re
 
 **Note on current constructor signatures** (verified against source):
 
-- `Enemy.ts:100-108` currently takes `(type, level, spawnIndex, grid, wave, difficultyTick, theme)` — **7 parameters** with `spawnIndex` and `difficultyTick` already present as separate parameters. Phase 2 adds `defaultVisual` as the **8th**. No other parameter changes.
-- `Tower.ts:233-241` currently takes `(type, tileX, tileY, save, grid, theme, placedAt)` — **7 parameters**. Both `theme` (6th, `= null`) and `placedAt` (7th, `= Date.now()`) have defaults. Phase 2 adds `defaultVisual` as the **7th** param (after `theme`, **before** `placedAt`), with a default `= null`. Placing it before `placedAt` preserves `placedAt`'s default so existing call sites that don't pass `placedAt` (notably `TowerManager.build` at `TowerManager.ts:129`, which passes only 6 args) only need to add the 7th arg; tests that pass 5 args (`tests/unit/towers.test.ts` — `new Tower("basic", 5, 3, makeSave(), makeMockGrid())`) continue to work via the defaults on params 6-8. Phase 3 does **not** change the Tower constructor — it changes the `Tower.update` method signature (`Tower.ts:664,776`) from `update(dt, enemyManager, projectileManager, soundManager)` to `update(dt, enemyManager, projectileManager, soundPlayer)` where `soundPlayer: SoundPlayer`. The constructor is unaffected by Phase 3.
+- `Enemy.ts:100-108` currently takes `(type, level, spawnIndex, grid, wave, difficultyTick, theme)` — **7 parameters** with `spawnIndex` and `difficultyTick` already present as separate parameters. Phase 2 adds `defaultVisual` as the **8th**.
+- `Tower.ts:233-241` currently takes `(type, tileX, tileY, save, grid, theme, placedAt)` — **7 parameters**. Both `theme` (6th, `= null`) and `placedAt` (7th, `= Date.now()`) have defaults. Phase 2 adds `defaultVisual` as the **7th** param (after `theme`, **before** `placedAt`), with a default `= null`. Placing it before `placedAt` preserves `placedAt`'s default.
 
 ```ts
 // Enemy.ts constructor signature change (100-108):
@@ -867,18 +800,18 @@ constructor(
 }
 ```
 
-**Explicit call-site changes for Phase 2** (these are the concrete diffs the implementing agent must make):
+**Explicit call-site changes for Phase 2:**
 
 | Call site | Current args | Phase 2 args |
 |---|---|---|
 | `TowerManager.ts:129` (`new Tower(type, tileX, tileY, save, grid, this.theme)`) | 6 args | `new Tower(type, tileX, tileY, save, grid, this.theme, this.defaultTowerVisuals[type] ?? null)` — 7 args (placedAt keeps its default) |
-| `EnemyManager.ts:53` (`new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick, this.theme)`) | 7 args | `new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick, this.theme, this.defaultEnemyVisuals[type] ?? null)` — 8 args (level/spawnIndex keep their defaults) |
+| `EnemyManager.ts:53` (`new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick, this.theme)`) | 7 args | `new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick, this.theme, this.defaultEnemyVisuals[type] ?? null)` — 8 args |
 | `GameEngine.ts:136` (`new EnemyManager(this.grid, this.particleManager, diffTick, this.theme)`) | 4 args | `new EnemyManager(this.grid, this.particleManager, diffTick, this.theme, this.themeBundle.defaultEnemyVisuals)` — 5 args |
 | `GameEngine.ts:138-144` (`new TowerManager(grid, particles, projectiles, sound, theme)`) | 5 args | `new TowerManager(grid, particles, projectiles, sound, theme, this.themeBundle.defaultTowerVisuals)` — 6 args (NEW 6th param on `TowerManager` constructor) |
 
 `TowerManager` and `EnemyManager` constructors each gain a `defaultVisuals: Record<...>` param as their last parameter (6th for `TowerManager`, 5th for `EnemyManager`), stored as a field and forwarded to each `new Tower(...)` / `new Enemy(...)` call. `TowerManager.build` reads `this.defaultTowerVisuals[type]` to pass the per-type visual into the `Tower` constructor.
 
-`EnemyManager` (`src/enemies/EnemyManager.ts`) currently receives `theme` in its constructor (passed from `GameEngine.ts:136`). Extend it to also receive a `defaultVisuals: EnemyVisualIndex` — a plain `Record<EnemyType, EnemyVisualMeta>` — sourced from `mapThemeStore.defaultTheme`. `GameEngine` looks this up once at construction and passes it through. Same shape for `TowerManager` and `Tower`.
+`EnemyManager` (`src/enemies/EnemyManager.ts`) currently receives `theme` in its constructor (passed from `GameEngine.ts:136`). Extend it to also receive a `defaultVisuals: EnemyVisualIndex` — a plain `Record<EnemyType, EnemyVisualMeta>` — sourced from `mapThemeStore.defaultTheme`. `GameEngine` looks this up once at construction and passes it through.
 
 To avoid the `GameEngine` itself importing the theme store, the lookup happens in `SvgGameRoot.vue` (which already imports `mapThemeStore`) and is passed into the `GameEngine` constructor as part of a `ThemeBundle`:
 
@@ -892,8 +825,6 @@ export interface ThemeBundle {
 
 // GameEngine constructor becomes:
 constructor(
-  gameStore: GameStore,
-  persistStore: PersistStore,
   themeBundle: ThemeBundle,
   host: HostBindings,
 )
@@ -926,8 +857,6 @@ function buildThemeBundle(mapThemeStore: MapThemeStore): ThemeBundle {
   };
 }
 ```
-
-**Why `ThemeBundle` instead of three separate constructor params:** `ThemeBundle` groups the active theme and the two default-visual indexes because they are sourced together from `mapThemeStore` and passed together into the engine and managers. Passing them as three separate constructor params achieves the same decoupling but spreads related data across the signature; the bundle keeps the grouping explicit and makes the "these travel together" invariant visible at the type level.
 
 ### `SkillTree` module-level population
 
@@ -964,7 +893,7 @@ export function populateSkillTreeTheme(
 }
 ```
 
-`main.ts` calls `populateSkillTreeTheme(...)` after the default theme is preloaded. The existing `try { useMapThemeStore() } catch {}` pattern (`SkillTree.ts:121-126`) goes away — the neutral defaults handle the pre-theme case, and the populate function handles the post-theme case deterministically. The current `main.ts` has no such call — it must be added explicitly:
+`main.ts` calls `populateSkillTreeTheme(...)` after the default theme is preloaded:
 
 ```ts
 // src/main.ts (extend the existing IIFE at lines 15-21)
@@ -977,7 +906,6 @@ usePersistStore().load();
 (async () => {
   try {
     await useMapThemeStore().preloadDefault();   // already present (main.ts:17)
-    // NEW: populate SKILL_TREE display fields from the now-loaded default theme.
     const mapThemeStore = useMapThemeStore();
     const defaultTowerVisuals: Record<string, TowerVisualMeta> = {};
     for (const id of Object.values(TowerIds)) {
@@ -993,9 +921,7 @@ usePersistStore().load();
 app.mount("#app");
 ```
 
-**IIFE context:** `main.ts` wraps the preload in an IIFE (`(async () => { ... })()`) at lines 15-21, NOT top-level await. The populate call goes inside this existing IIFE, immediately after `preloadDefault()` resolves and before the IIFE closes. The `await` keyword is not new; only the `populateSkillTreeTheme(...)` call and its preceding loop are new.
-
-**Ordering mitigation:** `main.ts` already `await`s `mapThemeStore.preloadDefault()` before `app.mount()` (per `README.md` line 365 — corrected: the call is awaited, not synchronous). The `populateSkillTreeTheme(...)` call goes immediately after `preloadDefault()` resolves and before `app.mount()`, so the populate runs before any route component (including `/skill-tree`) can mount. Additionally, add a defensive re-populate in `SkillTree.vue`'s setup that checks whether `SKILL_TREE` is still neutral (e.g., `SKILL_TREE.basic.name === ""`) and calls `populateSkillTreeTheme` again if so — this makes the ordering deterministic regardless of which route the user enters on first, and guards against any future change to `main.ts`'s init sequence.
+**Ordering mitigation:** `main.ts` already `await`s `mapThemeStore.preloadDefault()` before `app.mount()`. The `populateSkillTreeTheme(...)` call goes immediately after `preloadDefault()` resolves and before `app.mount()`, so the populate runs before any route component can mount. Additionally, add a defensive re-populate in `SkillTree.vue`'s setup that checks whether `SKILL_TREE` is still neutral (e.g., `SKILL_TREE.basic.name === ""`) and calls `populateSkillTreeTheme` again if so.
 
 ### Test impact
 
@@ -1003,40 +929,17 @@ Tests that construct `Enemy`/`Tower` directly (e.g., `tests/unit/enemies.test.ts
 
 ---
 
-## Phase 3 — Sound decoupling (cleanup)
-
-### Goal
-Phase 0 already routed all sound through `HostBindings` (and `SoundPlayer` for `TowerManager`/`Tower`). Phase 3 is now a **trivial cleanup phase**: delete the now-dead `SoundManagerRef` interface, verify no remaining `this.sound` references, and apply the `SoundName` template-literal improvement. No behavior change — the routing is already done.
-
-### Changes
-
-1. **Verify deletion of `this.sound` field on `GameEngine`** (already done in Phase 0). Grep for any remaining `this.sound` references in `GameEngine.ts` — there should be none.
-
-2. **Verify deletion of both `SoundManagerRef` interfaces** (already done in Phase 0). Phase 0 deleted the interface at `TowerManager.ts:78-80` **and** the identical one at `Tower.ts:137-139`, replacing both with `import type { SoundPlayer }`. Grep for any remaining `SoundManagerRef` references across `src/` — there should be none. If any remain, delete them and switch to `SoundPlayer`. This step is a verification gate, not new work.
-
-3. **Apply the `SoundName` template-literal improvement** (recommended, low effort — eliminates the `as SoundName` cast at `Tower.ts:808,841` and gives compile-time safety against typos in shoot sound names):
-   ```ts
-   export type ShootSoundName = `shoot_${TowerId}`;
-   export type SoundName = ShootSoundName | "place" | "base_hit" | "boss_die" | "sell" | "cancel";
-   ```
-   This lets `Tower.ts:808` drop the `as SoundName` cast (`host.playSound(\`shoot_${this.type}\`)` is now type-safe when `this.type` is a `TowerId`). Compile-time safety against typos in shoot sound names.
-
-### Test impact
-
-`tests/unit/sound-manager.test.ts` continues to test `SoundManager` directly — no change. Engine/tower/enemy tests that previously asserted on `mockSound.play` calls now assert on `mockHost.soundsPlayed` (the `MockHostBindings` from Phase 0 already collects this).
-
----
-
 ## Phase 4 — Confirm dialog relocation
 
 ### Goal
+
 `sellSelected()` on the engine becomes a fire-and-forget request via `HostBindings.requestConfirm`. The host (main thread) shows the dialog; on user confirmation it dispatches an `action:executeSell` command back to the engine. (Phase 4 still calls the engine method directly — the command dispatch is wired in Phase 6. For now, the host calls `engine.executeSell()` directly.)
 
 ### The flow
 
 ```
 User clicks "Sell" on TowerPanel
-  → Input.ts posts action:sellSelected (Phase 6) 
+  → Input.ts posts action:sellSelected (Phase 6)
   → GameEngine.sellSelected() executes:
       - read selected tower, sell value, isRefund flag
       - early-return if sellActive === "discount" (GameEngine.ts:605-607)
@@ -1056,23 +959,22 @@ User clicks "Sell" on TowerPanel
 
 ### `GameEngine.sellSelected` rewrite
 
-The tower id is **captured at the time of the confirm request**, not at resolution time — selection could change between dialog-open and confirm. The new `executeSellById(towerId)` method (defined below) takes the id explicitly, matching the `Command` schema's `action:executeSell` which carries `towerId` (see §6.2 of `ArchitecturePlan.md`).
+The tower id is **captured at the time of the confirm request**, not at resolution time — selection could change between dialog-open and confirm. The new `executeSellById(towerId)` method takes the id explicitly.
 
 ```ts
 async sellSelected(): Promise<void> {
-  const gameStore = this.gameStore;
-  if (!gameStore.selectedTower) return;
+  if (!this.runState.selectedTowerId) return;
 
   // Preserved early-return: when sell is disabled (discount mode), do nothing.
-  // This gate stays in the engine so the UI never sees a confirm request
-  // when selling is disabled.
-  if (this.persistStore.generalAddons.sellActive === "discount") {
+  if (this.persistState.generalAddons?.sellActive === "discount") {
     return;
   }
 
-  const tower = gameStore.selectedTower;
+  const tower = this.towerManager?.getTowerById(this.runState.selectedTowerId);
+  if (!tower) return;
+
   const towerId = tower.id;  // capture at request time
-  const isRefund = this.persistStore.generalAddons.sellActive === "refund";
+  const isRefund = this.persistState.generalAddons?.sellActive === "refund";
   const sellValue = isRefund ? tower.totalInvested : tower.sellValue();
 
   const confirmed = await this.host.requestConfirm({
@@ -1088,48 +990,36 @@ async sellSelected(): Promise<void> {
   }
 }
 
-// New method — added in Phase 4, not Phase 7. Phase 7's WorkerEntry.applyCommand
-// references this method for the action:executeSell command.
-//
-// By Phase 4, the engine holds both this.persistStore (Pinia) and this.persistState
-// (plain mirror from Phase 1). This method reads from this.persistState (the plain
-// mirror) to stay consistent with the Phase 1 parallel-mirror pattern and to
-// prepare for Phase 7 where persistStore is dropped entirely. The persistStore.$state
-// argument to towerManager.sell() is replaced with this.persistState.
 executeSellById(towerId: string): void {
   const tower = this.towerManager?.getTowerById(towerId);
   if (!tower) return;
 
-  // Re-validate sellability at execution time (not just at request time).
-  // The confirm dialog can remain open across multiple ticks — the tower may
-  // have become unsellable in the interim (e.g., sellActive switched to "discount").
+  // Re-validate sellability at execution time.
   if (this.persistState.generalAddons?.sellActive === "discount") return;
 
   const isRefund = this.persistState.generalAddons?.sellActive === "refund";
   const value = isRefund ? tower.totalInvested : this.towerManager!.sell(tower, this.persistState);
 
-  this.gameStore.setGold(this.gameStore.gold + value);
-  this.runState.gold += value;  // Phase 1 parallel-mirror write
+  this.runState.gold += value;
   this.totalGoldEarned += value;
-  this.gameStore.selectTower(null);
-  this.runState.selectedTowerId = null;  // Phase 1 parallel-mirror write
+  this.runState.selectedTowerId = null;
 }
 ```
 
 ### SaveData → PersistState call-site migration (Phase 4)
 
-`TowerManager.sell` isn't the only method that takes a `SaveData` (alias for the persist-state shape) argument. `Tower.specialize` (`Tower.ts:556`), `Tower.doUpgrade` (`Tower.ts:574`), and `Tower.canUpgrade` all take `SaveData` and are called from `GameEngine` with `this.persistStore.$state`. Phase 4 switches **all** of these call sites to `this.persistState` for consistency with `executeSellById` above — otherwise the dual-mirror pattern breaks (some persist reads/writes go through the Pinia proxy, others through the plain mirror, and they can diverge).
-
-Full enumeration of `SaveData`-taking method call sites in `GameEngine` (audit `GameEngine.ts` for `this.persistStore.$state`):
+Every `this.persistStore.$state` argument currently passed to Tower/TowerManager methods switches to `this.persistState`. Full enumeration:
 
 | Call site | Method | Current arg | Phase 4 arg |
 |---|---|---|---|
-| `GameEngine.ts:598` | `tower.specialize(variant, ...)` | `this.persistStore.$state` | `this.persistState` |
-| `GameEngine.ts` (upgrade path) | `tower.doUpgrade(save, ...)` / `tower.canUpgrade(save)` | `this.persistStore.$state` | `this.persistState` |
-| `GameEngine.ts` (build path) | `towerManager.build(type, x, y, save, grid)` | `this.persistStore.$state` (or `undefined`) | `this.persistState` |
-| `GameEngine.ts` (sell path) | `towerManager.sell(tower, save)` | `this.persistStore.$state` | `this.persistState` (shown in `executeSellById` above) |
+| `GameEngine.ts:536` | `towerManager.build(type, x, y, save, grid)` | `this.persistStore.$state` | `this.persistState` |
+| `GameEngine.ts:552,573` | `tower.canUpgrade(save)` | `this.persistStore.$state` | `this.persistState` |
+| `GameEngine.ts:580` | `tower.doUpgrade(save, cost)` | `this.persistStore.$state` | `this.persistState` |
+| `GameEngine.ts:598` | `tower.specialize(variant, save, cost)` | `this.persistStore.$state` | `this.persistState` |
+| `GameEngine.ts:631-632` | `sellActive` check + `towerManager.sell(tower, save)` | `this.persistStore.$state` | `this.persistState` |
+| `GameEngine.ts:665-668` | `sellActive` check + `towerManager.sell(tower, save)` (downgrade) | `this.persistStore.$state` | `this.persistState` |
 
-The method signatures on `Tower` and `TowerManager` change their `SaveData` parameter type to `PersistState` (`src/sim/PersistState.ts`). This is a structural type change — `SaveData` and `PersistState` describe the same shape — so it's a type-rename, not a runtime change. `TowerManager.build`'s `SaveData | undefined` param becomes `PersistState | undefined`; the `undefined` case (initial build before save data exists) is preserved. `TowerManager`/`Tower`'s local `SaveData` interface (`TowerManager.ts:82-86`, `Tower.ts` equivalent) is deleted in Phase 4 in favor of `import type { PersistState } from "@/sim/PersistState.js"`.
+The method signatures on `Tower` and `TowerManager` change their `SaveData` parameter type to `PersistState` (`src/sim/PersistState.ts`). This is a structural type change — `SaveData` and `PersistState` describe the same shape — so it's a type-rename, not a runtime change. `TowerManager`/`Tower`'s local `SaveData` interface (`TowerManager.ts:82-86`, `Tower.ts` equivalent) is deleted in Phase 4 in favor of `import type { PersistState } from "@/sim/PersistState.js"`.
 
 ### Why `async` is safe here
 
@@ -1141,20 +1031,21 @@ Currently synchronous and has no confirm dialog (`GameEngine.ts:652-657`). No ch
 
 ### Test impact
 
-`game-engine.test.ts` tests covering the sell flow need to `await` the now-async `sellSelected`. The `MockHostBindings.confirmResult` field (Phase 0) controls the resolution — set it before calling `sellSelected()` so the Promise resolves synchronously on the next microtask. Tests that previously inspected `uiStore.confirmDialog` directly can still do so — `MainThreadHostBindings` calls `uiStore.showConfirm`, so the same state transitions occur. Any test that asserts on post-sell state (gold, selection) must `await sellSelected()` before asserting, or the assertions will run before the Promise resolves.
+`game-engine.test.ts` tests covering the sell flow need to `await` the now-async `sellSelected`. The `MockHostBindings.confirmResult` field (Phase 0) controls the resolution — set it before calling `sellSelected()` so the Promise resolves synchronously on the next microtask.
 
 ---
 
 ## Phase 5 — Snapshot and Command schema
 
 ### Goal
-Define the `SimulationSnapshot` and `Command` types. The `SnapshotSerializer` maps `Enemy` and `Tower` directly into plain `EnemySnapshot` / `TowerSnapshot` DTOs (no `getRenderData()` method is added to those entity classes — the serializer owns the field-by-field mapping, which keeps the entity classes free of rendering concerns and avoids an extra method per entity). `ProjectileManager` and `ParticleSystem` already expose `getRenderData()` returning plain DTO arrays (`src/game/ProjectileManager.ts:774`, `src/game/ParticleSystem.ts:70`); the serializer **reuses** those existing methods and their existing return types (see the ProjectileSnapshot / ParticleSnapshot reuse note below). Update render managers' `syncFromGameEngine` signatures to accept snapshot arrays. The engine still runs on the main thread; snapshots are produced but consumed locally. **No behavior change** — the render path is exercised end-to-end via the new DTO path, proving the schema is complete before the worker migration.
+
+Define the `SimulationSnapshot` and `Command` types. The `SnapshotSerializer` maps `Enemy` and `Tower` directly into plain DTOs (no `getRenderData()` method on entity classes — the serializer owns the field-by-field mapping). `ProjectileManager` and `ParticleSystem` already expose `getRenderData()` returning plain DTO arrays; the serializer reuses those. Update render managers' `syncFromGameEngine` signatures to accept snapshot arrays. **Wire the snapshot → gameStore projection** so Vue components (HUD, shop, TowerPanel) render correctly again. The engine still runs on the main thread; snapshots are produced but consumed locally.
 
 ### Performance note: Phase 5 serialization overhead
 
-At Phase 5 the engine is still on the main thread, so `buildSnapshot` every frame is pure overhead with no decoupling benefit yet (the decoupling lands in Phase 7 when the worker produces the snapshot). The 60Hz `buildSnapshot` call mapping ~200 enemies + towers into new DTOs is a measurable cost.
+At Phase 5 the engine is still on the main thread, so `buildSnapshot` every frame is pure overhead with no decoupling benefit yet (the decoupling lands in Phase 7 when the worker produces the snapshot). The 60Hz `buildSnapshot` call mapping ~200 entities into new DTOs is a measurable cost.
 
-**Why accept it:** exercising the snapshot path end-to-end *before* the worker migration proves the schema is complete and the render managers consume it correctly. A bug discovered in Phase 5 (main thread, easy to debug) is far cheaper than a bug discovered in Phase 7 (worker round-trip, harder to debug).
+**Why accept it:** exercising the snapshot path end-to-end *before* the worker migration proves the schema is complete and the render managers consume it correctly.
 
 **If profiling shows jank:** gate the snapshot-build path behind a feature flag during Phase 5 so it can be A/B-tested against the live-object path. Recommend *not* doing this unless profiling surfaces a problem — the temporary overhead disappears in Phase 7 when the snapshot is produced by the worker regardless.
 
@@ -1195,20 +1086,16 @@ export type Command =
   | { commandId: number; type: "action:setTargeting"; mode: string }
   | { commandId: number; type: "action:setFixedAimDir"; dir: "N" | "E" | "S" | "W" | null }
   | { commandId: number; type: "action:cancelBuildMode" }
-  // @tech-debt PHASE 6 STUB — PROMINENT: this command variant is DEFINED in
-  // the schema here in Phase 5 but is NOT DISPATCHED by Phase 6's applyCommand
-  // (it's a no-op `break` there). Phase 7 implements engine.selectTowerById(id)
-  // and wires this case. The command exists in the schema now so Phase 7
-  // doesn't need to add a new variant. For Phases 5–6, the existing
-  // gameStore.selectTower(tower) calls in Input.ts and SvgGameRoot.vue stay
-  // direct (not via the dispatcher). See Phase 6 "Known tech debt" callout.
+  // @tech-debt PHASE 6 STUB — this command variant is DEFINED in the schema
+  // here in Phase 5 but is NOT DISPATCHED by Phase 6's applyCommand (it's a
+  // no-op `break` there). Phase 7 implements engine.selectTowerById(id) and
+  // wires this case. For Phase 6, the existing gameStore.selectTower(tower)
+  // calls in Input.ts and SvgGameRoot.vue stay direct (not via the dispatcher).
   | { commandId: number; type: "action:selectTower"; towerId: string | null }
 
   // ---- Lifecycle ----
   | { commandId: number; type: "lifecycle:init"; persistState: PersistState; themeBundle: ThemeBundle; mapIndex: number; randomMapParams?: unknown }
   | { commandId: number; type: "lifecycle:dispose" }
-  // NOTE: lifecycle:setTheme is omitted — mid-run theme switching is out of scope per README.md.
-  //   If it ever becomes in-scope, add a `lifecycle:setTheme` command then.
 
   // ---- Future LLM commands (stubs — implementations deferred to commander plane) ----
   | { commandId: number; type: "llm:routeGroup"; groupId: string; waypoints: Array<{ x: number; y: number }> }
@@ -1222,25 +1109,23 @@ export type Command =
 
 ```ts
 import type { GameRunState } from "./GameRunState.js";
-import type { PersistState } from "./PersistState.js";
 import type { ProjectileManager } from "@/game/ProjectileManager.js";
 import type { ParticleSystem } from "@/game/ParticleSystem.js";
 
 export interface SimulationSnapshot {
   schemaVersion: number;       // bump on incompatible schema changes; consumers reject mismatches
   frameId: number;             // monotonic per-tick counter
-  lastAppliedCommandId: number; // host uses this to confirm command application (see §6.2 of ArchitecturePlan.md)
+  lastAppliedCommandId: number; // host uses this to confirm command application
   meta: SnapshotMeta;
   enemies: EnemySnapshot[];
   towers: TowerSnapshot[];
   projectiles: ProjectileSnapshot[];
   particles: ParticleSnapshot[];
   spawnStates: SpawnStateSnapshot[];   // for spawn-queue overlay renderer
-  persistDirty: boolean;                // host flushes to localStorage when true
 }
 
 export interface SnapshotMeta {
-  // Scalar state mirrored from GameRunState. Subset that the renderer/UI need.
+  // Scalar state from GameRunState. Subset that the renderer/UI need.
   state: GameRunState["state"];
   mapIndex: number;
   lives: number;
@@ -1288,8 +1173,6 @@ export interface EnemySnapshot {
   hitFlash: number;       // 0..1 visual hit-reaction intensity
   walkingFrameIndex: number;
   isBoss: boolean;
-  // Status effect list — fixed-cap encoding for SAB-friendliness (see §6.1 of ArchitecturePlan.md).
-  // Phase 5: ship as a plain array; Phase 7+ can switch to fixed-cap typed arrays.
   statusEffects: StatusEffectSnapshot[];
 }
 
@@ -1316,46 +1199,15 @@ export interface TowerSnapshot {
   totalDamageDealt: number;
   fireAnimTime: number;
   fixedAimDir: "N" | "E" | "S" | "W" | null;
-  sellValue: number;          // pre-computed by the worker so TowerPanel doesn't need a live method call
+  sellValue: number;          // pre-computed so TowerPanel doesn't need a live method call
 }
 
-// TowerPanel looks up the selected tower from towers[] by selectedTowerId from meta
-// (id → TowerSnapshot). All fields it currently reads (level, type, variant,
-// totalInvested, sellValue, targeting) are present on TowerSnapshot.
-
-// Projectile and Particle snapshots: REUSE the existing DTO types, do NOT
-// define new ones. The existing methods already return plain arrays:
-//   - ProjectileManager.getRenderData() at src/game/ProjectileManager.ts:774
-//     returns Array<{ id: number; x: number; y: number; radius: number; color: string }>
-//   - ParticleSystem.getRenderData() at src/game/ParticleSystem.ts:70
-//     returns RenderParticle[] (defined inline in ParticleSystem.ts)
-// The SimulationSnapshot's `projectiles` and `particles` fields are typed as
-// the existing return types (import them as type-only aliases), not new
-// interfaces. If a render manager later needs a field the existing DTO lacks,
-// extend the existing DTO at its definition site — do not introduce a parallel
-// ProjectileSnapshot/ParticleSnapshot type that requires mapping. The two
-// alias lines below express this: they re-export the existing types under
-// the snapshot-consistent names so the snapshot schema reads cleanly.
+// Projectile and Particle snapshots: REUSE the existing DTO types.
+//   - ProjectileManager.getRenderData() returns Array<{ id, x, y, radius, color }>
+//   - ParticleSystem.getRenderData() returns RenderParticle[]
 export type ProjectileSnapshot = ReturnType<ProjectileManager["getRenderData"]>[number];
 export type ParticleSnapshot = ReturnType<ParticleSystem["getRenderData"]>[number];
 
-// If during the Phase 5 render-manager audit a field is found missing from
-// the existing DTO, the fix is: add the field to the inline DTO type in
-// ProjectileManager.ts / ParticleSystem.ts, populate it in getRenderData(),
-// and it flows through here automatically. Do NOT define a parallel type.
-
-// SpawnStateSnapshot: the existing SpawnState at src/render/themes/index.ts:71-74
-// is ALREADY plain data ({ visualState: SpawnVisualState; closeTransitionTimer: number }).
-// Reuse it via a type alias — do NOT define a duplicate interface that must
-// be kept in sync. The render manager at SvgGameRoot.vue:329-330 reads
-// spawnStates directly via SpawnManager.sync (src/render/svg/SpawnManager.ts),
-// which reads only `spawnState.visualState`, so the existing shape is the
-// contract. Importing from src/render/themes/ is permitted (the boundary
-// policy forbids src/stores/, src/components/, src/router/, src/sound/ —
-// src/render/themes/ is allowed; the worker imports theme types from there
-// per the Phase 7 boundary policy). If a future cleanup wants to remove the
-// sim→render layering wrinkle, move SpawnState into src/sim/ and have
-// render/themes re-export it; that's out of scope for Phase 5.
 import type { SpawnState } from "@/render/themes/index.js";
 export type SpawnStateSnapshot = SpawnState;
 ```
@@ -1368,10 +1220,8 @@ export type SpawnStateSnapshot = SpawnState;
 import type { Enemy } from "@/enemies/Enemy.js";
 import type { Tower } from "@/towers/Tower.js";
 import type { GameEngine } from "@/game/GameEngine.js";
-import type { GameRunState } from "./GameRunState.js";
 import type {
-  SimulationSnapshot, EnemySnapshot, TowerSnapshot,
-  ProjectileSnapshot, ParticleSnapshot, SnapshotMeta,
+  SimulationSnapshot, EnemySnapshot, TowerSnapshot, SnapshotMeta,
 } from "./SimulationSnapshot.js";
 
 let nextFrameId = 1;
@@ -1390,12 +1240,35 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
     projectiles: engine.projectileManager?.getRenderData() ?? [],
     particles: engine.particleManager?.getRenderData() ?? [],
     spawnStates: engine.waveManager?.spawnStates ?? [],
-    persistDirty: engine.persistDirty,  // added in Phase 1; set true by every persist mutation site
+    // No persistDirty — the engine writes to localStorage directly in
+    // _savePersistState(). Phase 7+ will signal persist flushes via
+    // HostBindings instead.
   };
-  // After building the snapshot, reset the dirty flag so the next frame only
-  // signals a flush when a new persist mutation occurred. (Phase 5 does this
-  // in the serializer; Phase 7+ does it in the host after flushing.)
-  engine.persistDirty = false;
+}
+
+function buildMeta(engine: GameEngine): SnapshotMeta {
+  const rs = engine.runState;
+  return {
+    state: rs.state,
+    mapIndex: rs.mapIndex,
+    lives: rs.lives,
+    gold: rs.gold,
+    currentWave: rs.currentWave,
+    waveCountdown: rs.waveCountdown,
+    timeScale: rs.timeScale,
+    selectedTowerId: rs.selectedTowerId,
+    selectedTowerType: rs.selectedTowerType,
+    hoverTile: rs.hoverTile,
+    hoverUpgradeBtn: rs.hoverUpgradeBtn,
+    upgradeBtnClickAnim: rs.upgradeBtnClickAnim,
+    runGemsEarned: rs.runGemsEarned,
+    bossesKilledThisRun: rs.bossesKilledThisRun,
+    bossesReachedBaseThisRun: rs.bossesReachedBaseThisRun,
+    lastScaledDt: engine.lastScaledDt,
+    endScreenData: rs.endScreenData,
+    gemBreakdown: rs.gemBreakdown,
+    milestoneRewardsClaimed: rs.milestoneRewardsClaimed,
+  };
 }
 
 function snapshotEnemy(e: Enemy): EnemySnapshot {
@@ -1407,17 +1280,6 @@ function snapshotEnemy(e: Enemy): EnemySnapshot {
     slowFactor: e.slowFactor ?? 1, slowTimer: e.slowTimer ?? 0, burnTimer: e.burnTimer ?? 0,
     hitFlash: e.hitFlash ?? 0, walkingFrameIndex: e.walkingFrameIndex ?? 0,
     isBoss: e.type === "boss",
-    // Enemy has no `activeEffects` field. Status effects are stored as
-    // individual fields on Enemy (src/enemies/Enemy.ts:79-95):
-    //   slowStack: SlowEntry[]   — array of { eff, remaining }
-    //   stunTimer: number         — remaining stun time
-    //   burnTimer: number         — remaining burn time
-    //   burnDps: number           — burn damage per second
-    //   markTargetMult: number    — mark multiplier (0 = not marked)
-    //   markTargetTimer: number   — remaining mark time
-    //   shield: number            — current shield
-    //   slowFactor: number        — aggregate slow factor (1.0 = not slowed)
-    // Build the statusEffects array from these individual fields:
     statusEffects: buildEnemyStatusEffects(e),
   };
 }
@@ -1425,8 +1287,6 @@ function snapshotEnemy(e: Enemy): EnemySnapshot {
 function buildEnemyStatusEffects(e: Enemy): StatusEffectSnapshot[] {
   const effects: StatusEffectSnapshot[] = [];
   if (e.slowFactor < 1) {
-    // Aggregate slow — magnitude is (1 - slowFactor) so the renderer can
-    // show "50% slowed" etc. remaining is the max of slowStack entries.
     const maxRemaining = e.slowStack?.reduce((max, s) => Math.max(max, s.remaining), 0) ?? 0;
     effects.push({ kind: "slow", remaining: maxRemaining, magnitude: 1 - e.slowFactor });
   }
@@ -1438,11 +1298,60 @@ function buildEnemyStatusEffects(e: Enemy): StatusEffectSnapshot[] {
 }
 
 // snapshotTower similar — audit Tower.ts for the full field set.
-// buildMeta extracts scalar fields from engine.runState (Phase 1) or
-// engine.gameStore (Phase 5 fallback if runState isn't fully populated yet).
 ```
 
-The exact field set for `snapshotEnemy` and `snapshotTower` must be derived by auditing the render managers' `syncFromGameEngine` methods. The audit is mechanical but must be complete — a missing field is a silent render regression.
+### GameStore projection (NEW — restores Vue component rendering)
+
+The Pinia `gameStore` was left stale since Phase 1 (the engine no longer writes to it). Phase 5 wires a one-way projection from the snapshot's `meta` into `gameStore` so Vue components (GameHud, GameShop, TowerPanel, etc.) render correct values again. The projection runs in the render callback after building the snapshot:
+
+```ts
+// src/components/SvgGameRoot.vue (Phase 5 render callback)
+import { useGameStore } from "@/stores/game.js";
+
+function projectSnapshotMeta(snapshot: SimulationSnapshot, gameStore: GameStore): void {
+  const m = snapshot.meta;
+  gameStore.state = m.state;
+  gameStore.lives = m.lives;
+  gameStore.gold = m.gold;
+  gameStore.currentWave = m.currentWave;
+  gameStore.waveCountdown = m.waveCountdown;
+  gameStore.timeScale = m.timeScale;
+  gameStore.runGemsEarned = m.runGemsEarned;
+  gameStore.bossesKilledThisRun = m.bossesKilledThisRun;
+  gameStore.bossesReachedBaseThisRun = m.bossesReachedBaseThisRun;
+  gameStore.gemBreakdown = m.gemBreakdown;
+  gameStore.endScreenData = m.endScreenData;
+  // selectedTowerId: gameStore.selectedTower is a live Tower ref, but
+  // the snapshot has an id. Look up the tower by id and assign it:
+  if (m.selectedTowerId) {
+    const tower = engine.value?.towerManager?.getTowerById(m.selectedTowerId);
+    gameStore.selectedTower = tower ?? null;
+  } else {
+    gameStore.selectedTower = null;
+  }
+  // selectedTowerType / hoverTile / hoverUpgradeBtn / upgradeBtnClickAnim
+  // are host-authoritative (updated directly on gameStore by Input.ts/SvgGameRoot.vue)
+  // — they are ECHOED in the snapshot unchanged, not driven by it.
+  // The projection reads them from the snapshot so the worker (Phase 7+) can
+  // echo them back, but during Phase 5 they're driven locally.
+  gameStore.selectedTowerType = m.selectedTowerType;
+  gameStore.hoverTile = m.hoverTile;
+  gameStore.hoverUpgradeBtn = m.hoverUpgradeBtn;
+  gameStore.upgradeBtnClickAnim = m.upgradeBtnClickAnim;
+}
+
+// In the render callback:
+engine.value!.renderCallback = () => {
+  // ... camera transform unchanged ...
+  const snapshot = buildSnapshot(engine.value!, lastAppliedCommandId);
+  projectSnapshotMeta(snapshot, useGameStore());  // NEW — restore Vue reactivity
+  enemyManager.syncFromGameEngine(snapshot.enemies);
+  towerManager.syncFromGameEngine(snapshot.towers, snapshot.meta.lastScaledDt);
+  // ... etc ...
+};
+```
+
+This is a one-way projection: `engine.runState` → snapshot → `gameStore`. The simulation writes to `runState`; the projection reads from the snapshot and writes to `gameStore`. Vue components bind to `gameStore` as before and see live values again. In Phase 7+, this projection becomes the "reactive mirror" receiving snapshots from the worker.
 
 ### Render manager signature updates
 
@@ -1450,14 +1359,14 @@ All **six** `syncFromGameEngine` methods in `src/render/svg/*.ts` change their p
 
 | File | Current signature | After | Fields read (audit each) |
 |---|---|---|---|
-| `EnemyManager.ts:17` | `syncFromGameEngine(enemies: Enemy[])` | `syncFromGameEngine(enemies: EnemySnapshot[])` | position, hp, status effect visuals (slow color, stun, burn), walking frame, hit flash, shield, boss flag |
+| `EnemyManager.ts:17` | `syncFromGameEngine(enemies: Enemy[])` | `syncFromGameEngine(enemies: EnemySnapshot[])` | position, hp, status effect visuals, walking frame, hit flash, shield, boss flag |
 | `TowerManager.ts:13` | `syncFromGameEngine(towers: Tower[], dt: number)` | `syncFromGameEngine(towers: TowerSnapshot[], dt: number)` | position, angle, level, variant, fire anim time, barrel rotation |
 | `ProjectileManager.ts:22` | `syncFromGameEngine(projectiles: Projectile[])` | `syncFromGameEngine(projectiles: ProjectileSnapshot[])` | already DTO-based via `getRenderData()`; minimal change |
 | `ParticleManager.ts:22` | `syncFromGameEngine(particles: Particle[])` | `syncFromGameEngine(particles: ParticleSnapshot[])` | already DTO-based via `getRenderData()`; minimal change |
 | `EffectManager.ts:173` | `syncFromGameEngine(buildPreviewTilePos, selectedTowerType, buildPreviewColor, selectedTower, buildPreviewValid, dt)` | params unchanged (all UI-computed on main thread; no snapshot arrays) | reads `selectedTower` fields — change to `TowerSnapshot \| null` |
 | `UiOverlayManager.ts:116` | `syncFromGameEngine(enemies: Enemy[], _selectedTower: Tower \| null)` | `syncFromGameEngine(enemies: EnemySnapshot[], _selectedTower: TowerSnapshot \| null)` | HP bars, shield bars, boss HP text — reads hp, maxHp, shield, maxShield, isBoss |
 
-Additionally, `UiOverlayManager.syncPendingQueueOverlays(grid, enemyManager)` (`src/render/svg/UiOverlayManager.ts:222`, called at `SvgGameRoot.vue:327`) currently reads the spawn queue from the live `enemyManager`. In Phase 5 it changes to read from the snapshot's `spawnStates` array. The new signature drops the `enemyManager` parameter and takes the plain `SpawnStateSnapshot[]` instead (the `grid` parameter stays — it's still needed for tile→pixel conversion):
+Additionally, `UiOverlayManager.syncPendingQueueOverlays(grid, enemyManager)` changes to read from the snapshot's `spawnStates` array:
 
 ```ts
 // Before (src/render/svg/UiOverlayManager.ts:222):
@@ -1467,26 +1376,13 @@ syncPendingQueueOverlays(grid: Grid, enemyManager: EnemyManager): void { ... }
 syncPendingQueueOverlays(grid: Grid, spawnStates: SpawnStateSnapshot[]): void { ... }
 ```
 
-Internally, every `enemyManager.<field>` read in the current method body becomes a read off the `spawnStates` array entries (each entry is a plain `SpawnStateSnapshot` with `visualState` and `closeTransitionTimer` — the only two fields the current method reads, verified against `src/render/themes/index.ts:71-74`). The call site at `SvgGameRoot.vue:327` changes from `uiOverlayManager.syncPendingQueueOverlays(grid, engine.value.enemyManager)` to `uiOverlayManager.syncPendingQueueOverlays(grid, snapshot.spawnStates)`.
-
-```ts
-// Example: src/render/svg/EnemyManager.ts:17
-// Before:
-syncFromGameEngine(enemies: Enemy[]): void { ... }
-// After:
-syncFromGameEngine(enemies: EnemySnapshot[]): void { ... }
-```
-
-Internally, each method reads the same fields off the snapshot objects that it previously read off the live entities. If a render manager reads a field not present on the snapshot, add the field to the snapshot interface and populate it in the serializer. **This audit step — covering all six managers — is what proves the schema is complete.**
-
 ### `SvgGameRoot.vue` render path
-
-The render callback at `SvgGameRoot.vue:302-353` currently calls `enemyManager.syncFromGameEngine(enemies)` with live `Enemy[]` read from `gameStore.enemyManager`. In Phase 5 it instead builds a snapshot and passes the snapshot arrays:
 
 ```ts
 engine.value.renderCallback = () => {
   // ... camera transform unchanged ...
   const snapshot = buildSnapshot(engine.value!, lastAppliedCommandId);
+  projectSnapshotMeta(snapshot, useGameStore());  // restore Vue reactivity
   enemyManager.syncFromGameEngine(snapshot.enemies);
   towerManager.syncFromGameEngine(snapshot.towers, snapshot.meta.lastScaledDt);
   // ... etc ...
@@ -1501,14 +1397,16 @@ New tests in `tests/unit/sim/snapshot.test.ts`:
 - Construct an engine with known entities, call `buildSnapshot`, assert every field is populated correctly.
 - Round-trip test: build a snapshot, mutate the engine, build another snapshot, assert the diff matches the mutation.
 - Schema-version rejection: a consumer given a snapshot with the wrong `schemaVersion` rejects it cleanly.
+- Projection test: build a snapshot, run `projectSnapshotMeta` into a gameStore, assert all fields match.
 
-Existing render-manager tests (`tests/unit/svg-effect-manager.test.ts` and any in `tests/unit/components/`) need their `syncFromGameEngine` call sites updated to pass snapshot arrays. The mock data helpers in `tests/helpers/mock-managers.ts` should produce snapshot arrays instead of (or in addition to) live entity arrays.
+Existing render-manager tests need their `syncFromGameEngine` call sites updated to pass snapshot arrays. The mock data helpers in `tests/helpers/mock-managers.ts` should produce snapshot arrays instead of (or in addition to) live entity arrays.
 
 ---
 
 ## Phase 6 — Input decoupling
 
 ### Goal
+
 `Input.ts` (the Vue composable at `src/game/Input.ts`) and the SVG click/hover handlers in `SvgGameRoot.vue` stop calling `engine.method()` directly. Instead, they post `Command` messages to a local `CommandDispatcher`. In Phase 6 the dispatcher still calls the engine directly (it's the seam that will later forward to the worker). **No behavior change** — every input still reaches the engine synchronously.
 
 ### `CommandDispatcher` interface
@@ -1535,15 +1433,12 @@ import type { GameEngine } from "@/game/GameEngine.js";
 export class MainThreadCommandDispatcher implements CommandDispatcher {
   private engine: GameEngine;
   private nextCommandId = 1;
-  // lastAppliedCommandId is read back from the snapshot in Phase 7.
-  // Phase 6: unused — commands apply synchronously.
 
   constructor(engine: GameEngine) {
     this.engine = engine;
   }
 
   dispatch(command: Command): void {
-    // Assign a commandId if the caller didn't (most input paths don't).
     if (command.commandId === undefined) {
       (command as { commandId: number }).commandId = this.nextCommandId++;
     }
@@ -1551,8 +1446,6 @@ export class MainThreadCommandDispatcher implements CommandDispatcher {
   }
 }
 
-// The apply function is the single switch that maps Command → engine method.
-// In Phase 7 this function moves into the worker; the dispatcher just posts.
 function applyCommand(engine: GameEngine, command: Command): void {
   switch (command.type) {
     case "input:click":
@@ -1565,8 +1458,8 @@ function applyCommand(engine: GameEngine, command: Command): void {
       command.direction === 1 ? engine.cycleSpeed() : engine.cycleSpeedReverse();
       break;
     case "action:upgradeSelected":   engine.upgradeSelected(); break;
-    case "action:sellSelected":      void engine.sellSelected(); break;  // fire-and-forget
-    case "action:executeSell":       engine.executeSellById(command.towerId); break;  // defined in Phase 4
+    case "action:sellSelected":      void engine.sellSelected(); break;
+    case "action:executeSell":       engine.executeSellById(command.towerId); break;
     case "action:downgradeSelected": engine.downgradeSelected(); break;
     case "action:specialize":        engine.specializeSelected(command.variant); break;
     case "action:cancelSelected":    engine.cancelSelected(); break;
@@ -1574,25 +1467,14 @@ function applyCommand(engine: GameEngine, command: Command): void {
     case "action:setFixedAimDir":    engine.setFixedAimDir(command.dir); break;
     case "action:cancelBuildMode":   engine.cancelBuildMode(); break;
     // NOTE: action:selectBuildType is intentionally absent — selectedTowerType
-    // is host-authoritative (updated directly on gameStore by Input.ts /
-    // SvgGameRoot.vue, echoed back in the snapshot's meta.selectedTowerType
-    // unchanged by the worker). See §6.2 of ArchitecturePlan.md.
+    // is host-authoritative.
     case "action:selectTower":
-      // PROMINENT TECH DEBT — DEFINED IN PHASE 5, NOT DISPATCHED IN PHASE 6.
-      // This case is intentionally a no-op `break` in Phase 6. The command
-      // variant exists in the Command schema (Phase 5) so Phase 7 doesn't need
-      // to add it. selectTower by id requires a lookup; engine.selectTower
-      // currently takes a live Tower ref, not an id, and the worker era's
-      // id-based lookup (engine.selectTowerById(id)) isn't needed while the
-      // engine is still on the main thread. Phase 7 implements
-      // engine.selectTowerById(id) and wires this case. For Phase 6, the
-      // existing gameStore.selectTower(tower) calls in Input.ts and
-      // SvgGameRoot.vue stay direct (not via dispatcher).
+      // PROMINENT TECH DEBT — this case is intentionally a no-op `break` in
+      // Phase 6. The command variant exists in the Command schema (Phase 5)
+      // so Phase 7 doesn't need to add it. Phase 7 implements
+      // engine.selectTowerById(id) and wires this case.
       break;
-    // Lifecycle and LLM commands are no-ops in Phase 6 (engine is constructed
-    // directly; LLM doesn't exist yet).
     default:
-      // exhaustive check — TypeScript will complain if a Command variant is missing
       const _exhaustive: never = command;
       void _exhaustive;
   }
@@ -1637,7 +1519,8 @@ The click handlers at `SvgGameRoot.vue:175-221` currently call `engine.value.han
 ```ts
 const soundManager = new SoundManager();
 const host = new MainThreadHostBindings(soundManager);
-engine.value = new GameEngine(gameStore, persistStore, themeBundle, host);
+const themeBundle = buildThemeBundle(mapThemeStore);
+engine.value = new GameEngine(themeBundle, host);
 const dispatcher = new MainThreadCommandDispatcher(engine.value);
 useInput(gameStore, dispatcher, uiStore);
 ```
@@ -1654,10 +1537,13 @@ useInput(gameStore, dispatcher, uiStore);
 - [ ] Boundary policy enforced: `src/game/`, `src/towers/`, `src/enemies/` have zero *runtime* `useXxxStore()` calls by end of Phase 2; type-only imports allowed through Phase 6, removed in Phase 7.
 - [ ] `GameEngine`, `TowerManager`, `Tower`, `Enemy`, `EnemyManager`, `WaveGraphTracker` have zero runtime calls to `useUiStore()`/`useMapThemeStore()`/`useGameStore()`/`usePersistStore()`.
 - [ ] `SoundManager` is owned by the host; `GameEngine` references sound via `HostBindings.playSound`, `TowerManager`/`Tower` via the narrower `SoundPlayer.playSound`.
-- [ ] `GameRunState` and `PersistState` plain interfaces exist; every mutation site on the engine has a paired plain-state write (centralized via `RunStateSync` helpers where the field has >2 mutation sites).
-- [ ] `SimulationSnapshot` and `Command` schemas are defined (with `lifecycle:setTheme` and `action:selectBuildType` omitted per §6.2 of `ArchitecturePlan.md`); `buildSnapshot` produces a complete snapshot; render managers consume snapshots.
-- [ ] Input and SVG click handlers dispatch commands through `CommandDispatcher`; no direct `engine.method()` calls outside the dispatcher (except `selectTower` which is documented tech debt until Phase 7).
-- [ ] All ~710 existing tests pass (with mechanical updates to mocks and call sites as noted per phase).
-- [ ] No behavior change observable to a player.
+- [ ] No remaining `SoundManagerRef` interfaces anywhere in `src/`. No remaining `this.sound` references in `GameEngine.ts`.
+- [ ] `GameRunState` and `PersistState` plain interfaces exist as the authoritative state on `GameEngine`. No Pinia stores on the engine (no `gameStore`/`persistStore` fields).
+- [ ] `WaveGraphTracker` reads from `runState`/`persistState` directly (no Pinia stores).
+- [ ] `SimulationSnapshot` and `Command` schemas are defined; `buildSnapshot` produces a complete snapshot; render managers consume snapshots.
+- [ ] `projectSnapshotMeta()` wires snapshot scalar state into `gameStore` so Vue components render correct values (HUD, shop, TowerPanel).
+- [ ] Input and SVG click handlers dispatch commands through `CommandDispatcher`; no direct `engine.method()` calls outside the dispatcher (except `selectTower`/hover which are documented tech debt until Phase 7).
+- [ ] The app is fully functional by the end of Phase 6 — all rendering, input, game logic, and persist save/load work correctly.
+- [ ] Any remaining broken tests (mechanical mocks not yet updated) pass by the end of Phase 6.
 
 Once these are met, the codebase is ready for Phases 7–9 (the actual worker migration). See `plans/ArchPrepPhases7-9.md`.
