@@ -6,11 +6,13 @@ interface EnemyManagerRef {
     x: number;
     y: number;
     pathIdx: number;
+    path: { x: number; y: number }[] | null;
     removed: boolean;
     maxHp: number;
     hp: number;
     id: number;
     applySlow(amount: number, duration: number): void;
+    applyStun?(duration: number): void;
   }[];
   getEnemiesInRange(
     x: number,
@@ -20,13 +22,25 @@ interface EnemyManagerRef {
     x: number;
     y: number;
     pathIdx: number;
+    path: { x: number; y: number }[] | null;
     removed: boolean;
     maxHp: number;
     hp: number;
     id: number;
     applySlow(amount: number, duration: number): void;
+    applyStun?(duration: number): void;
   }[];
-  getEnemyById(id: number): { id: number; removed: boolean; x: number; y: number; hp: number; pathIdx: number } | null;
+  getEnemyById(
+    id: number,
+  ): {
+    id: number;
+    removed: boolean;
+    x: number;
+    y: number;
+    hp: number;
+    pathIdx: number;
+    path: { x: number; y: number }[] | null;
+  } | null;
 }
 
 interface ParticleManagerRef {

@@ -49,6 +49,7 @@ interface EnemyManagerRef {
     x: number;
     y: number;
     pathIdx: number;
+    path: { x: number; y: number }[] | null;
     removed: boolean;
     maxHp: number;
     hp: number;
@@ -64,6 +65,7 @@ interface EnemyManagerRef {
     x: number;
     y: number;
     pathIdx: number;
+    path: { x: number; y: number }[] | null;
     removed: boolean;
     maxHp: number;
     hp: number;
@@ -71,7 +73,17 @@ interface EnemyManagerRef {
     applySlow(amount: number, duration: number): void;
     applyStun?(duration: number): void;
   }[];
-  getEnemyById(id: number): { id: number; removed: boolean; x: number; y: number; hp: number; pathIdx: number } | null;
+  getEnemyById(
+    id: number,
+  ): {
+    id: number;
+    removed: boolean;
+    x: number;
+    y: number;
+    hp: number;
+    pathIdx: number;
+    path: { x: number; y: number }[] | null;
+  } | null;
 }
 
 interface ProjectileManagerRef {
@@ -579,17 +591,44 @@ export class Tower {
   }
 
   selectTarget(
-    enemies: { x: number; y: number; pathIdx: number; hp: number; id: number }[],
+    enemies: {
+      x: number;
+      y: number;
+      pathIdx: number;
+      hp: number;
+      id: number;
+      path: { x: number; y: number }[] | null;
+    }[],
   ): { x: number; y: number; pathIdx: number; hp: number; id: number } | null {
     if (enemies.length === 0) return null;
     let target: { x: number; y: number; pathIdx: number; hp: number; id: number } | null = null;
 
+    const distToNextWaypoint = (enemy: {
+      x: number;
+      y: number;
+      pathIdx: number;
+      path: { x: number; y: number }[] | null;
+    }): number => {
+      const nextIdx = enemy.pathIdx + 1;
+      if (!enemy.path || nextIdx >= enemy.path.length) return 0;
+      const wp = enemy.path[nextIdx]!;
+      const wpX = wp.x * this.grid.tileSize + this.grid.tileSize / 2;
+      const wpY = wp.y * this.grid.tileSize + this.grid.tileSize / 2;
+      return Math.hypot(enemy.x - wpX, enemy.y - wpY);
+    };
+
     switch (this.targeting) {
       case "first":
-        target = enemies.reduce((prevA, prevB) => (prevA.pathIdx > prevB.pathIdx ? prevA : prevB));
+        target = enemies.reduce((prevA, prevB) => {
+          if (prevA.pathIdx !== prevB.pathIdx) return prevA.pathIdx > prevB.pathIdx ? prevA : prevB;
+          return distToNextWaypoint(prevA) <= distToNextWaypoint(prevB) ? prevA : prevB;
+        });
         break;
       case "last":
-        target = enemies.reduce((prevA, prevB) => (prevA.pathIdx < prevB.pathIdx ? prevA : prevB));
+        target = enemies.reduce((prevA, prevB) => {
+          if (prevA.pathIdx !== prevB.pathIdx) return prevA.pathIdx < prevB.pathIdx ? prevA : prevB;
+          return distToNextWaypoint(prevA) >= distToNextWaypoint(prevB) ? prevA : prevB;
+        });
         break;
       case "closest":
         target = enemies.reduce((prevA, prevB) => {

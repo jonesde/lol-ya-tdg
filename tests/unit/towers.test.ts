@@ -587,12 +587,22 @@ describe("Tower", () => {
   });
 
   describe("selectTarget", () => {
-    function makeEnemy(params: { pathIdx: number; x: number; y: number; hp: number; id?: number }) {
+    const defaultPath = Array.from({ length: 10 }, (_, i) => ({ x: i, y: 0 }));
+
+    function makeEnemy(params: {
+      pathIdx: number;
+      x: number;
+      y: number;
+      hp: number;
+      id?: number;
+      path?: { x: number; y: number }[] | null;
+    }) {
       return {
         pathIdx: params.pathIdx,
         x: params.x,
         y: params.y,
         hp: params.hp,
+        path: params.path ?? defaultPath,
         removed: false,
         type: "minion",
         id: params.id ?? 1,
@@ -660,6 +670,111 @@ describe("Tower", () => {
       const target = tower.selectTarget(enemies);
       expect(target).not.toBeNull();
       expect(target?.hp).toBe(50);
+    });
+
+    it('breaks ties for "first" targeting by distance to next waypoint (picks enemy further along segment)', () => {
+      const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
+      const tileSize = 36;
+      const path = [
+        { x: 0, y: 0 },
+        { x: 5, y: 0 },
+      ];
+      const waypointWorldX = path[1]!.x * tileSize + tileSize / 2;
+      const waypointWorldY = path[1]!.y * tileSize + tileSize / 2;
+      const enemyNearWaypoint = {
+        x: waypointWorldX - 5,
+        y: waypointWorldY,
+        pathIdx: 0,
+        hp: 10,
+        path,
+        removed: false,
+        type: "minion",
+        id: 1,
+      };
+      const enemyFarFromWaypoint = {
+        x: waypointWorldX - 150,
+        y: waypointWorldY,
+        pathIdx: 0,
+        hp: 10,
+        path,
+        removed: false,
+        type: "minion",
+        id: 2,
+      };
+      const target = tower.selectTarget([enemyNearWaypoint, enemyFarFromWaypoint]);
+      expect(target).not.toBeNull();
+      expect(target?.id).toBe(1);
+    });
+
+    it('breaks ties for "last" targeting by distance to next waypoint (picks enemy earlier along segment)', () => {
+      const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
+      const tileSize = 36;
+      const path = [
+        { x: 0, y: 0 },
+        { x: 5, y: 0 },
+      ];
+      const waypointWorldX = path[1]!.x * tileSize + tileSize / 2;
+      const waypointWorldY = path[1]!.y * tileSize + tileSize / 2;
+      const enemyNearWaypoint = {
+        x: waypointWorldX - 5,
+        y: waypointWorldY,
+        pathIdx: 0,
+        hp: 10,
+        path,
+        removed: false,
+        type: "minion",
+        id: 1,
+      };
+      const enemyFarFromWaypoint = {
+        x: waypointWorldX - 150,
+        y: waypointWorldY,
+        pathIdx: 0,
+        hp: 10,
+        path,
+        removed: false,
+        type: "minion",
+        id: 2,
+      };
+      tower.targeting = "last";
+      const target = tower.selectTarget([enemyNearWaypoint, enemyFarFromWaypoint]);
+      expect(target).not.toBeNull();
+      expect(target?.id).toBe(2);
+    });
+
+    it('preserves pathIdx ordering over tiebreaker for "first" targeting', () => {
+      const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
+      const tileSize = 36;
+      const shortPath = [
+        { x: 0, y: 0 },
+        { x: 2, y: 0 },
+      ];
+      const longPath = [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+      ];
+      const nearWp = {
+        x: 2 * tileSize + tileSize / 2 - 1,
+        y: tileSize / 2,
+        pathIdx: 0,
+        hp: 10,
+        path: shortPath,
+        removed: false,
+        type: "minion",
+        id: 1,
+      };
+      const farWp = {
+        x: 10 * tileSize + tileSize / 2 - 200,
+        y: tileSize / 2,
+        pathIdx: 1,
+        hp: 10,
+        path: longPath,
+        removed: false,
+        type: "minion",
+        id: 2,
+      };
+      const target = tower.selectTarget([nearWp, farWp]);
+      expect(target).not.toBeNull();
+      expect(target?.id).toBe(2);
     });
   });
 
