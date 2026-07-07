@@ -12,10 +12,12 @@ app.use(router);
 
 // Load persisted state from localStorage
 usePersistStore().load();
-try {
-  await useMapThemeStore().preloadDefault();
-} catch (err) {
-  console.error("Failed to preload default map theme:", err);
-}
+(async () => {
+  try {
+    await useMapThemeStore().preloadDefault();
+  } catch (err) {
+    console.error("Failed to preload default map theme:", err);
+  }
+})();
 
 app.mount("#app");
