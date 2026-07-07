@@ -178,13 +178,13 @@ const onMouseMove = (e: MouseEvent): void => {
 const onClick = (e: MouseEvent): void => {
   if (!svgRoot.value || !worldLayer.value || !engine.value) return;
 
-  updateCachedCtm();
-  if (!cachedInverseCtm) return;
+  const inverseCtm = worldLayer.value.getScreenCTM()?.inverse() ?? null;
+  if (!inverseCtm) return;
 
   const pt = svgRoot.value.createSVGPoint();
   pt.x = e.clientX;
   pt.y = e.clientY;
-  const worldPos = pt.matrixTransform(cachedInverseCtm);
+  const worldPos = pt.matrixTransform(inverseCtm);
 
   engine.value.handleClick(worldPos.x, worldPos.y);
 };
