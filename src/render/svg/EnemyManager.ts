@@ -14,14 +14,14 @@ export class EnemyManager {
     }
   }
 
-  syncFromGameEngine(enemies: Enemy[], dt: number): void {
+  syncFromGameEngine(enemies: Enemy[]): void {
     let proxyIndex = 0;
 
     for (const enemy of enemies) {
       if (proxyIndex >= this.pool.length) break;
 
       const proxy = this.pool[proxyIndex]!;
-      proxy.sync(enemy, dt);
+      proxy.sync(enemy);
       proxyIndex++;
     }
 
@@ -53,8 +53,7 @@ class EnemyRenderProxy {
   private el: SVGUseElement;
   private lastSpriteId: string = "";
   private active: boolean = false;
-  private walkingScaledElapsed: number = 0;
-  private hitReactionStartElapsed: number = 0;
+
   private lastTransform: string = "";
   private lastWidth: string = "";
   private lastHeight: string = "";
@@ -62,23 +61,14 @@ class EnemyRenderProxy {
 
   constructor(el: SVGUseElement) {
     this.el = el;
-    this.walkingScaledElapsed = 0;
-    this.hitReactionStartElapsed = 0;
   }
 
   getEl(): SVGUseElement {
     return this.el;
   }
 
-  private isInHitReaction(hitReaction: unknown): boolean {
-    if (!hitReaction || this.hitReactionStartElapsed === 0) return false;
-    const elapsed = this.walkingScaledElapsed - this.hitReactionStartElapsed;
-    return elapsed < (hitReaction as { duration: number }).duration;
-  }
-
-  sync(enemy: Enemy, dt: number): void {
+  sync(enemy: Enemy): void {
     if (!this.active) {
-      this.walkingScaledElapsed = 0;
       this.lastSpriteId = "";
     }
     this.active = true;
@@ -106,27 +96,22 @@ class EnemyRenderProxy {
 
     const hitReaction = (enemy as unknown as { hitReaction?: { duration: number; referenceImages?: unknown[] } | null })
       .hitReaction;
-    if (enemy.hitAnimTime > 0 && this.hitReactionStartElapsed === 0) {
-      this.hitReactionStartElapsed = this.walkingScaledElapsed;
-    }
+    const gameSeconds = enemy.gameSeconds;
+    const inHitReaction =
+      hitReaction && enemy.hitAnimTime > 0 && gameSeconds - enemy.hitAnimTime < hitReaction.duration;
 
-    this.walkingScaledElapsed += dt;
-
-    if (hitReaction && this.isInHitReaction(hitReaction)) {
-      const elapsed = this.walkingScaledElapsed - this.hitReactionStartElapsed;
+    if (inHitReaction) {
+      const elapsedInHit = gameSeconds - enemy.hitAnimTime;
       const refImages = hitReaction.referenceImages;
       const frameCount = refImages?.length || 1;
-      const hitFrameIdx = Math.floor((elapsed / hitReaction.duration) * frameCount) % frameCount;
+      const hitFrameIdx = Math.floor((elapsedInHit / hitReaction.duration) * frameCount) % frameCount;
       const spriteId = `enemy-${enemy.type}-hit-f${hitFrameIdx}`;
       if (spriteId !== this.lastSpriteId) {
         this.el.setAttribute("href", `#${spriteId}`);
         this.lastSpriteId = spriteId;
       }
     } else {
-      if (this.hitReactionStartElapsed > 0) {
-        this.hitReactionStartElapsed = 0;
-      }
-      const frameIdx = computeEnemyFrame(enemy, this.walkingScaledElapsed);
+      const frameIdx = computeEnemyFrame(enemy, gameSeconds);
       const spriteId = `enemy-${enemy.type}-f${frameIdx}`;
       if (spriteId !== this.lastSpriteId) {
         this.el.setAttribute("href", `#${spriteId}`);
@@ -165,8 +150,6 @@ class EnemyRenderProxy {
       this.el.style.visibility = "hidden";
       this.active = false;
       this.lastSpriteId = "";
-      this.walkingScaledElapsed = 0;
-      this.hitReactionStartElapsed = 0;
       this.lastTransform = "";
       this.lastWidth = "";
       this.lastHeight = "";

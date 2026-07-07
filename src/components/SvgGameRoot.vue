@@ -310,7 +310,7 @@ onMounted(async () => {
       const towers = gameStore.towerManager?.towers || [];
       const projectiles = engine.value.projectileManager?.getRenderData() || [];
       const particles = engine.value.particleManager?.getRenderData() || [];
-      enemyManager.syncFromGameEngine(enemies, dt);
+      enemyManager.syncFromGameEngine(enemies);
       towerManager.syncFromGameEngine(towers, dt);
       projectileManager.syncFromGameEngine(projectiles, dt);
       particleManager.syncFromGameEngine(particles);

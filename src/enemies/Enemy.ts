@@ -85,6 +85,10 @@ export class Enemy {
   burnDps!: number;
   hitAnimTime!: number;
   _gameSeconds: number = 0;
+
+  get gameSeconds(): number {
+    return this._gameSeconds;
+  }
   onPathBlocked!: boolean;
   moveAngle!: number;
   markTargetMult!: number;
