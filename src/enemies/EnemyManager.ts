@@ -22,6 +22,7 @@ export class EnemyManager {
   difficultyTick: number;
   theme: MapThemeData | null;
   private spatialHash: Map<string, Enemy[]>;
+  private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
 
   constructor(
@@ -36,12 +37,14 @@ export class EnemyManager {
     this.difficultyTick = difficultyTick;
     this.theme = theme;
     this.spatialHash = new Map();
+    this.idToEnemy = new Map();
     this.pendingQueues = new Map();
   }
 
   clear(): void {
     this.enemies = [];
     this.spatialHash.clear();
+    this.idToEnemy.clear();
     this.pendingQueues.clear();
     resetEnemyId();
   }
@@ -49,6 +52,7 @@ export class EnemyManager {
   spawn(type: string, level: number, spawnIndex: number, wave: number): Enemy {
     const enemy = new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick, this.theme);
     this.enemies.push(enemy);
+    this.idToEnemy.set(enemy.id, enemy);
     this.addToSpatialHash(enemy);
     return enemy;
   }
@@ -100,6 +104,7 @@ export class EnemyManager {
         this.particles.spawn(enemy.x, enemy.y, enemy.color, 12, { speed: 80, life: 0.5 });
         if (onEnemyKill) onEnemyKill(enemy);
         this.removeFromSpatialHash(enemy);
+        this.idToEnemy.delete(enemy.id);
         const removedSpawnIndex = enemy.spawnIndex;
         this.enemies.splice(i, 1);
         this.releaseOnePending(removedSpawnIndex);
@@ -188,6 +193,6 @@ export class EnemyManager {
   }
 
   getEnemyById(id: number): Enemy | null {
-    return this.enemies.find((enemy) => enemy.id === id) || null;
+    return this.idToEnemy.get(id) || null;
   }
 }

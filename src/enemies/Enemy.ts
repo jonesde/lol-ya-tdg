@@ -85,6 +85,7 @@ export class Enemy {
   burnTimer!: number;
   burnDps!: number;
   hitAnimTime!: number;
+  _gameSeconds: number = 0;
   onPathBlocked!: boolean;
   moveAngle!: number;
   markTargetMult!: number;
@@ -139,6 +140,7 @@ export class Enemy {
     this.burnTimer = 0;
     this.burnDps = 0;
     this.hitAnimTime = 0;
+    this._gameSeconds = 0;
     this.moveAngle = 0;
     this.markTargetMult = 0;
     this.markTargetTimer = 0;
@@ -212,13 +214,15 @@ export class Enemy {
       dmg *= 1 + this.markTargetMult;
     }
     this.hp -= dmg;
-    this.hitAnimTime = performance.now();
+    this.hitAnimTime = this._gameSeconds;
     if (this.hp <= 0) this.removed = true;
     return dmg;
   }
 
   update(dt: number, enemyManager: EnemyManagerRef | null) {
     if (this.removed || this.reachedBase) return;
+
+    this._gameSeconds += dt;
 
     for (let i = this.slowStack.length - 1; i >= 0; i--) {
       const slowEntry = this.slowStack[i]!;

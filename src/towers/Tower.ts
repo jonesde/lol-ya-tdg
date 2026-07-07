@@ -202,6 +202,7 @@ export class Tower {
   cooldown: number;
   angle: number;
   fireAnimTime: number;
+  _gameSeconds: number = 0;
   variant: "A" | "B" | null;
   fixedAimDir: "N" | "E" | "S" | "W" | null;
   placedAt: number;
@@ -252,6 +253,7 @@ export class Tower {
     this.cooldown = 0;
     this.angle = -Math.PI / 4;
     this.fireAnimTime = 0;
+    this._gameSeconds = 0;
     this.variant = null;
     this.fixedAimDir = null;
     this.placedAt = placedAt;
@@ -613,6 +615,7 @@ export class Tower {
     projectileManager: ProjectileManagerRef,
     soundManager: SoundManagerRef,
   ) {
+    this._gameSeconds += dt;
     if (this.cooldown > 0) this.cooldown -= dt;
 
     const stats = this.stats;
@@ -724,7 +727,7 @@ export class Tower {
         goldOnCrit: stats.goldOnCrit,
         range: stats.range,
       });
-      this.fireAnimTime = performance.now() / 1000;
+      this.fireAnimTime = this._gameSeconds;
       if (sound) sound.play(`shoot_${this.type}`);
       return;
     }
@@ -755,7 +758,7 @@ export class Tower {
       pierce: stats.pierce,
       stunDur: stats.stun,
     });
-    this.fireAnimTime = performance.now() / 1000;
+    this.fireAnimTime = this._gameSeconds;
     if (sound) sound.play(`shoot_${this.type}`);
   }
 }
