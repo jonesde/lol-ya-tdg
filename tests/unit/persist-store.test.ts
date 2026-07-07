@@ -7,8 +7,9 @@ describe("PersistStore", () => {
   let store: ReturnType<typeof createTestPersistStore>;
 
   beforeEach(() => {
-    vi.spyOn(localStorage, "setItem").mockImplementation(() => {});
-    vi.spyOn(localStorage, "getItem").mockImplementation(() => null);
+    localStorage.setItem = vi.fn();
+    localStorage.getItem = vi.fn().mockReturnValue(null);
+    localStorage.removeItem = vi.fn();
     store = createTestPersistStore();
   });
 
@@ -223,7 +224,9 @@ describe("PersistStore", () => {
 
     it("load restores from localStorage", () => {
       const testData = { gems: 50, highestUnlockedMap: 3 };
-      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(testData));
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(testData)); // STORAGE_KEY
       store.load();
       expect(store.gems).toBe(50);
       expect(store.highestUnlockedMap).toBe(3);
@@ -231,7 +234,9 @@ describe("PersistStore", () => {
 
     it("load merges with defaults for missing fields", () => {
       const testData = { gems: 50 };
-      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(testData));
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(testData)); // STORAGE_KEY
       store.load();
       expect(store.gems).toBe(50);
       expect(store.bestWaves).toEqual({});
@@ -247,18 +252,216 @@ describe("PersistStore", () => {
   });
 
   describe("schema migration on load", () => {
-    it("handles old save format with missing fields", () => {
-      const oldData = { gems: 10 };
-      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(oldData));
-      expect(() => store.load()).not.toThrow();
-      expect(store.gems).toBe(10);
-      expect(store.generalAddons).toBeDefined();
+    it("includes saveVersion in default state", () => {
+      expect(store.saveVersion).toBe(2);
+    });
+
+    it("migrates v1 data (no saveVersion) to v2", () => {
+      const oldData = { gems: 100, highestUnlockedMap: 5 };
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(oldData)); // STORAGE_KEY
+      store.load();
+      expect(store.saveVersion).toBe(2);
+      expect(store.gems).toBe(100);
+      expect(store.highestUnlockedMap).toBe(5);
+      expect(store.difficulty.multiplierTick).toBe(0);
+      expect(store.generalAddons.extraHealth).toBeNull();
+    });
+
+    it("migrates v1 data with explicit saveVersion: 1", () => {
+      const v1Data = { saveVersion: 1, gems: 200, bestWaves: { best_3: 45 } };
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
+      store.load();
+      expect(store.saveVersion).toBe(2);
+      expect(store.gems).toBe(200);
+      expect(store.bestWaves.best_3).toBe(45);
+    });
+
+    it("loads v2 data without re-migration", () => {
+      const v2Data = {
+        saveVersion: 2,
+        gems: 300,
+        difficulty: { multiplierTick: 4 },
+        generalAddons: {
+          extraHealth: 10,
+          startingGold: null,
+          sellRefundUnlocked: false,
+          sellDiscountUnlocked: false,
+          sellActive: null,
+          upgradeCostReduction: null,
+          terrainHeightBonus: null,
+          damageMilestoneBonus: null,
+          slowHealing: null,
+        },
+      };
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(v2Data)); // STORAGE_KEY
+      store.load();
+      expect(store.saveVersion).toBe(2);
+      expect(store.gems).toBe(300);
+      expect(store.difficulty.multiplierTick).toBe(4);
+      expect(store.generalAddons.extraHealth).toBe(10);
+    });
+
+    it("resets to defaults on unknown future version", () => {
+      const futureData = { saveVersion: 99, gems: 9999 };
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(futureData));
+      store.load();
+      expect(store.gems).toBe(0);
+      expect(store.saveVersion).toBe(2);
+      expect(warnSpy).toHaveBeenCalledWith("Unknown save version 99, resetting to defaults");
+      warnSpy.mockRestore();
+    });
+
+    it("fills missing nested fields with defaults during migration", () => {
+      const v1Data = { gems: 50, generalAddons: { extraHealth: 15 } };
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
+      store.load();
+      expect(store.gems).toBe(50);
+      expect(store.generalAddons.extraHealth).toBe(15);
+      expect(store.generalAddons.startingGold).toBeNull();
+      expect(store.generalAddons.sellRefundUnlocked).toBe(false);
+      expect(store.generalAddons.slowHealing).toBeNull();
+    });
+
+    it("preserves saved nested values over defaults during migration", () => {
+      const v1Data = {
+        gems: 50,
+        difficulty: { multiplierTick: 6 },
+        bestWaves: { best_10: 88 },
+        firstTimeMilestones: { "5_20": true },
+        firstClears: { "7": true },
+      };
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
+      store.load();
+      expect(store.difficulty.multiplierTick).toBe(6);
+      expect(store.bestWaves.best_10).toBe(88);
+      expect(store.firstTimeMilestones["5_20"]).toBe(true);
+      expect(store.firstClears["7"]).toBe(true);
+      expect(store.bestWaves.best_0).toBeUndefined();
     });
 
     it("handles corrupted save by resetting", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce("not json");
       expect(() => store.load()).not.toThrow();
       expect(store.gems).toBe(0);
+    });
+
+    it("handles null/undefined save gracefully", () => {
+      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
+      expect(() => store.load()).not.toThrow();
+      expect(store.gems).toBe(0);
+    });
+  });
+
+  describe("key migration", () => {
+    it("migrates data from old key to new key", () => {
+      const oldData = { gems: 100, highestUnlockedMap: 5 };
+      const migratedData = {
+        saveVersion: 2,
+        gems: 100,
+        highestUnlockedMap: 5,
+        difficulty: { multiplierTick: 0 },
+        generalAddons: {
+          extraHealth: null,
+          startingGold: null,
+          sellRefundUnlocked: false,
+          sellDiscountUnlocked: false,
+          sellActive: null,
+          upgradeCostReduction: null,
+          terrainHeightBonus: null,
+          damageMilestoneBonus: null,
+          slowHealing: null,
+        },
+        bestWaves: {},
+        firstTimeMilestones: {},
+        firstClears: {},
+        runHistory: [],
+        unlocked: {
+          basic: {
+            levels: [true, true, false, false, false, false, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+          ice: {
+            levels: [true, true, false, false, false, false, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+          sniper: {
+            levels: [true, true, false, false, false, false, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+          cannon: {
+            levels: [true, true, false, false, false, false, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+          lightning: {
+            levels: [true, true, false, false, false, false, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+          railgun: {
+            levels: [true, true, false, false, false, false, false],
+            variantA: [false, false, false],
+            variantB: [false, false, false],
+            addons: [false, false, false],
+          },
+        },
+      };
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(JSON.stringify(oldData)) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(migratedData)); // STORAGE_KEY (after migration)
+      store.load();
+      expect(store.gems).toBe(100);
+      expect(store.highestUnlockedMap).toBe(5);
+      expect((localStorage.setItem as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("lol_ya_tdg_save");
+      expect((localStorage.removeItem as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("gempath_save_v1");
+    });
+
+    it("deletes old key after migration", () => {
+      const oldData = { gems: 50 };
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(JSON.stringify(oldData))
+        .mockReturnValueOnce(null);
+      store.load();
+      expect((localStorage.removeItem as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+      expect((localStorage.removeItem as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("gempath_save_v1");
+    });
+
+    it("ignores corrupted old key and loads fresh", () => {
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce("not json") // OLD_STORAGE_KEY - corrupted
+        .mockReturnValueOnce(null); // STORAGE_KEY - empty
+      expect(() => store.load()).not.toThrow();
+      expect(store.gems).toBe(0);
+    });
+
+    it("does not touch old key when it does not exist", () => {
+      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
+      store.load();
+      expect((localStorage.removeItem as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+    });
+
+    it("storage key has no version suffix", () => {
+      store.save();
+      expect((localStorage.setItem as ReturnType<typeof vi.fn>).mock.calls[0][0]).not.toContain("_v");
     });
   });
 
@@ -275,7 +478,9 @@ describe("PersistStore", () => {
           },
         },
       };
-      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(oldData));
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(oldData)); // STORAGE_KEY
       store.load();
       expect(store.unlocked.basic.levels.length).toBe(7);
       expect(store.unlocked.basic.levels[0]).toBe(true);
@@ -297,7 +502,9 @@ describe("PersistStore", () => {
           },
         },
       };
-      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(data));
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(data)); // STORAGE_KEY
       store.load();
       expect(store.unlocked.basic.levels.length).toBe(8);
       expect(store.unlocked.basic.levels[7]).toBe(true);
@@ -315,7 +522,9 @@ describe("PersistStore", () => {
           },
         },
       };
-      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(data));
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(data)); // STORAGE_KEY
       store.load();
       expect(store.unlocked.basic.variantA.length).toBe(3);
       expect(store.unlocked.basic.variantA[0]).toBe(true);
@@ -342,7 +551,9 @@ describe("PersistStore", () => {
           },
         },
       };
-      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(data));
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(data)); // STORAGE_KEY
       store.load();
       expect(store.unlocked.basic.levels[0]).toBe(false);
       expect(store.unlocked.basic.levels[1]).toBe(false);
@@ -391,7 +602,9 @@ describe("PersistStore", () => {
           },
         },
       };
-      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(data));
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(data)); // STORAGE_KEY
       store.load();
       expect(store.unlocked.basic.levels.length).toBe(7);
       expect(store.unlocked.ice.levels.length).toBe(7);

@@ -1,7 +1,9 @@
 import { defineStore } from "pinia";
 import { useUiStore } from "@/stores/ui.js";
 
-const STORAGE_KEY = "gempath_save_v1";
+const OLD_STORAGE_KEY = "gempath_save_v1";
+const STORAGE_KEY = "lol_ya_tdg_save_1";
+const CURRENT_SAVE_VERSION = 2;
 
 interface TowerUnlocks {
   levels: boolean[];
@@ -23,6 +25,7 @@ export interface GeneralAddons {
 }
 
 interface PersistStateShape {
+  saveVersion: number;
   gems: number;
   highestUnlockedMap: number;
   bestWaves: Record<string, number>;
@@ -92,6 +95,7 @@ function defaultGeneralAddons(): GeneralAddons {
 
 function defaultState(): PersistStateShape {
   return {
+    saveVersion: CURRENT_SAVE_VERSION,
     gems: 0,
     highestUnlockedMap: 0,
     bestWaves: {},
@@ -110,6 +114,64 @@ function defaultState(): PersistStateShape {
     randomMapHeight: 20,
     lastSelectedThemeId: "default",
   };
+}
+
+function mergeWithDefaults<T>(defaults: T, parsed: unknown): T {
+  if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+    return { ...defaults, ...(parsed as Record<string, unknown>) } as T;
+  }
+  return defaults;
+}
+
+function migrateV1ToV2(parsed: Record<string, unknown>): PersistStateShape {
+  const defaults = defaultState();
+  const result: PersistStateShape = { ...defaults, ...parsed, saveVersion: CURRENT_SAVE_VERSION };
+  result.difficulty = mergeWithDefaults(defaults.difficulty, parsed.difficulty);
+  result.generalAddons = mergeWithDefaults(defaults.generalAddons, parsed.generalAddons);
+  result.bestWaves = mergeWithDefaults(defaults.bestWaves, parsed.bestWaves);
+  result.firstTimeMilestones = mergeWithDefaults(defaults.firstTimeMilestones, parsed.firstTimeMilestones);
+  result.firstClears = mergeWithDefaults(defaults.firstClears, parsed.firstClears);
+  result.runHistory = Array.isArray(parsed.runHistory) ? parsed.runHistory : defaults.runHistory;
+  result.unlocked = mergeWithDefaults(defaults.unlocked, parsed.unlocked) as Record<string, TowerUnlocks>;
+  for (const towerId of Object.keys(defaults.unlocked)) {
+    if (result.unlocked[towerId]) {
+      result.unlocked[towerId] = mergeTowerUnlocks(result.unlocked[towerId]);
+    }
+  }
+  return result;
+}
+
+function migrateCurrentVersion(parsed: Record<string, unknown>): PersistStateShape {
+  const defaults = defaultState();
+  const result: PersistStateShape = { ...defaults, ...parsed };
+  result.difficulty = mergeWithDefaults(defaults.difficulty, parsed.difficulty);
+  result.generalAddons = mergeWithDefaults(defaults.generalAddons, parsed.generalAddons);
+  result.bestWaves = mergeWithDefaults(defaults.bestWaves, parsed.bestWaves);
+  result.firstTimeMilestones = mergeWithDefaults(defaults.firstTimeMilestones, parsed.firstTimeMilestones);
+  result.firstClears = mergeWithDefaults(defaults.firstClears, parsed.firstClears);
+  result.runHistory = Array.isArray(parsed.runHistory) ? parsed.runHistory : defaults.runHistory;
+  result.unlocked = mergeWithDefaults(defaults.unlocked, parsed.unlocked) as Record<string, TowerUnlocks>;
+  for (const towerId of Object.keys(defaults.unlocked)) {
+    if (result.unlocked[towerId]) {
+      result.unlocked[towerId] = mergeTowerUnlocks(result.unlocked[towerId]);
+    }
+  }
+  return result;
+}
+
+function migrateToCurrent(parsed: Record<string, unknown>): PersistStateShape {
+  const version = parsed.saveVersion;
+  if (version === undefined || version === null) {
+    return migrateV1ToV2(parsed);
+  }
+  if (version === 1) {
+    return migrateV1ToV2(parsed);
+  }
+  if (version === CURRENT_SAVE_VERSION) {
+    return migrateCurrentVersion(parsed);
+  }
+  console.warn(`Unknown save version ${version}, resetting to defaults`);
+  return defaultState();
 }
 
 export const usePersistStore = defineStore("persist", {
@@ -136,19 +198,22 @@ export const usePersistStore = defineStore("persist", {
 
     load() {
       try {
+        const oldRawData = localStorage.getItem(OLD_STORAGE_KEY);
+        if (oldRawData) {
+          try {
+            const parsed = JSON.parse(oldRawData);
+            const migrated = migrateToCurrent(parsed);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+            localStorage.removeItem(OLD_STORAGE_KEY);
+          } catch {
+            // Corrupted old save - ignore, proceed with fresh load
+          }
+        }
         const rawData = localStorage.getItem(STORAGE_KEY);
         if (rawData) {
           const parsed = JSON.parse(rawData);
-          const defaults = defaultState();
-          this.$state = { ...defaults, ...parsed };
-          this.difficulty = { ...defaults.difficulty, ...this.difficulty };
-          this.generalAddons = { ...defaults.generalAddons, ...this.generalAddons };
-          this.unlocked = { ...defaults.unlocked, ...this.unlocked };
-          for (const towerId of Object.keys(defaults.unlocked)) {
-            if (this.unlocked[towerId]) {
-              this.unlocked[towerId] = mergeTowerUnlocks(this.unlocked[towerId]);
-            }
-          }
+          const migrated = migrateToCurrent(parsed);
+          this.$state = migrated;
           return;
         }
       } catch {
