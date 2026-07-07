@@ -266,7 +266,7 @@ describe("ProjectileManager", () => {
       expect(takeDamage).toHaveBeenCalledWith(20, false);
     });
 
-    it("pierces to next target when pierceCount > 0", () => {
+    it("pierces to next target when maxHitCount > 0", () => {
       const enemy1 = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       const enemy2 = createMockEnemy({ id: 2, x: 108, y: 200, hp: 100, maxHp: 100 });
       const takeDamage1 = vi.fn();
@@ -290,7 +290,7 @@ describe("ProjectileManager", () => {
       // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
       const proj = (manager as any).projectiles[0]!;
       proj.isCrit = false;
-      proj.pierceCount = 2;
+      proj.maxHitCount = 2;
 
       manager.update(0.016);
 
@@ -320,7 +320,7 @@ describe("ProjectileManager", () => {
       // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
       const proj = (manager as any).projectiles[0]!;
       proj.isCrit = false;
-      proj.pierceCount = 1;
+      proj.maxHitCount = 1;
 
       manager.update(0.016);
 
@@ -917,7 +917,7 @@ describe("ProjectileManager", () => {
       // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
       const proj = (manager as any).projectiles[0]!;
       expect(proj.stunDuration).toBe(0.2);
-      expect(proj.pierceCount).toBe(2);
+      expect(proj.maxHitCount).toBe(2);
     });
 
     it("sniper projectile applies stun to enemy on hit", () => {

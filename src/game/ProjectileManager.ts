@@ -34,7 +34,7 @@ export interface ProjectileGame {
   targetX: number;
   targetY: number;
   splashRadius: number;
-  pierceCount: number;
+  maxHitCount: number;
   knockback: number;
   slowFactor: number;
   slowDuration: number;
@@ -222,7 +222,7 @@ export class ProjectileManager {
       targetX: opts.targetX ?? 0,
       targetY: opts.targetY ?? 0,
       splashRadius: 0,
-      pierceCount: 0,
+      maxHitCount: 0,
       knockback: 0,
       slowFactor: opts.slowAmt ?? 0,
       slowDuration: opts.slowDur ?? 0,
@@ -289,7 +289,7 @@ export class ProjectileManager {
     }
 
     if (towerType === "railgun") {
-      projectile.pierceCount = 1 + tier + (pierce ?? 0);
+      projectile.maxHitCount = 1 + tier + (pierce ?? 0);
       projectile.knockback = RAILGUN_KNOCKBASE + RAILGUN_KNOCK_SCALE * tier;
       if (knockback) {
         projectile.knockback *= RAILGUN_KNOCKBACK_MULT;
@@ -302,7 +302,7 @@ export class ProjectileManager {
     }
 
     if (towerType === "sniper" && towerLevel >= 5 && variant === "B") {
-      projectile.pierceCount = (pierce ?? 0) - 1;
+      projectile.maxHitCount = (pierce ?? 0) - 1;
     }
   }
 
@@ -400,7 +400,7 @@ export class ProjectileManager {
             fixedAimHits++;
             projectile.fixedAimHits = fixedAimHits;
             // If pierce removed projectile, restore it to continue toward aim point
-            if (!projectile.active && fixedAimHits <= projectile.pierceCount) {
+            if (!projectile.active && fixedAimHits <= projectile.maxHitCount) {
               projectile.active = true;
               projectile.targetId = 0;
             }
@@ -567,9 +567,9 @@ export class ProjectileManager {
       }
     }
 
-    if (projectile.pierceCount > 0) {
+    if (projectile.maxHitCount > 0) {
       projectile.hitCount++;
-      if (projectile.hitCount <= projectile.pierceCount) {
+      if (projectile.hitCount <= projectile.maxHitCount) {
         const nextTarget = this.findNearestEnemy(projectile.x, projectile.y, projectile.range, enemy.id);
         if (nextTarget) {
           projectile.targetId = nextTarget.id;
