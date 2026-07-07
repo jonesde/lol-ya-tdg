@@ -14,14 +14,22 @@ Create a new directory `src/sim/` to hold the new simulation contracts. Anything
 
 ```
 src/sim/
-├── HostBindings.ts          # Phase 0 — the host interface
-├── GameRunState.ts          # Phase 1 — plain run-state interface + helpers
-├── PersistState.ts          # Phase 1 — plain persist-state interface + pure logic
-├── Command.ts               # Phase 5 — discriminated-union command schema
-├── SimulationSnapshot.ts    # Phase 5 — DTO schema + entity snapshot types
-├── SpatialIndex.ts          # Phase 5 (interface only; implementation deferred until pile-up feature)
-└── SnapshotSerializer.ts    # Phase 5 — entity → snapshot DTO conversion
+├── HostBindings.ts             # Phase 0 — the host interface (SoundName, SoundPlayer, HostBindings, ThemeBundle)
+├── GameRunState.ts             # Phase 1 — plain run-state interface + pure helpers
+├── PersistState.ts             # Phase 1 — plain persist-state interface + pure logic
+├── RunStateSync.ts             # Phase 1 — centralized dual-write helpers (gameStore + runState)
+├── Command.ts                  # Phase 5 — discriminated-union command schema
+├── CommandDispatcher.ts        # Phase 6 — the dispatcher interface
+├── SimulationSnapshot.ts       # Phase 5 — DTO schema + entity snapshot types
+├── SpatialIndex.ts             # Phase 5 (interface only; implementation deferred until pile-up feature)
+└── SnapshotSerializer.ts       # Phase 5 — entity → snapshot DTO conversion
 ```
+
+Adapters that depend on Pinia/DOM live **outside** `src/sim/` (they import from `src/sim/` but are not imported by the worker):
+- `src/sim/MainThreadHostBindings.ts` — Phase 0 adapter (imports `SoundManager`, `uiStore`, `persistStore`)
+- `src/sim/MainThreadCommandDispatcher.ts` — Phase 6 adapter (imports `GameEngine`)
+
+The split keeps `src/sim/` itself free of any `src/stores/` import, while the adapters — which the worker never imports — can reach into Pinia freely.
 
 The directory forms a **build-time boundary**: it must not import anything from `src/stores/`, `src/components/`, `src/router/`, or `src/sound/`. A `tsconfig`-level path-alias check or an ESLint `no-restricted-imports` rule should enforce this from Phase 1 onward. This is what prevents accidental transitive coupling to Pinia — see Risk §7.5 in `ArchitecturePlan.md`.
 
@@ -53,7 +61,14 @@ import type { MapThemeData } from "@/render/themes/index.js";
 export type UiEvent =
   | { type: "initForRun"; mapIndex: number }
   | { type: "showNotification"; message: string }
-  | { type: "endGame"; victory: boolean; data: EndScreenPayload };
+  | { type: "endGame"; payload: EndScreenPayload };
+// NOTE: EndScreenPayload (defined in src/stores/game.ts:45-50) already
+// includes `victory: boolean`, so the endGame event wraps the full payload
+// rather than splitting victory out. The payload shape must match
+// gameStore.triggerEnd's `data: Omit<EndScreenPayload, "victory">` plus
+// the victory flag — i.e., the full EndScreenPayload. Import the type from
+// src/sim/GameRunState.ts (Phase 1 re-declares it there as a plain interface
+// matching the one in game.ts) to avoid importing from src/stores/.
 
 // ConfirmPayload is what the sim emits when it needs the user to confirm
 // something. The host enriches with display data (themed tower name) and
@@ -94,9 +109,12 @@ export interface HostBindings extends SoundPlayer {
   requestConfirm(payload: ConfirmPayload): Promise<boolean>;
 }
 
-// SoundName is currently buried inside SoundManager.ts as a private type.
-// Hoist it to a shared location (e.g. src/sim/HostBindings.ts or a new
-// src/sound/SoundName.ts) so both sim and host can reference it.
+// SoundName is currently a private type inside SoundManager.ts. Hoist it to
+// src/sim/HostBindings.ts (option (a)) and have SoundManager.ts import it from
+// here. This is preferable to exporting from SoundManager.ts (option (b))
+// because SoundManager.ts will eventually also live in or near the worker, and
+// the sim boundary should own the contract types that cross it. SoundManager
+// remains the implementation; HostBindings owns the type.
 export type SoundName =
   | "shoot_basic" | "shoot_sniper" | "shoot_cannon"
   | "shoot_ice" | "shoot_lightning" | "shoot_railgun"
@@ -110,6 +128,7 @@ export type SoundName =
 ```ts
 import type { HostBindings, ConfirmPayload, PersistStateSlice, UiEvent } from "./HostBindings.js";
 import { SoundManager } from "@/sound/SoundManager.js";
+import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -135,9 +154,22 @@ export class MainThreadHostBindings implements HostBindings {
   notifyUi(event: UiEvent): void {
     const uiStore = useUiStore();
     switch (event.type) {
-      case "initForRun":      uiStore.initForRun(null); break;
-      case "showNotification": uiStore.showNotification(event.message); break;
-      case "endGame":         /* Phase 1: route through gameStore.triggerEnd */ break;
+      case "initForRun":
+        uiStore.initForRun(null);
+        break;
+      case "showNotification":
+        uiStore.showNotification(event.message);
+        break;
+      case "endGame": {
+        // Route to gameStore.triggerEnd. The payload is the full
+        // EndScreenPayload (includes victory, wave, gems, gemBreakdown).
+        // gameStore.triggerEnd signature is (victoryFlag, data: Omit<EndScreenPayload, "victory">),
+        // so split the payload: pass victory as the flag, rest as data.
+        const gameStore = useGameStore();
+        const { victory, ...data } = event.payload;
+        gameStore.triggerEnd(victory, data);
+        break;
+      }
     }
   }
 
@@ -487,6 +519,14 @@ export class GameEngine {
    // mutated externally (rare; mainly for safety).
    // structuredClone is available in all target environments (Node 18+,
    // Chrome 98+, Firefox 94+, Safari 15.4+) — no polyfill needed.
+   //
+   // Test compatibility: persistStore.$state is a Pinia reactive proxy.
+   // structuredClone on a Pinia proxy works (Pinia proxies are plain objects
+   // under the hood), but test fixtures that mock persistStore with partial
+   // objects (not full Pinia stores created via createPinia() + usePersistStore())
+   // may have missing fields. Verify all test fixtures in tests/helpers/mock-stores.ts
+   // construct a complete persist store state — either via the real Pinia store
+   // or via a complete plain object matching PersistStateShape (persist.ts:28-47).
    private snapshotPersistState(): PersistState {
      return structuredClone(this.persistStore.$state) as PersistState;
    }
@@ -513,45 +553,137 @@ The parallel-mirror pattern is fragile: a developer adding a new gold mutation m
 
 ```ts
 // src/sim/RunStateSync.ts
-import type { GameRunState } from "./GameRunState.js";
+import type { GameRunState, GemBreakdown, EndScreenPayload } from "./GameRunState.js";
 import type { GameStore } from "@/stores/game.js";
+import type { PersistState } from "./PersistState.js";
+import type { PersistStore } from "@/stores/persist.js";
 
 // Every dual-write goes through one of these. A custom ESLint rule
 // (no-restricted-syntax) flags `this.gameStore.<field> =` or
 // `this.runState.<field> =` outside this module.
-export function syncGold(gameStore: GameStore, runState: GameRunState, amount: number): void {
-  gameStore.gold += amount;
-  runState.gold += amount;
+//
+// Full enumeration of dual-written fields, derived from auditing every
+// mutation site in GameEngine (_initMap, _applyStartingBonuses, onBossKilled,
+// onWaveCleared, onWaveStart, onEnemyKill, earnGold, endGame, loop, handleClick,
+// upgradeSelected, specializeSelected, executeSellById, cancelSelected,
+// downgradeSelected, setHover, togglePause, cycleSpeed, etc.):
+
+// --- Gold (mutation sites: _applyStartingBonuses, earnGold, handleClick,
+//     upgradeSelected, specializeSelected, executeSellById, cancelSelected,
+//     downgradeSelected) ---
+export function syncAddGold(gs: GameStore, rs: GameRunState, amount: number): void {
+  gs.gold += amount; rs.gold += amount;
 }
-export function syncLives(gameStore: GameStore, runState: GameRunState, delta: number): void {
-  gameStore.lives += delta;
-  runState.lives += delta;
+export function syncSetGold(gs: GameStore, rs: GameRunState, value: number): void {
+  gs.gold = value; rs.gold = value;
 }
-export function syncSetGold(gameStore: GameStore, runState: GameRunState, value: number): void {
-  gameStore.gold = value;
-  runState.gold = value;
+
+// --- Lives (mutation sites: _applyStartingBonuses, loop via loseLives,
+//     onWaveStart slow healing) ---
+export function syncAddLives(gs: GameStore, rs: GameRunState, delta: number): void {
+  gs.lives += delta; rs.lives += delta;
 }
-// ... one helper per dual-written field
+export function syncSetLives(gs: GameStore, rs: GameRunState, value: number): void {
+  gs.lives = value; rs.lives = value;
+}
+
+// --- Bosses killed/reached (mutation sites: onBossKilled, loop) ---
+export function syncIncBossesKilled(gs: GameStore, rs: GameRunState): void {
+  gs.bossesKilledThisRun++; rs.bossesKilledThisRun++;
+}
+export function syncIncBossesReached(gs: GameStore, rs: GameRunState): void {
+  gs.bossesReachedBaseThisRun++; rs.bossesReachedBaseThisRun++;
+}
+
+// --- Run gems earned (mutation sites: onBossKilled, onWaveCleared, endGame) ---
+export function syncAddRunGems(gs: GameStore, rs: GameRunState, amount: number): void {
+  gs.runGemsEarned += amount; rs.runGemsEarned += amount;
+}
+
+// --- Persist gems (mutation sites: onBossKilled, onWaveCleared, endGame) ---
+export function syncAddPersistGems(ps: PersistStore, pstate: PersistState, amount: number): void {
+  ps.gems += amount; pstate.gems += amount;
+}
+
+// --- Wave (mutation sites: onWaveCleared, onWaveStart, _initMap) ---
+export function syncSetWave(gs: GameStore, rs: GameRunState, wave: number): void {
+  gs.currentWave = wave; rs.currentWave = wave;
+}
+
+// --- Time scale (mutation sites: cycleSpeed, cycleSpeedReverse) ---
+export function syncSetTimeScale(gs: GameStore, rs: GameRunState, value: number): void {
+  gs.timeScale = value; rs.timeScale = value;
+}
+
+// --- Game state (mutation sites: togglePause, stop, endGame) ---
+export function syncSetState(gs: GameStore, rs: GameRunState, value: GameState): void {
+  gs.setState(value); rs.state = value;
+}
+
+// --- Selection (mutation sites: handleClick, selectTower, executeSellById,
+//     cancelSelected, endGame, cancelBuildMode) ---
+export function syncSelectTower(gs: GameStore, rs: GameRunState, towerId: string | null): void {
+  // gs.selectTower takes a Tower ref; rs uses id. Lookup happens at the call site
+  // (or pass the tower ref + id together). For Phase 1, the helper takes both:
+  gs.selectedTower = /* resolve from towerId */ null;
+  rs.selectedTowerId = towerId;
+}
+
+// --- Milestone rewards claimed (mutation sites: onWaveCleared) ---
+export function syncClaimMilestone(gs: GameStore, rs: GameRunState, wave: number): void {
+  gs.claimMilestone(wave); rs.milestoneRewardsClaimed[wave] = true;
+}
+
+// --- Gem breakdown (mutation sites: onBossKilled, onWaveCleared, endGame) ---
+export function syncGemBreakdown(gs: GameStore, rs: GameRunState, breakdown: GemBreakdown): void {
+  gs.gemBreakdown = breakdown; rs.gemBreakdown = breakdown;
+}
+
+// --- End screen data (mutation sites: endGame) ---
+export function syncTriggerEnd(gs: GameStore, rs: GameRunState, payload: EndScreenPayload): void {
+  gs.triggerEnd(payload.victory, { wave: payload.wave, gems: payload.gems, gemBreakdown: payload.gemBreakdown });
+  rs.endScreenData = payload;
+}
+
+// --- Wave countdown (mutation sites: loop) ---
+export function syncSetWaveCountdown(gs: GameStore, rs: GameRunState, value: { remaining: number; nextWave: number } | null): void {
+  gs.waveCountdown = value; rs.waveCountdown = value;
+}
+
+// --- Hover (mutation sites: setHover) ---
+export function syncSetHoverTile(gs: GameStore, rs: GameRunState, tile: { tileX: number; tileY: number } | null): void {
+  gs.setHoverTile(tile); rs.hoverTile = tile;
+}
+
+// --- Upgrade btn click anim (mutation sites: handleClick) ---
+export function syncSetUpgradeBtnAnim(gs: GameStore, rs: GameRunState, value: number): void {
+  gs.upgradeBtnClickAnim = value; rs.upgradeBtnClickAnim = value;
+}
+
+// Fields NOT needing helpers (single mutation site, or pure UI):
+//   camera — main-thread-authoritative, never written by the engine
+//   mapIndex, map, grid — set once at _initMap, can be a direct dual-write there
+//   randomMapParams — set once at init
 ```
 
 Engine call sites become `syncGold(this.gameStore, this.runState, amount)` instead of two separate writes. The ESLint rule makes drift a compile-time lint error rather than a runtime regression. If the lint rule is too much investment for Phase 1, the fallback is a code-review checklist item and the knowledge that Phase 7's cutover will surface any drift immediately — but recommend the helper approach for any field with more than two mutation sites.
 
 ### `WaveGraphTracker`
 
-`src/game/WaveGraphTracker.ts:51-57` takes `gameStore: GameStore` and `persistStore: PersistStore`. Add `runState` and `persistState` parameters and pair every read:
+The current constructor at `src/game/WaveGraphTracker.ts:50-55` is `(gameStore, persistStore, towerManager, enemyManager)` — 4 params. Add `runState` and `persistState` as the **5th and 6th params** (at the end) to avoid breaking the existing call site at `GameEngine.ts:153-158`:
 
 ```ts
 constructor(
   gameStore: GameStore,
   persistStore: PersistStore,
-  runState: GameRunState,        // NEW
-  persistState: PersistState,    // NEW
   towerManager: TowerManagerRef,
   enemyManager: EnemyManagerRef,
+  runState: GameRunState,        // NEW — 5th param
+  persistState: PersistState,    // NEW — 6th param
 ) { ... }
 ```
 
-The reads at `WaveGraphTracker.ts:81` (`persistStore.gems`) and `:88,147` (`gameStore.lives`) get paired reads from the plain state. Same additive pattern.
+Update the `new WaveGraphTracker(...)` call at `GameEngine.ts:153-158` to pass `this.runState` and `this.persistState` as the 5th and 6th args. The reads at `WaveGraphTracker.ts:81` (`persistStore.gems`) and `:88,147` (`gameStore.lives`) get paired reads from the plain state. Same additive pattern.
 
 ### Test impact
 
@@ -633,6 +765,32 @@ constructor(
 
 `SvgGameRoot.vue` builds the `ThemeBundle` from `mapThemeStore` once and passes it in. This is the *only* place the theme store is consulted for the simulation; everything downstream receives plain data.
 
+**How `defaultTowerVisuals` / `defaultEnemyVisuals` are sourced:** `mapThemeStore` exposes per-type getters `getDefaultTowerVisual(typeId)` and `getDefaultEnemyVisual(typeId)` (`src/stores/mapTheme.ts:84,88`), not bulk getters. `SvgGameRoot.vue` builds the `Record<string, TowerVisualMeta>` and `Record<string, EnemyVisualMeta>` by iterating the known type ids (`Object.values(TowerIds)` for towers; `Object.keys(ENEMY_TYPES)` for enemies) and calling the per-type getter for each. This is a one-time O(N) loop at engine construction; the result is a plain object passed by reference thereafter.
+
+```ts
+// src/components/SvgGameRoot.vue (illustrative — build the ThemeBundle once)
+import { TowerIds } from "@/game/ConstantsTower.js";
+import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
+
+function buildThemeBundle(mapThemeStore: MapThemeStore): ThemeBundle {
+  const defaultTowerVisuals: Record<string, TowerVisualMeta> = {};
+  for (const id of Object.values(TowerIds)) {
+    const visual = mapThemeStore.getDefaultTowerVisual(id);
+    if (visual) defaultTowerVisuals[id] = visual;
+  }
+  const defaultEnemyVisuals: Record<string, EnemyVisualMeta> = {};
+  for (const type of Object.keys(ENEMY_TYPES)) {
+    const visual = mapThemeStore.getDefaultEnemyVisual(type);
+    if (visual) defaultEnemyVisuals[type] = visual;
+  }
+  return {
+    active: mapThemeStore.activeTheme,
+    defaultTowerVisuals,
+    defaultEnemyVisuals,
+  };
+}
+```
+
 **Why `ThemeBundle` instead of three separate constructor params:** `ThemeBundle` groups the active theme and the two default-visual indexes because they are sourced together from `mapThemeStore` and passed together into the engine and managers. Passing them as three separate constructor params achieves the same decoupling but spreads related data across the signature; the bundle keeps the grouping explicit and makes the "these travel together" invariant visible at the type level.
 
 ### `SkillTree` module-level population
@@ -670,9 +828,34 @@ export function populateSkillTreeTheme(
 }
 ```
 
-`main.ts` (or `SvgGameRoot.vue` setup) calls `populateSkillTreeTheme(mapThemeStore.defaultThemeTowerVisuals)` after the default theme is preloaded. The existing `try { useMapThemeStore() } catch {}` pattern (`SkillTree.ts:121-126`) goes away — the neutral defaults handle the pre-theme case, and the populate function handles the post-theme case deterministically.
+`main.ts` calls `populateSkillTreeTheme(...)` after the default theme is preloaded. The existing `try { useMapThemeStore() } catch {}` pattern (`SkillTree.ts:121-126`) goes away — the neutral defaults handle the pre-theme case, and the populate function handles the post-theme case deterministically. The current `main.ts` has no such call — it must be added explicitly:
 
-**Ordering mitigation:** `main.ts` already calls `mapThemeStore.preloadDefault()` synchronously before `app.mount()` (per `README.md` line 365). Call `populateSkillTreeTheme(...)` immediately after `preloadDefault()` and before `app.mount()`, so the populate runs before any route component (including `/skill-tree`) can mount. Additionally, add a defensive re-populate in `SkillTree.vue`'s setup that checks whether `SKILL_TREE` is still neutral (e.g., `SKILL_TREE.basic.name === ""`) and calls `populateSkillTreeTheme` again if so — this makes the ordering deterministic regardless of which route the user enters on first, and guards against any future change to `main.ts`'s init sequence.
+```ts
+// src/main.ts (add the populate call after preloadDefault, before app.mount)
+import { populateSkillTreeTheme } from "@/towers/SkillTree.js";
+import { TowerIds } from "@/game/ConstantsTower.js";
+
+// ... existing createApp, pinia, router setup ...
+
+usePersistStore().load();
+try {
+  await useMapThemeStore().preloadDefault();
+  // NEW: populate SKILL_TREE display fields from the now-loaded default theme.
+  const mapThemeStore = useMapThemeStore();
+  const defaultTowerVisuals: Record<string, TowerVisualMeta> = {};
+  for (const id of Object.values(TowerIds)) {
+    const visual = mapThemeStore.getDefaultTowerVisual(id);
+    if (visual) defaultTowerVisuals[id] = visual;
+  }
+  populateSkillTreeTheme(defaultTowerVisuals);
+} catch (err) {
+  console.error("Failed to preload default map theme:", err);
+}
+
+app.mount("#app");
+```
+
+**Ordering mitigation:** `main.ts` already calls `mapThemeStore.preloadDefault()` synchronously before `app.mount()` (per `README.md` line 365). The `populateSkillTreeTheme(...)` call goes immediately after `preloadDefault()` and before `app.mount()`, so the populate runs before any route component (including `/skill-tree`) can mount. Additionally, add a defensive re-populate in `SkillTree.vue`'s setup that checks whether `SKILL_TREE` is still neutral (e.g., `SKILL_TREE.basic.name === ""`) and calls `populateSkillTreeTheme` again if so — this makes the ordering deterministic regardless of which route the user enters on first, and guards against any future change to `main.ts`'s init sequence.
 
 ### Test impact
 
@@ -766,22 +949,30 @@ async sellSelected(): Promise<void> {
 
 // New method — added in Phase 4, not Phase 7. Phase 7's WorkerEntry.applyCommand
 // references this method for the action:executeSell command.
+//
+// By Phase 4, the engine holds both this.persistStore (Pinia) and this.persistState
+// (plain mirror from Phase 1). This method reads from this.persistState (the plain
+// mirror) to stay consistent with the Phase 1 parallel-mirror pattern and to
+// prepare for Phase 7 where persistStore is dropped entirely. The persistStore.$state
+// argument to towerManager.sell() is replaced with this.persistState.
 executeSellById(towerId: string): void {
   const tower = this.towerManager?.getTowerById(towerId);
   if (!tower) return;
 
-  const isRefund = this.persistStore.generalAddons?.sellActive === "refund";
-  const value = isRefund ? tower.totalInvested : this.towerManager!.sell(tower, this.persistStore.$state);
+  const isRefund = this.persistState.generalAddons?.sellActive === "refund";
+  const value = isRefund ? tower.totalInvested : this.towerManager!.sell(tower, this.persistState);
 
   this.gameStore.setGold(this.gameStore.gold + value);
+  this.runState.gold += value;  // Phase 1 parallel-mirror write
   this.totalGoldEarned += value;
   this.gameStore.selectTower(null);
+  this.runState.selectedTowerId = null;  // Phase 1 parallel-mirror write
 }
 ```
 
 ### Why `async` is safe here
 
-`sellSelected` is currently synchronous and called from `Input.ts` and `TowerPanel.vue`. Making it `async` means callers receive a `Promise<void>` they can ignore. The engine's update loop does not call `sellSelected` — it's purely input-driven — so there is no risk of the engine stalling mid-tick waiting for a dialog. The engine's main loop (`GameEngine.loop`) is synchronous and never awaits; only user-initiated action handlers do.
+`sellSelected` is currently synchronous and called from `Input.ts` (`engine?.sellSelected?.()` at line 132) and `TowerPanel.vue` (`gameStore.engine?.sellSelected()` at line 125). Both use optional chaining and ignore the return value — making it `async` means callers receive a `Promise<void>` they can ignore. Optional chaining on an async function is fine; the returned promise is simply discarded. The engine's update loop does not call `sellSelected` — it's purely input-driven — so there is no risk of the engine stalling mid-tick waiting for a dialog. The engine's main loop (`GameEngine.loop`) is synchronous and never awaits; only user-initiated action handlers do.
 
 ### `downgradeSelected`
 
@@ -789,7 +980,7 @@ Currently synchronous and has no confirm dialog (`GameEngine.ts:652-657`). No ch
 
 ### Test impact
 
-`game-engine.test.ts` tests covering the sell flow need to await the now-async `sellSelected`. The `MockHostBindings.confirmResult` field (Phase 0) controls the resolution. Tests that previously inspected `uiStore.confirmDialog` directly can still do so — `MainThreadHostBindings` calls `uiStore.showConfirm`, so the same state transitions occur.
+`game-engine.test.ts` tests covering the sell flow need to `await` the now-async `sellSelected`. The `MockHostBindings.confirmResult` field (Phase 0) controls the resolution — set it before calling `sellSelected()` so the Promise resolves synchronously on the next microtask. Tests that previously inspected `uiStore.confirmDialog` directly can still do so — `MainThreadHostBindings` calls `uiStore.showConfirm`, so the same state transitions occur. Any test that asserts on post-sell state (gold, selection) must `await sellSelected()` before asserting, or the assertions will run before the Promise resolves.
 
 ---
 
@@ -843,6 +1034,10 @@ export type Command =
   | { commandId: number; type: "action:setTargeting"; mode: string }
   | { commandId: number; type: "action:setFixedAimDir"; dir: "N" | "E" | "S" | "W" | null }
   | { commandId: number; type: "action:cancelBuildMode" }
+  // @tech-debt Phase 6: this command is a no-op in applyCommand (engine.selectTower
+  // takes a live Tower ref, not an id). Phase 7 implements engine.selectTowerById(id)
+  // and wires this case. The command exists in the schema now so Phase 7 doesn't
+  // need to add it. See Phase 6 "Known tech debt" callout.
   | { commandId: number; type: "action:selectTower"; towerId: string | null }
 
   // ---- Lifecycle ----
@@ -1026,8 +1221,34 @@ function snapshotEnemy(e: Enemy): EnemySnapshot {
     slowFactor: e.slowFactor ?? 1, slowTimer: e.slowTimer ?? 0, burnTimer: e.burnTimer ?? 0,
     hitFlash: e.hitFlash ?? 0, walkingFrameIndex: e.walkingFrameIndex ?? 0,
     isBoss: e.type === "boss",
-    statusEffects: [],  // populate from e.activeEffects if present; otherwise empty
+    // Enemy has no `activeEffects` field. Status effects are stored as
+    // individual fields on Enemy (src/enemies/Enemy.ts:79-95):
+    //   slowStack: SlowEntry[]   — array of { eff, remaining }
+    //   stunTimer: number         — remaining stun time
+    //   burnTimer: number         — remaining burn time
+    //   burnDps: number           — burn damage per second
+    //   markTargetMult: number    — mark multiplier (0 = not marked)
+    //   markTargetTimer: number   — remaining mark time
+    //   shield: number            — current shield
+    //   slowFactor: number        — aggregate slow factor (1.0 = not slowed)
+    // Build the statusEffects array from these individual fields:
+    statusEffects: buildEnemyStatusEffects(e),
   };
+}
+
+function buildEnemyStatusEffects(e: Enemy): StatusEffectSnapshot[] {
+  const effects: StatusEffectSnapshot[] = [];
+  if (e.slowFactor < 1) {
+    // Aggregate slow — magnitude is (1 - slowFactor) so the renderer can
+    // show "50% slowed" etc. remaining is the max of slowStack entries.
+    const maxRemaining = e.slowStack?.reduce((max, s) => Math.max(max, s.remaining), 0) ?? 0;
+    effects.push({ kind: "slow", remaining: maxRemaining, magnitude: 1 - e.slowFactor });
+  }
+  if (e.stunTimer > 0) effects.push({ kind: "stun", remaining: e.stunTimer, magnitude: 1 });
+  if (e.burnTimer > 0) effects.push({ kind: "burn", remaining: e.burnTimer, magnitude: e.burnDps ?? 0 });
+  if (e.shield > 0) effects.push({ kind: "shield", remaining: 0, magnitude: e.shield });
+  if (e.markTargetMult > 0) effects.push({ kind: "mark", remaining: e.markTargetTimer, magnitude: e.markTargetMult });
+  return effects;
 }
 
 // snapshotTower similar — audit Tower.ts for the full field set.
@@ -1039,17 +1260,28 @@ The exact field set for `snapshotEnemy` and `snapshotTower` must be derived by a
 
 ### Render manager signature updates
 
-Each `syncFromGameEngine` in `src/render/svg/*.ts` changes its parameter type from the live entity array to the snapshot array:
+All **six** `syncFromGameEngine` methods in `src/render/svg/*.ts` change their parameter types from live entity arrays to snapshot arrays. Audit each one for the full field set it reads:
+
+| File | Current signature | After | Fields read (audit each) |
+|---|---|---|---|
+| `EnemyManager.ts:17` | `syncFromGameEngine(enemies: Enemy[])` | `syncFromGameEngine(enemies: EnemySnapshot[])` | position, hp, status effect visuals (slow color, stun, burn), walking frame, hit flash, shield, boss flag |
+| `TowerManager.ts:13` | `syncFromGameEngine(towers: Tower[], dt: number)` | `syncFromGameEngine(towers: TowerSnapshot[], dt: number)` | position, angle, level, variant, fire anim time, barrel rotation |
+| `ProjectileManager.ts:22` | `syncFromGameEngine(projectiles: Projectile[])` | `syncFromGameEngine(projectiles: ProjectileSnapshot[])` | already DTO-based via `getRenderData()`; minimal change |
+| `ParticleManager.ts:22` | `syncFromGameEngine(particles: Particle[])` | `syncFromGameEngine(particles: ParticleSnapshot[])` | already DTO-based via `getRenderData()`; minimal change |
+| `EffectManager.ts:173` | `syncFromGameEngine(buildPreviewTilePos, selectedTowerType, buildPreviewColor, selectedTower, buildPreviewValid, dt)` | params unchanged (all UI-computed on main thread; no snapshot arrays) | reads `selectedTower` fields — change to `TowerSnapshot \| null` |
+| `UiOverlayManager.ts:116` | `syncFromGameEngine(enemies: Enemy[], _selectedTower: Tower \| null)` | `syncFromGameEngine(enemies: EnemySnapshot[], _selectedTower: TowerSnapshot \| null)` | HP bars, shield bars, boss HP text — reads hp, maxHp, shield, maxShield, isBoss |
+
+Additionally, `UiOverlayManager.syncPendingQueueOverlays(grid, enemyManager)` (called at `SvgGameRoot.vue:327`) reads spawn queue data from `enemyManager` — this changes to read from `snapshot.spawnStates` (see `SpawnStateSnapshot`).
 
 ```ts
-// src/render/svg/EnemyManager.ts:17
+// Example: src/render/svg/EnemyManager.ts:17
 // Before:
 syncFromGameEngine(enemies: Enemy[]): void { ... }
 // After:
 syncFromGameEngine(enemies: EnemySnapshot[]): void { ... }
 ```
 
-Internally, the method reads the same fields off the snapshot objects that it previously read off the live entities. If a render manager reads a field not present on the snapshot, add the field to the snapshot interface and populate it in the serializer. **This is the audit step that proves the schema is complete.**
+Internally, each method reads the same fields off the snapshot objects that it previously read off the live entities. If a render manager reads a field not present on the snapshot, add the field to the snapshot interface and populate it in the serializer. **This audit step — covering all six managers — is what proves the schema is complete.**
 
 ### `SvgGameRoot.vue` render path
 
