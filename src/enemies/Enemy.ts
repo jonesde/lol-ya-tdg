@@ -303,7 +303,20 @@ export class Enemy {
                 bestForwardIdx = i;
               }
             }
-            this.pathIdx = bestForwardIdx >= 0 ? bestForwardIdx : nearestIdx;
+            if (bestForwardIdx >= 0) {
+              this.pathIdx = bestForwardIdx;
+            } else {
+              let forwardFallbackIdx = -1;
+              for (let i = nearestIdx; i < newPath.length; i++) {
+                const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
+                const distSqToBase = (worldPos.x - baseWorldPos.x) ** 2 + (worldPos.y - baseWorldPos.y) ** 2;
+                if (distSqToBase <= currentDistSqToBase) {
+                  forwardFallbackIdx = i;
+                  break;
+                }
+              }
+              this.pathIdx = forwardFallbackIdx >= 0 ? forwardFallbackIdx : nearestIdx;
+            }
           } else {
             this.onPathBlocked = true;
             this.removed = true;

@@ -144,6 +144,7 @@ export class TowerManager {
     this.towerMap.delete(tower.id);
     this.tileMap.delete(`${tower.tileX},${tower.tileY}`);
     this.particles.spawn(tower.x, tower.y, "#ffcf4d", 14, { speed: 70, life: 0.5 });
+    this.sound.play("sell");
     return val;
   }
 
@@ -153,6 +154,7 @@ export class TowerManager {
     this.towerMap.delete(tower.id);
     this.tileMap.delete(`${tower.tileX},${tower.tileY}`);
     this.particles.spawn(tower.x, tower.y, "#88ff88", 14, { speed: 70, life: 0.5 });
+    this.sound.play("cancel");
     return tower.totalInvested;
   }
 

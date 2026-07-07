@@ -180,6 +180,22 @@ describe("SoundManager", () => {
       expect(oscillator.type).toBe("sawtooth");
     });
 
+    it("sets oscillatorillator frequency and type for sell", () => {
+      sm.play("sell");
+      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
+        .value;
+      expect(oscillator.frequency.value).toBe(520);
+      expect(oscillator.type).toBe("triangle");
+    });
+
+    it("sets oscillatorillator frequency and type for cancel", () => {
+      sm.play("cancel");
+      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
+        .value;
+      expect(oscillator.frequency.value).toBe(200);
+      expect(oscillator.type).toBe("sine");
+    });
+
     it("calls setValueAtTime on gain", () => {
       sm.play("shoot_basic");
       const gainNode = (sm.audioContext?.createGain as MockAudioContext["createGain"]).mock.results[0].value;

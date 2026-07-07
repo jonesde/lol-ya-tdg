@@ -9,7 +9,9 @@ type SoundName =
   | "shoot_railgun"
   | "place"
   | "base_hit"
-  | "boss_die";
+  | "boss_die"
+  | "sell"
+  | "cancel";
 
 export class SoundManager {
   audioContext: AudioContext | null;
@@ -91,6 +93,16 @@ export class SoundManager {
       type = "sawtooth";
       dur = 0.6;
       vol = 0.15;
+    } else if (name === "sell") {
+      freq = 520;
+      type = "triangle";
+      dur = 0.12;
+      vol = 0.08;
+    } else if (name === "cancel") {
+      freq = 200;
+      type = "sine";
+      dur = 0.08;
+      vol = 0.05;
     }
     oscillator.type = type;
     oscillator.frequency.value = freq;

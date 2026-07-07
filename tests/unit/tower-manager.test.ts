@@ -176,6 +176,12 @@ describe("TowerManager", () => {
       expect(particles.spawns.length).toBeGreaterThan(0);
       expect(particles.spawns[particles.spawns.length - 1].color).toBe("#ffcf4d");
     });
+
+    it("plays sell sound", () => {
+      const tower = manager.build("basic", 0, 0, makeSave(), grid) as Tower;
+      manager.sell(tower, makeSave());
+      expect(sound.plays).toContain("sell");
+    });
   });
 
   describe("cancelBuild", () => {
@@ -193,6 +199,12 @@ describe("TowerManager", () => {
       manager.cancelBuild(tower);
       expect(particles.spawns.length).toBeGreaterThan(0);
       expect(particles.spawns[particles.spawns.length - 1].color).toBe("#88ff88");
+    });
+
+    it("plays cancel sound", () => {
+      const tower = manager.build("basic", 0, 0, makeSave(), grid) as Tower;
+      manager.cancelBuild(tower);
+      expect(sound.plays).toContain("cancel");
     });
   });
 
