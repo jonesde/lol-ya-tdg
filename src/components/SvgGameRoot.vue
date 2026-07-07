@@ -1,7 +1,7 @@
 <template>
   <div class="svg-wrapper">
     <svg ref="svgRoot" class="game-svg" xmlns="http://www.w3.org/2000/svg"
-         :viewBox="mapViewBox" @mousemove="onMouseMove" @click="onClick" @contextmenu.prevent>
+         :viewBox="mapViewBox" @mousemove="onMouseMove" @click="onClick" @mousedown="onMouseDown" @contextmenu.prevent>
       <defs ref="defsLayer"></defs>
 
       <g class="grid-layer" v-html="gridContent"></g>
@@ -120,6 +120,13 @@ let cachedCameraZoom: number = 1;
 let cachedViewW: number = 0;
 let cachedViewH: number = 0;
 
+// Mousedown/click deduplication — mousedown fires on button press (less likely to be dropped),
+// click fires on button release (can be dropped when the main thread is blocked at high speed).
+const CLICK_DEDUP_MS = 50;
+let lastMouseDownTime: number = 0;
+let lastMouseDownX: number = 0;
+let lastMouseDownY: number = 0;
+
 const updateCachedCtm = (): void => {
   if (!worldLayer.value) return;
   const cam = gameStore.camera;
@@ -175,7 +182,32 @@ const onMouseMove = (e: MouseEvent): void => {
   scheduleHover(e.clientX, e.clientY);
 };
 
+const onMouseDown = (e: MouseEvent): void => {
+  if (e.button !== 0) return;
+  if (!svgRoot.value || !worldLayer.value || !engine.value) return;
+
+  const inverseCtm = worldLayer.value.getScreenCTM()?.inverse() ?? null;
+  if (!inverseCtm) return;
+
+  const pt = svgRoot.value.createSVGPoint();
+  pt.x = e.clientX;
+  pt.y = e.clientY;
+  const worldPos = pt.matrixTransform(inverseCtm);
+
+  engine.value.handleClick(worldPos.x, worldPos.y);
+
+  lastMouseDownTime = performance.now();
+  lastMouseDownX = e.clientX;
+  lastMouseDownY = e.clientY;
+};
+
 const onClick = (e: MouseEvent): void => {
+  // If a mousedown already handled this click, skip to avoid double-processing.
+  const elapsed = performance.now() - lastMouseDownTime;
+  const dx = e.clientX - lastMouseDownX;
+  const dy = e.clientY - lastMouseDownY;
+  if (elapsed < CLICK_DEDUP_MS && dx * dx + dy * dy < 16) return;
+
   if (!svgRoot.value || !worldLayer.value || !engine.value) return;
 
   const inverseCtm = worldLayer.value.getScreenCTM()?.inverse() ?? null;
