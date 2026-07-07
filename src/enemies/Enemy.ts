@@ -257,6 +257,7 @@ export class Enemy {
       this.burnTimer -= dt;
       this.takeDamage(this.burnDps * dt, true);
     }
+    if (this.removed) return;
     if (this.markTargetTimer > 0) {
       this.markTargetTimer -= dt;
       if (this.markTargetTimer <= 0) {

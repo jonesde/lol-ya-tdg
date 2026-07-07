@@ -375,6 +375,18 @@ describe("Enemy", () => {
       expect(enemy.hp).toBe(hpAfterExpiry);
     });
 
+    it("does not move after burn damage kills it", () => {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+      enemy.hp = 5;
+      enemy.applyBurn(100, 1.0);
+      const startX = enemy.x;
+      const startY = enemy.y;
+      enemy.update(1.0, null);
+      expect(enemy.removed).toBe(true);
+      expect(enemy.x).toBe(startX);
+      expect(enemy.y).toBe(startY);
+    });
+
     it("adjusts pathIdx to nearest tile when path is recomputed", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
 
