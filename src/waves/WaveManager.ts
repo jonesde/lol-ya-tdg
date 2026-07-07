@@ -1,6 +1,7 @@
 import { BETWEEN_WAVES_TIMER, PRE_EMPTIVE_WAVE_TIMER, VICTORY_WAVE } from "../game/Constants.js";
 import { ENEMY_TYPES, WAVE_COUNT_BASE, WAVE_COUNT_SCALE } from "../game/ConstantsEnemy.js";
 import { mulberry32 } from "../grid/Map.js";
+import { ENEMY_POOL_SIZE } from "../render/svg/types.js";
 import type { SpawnState } from "../render/themes/index.js";
 
 interface MapRef {
@@ -156,11 +157,18 @@ export class WaveManager {
 
   generateWave(n: number): WaveEntry[] {
     const baseCount = WAVE_COUNT_BASE + Math.floor(n * WAVE_COUNT_SCALE);
-    const out: WaveEntry[] = [];
     const regionLevel = this.map.level;
     const enemyLevel = Math.max(1, Math.floor(n / 3) + regionLevel);
 
-    for (let i = 0; i < baseCount; i++) {
+    let bossCount = 0;
+    if (n % this.bossCadence === 0) {
+      bossCount = 1 + Math.floor(n / 30);
+    }
+
+    const nonBossCount = Math.min(baseCount, Math.max(0, ENEMY_POOL_SIZE - bossCount));
+    const out: WaveEntry[] = [];
+
+    for (let i = 0; i < nonBossCount; i++) {
       const rand = this.rng();
       let type = "minion";
       const tierThresholds = [
@@ -180,11 +188,8 @@ export class WaveManager {
       out.push({ type, level: enemyLevel, delay: 0.5 + this.rng() * 0.5 });
     }
 
-    if (n % this.bossCadence === 0) {
-      const bossCount = 1 + Math.floor(n / 30);
-      for (let i = 0; i < bossCount; i++) {
-        out.push({ type: "boss", level: enemyLevel, delay: 2 + i * 2 });
-      }
+    for (let i = 0; i < bossCount; i++) {
+      out.push({ type: "boss", level: enemyLevel, delay: 2 + i * 2 });
     }
     return out;
   }
