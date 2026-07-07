@@ -214,30 +214,16 @@ export function canRefund(save: SaveData, towerId: string, tier: string, index: 
   const unlocked = save.unlocked[towerId]!;
 
   if (tier === "level") {
-    if (index === 2 && unlocked.levels[3]) return 0;
-    if (index === 3) {
-      if (
-        unlocked.variantA[0] ||
-        unlocked.variantA[1] ||
-        unlocked.variantA[2] ||
-        unlocked.variantB[0] ||
-        unlocked.variantB[1] ||
-        unlocked.variantB[2]
-      )
-        return 0;
+    for (let j = index + 1; j < unlocked.levels.length; j++) {
+      if (unlocked.levels[j]) return 0;
     }
-  }
-  if (tier === "variantA") {
-    if (index === 0 && unlocked.variantA[1]) return 0;
-    if (index === 1 && unlocked.variantA[2]) return 0;
-  }
-  if (tier === "variantB") {
-    if (index === 0 && unlocked.variantB[1]) return 0;
-    if (index === 1 && unlocked.variantB[2]) return 0;
-  }
-  if (tier === "addons") {
-    if (index === 0 && unlocked.addons[1]) return 0;
-    if (index === 1 && unlocked.addons[2]) return 0;
+    if (index === 3 && (unlocked.variantA.some(Boolean) || unlocked.variantB.some(Boolean))) return 0;
+  } else {
+    const key = tier === "addons" ? "addons" : tier === "variantA" ? "variantA" : "variantB";
+    const arr = unlocked[key];
+    for (let j = index + 1; j < arr.length; j++) {
+      if (arr[j]) return 0;
+    }
   }
 
   return getCost(tier, index);
