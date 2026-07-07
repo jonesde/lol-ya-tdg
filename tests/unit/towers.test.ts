@@ -446,6 +446,46 @@ describe("Tower", () => {
       const expectedDamage = baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 2);
       expect(tower.stats.damage).toBeCloseTo(expectedDamage, 4);
     });
+
+    it("invalidates cache when totalDamageDealt crosses a milestone threshold", () => {
+      const save = makeSave();
+      save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% dmg per 1M
+      const tower = new Tower("basic", 0, 0, save, makeMockGrid());
+
+      // Below threshold — stats are cached
+      tower.totalDamageDealt = MILESTONE_THRESHOLD - 1;
+      const statsBelow = tower.stats;
+
+      // Cross the threshold — should recompute without manual cache touch
+      tower.totalDamageDealt = MILESTONE_THRESHOLD;
+      const statsAbove = tower.stats;
+
+      expect(statsAbove.damage).toBeGreaterThan(statsBelow.damage);
+      const baseDamage = TOWER_BASE.basic.damage;
+      expect(statsAbove.damage).toBeCloseTo(
+        baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 1),
+        4,
+      );
+    });
+
+    it("invalidates cache when totalDamageDealt crosses a second milestone threshold", () => {
+      const save = makeSave();
+      save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% dmg per 1M
+      const tower = new Tower("basic", 0, 0, save, makeMockGrid());
+
+      tower.totalDamageDealt = MILESTONE_THRESHOLD;
+      const statsAt1M = tower.stats;
+
+      tower.totalDamageDealt = MILESTONE_THRESHOLD * 2;
+      const statsAt2M = tower.stats;
+
+      expect(statsAt2M.damage).toBeGreaterThan(statsAt1M.damage);
+      const baseDamage = TOWER_BASE.basic.damage;
+      expect(statsAt2M.damage).toBeCloseTo(
+        baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 2),
+        4,
+      );
+    });
   });
 
   describe("upgradeCost", () => {

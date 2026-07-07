@@ -490,6 +490,7 @@ export class ProjectileManager {
         if (tower) {
           tower.totalDamageDealt += instantKillDamage;
           tower.waveDamage += instantKillDamage;
+          tower.clearStatsCache();
         }
       }
       if (this.particles) {
@@ -507,6 +508,7 @@ export class ProjectileManager {
         if (tower) {
           tower.totalDamageDealt += instantKillDamage;
           tower.waveDamage += instantKillDamage;
+          tower.clearStatsCache();
         }
       }
       if (this.particles) {
@@ -723,6 +725,7 @@ export class ProjectileManager {
     if (tower) {
       tower.totalDamageDealt += amount;
       tower.waveDamage += amount;
+      tower.clearStatsCache();
     }
   }
 

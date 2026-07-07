@@ -319,6 +319,10 @@ export class Tower {
     return h | (r << 8) | (m << 16) | (ml << 24);
   }
 
+  clearStatsCache(): void {
+    this._statsCache = null;
+  }
+
   _computeStats(): TowerStats {
     const level = this.level;
     const dmgMult = TOWER_LEVEL_DMG_MULT ** (level - 1);
@@ -563,7 +567,7 @@ export class Tower {
     const cost = actualCost ?? this.upgradeCost(5);
     this.totalInvested += cost;
     this.levelCosts.push(cost);
-    this._statsCache = null;
+    this.clearStatsCache();
     return true;
   }
 
@@ -574,7 +578,7 @@ export class Tower {
     const cost = actualCost ?? check.cost ?? 0;
     this.totalInvested += cost;
     this.levelCosts.push(cost);
-    this._statsCache = null;
+    this.clearStatsCache();
     return { ok: true };
   }
 
