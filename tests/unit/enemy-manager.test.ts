@@ -73,6 +73,16 @@ describe("EnemyManager", () => {
       expect(manager.enemies).toHaveLength(0);
     });
 
+    it("removes enemies that die during update from spatial hash", () => {
+      const enemy = manager.spawn("runner", 1, 0, 1);
+      enemy.hp = 10;
+      enemy.applyBurn(1000, 1.0);
+      manager.update(0.016, () => {});
+      expect(manager.enemies).toHaveLength(0);
+      const inRange = manager.getEnemiesInRange(enemy.x, enemy.y, 10);
+      expect(inRange).not.toContain(enemy);
+    });
+
     it("spawns particles when enemy dies", () => {
       const enemy = manager.spawn("minion", 1, 0, 1);
       enemy.removed = true;

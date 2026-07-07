@@ -76,6 +76,16 @@ export class EnemyManager {
     this.spawn(entry.type, entry.level, spawnIndex, entry.wave);
   }
 
+  removeDeadEnemy(i: number): void {
+    const enemy = this.enemies[i]!;
+    this.particles.spawn(enemy.x, enemy.y, enemy.color, 12, { speed: 80, life: 0.5 });
+    this.removeFromSpatialHash(enemy);
+    this.idToEnemy.delete(enemy.id);
+    const removedSpawnIndex = enemy.spawnIndex;
+    this.enemies.splice(i, 1);
+    this.releaseOnePending(removedSpawnIndex);
+  }
+
   hasPendingEnemies(): boolean {
     for (const queue of this.pendingQueues.values()) {
       if (queue.length > 0) return true;
@@ -101,16 +111,15 @@ export class EnemyManager {
       const enemy = this.enemies[i];
       if (!enemy) continue;
       if (enemy.removed || enemy.reachedBase) {
-        this.particles.spawn(enemy.x, enemy.y, enemy.color, 12, { speed: 80, life: 0.5 });
         if (onEnemyKill) onEnemyKill(enemy);
-        this.removeFromSpatialHash(enemy);
-        this.idToEnemy.delete(enemy.id);
-        const removedSpawnIndex = enemy.spawnIndex;
-        this.enemies.splice(i, 1);
-        this.releaseOnePending(removedSpawnIndex);
+        this.removeDeadEnemy(i);
         continue;
       }
       enemy.update(dt, this);
+      if (enemy.removed || enemy.reachedBase) {
+        if (onEnemyKill) onEnemyKill(enemy);
+        this.removeDeadEnemy(i);
+      }
     }
     this.updateSpatialHash();
   }
