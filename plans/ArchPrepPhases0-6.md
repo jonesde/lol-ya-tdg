@@ -386,7 +386,7 @@ export interface GameRunState {
   milestoneRewardsClaimed: Record<number, boolean>;
   gemBreakdown: GemBreakdown;
   endScreenData: EndScreenPayload | null;
-  camera: { x: number; y: number; zoom: number };
+  // NOTE: camera is excluded — it is main-thread-only UI state, never written by the engine.
   randomMapParams: Record<string, unknown> | null;
 }
 
@@ -734,7 +734,7 @@ export function syncSetUpgradeBtnAnim(gs: GameStore, rs: GameRunState, value: nu
 }
 
 // Fields NOT needing helpers (single mutation site, or pure UI):
-//   camera — main-thread-authoritative, never written by the engine
+//   camera — main-thread-authoritative, excluded from GameRunState entirely
 //   mapIndex, map, grid — set once at _initMap, can be a direct dual-write there
 //   randomMapParams — set once at init
 ```
@@ -1045,7 +1045,8 @@ User clicks "Sell" on TowerPanel
       - call uiStore.showConfirm({...}) with onConfirm/onCancel resolving the Promise
   → User clicks "Sell" in ConfirmDialog
       → Promise resolves true
-      → engine.executeSellById(towerId) runs  (towerId captured at request time)
+      → engine.executeSellById(towerId) runs, re-validating that the tower is still
+        sellable at execution time (tower existence + sellActive are re-checked)
   → User clicks "Keep" (or hits Escape)
       → Promise resolves false
       → engine does nothing
@@ -1096,6 +1097,11 @@ async sellSelected(): Promise<void> {
 executeSellById(towerId: string): void {
   const tower = this.towerManager?.getTowerById(towerId);
   if (!tower) return;
+
+  // Re-validate sellability at execution time (not just at request time).
+  // The confirm dialog can remain open across multiple ticks — the tower may
+  // have become unsellable in the interim (e.g., sellActive switched to "discount").
+  if (this.persistState.generalAddons?.sellActive === "discount") return;
 
   const isRefund = this.persistState.generalAddons?.sellActive === "refund";
   const value = isRefund ? tower.totalInvested : this.towerManager!.sell(tower, this.persistState);
@@ -1248,7 +1254,7 @@ export interface SnapshotMeta {
   runGemsEarned: number;
   bossesKilledThisRun: number;
   bossesReachedBaseThisRun: number;
-  camera: { x: number; y: number; zoom: number };
+  // camera is excluded — main-thread-only UI state, read from gameStore.camera directly
   lastScaledDt: number;       // renderer uses this for animation interpolation
   endScreenData: GameRunState["endScreenData"];
   gemBreakdown: GameRunState["gemBreakdown"];
@@ -1308,7 +1314,12 @@ export interface TowerSnapshot {
   totalDamageDealt: number;
   fireAnimTime: number;
   fixedAimDir: "N" | "E" | "S" | "W" | null;
+  sellValue: number;          // pre-computed by the worker so TowerPanel doesn't need a live method call
 }
+
+// TowerPanel looks up the selected tower from towers[] by selectedTowerId from meta
+// (id → TowerSnapshot). All fields it currently reads (level, type, variant,
+// totalInvested, sellValue, targeting) are present on TowerSnapshot.
 
 // Projectile and Particle snapshots: REUSE the existing DTO types, do NOT
 // define new ones. The existing methods already return plain arrays:
