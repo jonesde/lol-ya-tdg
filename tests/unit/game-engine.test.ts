@@ -16,24 +16,27 @@ import { GameEngine } from "@/game/GameEngine.js";
 import type { useGameStore } from "@/stores/game.js";
 import type { usePersistStore } from "@/stores/persist.js";
 import type { Tower } from "@/towers/Tower.js";
-import { createTestStores } from "../helpers/mock-stores";
+import { createTestStores, MockHostBindings } from "../helpers/mock-stores";
 
 describe("GameEngine", () => {
   let engine: GameEngine;
   let gameStore: ReturnType<typeof useGameStore>;
   let persistStore: ReturnType<typeof usePersistStore>;
+  let mockHost: MockHostBindings;
 
   beforeEach(() => {
     const stores = createTestStores();
     gameStore = stores.game;
     persistStore = stores.persist;
-    engine = new GameEngine(gameStore, persistStore);
+    mockHost = new MockHostBindings();
+    engine = new GameEngine(gameStore, persistStore, null, mockHost);
   });
 
   describe("constructor", () => {
-    it("stores references to stores", () => {
+    it("stores references to stores and host", () => {
       expect(engine.gameStore).toBe(gameStore);
       expect(engine.persistStore).toBe(persistStore);
+      expect(engine.host).toBe(mockHost);
     });
 
     it("initializes with null managers", () => {

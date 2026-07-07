@@ -1,0 +1,56 @@
+import type { TowerId } from "@/game/ConstantsTower.js";
+
+// Canonical sound-name type — replaces the module-private declaration in SoundManager.ts.
+// Uses a template-literal for tower shoot sounds to give compile-time safety against typos.
+export type ShootSoundName = `shoot_${TowerId}`;
+export type SoundName = ShootSoundName | "place" | "base_hit" | "boss_die" | "sell" | "cancel";
+
+// Anything the sim needs to ask the host to do that isn't a sound, a persistence flush,
+// or a confirm dialog.
+export type UiEvent =
+  | { type: "initForRun"; mapIndex: number }
+  | { type: "showNotification"; message: string }
+  | { type: "endGame"; payload: EndScreenPayload };
+
+// Minimal inline definition matching src/stores/game.ts EndScreenPayload.
+// Phase 1 re-declares it in GameRunState.ts as the canonical plain interface.
+interface EndScreenPayload {
+  victory: boolean;
+  wave: number;
+  gems: number;
+  gemBreakdown: unknown;
+}
+
+// What the sim emits when it needs the user to confirm something.
+// The host enriches with display data (themed tower name) and shows the dialog.
+export interface ConfirmPayload {
+  towerId: string;
+  towerType: string;
+  towerLevel: number;
+  sellValue: number;
+  isRefund: boolean;
+}
+
+// Subset of PersistState the host needs to write to localStorage.
+// Full PersistState is defined in Phase 1.
+export interface PersistStateSlice {
+  gems: number;
+  bestWaves: Record<string, number>;
+  activeWaves: Record<string, number>;
+  firstTimeMilestones: Record<string, boolean>;
+  firstClears: Record<string, boolean>;
+  runHistory: unknown[];
+}
+
+// Narrow interface for TowerManager/Tower — they only need playSound, not the full HostBindings.
+export interface SoundPlayer {
+  playSound(name: SoundName): void;
+}
+
+// Central interface — every method is fire-and-forget except requestConfirm,
+// which returns a Promise because the sim cannot proceed until the user decides.
+export interface HostBindings extends SoundPlayer {
+  notifyUi(event: UiEvent): void;
+  schedulePersistSave(state: PersistStateSlice): void;
+  requestConfirm(payload: ConfirmPayload): Promise<boolean>;
+}

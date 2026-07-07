@@ -29,7 +29,7 @@ interface ParticleSystem {
 
 interface SoundRecord {
   plays: string[];
-  play(name: string): void;
+  playSound(name: string): void;
   dispose(): void;
 }
 
@@ -73,7 +73,7 @@ export function makeSoundManager(): SoundRecord {
   const plays: string[] = [];
   return {
     plays,
-    play(name: string) {
+    playSound(name: string) {
       plays.push(name);
     },
     dispose() {

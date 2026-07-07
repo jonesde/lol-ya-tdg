@@ -1,4 +1,5 @@
 import type { MapThemeData } from "@/render/themes/index.js";
+import type { SoundPlayer } from "@/sim/HostBindings.js";
 import { Tower } from "./Tower.js";
 
 interface EnemyManagerRef {
@@ -75,10 +76,6 @@ interface ProjectileManagerRef {
   setOnLightningFlash(callback: (startX: number, startY: number, endX: number, endY: number) => void): void;
 }
 
-interface SoundManagerRef {
-  play(name: string): void;
-}
-
 interface SaveData {
   gems: number;
   unlocked: Record<string, { addons: boolean[]; variantA: boolean[]; variantB: boolean[]; levels: boolean[] }>;
@@ -96,7 +93,7 @@ export class TowerManager {
   grid: GridRef;
   particles: ParticleManagerRef;
   projectiles: ProjectileManagerRef;
-  sound: SoundManagerRef;
+  sound: SoundPlayer;
   towers: Tower[];
   private nextTowerId: number = 0;
   private towerMap: Map<string, Tower> = new Map();
@@ -107,7 +104,7 @@ export class TowerManager {
     grid: GridRef,
     particles: ParticleManagerRef,
     projectiles: ProjectileManagerRef,
-    sound: SoundManagerRef,
+    sound: SoundPlayer,
     theme: MapThemeData | null = null,
   ) {
     this.grid = grid;
@@ -133,7 +130,7 @@ export class TowerManager {
     this.towerMap.set(tower.id, tower);
     this.tileMap.set(`${tileX},${tileY}`, tower);
     this.particles.spawn(tower.x, tower.y, tower.color, 10, { speed: 50, life: 0.4 });
-    this.sound.play("place");
+    this.sound.playSound("place");
     return tower;
   }
 
@@ -144,7 +141,7 @@ export class TowerManager {
     this.towerMap.delete(tower.id);
     this.tileMap.delete(`${tower.tileX},${tower.tileY}`);
     this.particles.spawn(tower.x, tower.y, "#ffcf4d", 14, { speed: 70, life: 0.5 });
-    this.sound.play("sell");
+    this.sound.playSound("sell");
     return val;
   }
 
@@ -154,7 +151,7 @@ export class TowerManager {
     this.towerMap.delete(tower.id);
     this.tileMap.delete(`${tower.tileX},${tower.tileY}`);
     this.particles.spawn(tower.x, tower.y, "#88ff88", 14, { speed: 70, life: 0.5 });
-    this.sound.play("cancel");
+    this.sound.playSound("cancel");
     return tower.totalInvested;
   }
 

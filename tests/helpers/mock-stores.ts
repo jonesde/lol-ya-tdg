@@ -5,6 +5,7 @@ import type { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
 import type { MapThemeData } from "@/render/themes/index.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
+import type { ConfirmPayload, HostBindings, PersistStateSlice, SoundName, UiEvent } from "@/sim/HostBindings.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -118,6 +119,28 @@ export function createTestMapThemeStore(): MapThemeStore {
   store.defaultTheme = mockDefaultTheme;
   store.activeTheme = mockDefaultTheme;
   return store;
+}
+
+export class MockHostBindings implements HostBindings {
+  soundsPlayed: SoundName[] = [];
+  uiEvents: UiEvent[] = [];
+  persistSaves: PersistStateSlice[] = [];
+  confirmPayloads: ConfirmPayload[] = [];
+  confirmResult: boolean = true;
+
+  playSound(name: SoundName): void {
+    this.soundsPlayed.push(name);
+  }
+  notifyUi(event: UiEvent): void {
+    this.uiEvents.push(event);
+  }
+  schedulePersistSave(state: PersistStateSlice): void {
+    this.persistSaves.push(state);
+  }
+  requestConfirm(payload: ConfirmPayload): Promise<boolean> {
+    this.confirmPayloads.push(payload);
+    return Promise.resolve(this.confirmResult);
+  }
 }
 
 export function createTestStores(): { game: GameStore; persist: PersistStore; ui: UiStore } {

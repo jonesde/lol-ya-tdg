@@ -8,7 +8,7 @@ import { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
 import { generateRandomMap, getMap } from "@/grid/Map.js";
 import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
-import { SoundManager } from "@/sound/SoundManager.js";
+import type { HostBindings } from "@/sim/HostBindings.js";
 import type { GameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import type { PersistStore } from "@/stores/persist.js";
@@ -58,7 +58,7 @@ interface WaveManagerRef {
 export class GameEngine {
   gameStore: GameStore;
   persistStore: PersistStore;
-  sound: SoundManager;
+  host: HostBindings;
   grid: Grid | null;
   enemyManager: EnemyManager | null;
   towerManager: TowerManager | null;
@@ -79,16 +79,15 @@ export class GameEngine {
 
   theme: MapThemeData | null = null;
 
-  constructor(gameStore: GameStore, persistStore: PersistStore, theme?: MapThemeData | null) {
+  constructor(gameStore: GameStore, persistStore: PersistStore, theme: MapThemeData | null, host: HostBindings) {
     this.gameStore = gameStore;
     this.persistStore = persistStore;
     this.theme = theme ?? null;
+    this.host = host;
 
     if (this.theme) {
       this.setTheme(this.theme);
     }
-
-    this.sound = new SoundManager();
 
     this.grid = null;
     this.enemyManager = null;
@@ -139,7 +138,7 @@ export class GameEngine {
       this.grid,
       this.particleManager,
       this.projectileManager,
-      this.sound,
+      this.host,
       this.theme,
     );
     this.projectileManager.setTowerLookup((towerId) => this.towerManager?.getTowerById(towerId) ?? null);
@@ -201,7 +200,7 @@ export class GameEngine {
     this.gameStore.runGemsEarned += afterRegion;
     this.persistStore.save();
 
-    this.sound.play("boss_die");
+    this.host.playSound("boss_die");
   }
 
   start(): void {
@@ -264,7 +263,7 @@ export class GameEngine {
           this.gameStore.bossesReachedBaseThisRun++;
           this.waveManager!.reportBossReachedBase();
         }
-        this.sound.play("base_hit");
+        this.host.playSound("base_hit");
         if (this.gameStore.lives <= 0) {
           this.shouldEndGame = true;
           return;
@@ -702,7 +701,6 @@ export class GameEngine {
 
   dispose(): void {
     this.stop();
-    this.sound.dispose();
     this.waveGraphTracker?.dispose();
   }
 

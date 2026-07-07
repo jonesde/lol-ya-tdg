@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { FIXED_DT, GameState, STARTING_GOLD_BONUS, STARTING_HEALTH_BONUS, StartingGold } from "@/game/Constants.js";
 import { TOWER_META } from "@/game/ConstantsTower.js";
 import { GameEngine } from "@/game/GameEngine.js";
-import { createTestStores } from "../helpers/mock-stores";
+import { createTestStores, MockHostBindings } from "../helpers/mock-stores";
 
 function runTicks(engine: GameEngine, ticks: number): void {
   for (let i = 0; i < ticks; i++) {
@@ -20,7 +20,7 @@ describe("Integration: Single Wave Simulation", () => {
     const stores = createTestStores();
     gameStore = stores.game;
     persistStore = stores.persist;
-    engine = new GameEngine(gameStore, persistStore);
+    engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     engine.loadMap(0);
     const grid = engine.grid!;
@@ -44,7 +44,7 @@ describe("Integration: Single Wave Simulation", () => {
     const stores = createTestStores();
     gameStore = stores.game;
     persistStore = stores.persist;
-    engine = new GameEngine(gameStore, persistStore);
+    engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     engine.loadMap(0);
     const grid = engine.grid!;
@@ -65,7 +65,7 @@ describe("Integration: Single Wave Simulation", () => {
     const stores = createTestStores();
     gameStore = stores.game;
     persistStore = stores.persist;
-    engine = new GameEngine(gameStore, persistStore);
+    engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     engine.loadMap(0);
 
@@ -87,7 +87,7 @@ describe("Integration: Single Wave Simulation", () => {
     const stores2 = createTestStores();
     gameStore = stores2.game;
     persistStore = stores2.persist;
-    engine = new GameEngine(gameStore, persistStore);
+    engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     engine.loadMap(0);
     const _initialGold = gameStore.gold;
@@ -106,7 +106,7 @@ describe("Integration: Tower Placement Flow", () => {
     const stores = createTestStores();
     const gameStore = stores.game;
     const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore);
+    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     engine.loadMap(0);
     const grid = engine.grid!;
@@ -123,7 +123,7 @@ describe("Integration: Tower Placement Flow", () => {
     const stores = createTestStores();
     const gameStore = stores.game;
     const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore);
+    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     engine.loadMap(0);
     const grid = engine.grid!;
@@ -136,7 +136,7 @@ describe("Integration: Tower Placement Flow", () => {
     const stores = createTestStores();
     const gameStore = stores.game;
     const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore);
+    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     engine.loadMap(0);
     const grid = engine.grid!;
@@ -154,7 +154,7 @@ describe("Integration: Tower Placement Flow", () => {
     const stores = createTestStores();
     const gameStore = stores.game;
     const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore);
+    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     engine.loadMap(0);
     const grid = engine.grid!;
@@ -176,7 +176,7 @@ describe("Integration: Economy Flow", () => {
     const stores = createTestStores();
     const gameStore = stores.game;
     const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore);
+    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     engine.loadMap(0);
     const grid = engine.grid!;
@@ -195,7 +195,7 @@ describe("Integration: Economy Flow", () => {
     const stores = createTestStores();
     const gameStore = stores.game;
     const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore);
+    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     engine.loadMap(0);
     const grid = engine.grid!;
@@ -215,7 +215,7 @@ describe("Integration: Economy Flow", () => {
     const stores = createTestStores();
     const gameStore = stores.game;
     const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore);
+    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     engine.loadMap(0);
     const grid = engine.grid!;
@@ -236,7 +236,7 @@ describe("Integration: Economy Flow", () => {
     const stores = createTestStores();
     const gameStore = stores.game;
     const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore);
+    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
 
     persistStore.generalAddons.startingGold = 0;
     persistStore.generalAddons.extraHealth = 0;

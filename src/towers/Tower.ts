@@ -30,6 +30,7 @@ import {
   UPGRADE_COST_BASE,
 } from "../game/ConstantsTower.js";
 import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "../render/themes/index.js";
+import type { SoundPlayer } from "../sim/HostBindings.js";
 import { useMapThemeStore } from "../stores/mapTheme.js";
 import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
 
@@ -132,10 +133,6 @@ interface ProjectileManagerRef {
     range?: number;
   }): void;
   setOnLightningFlash(callback: (startX: number, startY: number, endX: number, endY: number) => void): void;
-}
-
-interface SoundManagerRef {
-  play(name: string): void;
 }
 
 interface TowerStats {
@@ -657,12 +654,7 @@ export class Tower {
     return target;
   }
 
-  update(
-    dt: number,
-    enemyManager: EnemyManagerRef,
-    projectileManager: ProjectileManagerRef,
-    soundManager: SoundManagerRef,
-  ) {
+  update(dt: number, enemyManager: EnemyManagerRef, projectileManager: ProjectileManagerRef, sound: SoundPlayer) {
     this._gameSeconds += dt;
     if (this.cooldown > 0) this.cooldown -= dt;
 
@@ -737,7 +729,7 @@ export class Tower {
       if (targetEnemy) {
         if (this.cooldown <= 0) {
           const aimTarget = { x: this.x + ddx * rangePx, y: this.y + ddy * rangePx, id: 0 };
-          this.fire(aimTarget, enemyManager, projectileManager, soundManager);
+          this.fire(aimTarget, enemyManager, projectileManager, sound);
           this.cooldown = 1 / stats.fireRate;
         }
       }
@@ -763,7 +755,7 @@ export class Tower {
     if (target) {
       this.angle = Math.atan2(target.y - this.y, target.x - this.x);
       if (this.cooldown <= 0) {
-        this.fire(target, enemyManager, projectileManager, soundManager);
+        this.fire(target, enemyManager, projectileManager, sound);
         this.cooldown = 1 / stats.fireRate;
       }
     }
@@ -773,7 +765,7 @@ export class Tower {
     target: { x: number; y: number; id: number },
     _enemyManager: EnemyManagerRef,
     projectileManager: ProjectileManagerRef,
-    sound: SoundManagerRef,
+    sound: SoundPlayer,
   ) {
     const stats = this.stats;
     let fireDamage = stats.damage;
@@ -805,7 +797,7 @@ export class Tower {
         range: stats.range,
       });
       this.fireAnimTime = this._gameSeconds;
-      if (sound) sound.play(`shoot_${this.type}`);
+      if (sound) sound.playSound(`shoot_${this.type as TowerId}`);
       return;
     }
     projectileManager.spawn({
@@ -838,6 +830,6 @@ export class Tower {
       stunDur: stats.stun,
     });
     this.fireAnimTime = this._gameSeconds;
-    if (sound) sound.play(`shoot_${this.type}`);
+    if (sound) sound.playSound(`shoot_${this.type as TowerId}`);
   }
 }

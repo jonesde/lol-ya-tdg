@@ -1,17 +1,6 @@
 // Lightweight WebAudio synth — no external assets needed.
 
-type SoundName =
-  | "shoot_basic"
-  | "shoot_sniper"
-  | "shoot_cannon"
-  | "shoot_ice"
-  | "shoot_lightning"
-  | "shoot_railgun"
-  | "place"
-  | "base_hit"
-  | "boss_die"
-  | "sell"
-  | "cancel";
+import type { SoundName } from "@/sim/HostBindings.js";
 
 export class SoundManager {
   audioContext: AudioContext | null;

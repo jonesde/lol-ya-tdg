@@ -33,6 +33,8 @@ import { TowerManager } from "@/render/svg/TowerManager.js";
 import type { Particle, Projectile } from "@/render/svg/types.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
+import { MainThreadHostBindings } from "@/sim-adapters/MainThreadHostBindings.js";
+import { SoundManager } from "@/sound/SoundManager.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -222,6 +224,7 @@ const onClick = (e: MouseEvent): void => {
 };
 
 const resizeObserver = ref<ResizeObserver | null>(null);
+const soundManager = ref<SoundManager | null>(null);
 
 async function buildDefsImperative(staticContent: string, mapContent: string): Promise<void> {
   if (!defsLayer.value) return;
@@ -232,7 +235,9 @@ async function buildDefsImperative(staticContent: string, mapContent: string): P
 }
 
 onMounted(async () => {
-  engine.value = new GameEngine(gameStore, persistStore, themeStore.activeTheme);
+  const sound = new SoundManager();
+  soundManager.value = sound;
+  engine.value = new GameEngine(gameStore, persistStore, themeStore.activeTheme, new MainThreadHostBindings(sound));
   gameStore.setEngine(engine.value);
 
   useInput(gameStore, engine.value, uiStore);
@@ -389,6 +394,7 @@ onUnmounted(() => {
   pendingHoverScheduled = false;
   gameStore.clearEngine();
   engine.value?.dispose();
+  soundManager.value?.dispose();
   resizeObserver.value?.disconnect();
   resizeObserver.value = null;
 
