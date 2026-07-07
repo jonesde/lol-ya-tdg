@@ -636,9 +636,8 @@ export class GameEngine {
     const tower = gameStore.selectedTower;
     if (tower === null) return;
 
-    this.towerManager!.sell(tower, this.persistStore.$state);
-    const val =
-      this.persistStore.$state.generalAddons?.sellActive === "refund" ? tower.totalInvested : tower.sellValue();
+    const isRefund = this.persistStore.$state.generalAddons?.sellActive === "refund";
+    const val = isRefund ? tower.totalInvested : this.towerManager!.sell(tower, this.persistStore.$state);
     gameStore.setGold(gameStore.gold + val);
     this.totalGoldEarned += val;
     gameStore.selectTower(null);

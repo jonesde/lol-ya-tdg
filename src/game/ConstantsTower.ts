@@ -141,27 +141,26 @@ export const RAILGUN_KNOCKBACK_MULT = 3;
 // ===== Tower Variant Definitions =====
 // Applied when a tower reaches level 4 and is specialized (Tower.js)
 
+export type TowerVariantStats = {
+  range: number;
+  damage: number;
+  fireRate: number;
+  splash: number;
+  chain: number;
+  stun: number;
+  pierce: number;
+  pierceFalloff: number;
+  slowAmt: number;
+  slowDur: number;
+  marksman: boolean;
+  napalm: boolean;
+  stormcall: boolean;
+  knockback: boolean;
+};
+
 export interface TowerVariantConfig {
   name: string;
-  apply: (
-    stats: {
-      range: number;
-      damage: number;
-      fireRate: number;
-      splash: number;
-      chain: number;
-      stun: number;
-      pierce: number;
-      pierceFalloff: number;
-      slowAmt: number;
-      slowDur: number;
-      marksman: boolean;
-      napalm: boolean;
-      stormcall: boolean;
-      knockback: boolean;
-    },
-    tierIdx: number,
-  ) => Record<string, number | boolean>;
+  apply: (stats: TowerVariantStats, tierIdx: number) => TowerVariantStats;
 }
 
 export const TOWER_VARIANTS: Record<TowerId, { A: TowerVariantConfig; B: TowerVariantConfig }> = {

@@ -78,7 +78,6 @@ export class Enemy {
   worldPos!: { x: number; y: number };
   slowFactor!: number;
   slowStack!: SlowEntry[];
-  private _slowDirty: boolean = false;
   stunTimer!: number;
   reachedBase!: boolean;
   removed!: boolean;
@@ -173,7 +172,6 @@ export class Enemy {
     } else {
       this.slowStack.push({ eff, remaining: duration });
     }
-    this._slowDirty = true;
     this.recalcSlow();
   }
 
@@ -230,23 +228,6 @@ export class Enemy {
       if (slowEntry.remaining <= 0) {
         this.slowStack.splice(i, 1);
       }
-    }
-    if (this._slowDirty) {
-      if (this.slowStack.length > 1) {
-        this.slowStack.sort((entryA, entryB) => entryB.eff - entryA.eff);
-        const merged: SlowEntry[] = [this.slowStack[0]!];
-        for (let i = 1; i < this.slowStack.length; i++) {
-          const cur = this.slowStack[i]!;
-          const last = merged[merged.length - 1]!;
-          if (Math.abs(cur.eff - last.eff) < 0.001) {
-            last.remaining = Math.max(last.remaining, cur.remaining);
-          } else {
-            merged.push(cur);
-          }
-        }
-        this.slowStack = merged;
-      }
-      this._slowDirty = false;
     }
     if (this.slowStack.length === 0) this.slowFactor = 1;
     else this.recalcSlow();

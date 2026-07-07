@@ -192,19 +192,7 @@ export class WaveManager {
   update(dt: number, onWaveCleared: ((wave: number) => void) | null, onWaveStart: ((wave: number) => void) | null) {
     this.updateSpawnTimers(dt);
 
-    if (this.queue.length === 0) {
-      for (let i = 0; i < this.spawnStates.length; i++) {
-        if (
-          this.spawnStates[i]!.visualState === "open" &&
-          this.enemyManager.getActiveEnemyCountForSpawn(i) === 0 &&
-          this.enemyManager.getPendingCountForSpawn(i) === 0
-        ) {
-          this.transitionSpawnToClosed(i);
-        }
-      }
-    }
-
-    if (!(!this.queue.length && !this.enemyManager.hasPendingEnemies() && this.enemyManager.enemies.length === 0)) {
+    if (this.queue.length === 0 && !this.enemyManager.hasPendingEnemies() && this.enemyManager.enemies.length === 0) {
       for (let i = 0; i < this.spawnStates.length; i++) {
         if (this.spawnStates[i]!.visualState === "open") {
           if (

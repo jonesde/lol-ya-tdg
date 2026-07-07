@@ -858,4 +858,169 @@ describe("ProjectileManager", () => {
       expect(applyStun).toHaveBeenCalledWith(0.2);
     });
   });
+
+  describe("fixed-aim projectile (targetId === 0)", () => {
+    it("travels toward target position without enemy lookup", () => {
+      enemyManager = createMockEnemyManager([]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 200,
+        range: 10,
+        towerType: "railgun",
+        towerLevel: 1,
+        targetId: 0,
+        targetX: 300,
+        targetY: 200,
+      });
+
+      manager.update(0.5);
+
+      const renderData = manager.getRenderData();
+      expect(renderData).toHaveLength(1);
+      expect(renderData[0]!.x).toBeCloseTo(200, 0);
+      expect(renderData[0]!.y).toBe(200);
+    });
+
+    it("does not get removed on frame one when no enemy has id 0", () => {
+      enemyManager = createMockEnemyManager([]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 200,
+        range: 10,
+        towerType: "railgun",
+        towerLevel: 1,
+        targetId: 0,
+        targetX: 300,
+        targetY: 200,
+      });
+
+      manager.update(0.016);
+
+      expect(manager.getRenderData()).toHaveLength(1);
+    });
+
+    it("hits enemy along the path", () => {
+      const enemy = createMockEnemy({ id: 1, x: 180, y: 200, hp: 100, maxHp: 100 });
+      const takeDamage = vi.fn();
+      enemy.takeDamage = takeDamage;
+      enemyManager = createMockEnemyManager([enemy]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 25,
+        speed: 160,
+        range: 10,
+        towerType: "railgun",
+        towerLevel: 1,
+        targetId: 0,
+        targetX: 400,
+        targetY: 200,
+      });
+
+      manager.update(0.5);
+
+      expect(takeDamage).toHaveBeenCalled();
+      expect(takeDamage.mock.calls[0][0]).toBe(25);
+    });
+
+    it("pierces through multiple enemies along the path", () => {
+      const enemy1 = createMockEnemy({ id: 1, x: 100, y: 200, hp: 100, maxHp: 100 });
+      const takeDamage1 = vi.fn();
+      enemy1.takeDamage = takeDamage1;
+      const enemy2 = createMockEnemy({ id: 2, x: 180, y: 200, hp: 100, maxHp: 100 });
+      const takeDamage2 = vi.fn();
+      enemy2.takeDamage = takeDamage2;
+      enemyManager = createMockEnemyManager([enemy1, enemy2]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 20,
+        speed: 160,
+        range: 10,
+        towerType: "railgun",
+        towerLevel: 1,
+        targetId: 0,
+        targetX: 400,
+        targetY: 200,
+        pierce: 2,
+      });
+
+      manager.update(0.5);
+
+      expect(takeDamage1).toHaveBeenCalled();
+      expect(takeDamage1.mock.calls[0][0]).toBe(20);
+      expect(takeDamage2).toHaveBeenCalled();
+      expect(takeDamage2.mock.calls[0][0]).toBe(20);
+    });
+
+    it("expires at target position when no enemies in path", () => {
+      enemyManager = createMockEnemyManager([]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 1000,
+        range: 10,
+        towerType: "railgun",
+        towerLevel: 1,
+        targetId: 0,
+        targetX: 200,
+        targetY: 200,
+      });
+
+      manager.update(0.5);
+
+      expect(manager.getRenderData()).toHaveLength(0);
+    });
+
+    it("stops after piercing through all allowed targets", () => {
+      const enemy1 = createMockEnemy({ id: 1, x: 100, y: 200, hp: 100, maxHp: 100 });
+      const takeDamage1 = vi.fn();
+      enemy1.takeDamage = takeDamage1;
+      const enemy2 = createMockEnemy({ id: 2, x: 180, y: 200, hp: 100, maxHp: 100 });
+      const takeDamage2 = vi.fn();
+      enemy2.takeDamage = takeDamage2;
+      const enemy3 = createMockEnemy({ id: 3, x: 300, y: 200, hp: 100, maxHp: 100 });
+      const takeDamage3 = vi.fn();
+      enemy3.takeDamage = takeDamage3;
+      enemyManager = createMockEnemyManager([enemy1, enemy2, enemy3]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 20,
+        speed: 160,
+        range: 10,
+        towerType: "railgun",
+        towerLevel: 1,
+        targetId: 0,
+        targetX: 500,
+        targetY: 200,
+        pierce: 1,
+      });
+
+      manager.update(0.5);
+
+      expect(takeDamage1).toHaveBeenCalled();
+      expect(takeDamage1.mock.calls[0][0]).toBe(20);
+      expect(takeDamage2).toHaveBeenCalled();
+      expect(takeDamage2.mock.calls[0][0]).toBe(20);
+      expect(takeDamage3).not.toHaveBeenCalled();
+    });
+  });
 });

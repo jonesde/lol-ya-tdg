@@ -31,6 +31,8 @@ export interface ProjectileGame {
   towerType: string;
   towerLevel: number;
   targetId: number;
+  targetX: number;
+  targetY: number;
   splashRadius: number;
   pierceCount: number;
   knockback: number;
@@ -57,6 +59,9 @@ export interface ProjectileGame {
   markTarget: number;
   antiHeal: boolean;
   burnCircuit: boolean;
+  // Fixed-aim tracking
+  hitEnemyIds?: Set<number>;
+  fixedAimHits?: number;
 }
 
 interface LightningTarget {
@@ -82,7 +87,20 @@ export interface EnemyManager {
     x: number,
     y: number,
     range: number,
-  ): { id: number; hp: number; maxHp: number; x: number; y: number; takeDamage(dmg: number): void }[];
+  ): {
+    id: number;
+    type: string;
+    x: number;
+    y: number;
+    hp: number;
+    maxHp: number;
+    takeDamage(dmg: number, armorPiercing?: boolean): void;
+    applyBurn?(dps: number, duration: number): void;
+    applySlow?(factor: number, duration: number): void;
+    applyStun?(duration: number): void;
+    applyMarkTarget?(mult: number, duration: number): void;
+    applyAntiHeal?(duration: number): void;
+  }[];
   getEnemyById(
     id: number,
   ): {
@@ -169,6 +187,8 @@ export class ProjectileManager {
     towerType: string;
     towerLevel: number;
     targetId: number;
+    targetX?: number;
+    targetY?: number;
     slowAmt?: number;
     slowDur?: number;
     towerId?: string;
@@ -199,6 +219,8 @@ export class ProjectileManager {
       towerType: opts.towerType,
       towerLevel: opts.towerLevel,
       targetId: opts.targetId,
+      targetX: opts.targetX ?? 0,
+      targetY: opts.targetY ?? 0,
       splashRadius: 0,
       pierceCount: 0,
       knockback: 0,
@@ -350,6 +372,68 @@ export class ProjectileManager {
   }
 
   private updateCircleProjectile(projectile: ProjectileGame, dt: number): void {
+    // Fixed-aim: targetId === 0, travel straight toward aimed world position
+    if (projectile.targetId === 0) {
+      const hitThreshold = projectile.radius + PROJECTILE_HIT_THRESHOLD;
+      const hitEnemyIds = projectile.hitEnemyIds;
+      if (hitEnemyIds === undefined) {
+        projectile.hitEnemyIds = new Set<number>();
+      }
+      const hitSet = projectile.hitEnemyIds as Set<number>;
+      let fixedAimHits: number = projectile.fixedAimHits ?? 0;
+      if (projectile.fixedAimHits === undefined) {
+        projectile.fixedAimHits = 0;
+      }
+
+      const targetDx = projectile.targetX - projectile.x;
+      const targetDy = projectile.targetY - projectile.y;
+      const targetDist = Math.sqrt(targetDx * targetDx + targetDy * targetDy);
+      const moveAmount = projectile.speed * dt;
+
+      // Scan for enemies at current position before moving
+      const scanNearby = (): boolean => {
+        const nearbyEnemies = this.enemyManager.getEnemiesInRange(projectile.x, projectile.y, hitThreshold);
+        for (const nearbyEnemy of nearbyEnemies) {
+          if (!hitSet.has(nearbyEnemy.id)) {
+            this.hitCircleProjectile(projectile, nearbyEnemy);
+            hitSet.add(nearbyEnemy.id);
+            fixedAimHits++;
+            projectile.fixedAimHits = fixedAimHits;
+            // If pierce removed projectile, restore it to continue toward aim point
+            if (!projectile.active && fixedAimHits <= projectile.pierceCount) {
+              projectile.active = true;
+              projectile.targetId = 0;
+            }
+            return true;
+          }
+        }
+        return false;
+      };
+
+      scanNearby();
+      if (!projectile.active) return;
+
+      // Move toward target position
+      if (targetDist > 0) {
+        const moveDist = Math.min(moveAmount, targetDist);
+        projectile.x += (targetDx / targetDist) * moveDist;
+        projectile.y += (targetDy / targetDist) * moveDist;
+      }
+
+      // Scan for enemies at new position after moving
+      scanNearby();
+      if (!projectile.active) return;
+
+      // Check if reached aim point (after hit scan so enemies AT aim point are hit)
+      const finalDx = projectile.targetX - projectile.x;
+      const finalDy = projectile.targetY - projectile.y;
+      const finalDist = Math.sqrt(finalDx * finalDx + finalDy * finalDy);
+      if (finalDist <= hitThreshold) {
+        this.removeProjectile(projectile, "reached-target");
+      }
+      return;
+    }
+
     const enemy = this.enemyManager.getEnemyById(projectile.targetId);
     if (!enemy || enemy.removed) {
       this.removeProjectile(projectile, "target-lost");

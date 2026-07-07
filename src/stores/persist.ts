@@ -20,6 +20,7 @@ export interface GeneralAddons {
   sellActive: string | null;
   upgradeCostReduction: number | null;
   terrainHeightBonus: number | null;
+  terrainHeightRangeBonus: number | null;
   damageMilestoneBonus: number | null;
   slowHealing: number | null;
 }
@@ -88,6 +89,7 @@ function defaultGeneralAddons(): GeneralAddons {
     sellActive: null,
     upgradeCostReduction: null,
     terrainHeightBonus: null,
+    terrainHeightRangeBonus: null,
     damageMilestoneBonus: null,
     slowHealing: null,
   };

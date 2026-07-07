@@ -84,6 +84,8 @@ interface ProjectileManagerRef {
     towerType: string;
     towerLevel: number;
     targetId: number;
+    targetX?: number;
+    targetY?: number;
     slowAmt?: number;
     slowDur?: number;
     towerId?: string;
@@ -327,7 +329,7 @@ export class Tower {
     if (this.level >= 5 && this.variant === "A") {
       const variantA = TOWER_VARIANTS[this.type as TowerId]?.A;
       if (variantA) {
-        const result = variantA.apply(
+        const variantAResult = variantA.apply(
           {
             range,
             damage,
@@ -345,7 +347,7 @@ export class Tower {
             knockback,
           },
           level - 5,
-        ) as unknown as TowerStats;
+        );
         ({
           range,
           damage,
@@ -361,13 +363,13 @@ export class Tower {
           napalm,
           stormcall,
           knockback,
-        } = result);
+        } = variantAResult);
       }
     }
     if (this.level >= 5 && this.variant === "B") {
       const variantB = TOWER_VARIANTS[this.type as TowerId]?.B;
       if (variantB) {
-        const result = variantB.apply(
+        const variantBResult = variantB.apply(
           {
             range,
             damage,
@@ -385,7 +387,7 @@ export class Tower {
             knockback,
           },
           level - 5,
-        ) as unknown as TowerStats;
+        );
         ({
           range,
           damage,
@@ -401,7 +403,7 @@ export class Tower {
           napalm,
           stormcall,
           knockback,
-        } = result);
+        } = variantBResult);
       }
     }
 
@@ -773,6 +775,8 @@ export class Tower {
       towerType: this.type,
       towerLevel: this.level,
       targetId: target.id,
+      targetX: target.x,
+      targetY: target.y,
       slowAmt: stats.slowAmt,
       slowDur: stats.slowDur,
       napalm: stats.napalm,
