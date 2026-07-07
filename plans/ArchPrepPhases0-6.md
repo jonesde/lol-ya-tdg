@@ -31,7 +31,13 @@ Adapters that depend on Pinia/DOM live **outside** `src/sim/` (they import from 
 
 The split keeps `src/sim/` itself free of any `src/stores/` import, while the adapters — which the worker never imports — can reach into Pinia freely.
 
-The directory forms a **build-time boundary**: it must not import anything from `src/stores/`, `src/components/`, `src/router/`, or `src/sound/`. A `tsconfig`-level path-alias check or an ESLint `no-restricted-imports` rule should enforce this from Phase 1 onward. This is what prevents accidental transitive coupling to Pinia — see Risk §7.5 in `ArchitecturePlan.md`.
+The directory forms a **build-time boundary**: it must not import anything from `src/stores/`, `src/components/`, `src/router/`, or `src/sound/`. **The project uses Biome (not ESLint) for linting** (see `biome.json` and `package.json`'s `lint` script), and Biome has no `no-restricted-imports`-equivalent rule. The boundary is therefore enforced by a **small custom script** wired into `package.json`:
+
+- Add `scripts/check-sim-boundary.ts` (run via `tsx` or compiled) that walks every `.ts` file under `src/sim/` and fails if any `import ... from "@/stores/..."`, `import ... from "@/components/..."`, `import ... from "@/router/..."`, or `import ... from "@/sound/..."` is found. The two `MainThread*` adapter files (`src/sim/MainThreadHostBindings.ts`, `src/sim/MainThreadCommandDispatcher.ts`) are the **only** files exempted — they live under `src/sim/` but explicitly import stores; the script's exemption list is exactly those two filenames (do **not** exempt by directory glob, or a future file would silently bypass the rule).
+- Add `"check:sim-boundary": "tsx scripts/check-sim-boundary.ts"` to `package.json` and chain it into the existing `lint` script (`"lint": "biome check . && npm run check:sim-boundary"`) so it runs in CI and on every `npm run lint`.
+- A grep-only fallback (one-liner in CI) is acceptable as a stopgap if `tsx` isn't already a dev dependency — but prefer the script so the failure message can name the offending file and import line.
+
+This is what prevents accidental transitive coupling to Pinia — see Risk §7.5 in `ArchitecturePlan.md`. The rule is in place from Phase 1 onward (Phase 0 only adds `HostBindings.ts` and `MainThreadHostBindings.ts`; the script can be added in Phase 0 or Phase 1 — recommend Phase 0 so the boundary is enforced the moment `src/sim/` exists).
 
 ### Boundary policy for migration-target directories
 
@@ -109,12 +115,20 @@ export interface HostBindings extends SoundPlayer {
   requestConfirm(payload: ConfirmPayload): Promise<boolean>;
 }
 
-// SoundName is currently a private type inside SoundManager.ts. Hoist it to
-// src/sim/HostBindings.ts (option (a)) and have SoundManager.ts import it from
-// here. This is preferable to exporting from SoundManager.ts (option (b))
-// because SoundManager.ts will eventually also live in or near the worker, and
-// the sim boundary should own the contract types that cross it. SoundManager
-// remains the implementation; HostBindings owns the type.
+// SoundName is currently MODULE-PRIVATE in src/sound/SoundManager.ts:3-14
+// (`type SoundName = ...` — NO `export` keyword). No module outside
+// SoundManager.ts imports it today (verified: only SoundManager.ts references
+// the name, internally). Phase 0 makes `SoundManager.ts`'s declaration go
+// away and defines SoundName canonically HERE in src/sim/HostBindings.ts.
+// The change to SoundManager.ts is:
+//   - DELETE the local `type SoundName = ...` declaration (lines 3-14).
+//   - ADD `import type { SoundName } from "@/sim/HostBindings.js";` at the top.
+//   - The `play(name: SoundName)` method signature is unchanged — `SoundName`
+//     now resolves via the import instead of a local declaration.
+// This is option (b) from the original plan: SoundManager remains the
+// implementation; HostBindings owns the contract type that crosses the sim
+// boundary. No "re-export" is involved — the type literally moves from
+// SoundManager.ts to HostBindings.ts.
 export type SoundName =
   | "shoot_basic" | "shoot_sniper" | "shoot_cannon"
   | "shoot_ice" | "shoot_lightning" | "shoot_railgun"
@@ -237,13 +251,28 @@ export class GameEngine {
 }
 ```
 
-`SoundManager` construction moves to `SvgGameRoot.vue` next to where the engine is created (`src/components/SvgGameRoot.vue:235`):
+`SoundManager` construction moves to `SvgGameRoot.vue` next to where the engine is created (`src/components/SvgGameRoot.vue:235`). `SvgGameRoot.vue` already has an `onUnmounted` hook (`SvgGameRoot.vue:388`) that disposes the engine and the render managers — it **must also dispose the `SoundManager`** in the same hook, since the host now owns it (Phase 0 deletes `GameEngine.dispose()`'s `this.sound.dispose()` call). Concretely, `SvgGameRoot.vue` keeps a ref to the `SoundManager` it constructed and calls `soundManager.dispose()` in `onUnmounted` alongside `engine.value?.dispose()` and the render-manager disposes:
 
 ```ts
+// src/components/SvgGameRoot.vue (Phase 0 wiring)
 const soundManager = new SoundManager();
 const host = new MainThreadHostBindings(soundManager);
 engine.value = new GameEngine(gameStore, persistStore, themeStore.activeTheme, host);
+
+// ... later, in the existing onUnmounted hook (SvgGameRoot.vue:388):
+onUnmounted(() => {
+  pendingHoverScheduled = false;
+  gameStore.clearEngine();
+  engine.value?.dispose();
+  soundManager.dispose();   // NEW — host owns disposal now
+  resizeObserver.value?.disconnect();
+  resizeObserver.value = null;
+  enemyManager.dispose();
+  // ... existing render-manager disposes ...
+});
 ```
+
+If the `SoundManager` instance is also referenced for any non-engine sound (it isn't today, but defensively), keep the ref at component scope so both the host construction and the unmount hook can reach it.
 
 ### Routing position: why Phase 0 routes all sound immediately
 
@@ -260,16 +289,21 @@ This is the part the earlier plan missed. The sound interface flows through thre
 
 1. `GameEngine.ts:142` constructs `TowerManager(grid, particles, projectiles, this.sound, theme)`. Change the 4th parameter from `this.sound` (a `SoundManager`) to `this.host` (a `HostBindings`, which is also a `SoundPlayer` by interface extension). `TowerManager` stores it as `SoundPlayer`.
 
-2. `TowerManager.ts:110` currently takes `sound: SoundManagerRef`. Change the parameter type to `sound: SoundPlayer`. Update the `SoundManagerRef` interface (`TowerManager.ts:78`) — it is deleted and replaced by the shared `SoundPlayer` from `src/sim/HostBindings.ts`. The implementation already just delegates, so this is a type rename:
-
+2. `TowerManager.ts:110` currently takes `sound: SoundManagerRef`. Change the parameter type to `sound: SoundPlayer`. The current `SoundManagerRef` interface is defined **twice** — once at `TowerManager.ts:78-80` and once identically at `Tower.ts:137-139`. Both are:
    ```ts
-   // Old: interface SoundManagerRef { play(name: SoundName): void; }
-   // New: import type { SoundPlayer } from "@/sim/HostBindings.js";
-   //      (SoundPlayer has playSound(name), not play(name) — update call sites)
+   // Old (both files): interface SoundManagerRef { play(name: string): void; }
+   //   NOTE: method name is "play" (not "playSound"), param type is "string"
+   //   (not SoundName) — the current interface is stringly-typed.
+   // New (both files): import type { SoundPlayer } from "@/sim/HostBindings.js";
+   //   (SoundPlayer has playSound(name: SoundName), not play(name: string))
    ```
-   `TowerManager.ts:136,147,157` (`this.sound.play("place")` / `"sell"` / `"cancel"`) become `this.sound.playSound("place")` etc.
+   This is NOT a pure type rename — it changes the method name (`play` → `playSound`) and tightens the parameter type (`string` → `SoundName`). Phase 0 must:
+   - **Delete both `SoundManagerRef` interface definitions** (`TowerManager.ts:78-80` and `Tower.ts:137-139`).
+   - **Add `import type { SoundPlayer } from "@/sim/HostBindings.js";`** to both `TowerManager.ts` and `Tower.ts`.
+   - **Re-type 4 annotations**: `TowerManager.ts:99` (field `sound: SoundManagerRef` → `SoundPlayer`), `:110` (constructor param), `Tower.ts:664` (`soundManager: SoundManagerRef` param → `SoundPlayer`), `:776` (`sound: SoundManagerRef` param → `SoundPlayer`).
+   - **Rename the method at 5 call sites**: `TowerManager.ts:136,147,157` (`this.sound.play("place"|"sell"|"cancel")` → `this.sound.playSound(...)`) and `Tower.ts:808,841` (`sound.play(\`shoot_${this.type}\`)` → `sound.playSound(\`shoot_${this.type}\` as SoundName)`).
 
-3. `TowerManager.ts:184` calls `tower.update(dt, enemyManager, this.projectiles, this.sound)`. The `sound` parameter on `Tower.update` (`Tower.ts:664,776`) is re-typed from `SoundManagerRef` to `SoundPlayer`. The call sites at `Tower.ts:808,841` (`if (sound) sound.play(\`shoot_${this.type}\`)`) become `if (sound) sound.playSound(\`shoot_${this.type}\` as SoundName)`. (The cast is because template-literal types don't narrow to the union; see Phase 3's implementation note about making `SoundName` a template-literal type.)
+3. `TowerManager.ts:184` calls `tower.update(dt, enemyManager, this.projectiles, this.sound)`. The `sound` parameter on `Tower.update` (`Tower.ts:664,776`) is re-typed from `SoundManagerRef` to `SoundPlayer` (covered in step 2 above). The call sites at `Tower.ts:808,841` (`if (sound) sound.play(\`shoot_${this.type}\`)`) become `if (sound) sound.playSound(\`shoot_${this.type}\` as SoundName)`. (The cast is because template-literal types don't narrow to the union; see Phase 3's implementation note about making `SoundName` a template-literal type.)
 
 ### What stays the same in Phase 0
 
@@ -493,6 +527,15 @@ Add two fields, construct them at init, and pair every `gameStore`/`persistStore
 export class GameEngine {
   runState!: GameRunState;
   persistState!: PersistState;
+  // Set to true whenever a persist-state mutation occurs (gems, bestWaves,
+  // firstTimeMilestones, firstClears, runHistory, activeWaves, highestUnlockedMap).
+  // The SnapshotSerializer (Phase 5) reads this; the host (Phase 7+) flushes
+  // localStorage when the snapshot's persistDirty is true. Reset to false
+  // after each snapshot is built (Phase 5) or after the host flushes (Phase 7+).
+  // Phase 1 adds the field and sets it true at every persist mutation site
+  // (onBossKilled, onWaveCleared, endGame, etc.) — concretely, in the same
+  // lines that call syncAddPersistGems or other persist-mutating sync helpers.
+  persistDirty: boolean = false;
   // ... existing fields ...
 
   _initMap(mapIndex: number, mapData: GeneratedMap): void {
@@ -557,9 +600,11 @@ import type { GameRunState, GemBreakdown, EndScreenPayload } from "./GameRunStat
 import type { GameStore } from "@/stores/game.js";
 import type { PersistState } from "./PersistState.js";
 import type { PersistStore } from "@/stores/persist.js";
+import type { Tower } from "@/towers/Tower.js";  // for syncSelectTower below
 
-// Every dual-write goes through one of these. A custom ESLint rule
-// (no-restricted-syntax) flags `this.gameStore.<field> =` or
+// Every dual-write goes through one of these. A custom check (either a
+// small script similar to the sim-boundary check, or a Biome-specific
+// approach) flags `this.gameStore.<field> =` or
 // `this.runState.<field> =` outside this module.
 //
 // Full enumeration of dual-written fields, derived from auditing every
@@ -601,6 +646,12 @@ export function syncAddRunGems(gs: GameStore, rs: GameRunState, amount: number):
 }
 
 // --- Persist gems (mutation sites: onBossKilled, onWaveCleared, endGame) ---
+// NOTE: every call site that calls this helper MUST also set
+// `this.persistDirty = true` on the engine (the helper itself has no engine
+// reference). Same for any other persist-mutating sync helper. The engine's
+// persistDirty field (added in Phase 1 — see GameEngine changes below) is
+// read by the Phase 5 SnapshotSerializer and reset to false after each
+// snapshot build.
 export function syncAddPersistGems(ps: PersistStore, pstate: PersistState, amount: number): void {
   ps.gems += amount; pstate.gems += amount;
 }
@@ -622,11 +673,14 @@ export function syncSetState(gs: GameStore, rs: GameRunState, value: GameState):
 
 // --- Selection (mutation sites: handleClick, selectTower, executeSellById,
 //     cancelSelected, endGame, cancelBuildMode) ---
-export function syncSelectTower(gs: GameStore, rs: GameRunState, towerId: string | null): void {
-  // gs.selectTower takes a Tower ref; rs uses id. Lookup happens at the call site
-  // (or pass the tower ref + id together). For Phase 1, the helper takes both:
-  gs.selectedTower = /* resolve from towerId */ null;
-  rs.selectedTowerId = towerId;
+// The helper takes a live `Tower | null` reference (the same value the
+// existing gameStore.selectTower(tower) call sites pass today) and derives
+// the id from it internally — the sim side stores the id, not the ref. No
+// call site needs to pass (ref, id) together; the id is read off the ref.
+// When `tower` is null, both sides clear selection.
+export function syncSelectTower(gs: GameStore, rs: GameRunState, tower: Tower | null): void {
+  gs.selectedTower = tower;                       // Pinia side keeps the live ref
+  rs.selectedTowerId = tower ? tower.id : null;   // plain mirror keeps the id only
 }
 
 // --- Milestone rewards claimed (mutation sites: onWaveCleared) ---
@@ -666,7 +720,7 @@ export function syncSetUpgradeBtnAnim(gs: GameStore, rs: GameRunState, value: nu
 //   randomMapParams — set once at init
 ```
 
-Engine call sites become `syncGold(this.gameStore, this.runState, amount)` instead of two separate writes. The ESLint rule makes drift a compile-time lint error rather than a runtime regression. If the lint rule is too much investment for Phase 1, the fallback is a code-review checklist item and the knowledge that Phase 7's cutover will surface any drift immediately — but recommend the helper approach for any field with more than two mutation sites.
+Engine call sites become `syncGold(this.gameStore, this.runState, amount)` instead of two separate writes. The drift-detection check makes drift a lint-time error rather than a runtime regression. If the check is too much investment for Phase 1, the fallback is a code-review checklist item and the knowledge that Phase 7's cutover will surface any drift immediately — but recommend the helper approach for any field with more than two mutation sites.
 
 ### `WaveGraphTracker`
 
@@ -683,7 +737,16 @@ constructor(
 ) { ... }
 ```
 
-Update the `new WaveGraphTracker(...)` call at `GameEngine.ts:153-158` to pass `this.runState` and `this.persistState` as the 5th and 6th args. The reads at `WaveGraphTracker.ts:81` (`persistStore.gems`) and `:88,147` (`gameStore.lives`) get paired reads from the plain state. Same additive pattern.
+Update the `new WaveGraphTracker(...)` call at `GameEngine.ts:153-158` to pass `this.runState` and `this.persistState` as the 5th and 6th args. The same additive pattern applies to every read. **Full read inventory** (audit of `src/game/WaveGraphTracker.ts` — every `this.gameStore.<field>` and `this.persistStore.<field>` read must get a paired `this.runState.<field>` / `this.persistState.<field>` read):
+
+| Line | Current read | Add paired plain-state read |
+|---|---|---|
+| `:64-65` (constructor) | `persistStore.gems` → `_prevGems`; `gameStore.lives` → `_intervalMinLives` | `persistState.gems` → `_prevGemsPlain`; `runState.lives` → `_intervalMinLivesPlain` |
+| `:81` | `this.persistStore.gems` (current gems snapshot) | `this.persistState.gems` |
+| `:88` | `this.gameStore.lives` (interval min check) | `this.runState.lives` |
+| `:89,147` | `this.gameStore.lives` (write to internal `_intervalMinLives`) | `this.runState.lives` (paired read) |
+
+The plan stores both the Pinia value and the plain-mirror value in separate internal fields during Phase 1 (e.g., `_prevGems` and `_prevGemsPlain`) and reads both at each site. Phase 7 drops the Pinia fields; the `_plain` fields become the only ones. If a future read site is added, the same dual-read pattern applies — the boundary script does not catch reads (it catches imports only), so this is a code-review checklist item for `WaveGraphTracker` specifically.
 
 ### Test impact
 
@@ -872,9 +935,9 @@ Phase 0 already routed all sound through `HostBindings` (and `SoundPlayer` for `
 
 1. **Verify deletion of `this.sound` field on `GameEngine`** (already done in Phase 0). Grep for any remaining `this.sound` references in `GameEngine.ts` — there should be none.
 
-2. **Delete the `SoundManagerRef` interface** at `TowerManager.ts:78`. `TowerManager` and `Tower` now import `SoundPlayer` from `src/sim/HostBindings.ts` (done in Phase 0). The local interface is dead code.
+2. **Verify deletion of both `SoundManagerRef` interfaces** (already done in Phase 0). Phase 0 deleted the interface at `TowerManager.ts:78-80` **and** the identical one at `Tower.ts:137-139`, replacing both with `import type { SoundPlayer }`. Grep for any remaining `SoundManagerRef` references across `src/` — there should be none. If any remain, delete them and switch to `SoundPlayer`. This step is a verification gate, not new work.
 
-3. **Apply the `SoundName` template-literal improvement** (optional but recommended):
+3. **Apply the `SoundName` template-literal improvement** (recommended, low effort — eliminates the `as SoundName` cast at `Tower.ts:808,841` and gives compile-time safety against typos in shoot sound names):
    ```ts
    export type ShootSoundName = `shoot_${TowerId}`;
    export type SoundName = ShootSoundName | "place" | "base_hit" | "boss_die" | "sell" | "cancel";
@@ -987,7 +1050,7 @@ Currently synchronous and has no confirm dialog (`GameEngine.ts:652-657`). No ch
 ## Phase 5 — Snapshot and Command schema
 
 ### Goal
-Define the `SimulationSnapshot` and `Command` types. Add `getRenderData()` to `Enemy` and `Tower`. Update render managers' `syncFromGameEngine` signatures to accept snapshot arrays. The engine still runs on the main thread; snapshots are produced but consumed locally. **No behavior change** — the render path is exercised end-to-end via the new DTO path, proving the schema is complete before the worker migration.
+Define the `SimulationSnapshot` and `Command` types. The `SnapshotSerializer` maps `Enemy` and `Tower` directly into plain `EnemySnapshot` / `TowerSnapshot` DTOs (no `getRenderData()` method is added to those entity classes — the serializer owns the field-by-field mapping, which keeps the entity classes free of rendering concerns and avoids an extra method per entity). `ProjectileManager` and `ParticleSystem` already expose `getRenderData()` returning plain DTO arrays (`src/game/ProjectileManager.ts:774`, `src/game/ParticleSystem.ts:70`); the serializer **reuses** those existing methods and their existing return types (see the ProjectileSnapshot / ParticleSnapshot reuse note below). Update render managers' `syncFromGameEngine` signatures to accept snapshot arrays. The engine still runs on the main thread; snapshots are produced but consumed locally. **No behavior change** — the render path is exercised end-to-end via the new DTO path, proving the schema is complete before the worker migration.
 
 ### Performance note: Phase 5 serialization overhead
 
@@ -1034,10 +1097,13 @@ export type Command =
   | { commandId: number; type: "action:setTargeting"; mode: string }
   | { commandId: number; type: "action:setFixedAimDir"; dir: "N" | "E" | "S" | "W" | null }
   | { commandId: number; type: "action:cancelBuildMode" }
-  // @tech-debt Phase 6: this command is a no-op in applyCommand (engine.selectTower
-  // takes a live Tower ref, not an id). Phase 7 implements engine.selectTowerById(id)
-  // and wires this case. The command exists in the schema now so Phase 7 doesn't
-  // need to add it. See Phase 6 "Known tech debt" callout.
+  // @tech-debt PHASE 6 STUB — PROMINENT: this command variant is DEFINED in
+  // the schema here in Phase 5 but is NOT DISPATCHED by Phase 6's applyCommand
+  // (it's a no-op `break` there). Phase 7 implements engine.selectTowerById(id)
+  // and wires this case. The command exists in the schema now so Phase 7
+  // doesn't need to add a new variant. For Phases 5–6, the existing
+  // gameStore.selectTower(tower) calls in Input.ts and SvgGameRoot.vue stay
+  // direct (not via the dispatcher). See Phase 6 "Known tech debt" callout.
   | { commandId: number; type: "action:selectTower"; towerId: string | null }
 
   // ---- Lifecycle ----
@@ -1059,6 +1125,8 @@ export type Command =
 ```ts
 import type { GameRunState } from "./GameRunState.js";
 import type { PersistState } from "./PersistState.js";
+import type { ProjectileManager } from "@/game/ProjectileManager.js";
+import type { ParticleSystem } from "@/game/ParticleSystem.js";
 
 export interface SimulationSnapshot {
   schemaVersion: number;       // bump on incompatible schema changes; consumers reject mismatches
@@ -1152,20 +1220,26 @@ export interface TowerSnapshot {
   fixedAimDir: "N" | "E" | "S" | "W" | null;
 }
 
-// Projectile and Particle snapshots already exist as the return types of
-// the existing getRenderData() methods. Re-export them here under the new
-// names for consistency, or define matching interfaces and have the
-// SnapshotSerializer map between them.
-export interface ProjectileSnapshot {
-  id: number; x: number; y: number; radius: number; color: string;
-  // Extend with any fields the render manager reads beyond the above.
-  // Audit src/render/svg/ProjectileManager.ts:22 syncFromGameEngine.
-}
+// Projectile and Particle snapshots: REUSE the existing DTO types, do NOT
+// define new ones. The existing methods already return plain arrays:
+//   - ProjectileManager.getRenderData() at src/game/ProjectileManager.ts:774
+//     returns Array<{ id: number; x: number; y: number; radius: number; color: string }>
+//   - ParticleSystem.getRenderData() at src/game/ParticleSystem.ts:70
+//     returns RenderParticle[] (defined inline in ParticleSystem.ts)
+// The SimulationSnapshot's `projectiles` and `particles` fields are typed as
+// the existing return types (import them as type-only aliases), not new
+// interfaces. If a render manager later needs a field the existing DTO lacks,
+// extend the existing DTO at its definition site — do not introduce a parallel
+// ProjectileSnapshot/ParticleSnapshot type that requires mapping. The two
+// alias lines below express this: they re-export the existing types under
+// the snapshot-consistent names so the snapshot schema reads cleanly.
+export type ProjectileSnapshot = ReturnType<ProjectileManager["getRenderData"]>[number];
+export type ParticleSnapshot = ReturnType<ParticleSystem["getRenderData"]>[number];
 
-export interface ParticleSnapshot {
-  x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; radius: number;
-  // Audit src/render/svg/ParticleManager.ts:22 syncFromGameEngine for the full set.
-}
+// If during the Phase 5 render-manager audit a field is found missing from
+// the existing DTO, the fix is: add the field to the inline DTO type in
+// ProjectileManager.ts / ParticleSystem.ts, populate it in getRenderData(),
+// and it flows through here automatically. Do NOT define a parallel type.
 
 // Mirrors SpawnState from src/render/themes/index.ts:71-74 — plain data,
 // no methods. The render manager at SvgGameRoot.vue:329-330 reads spawnStates
@@ -1208,8 +1282,12 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
     projectiles: engine.projectileManager?.getRenderData() ?? [],
     particles: engine.particleManager?.getRenderData() ?? [],
     spawnStates: engine.waveManager?.spawnStates ?? [],
-    persistDirty: engine.persistDirty,  // engine sets this when persist mutations occur
+    persistDirty: engine.persistDirty,  // added in Phase 1; set true by every persist mutation site
   };
+  // After building the snapshot, reset the dirty flag so the next frame only
+  // signals a flush when a new persist mutation occurred. (Phase 5 does this
+  // in the serializer; Phase 7+ does it in the host after flushing.)
+  engine.persistDirty = false;
 }
 
 function snapshotEnemy(e: Enemy): EnemySnapshot {
@@ -1271,7 +1349,17 @@ All **six** `syncFromGameEngine` methods in `src/render/svg/*.ts` change their p
 | `EffectManager.ts:173` | `syncFromGameEngine(buildPreviewTilePos, selectedTowerType, buildPreviewColor, selectedTower, buildPreviewValid, dt)` | params unchanged (all UI-computed on main thread; no snapshot arrays) | reads `selectedTower` fields — change to `TowerSnapshot \| null` |
 | `UiOverlayManager.ts:116` | `syncFromGameEngine(enemies: Enemy[], _selectedTower: Tower \| null)` | `syncFromGameEngine(enemies: EnemySnapshot[], _selectedTower: TowerSnapshot \| null)` | HP bars, shield bars, boss HP text — reads hp, maxHp, shield, maxShield, isBoss |
 
-Additionally, `UiOverlayManager.syncPendingQueueOverlays(grid, enemyManager)` (called at `SvgGameRoot.vue:327`) reads spawn queue data from `enemyManager` — this changes to read from `snapshot.spawnStates` (see `SpawnStateSnapshot`).
+Additionally, `UiOverlayManager.syncPendingQueueOverlays(grid, enemyManager)` (`src/render/svg/UiOverlayManager.ts:222`, called at `SvgGameRoot.vue:327`) currently reads the spawn queue from the live `enemyManager`. In Phase 5 it changes to read from the snapshot's `spawnStates` array. The new signature drops the `enemyManager` parameter and takes the plain `SpawnStateSnapshot[]` instead (the `grid` parameter stays — it's still needed for tile→pixel conversion):
+
+```ts
+// Before (src/render/svg/UiOverlayManager.ts:222):
+syncPendingQueueOverlays(grid: Grid, enemyManager: EnemyManager): void { ... }
+
+// After:
+syncPendingQueueOverlays(grid: Grid, spawnStates: SpawnStateSnapshot[]): void { ... }
+```
+
+Internally, every `enemyManager.<field>` read in the current method body becomes a read off the `spawnStates` array entries (each entry is a plain `SpawnStateSnapshot` with `visualState` and `closeTransitionTimer` — the only two fields the current method reads, verified against `src/render/themes/index.ts:71-74`). The call site at `SvgGameRoot.vue:327` changes from `uiOverlayManager.syncPendingQueueOverlays(grid, engine.value.enemyManager)` to `uiOverlayManager.syncPendingQueueOverlays(grid, snapshot.spawnStates)`.
 
 ```ts
 // Example: src/render/svg/EnemyManager.ts:17
@@ -1382,12 +1470,13 @@ function applyCommand(engine: GameEngine, command: Command): void {
     // SvgGameRoot.vue, echoed back in the snapshot's meta.selectedTowerType
     // unchanged by the worker). See §6.2 of ArchitecturePlan.md.
     case "action:selectTower":
-      // KNOWN TECH DEBT (intentional in Phase 6):
-      // selectTower by id requires a lookup; engine.selectTower currently
-      // takes a live Tower ref, not an id, and the worker era's id-based
-      // lookup (engine.selectTowerById(id)) isn't needed while the engine
-      // is still on the main thread. The command exists in the schema so
-      // Phase 7 doesn't need to add it. Phase 7 implements
+      // PROMINENT TECH DEBT — DEFINED IN PHASE 5, NOT DISPATCHED IN PHASE 6.
+      // This case is intentionally a no-op `break` in Phase 6. The command
+      // variant exists in the Command schema (Phase 5) so Phase 7 doesn't need
+      // to add it. selectTower by id requires a lookup; engine.selectTower
+      // currently takes a live Tower ref, not an id, and the worker era's
+      // id-based lookup (engine.selectTowerById(id)) isn't needed while the
+      // engine is still on the main thread. Phase 7 implements
       // engine.selectTowerById(id) and wires this case. For Phase 6, the
       // existing gameStore.selectTower(tower) calls in Input.ts and
       // SvgGameRoot.vue stay direct (not via dispatcher).
@@ -1453,7 +1542,7 @@ useInput(gameStore, dispatcher, uiStore);
 
 ## Phase 0–6 completion criteria
 
-- [ ] `src/sim/` directory exists; ESLint rule prevents imports from `src/stores/`, `src/components/`, `src/router/`, `src/sound/` inside it (excluding the `MainThread*` adapters, which live outside `src/sim/`).
+- [ ] `src/sim/` directory exists; the custom `check:sim-boundary` script (chained into `npm run lint` alongside Biome) prevents imports from `src/stores/`, `src/components/`, `src/router/`, `src/sound/` inside it (the two `MainThread*` adapter files are the only exempted filenames).
 - [ ] Boundary policy enforced: `src/game/`, `src/towers/`, `src/enemies/` have zero *runtime* `useXxxStore()` calls by end of Phase 2; type-only imports allowed through Phase 6, removed in Phase 7.
 - [ ] `GameEngine`, `TowerManager`, `Tower`, `Enemy`, `EnemyManager`, `WaveGraphTracker` have zero runtime calls to `useUiStore()`/`useMapThemeStore()`/`useGameStore()`/`usePersistStore()`.
 - [ ] `SoundManager` is owned by the host; `GameEngine` references sound via `HostBindings.playSound`, `TowerManager`/`Tower` via the narrower `SoundPlayer.playSound`.
