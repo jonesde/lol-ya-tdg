@@ -194,12 +194,12 @@ The schema is a discriminated union. Categories include:
   - `{type: "action:setTargeting", mode}`
   - `{type: "action:setFixedAimDir", dir}`
   - `{type: "action:cancelBuildMode"}`
-  - `{type: "action:selectBuildType", towerType}`
   - `{type: "action:selectTower", towerId}`
+  - *(Note: `action:selectBuildType` is intentionally omitted — `selectedTowerType` is host-authoritative, updated directly on `gameStore` and echoed back in the snapshot. See §6.2.)*
 - **Lifecycle commands:**
   - `{type: "lifecycle:init", persistState, theme, mapIndex}` — startup
   - `{type: "lifecycle:dispose"}` — clean shutdown
-  - `{type: "lifecycle:setTheme", theme}` — theme swap mid-run (if ever supported)
+  - *(Note: `lifecycle:setTheme` is intentionally omitted — mid-run theme switching is out of scope per `README.md`. Add it if mid-run switching ever becomes in-scope.)*
 - **Future LLM commands** (same schema, same queue):
   - `{type: "llm:routeGroup", groupId, waypoints}`
   - `{type: "llm:setTargeting", enemyIds[], mode}`
@@ -381,7 +381,7 @@ Phases 0–6 are behavior-preserving and can be done sequentially with the test 
 
 **Proposal:**
 
-- **Every public method on `GameEngine` that is called from outside the engine gets a command.** The full list, derived from current call sites in `Input.ts` and `SvgGameRoot.vue`: `handleClick`, `setHover`, `togglePause`, `cycleSpeed`, `cycleSpeedReverse`, `upgradeSelected`, `sellSelected`, `executeSell`, `downgradeSelected`, `specializeSelected`, `cancelSelected`, `setTargeting`, `setFixedAimDir`, `cancelBuildMode`, `selectBuildType`, `selectTower`, `loadMap`, `loadRandomMap`, `start`, `stop`, `dispose`. Methods that are internal-only (`update`, `loop`, `onWaveCleared`, `onWaveStart`, `onEnemyKill`, `onBossKilled`, `earnGold`, `endGame`, `_initMap`, `_applyStartingBonuses`) do not get commands.
+- **Every public method on `GameEngine` that is called from outside the engine gets a command, with exceptions noted in §6.2.** The full list, derived from current call sites in `Input.ts` and `SvgGameRoot.vue`: `handleClick`, `setHover`, `togglePause`, `cycleSpeed`, `cycleSpeedReverse`, `upgradeSelected`, `sellSelected`, `executeSell`, `downgradeSelected`, `specializeSelected`, `cancelSelected`, `setTargeting`, `setFixedAimDir`, `cancelBuildMode`, `selectBuildType` *(exception — see §6.2, stays main-thread)*, `selectTower`, `loadMap`, `loadRandomMap`, `start`, `stop`, `dispose`. Methods that are internal-only (`update`, `loop`, `onWaveCleared`, `onWaveStart`, `onEnemyKill`, `onBossKilled`, `earnGold`, `endGame`, `_initMap`, `_applyStartingBonuses`) do not get commands.
 - **Camera stays on the main thread.** Camera pan, zoom, and coordinate conversion (`src/composables/cameraUtils.ts`, `src/render/svg/cameraUtils.ts`) never need to cross the worker boundary. The camera is input-driven UI state; the snapshot includes the camera for the render loop, but the camera is written on the main thread and the worker never reads it. This is a one-way field in the snapshot, populated by the main thread before the render loop reads it.
 - **Hover preview stays on the main thread.** `setHover` currently updates `gameStore.hoverTile` for build-preview rendering (`GameEngine.ts:482-501`). Under the new architecture, hover is pure UI — the main thread computes the tile from the mouse position and updates `gameStore.hoverTile` directly. The worker doesn't need to know about hover. The `setHover` command is dropped; the worker only needs `input:click` (for actual placement/selection).
 - **Build menu selection stays on the main thread.** `selectBuildType` updates `gameStore.selectedTowerType` for build-preview rendering. The worker only needs to know the selected build type when a click arrives for placement — the `input:click` command carries the implied intent (if `selectedTowerType` is set in the snapshot mirror, a click means "place here"; if not, a click means "select tower here"). The worker reads `selectedTowerType` from the snapshot meta. No `action:selectBuildType` command is needed; the field is updated locally and reflected back in the next snapshot.
@@ -445,7 +445,7 @@ Input commands arriving while the engine is mid-update. The earlier plan flagged
 
 Theme JSON is large (hundreds of kilobytes of SVG sprite definitions). Posting it per-frame would be catastrophic.
 
-**Mitigation:** theme is posted once at `lifecycle:init` and on `lifecycle:setTheme` (if ever). The worker holds the theme reference and never re-receives it. Theme data is plain JSON with inlined SVG strings — `structuredClone`-safe, no functions or closures.
+**Mitigation:** theme is posted once at `lifecycle:init` (and on `lifecycle:setTheme` if mid-run switching is ever added — currently out of scope per `README.md`). The worker holds the theme reference and never re-receives it. Theme data is plain JSON with inlined SVG strings — `structuredClone`-safe, no functions or closures.
 
 ### 7.5 Transitive Pinia import coupling
 
