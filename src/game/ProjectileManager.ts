@@ -1,3 +1,4 @@
+import { GRID_TILE_SIZE } from "@/render/svg/types.js";
 import type { Tower } from "@/towers/Tower.js";
 import { PROJECTILE_HIT_THRESHOLD } from "./Constants.js";
 import {
@@ -111,7 +112,7 @@ export interface ParticleSystem {
 }
 
 export type OnLightningFlashCallback = (startX: number, startY: number, endX: number, endY: number) => void;
-export type OnStunEffectCallback = (x: number, y: number) => void;
+export type OnStunEffectCallback = (x: number, y: number, duration: number) => void;
 export type OnGoldRewardCallback = (amount: number) => void;
 
 export class ProjectileManager {
@@ -458,7 +459,7 @@ export class ProjectileManager {
         enemy.applyStun(projectile.stunDuration);
       }
       if (this.onStunEffect) {
-        this.onStunEffect(enemy.x, enemy.y);
+        this.onStunEffect(enemy.x, enemy.y, projectile.stunDuration);
       }
     }
 
@@ -592,7 +593,7 @@ export class ProjectileManager {
     if (opts.stunDuration > 0) {
       for (const target of chainTargets) {
         if (target.applyStun) target.applyStun(opts.stunDuration);
-        if (this.onStunEffect) this.onStunEffect(target.x, target.y);
+        if (this.onStunEffect) this.onStunEffect(target.x, target.y, opts.stunDuration);
       }
       if (this.onLightningFlash) {
         this.onLightningFlash(opts.originX, opts.originY, current.x, current.y);
@@ -636,22 +637,41 @@ export class ProjectileManager {
   }
 
   private findNearestEnemy(x: number, y: number, range: number, excludeId: number): LightningTarget | null {
-    const enemies = this.enemyManager.getEnemiesInRange(x, y, range);
-    let closest: LightningTarget | null = null;
-    let closestDist = Infinity;
+    const fullRangeEnemies = this.enemyManager.getEnemiesInRange(x, y, range);
 
-    for (const enemy of enemies) {
-      if (enemy.id === excludeId) continue;
-      const dx = enemy.x - x;
-      const dy = enemy.y - y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closest = enemy;
+    if (fullRangeEnemies.length <= 8) {
+      let closest: LightningTarget | null = null;
+      let closestDist = Infinity;
+      for (const enemy of fullRangeEnemies) {
+        if (enemy.id === excludeId) continue;
+        const dx = enemy.x - x;
+        const dy = enemy.y - y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closest = enemy;
+        }
+      }
+      return closest;
+    }
+
+    const tileSize = GRID_TILE_SIZE;
+    const halfTileRange = 0.5 * tileSize;
+    const quarterRange = 0.25 * range;
+    const halfRange = 0.5 * range;
+
+    const subRanges = [halfTileRange, quarterRange, halfRange];
+    for (const subRange of subRanges) {
+      const subEnemies = this.enemyManager.getEnemiesInRange(x, y, subRange);
+      for (const enemy of subEnemies) {
+        if (enemy.id !== excludeId) return enemy;
       }
     }
 
-    return closest;
+    for (const enemy of fullRangeEnemies) {
+      if (enemy.id !== excludeId) return enemy;
+    }
+    return null;
   }
 
   private removeProjectile(projectile: ProjectileGame, _reason: string): void {

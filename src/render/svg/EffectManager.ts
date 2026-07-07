@@ -16,9 +16,8 @@ interface StunEffect {
   id: string;
   x: number;
   y: number;
-  life: number;
+  remainingLife: number;
   maxLife: number;
-  angle: number;
 }
 
 const LIGHTNING_SEGMENTS = 5;
@@ -27,11 +26,15 @@ const LIGHTNING_LIFE_SECONDS = 1 / 3;
 const LIGHTNING_PERP_OFFSET = 6;
 const LIGHTNING_COLOR_PRIMARY = "#40a0ff";
 
-const STUN_STAR_COUNT = 5;
-const STUN_RADIUS = 10;
-const STUN_LIFE_SECONDS = 0.5;
-const STUN_ROTATION_SPEED = 9;
-const STUN_COLOR = "#40a0ff";
+const STUN_ARC_SEGMENTS = 8;
+const STUN_ARC_RADIUS = 14;
+const STUN_WIGGLE_RANGE = 4;
+const STUN_FLASH_HZ = 9;
+const STUN_PULSE_HZ = 2;
+const STUN_COLOR_OUTER = "#40a0ff";
+const STUN_COLOR_INNER = "#ffffff";
+const STUN_STROKE_OUTER = 2.5;
+const STUN_STROKE_INNER = 1.5;
 
 const TILE_SIZE = 36;
 
@@ -154,10 +157,16 @@ export class EffectManager {
     return id;
   }
 
-  addStunEffect(x: number, y: number): string {
+  addStunEffect(x: number, y: number, duration: number): string {
+    const key = `${x.toFixed(1)},${y.toFixed(1)}`;
+    const existing = this.stunEffects.get(key);
+    if (existing) {
+      existing.remainingLife = Math.max(existing.remainingLife, duration);
+      return existing.id;
+    }
     const id = this.generateStunId();
-    const effect: StunEffect = { id, x, y, life: STUN_LIFE_SECONDS, maxLife: STUN_LIFE_SECONDS, angle: 0 };
-    this.stunEffects.set(id, effect);
+    const effect: StunEffect = { id, x, y, remainingLife: duration, maxLife: duration };
+    this.stunEffects.set(key, effect);
     return id;
   }
 
@@ -261,7 +270,7 @@ export class EffectManager {
   private syncStun(dt: number): void {
     let slotIndex = 0;
     for (const effect of this.stunEffects.values()) {
-      if (effect.life <= 0) continue;
+      if (effect.remainingLife <= 0) continue;
       if (slotIndex >= this.stunPool.length) break;
 
       const group = this.stunPool[slotIndex]!;
@@ -270,57 +279,80 @@ export class EffectManager {
         this.initStunGroup(group);
       }
 
-      const elapsed = effect.maxLife - effect.life;
-      const lifeRatio = Math.max(0, 1 - elapsed / effect.maxLife);
-      const pulse = 0.7 + 0.3 * Math.sin((1 - lifeRatio) * Math.PI * 4);
-      const radius = STUN_RADIUS * pulse;
+      const elapsed = effect.maxLife - effect.remainingLife;
+      const lifeRatio = Math.max(0, effect.remainingLife / effect.maxLife);
+
+      const points = this.generateStunArcPoints(0, 0, STUN_ARC_SEGMENTS, elapsed);
+
+      const outerArc = group.childNodes[0] as SVGPolylineElement;
+      const innerArc = group.childNodes[1] as SVGPolylineElement;
+
+      outerArc.setAttribute("points", points);
+      innerArc.setAttribute("points", points);
+
+      const outerOpacity = 0.35 + 0.15 * Math.sin(elapsed * STUN_PULSE_HZ * Math.PI * 2);
+      outerArc.setAttribute("opacity", outerOpacity.toFixed(3));
+
+      const flash = Math.sin(elapsed * STUN_FLASH_HZ * Math.PI * 2) > 0.2;
+      const innerOpacity = flash ? 1.0 : 0.08;
+      innerArc.setAttribute("opacity", innerOpacity.toFixed(3));
 
       group.setAttribute("transform", `translate(${effect.x.toFixed(1)}, ${effect.y.toFixed(1)})`);
       group.setAttribute("opacity", lifeRatio.toFixed(3));
       group.style.visibility = "visible";
 
-      const rotationAngle = effect.angle;
-      for (let i = 0; i < group.childNodes.length; i++) {
-        const star = group.childNodes[i] as SVGCircleElement;
-        const starAngle = rotationAngle + (i / STUN_STAR_COUNT) * Math.PI * 2;
-        const starX = Math.cos(starAngle) * radius;
-        const starY = Math.sin(starAngle) * radius;
-        const starR = 2.5 + 1.5 * Math.sin(starAngle * 2 + effect.angle);
-        star.setAttribute("cx", starX.toFixed(1));
-        star.setAttribute("cy", starY.toFixed(1));
-        star.setAttribute("r", starR.toFixed(2));
-      }
-
-      effect.angle += STUN_ROTATION_SPEED * dt;
+      effect.remainingLife -= dt;
     }
 
     for (let i = slotIndex; i < this.stunPool.length; i++) {
       this.stunPool[i]!.style.visibility = "hidden";
     }
 
-    const expiredIds: string[] = [];
-    for (const [id, effect] of this.stunEffects) {
-      effect.life -= dt;
-      if (effect.life <= 0) {
-        expiredIds.push(id);
+    const expiredKeys: string[] = [];
+    for (const [key, effect] of this.stunEffects) {
+      if (effect.remainingLife <= 0) {
+        expiredKeys.push(key);
       }
     }
-    for (const id of expiredIds) {
-      this.stunEffects.delete(id);
+    for (const key of expiredKeys) {
+      this.stunEffects.delete(key);
     }
   }
 
-  private initStunGroup(group: SVGGElement): void {
-    for (let i = 0; i < STUN_STAR_COUNT; i++) {
-      const star = document.createElementNS(SVG_NS, "circle") as SVGCircleElement;
-      star.setAttribute("fill", STUN_COLOR);
-      star.setAttribute("stroke", "rgba(255,215,0,0.5)");
-      star.setAttribute("stroke-width", "0.5");
-      star.setAttribute("cx", "0");
-      star.setAttribute("cy", "0");
-      star.setAttribute("r", "3");
-      group.appendChild(star);
+  private generateStunArcPoints(centerX: number, centerY: number, segments: number, timeSeed: number): string {
+    const points: string[] = [];
+    for (let i = 0; i < segments; i++) {
+      const baseAngle = (i / segments) * Math.PI * 2 - Math.PI / 2;
+      const baseX = centerX + Math.cos(baseAngle) * STUN_ARC_RADIUS;
+      const baseY = centerY + Math.sin(baseAngle) * STUN_ARC_RADIUS;
+      const tangentX = -Math.sin(baseAngle);
+      const tangentY = Math.cos(baseAngle);
+      const jitter = (Math.sin(timeSeed + i * 3.7) * 0.5 + 0.5) * 2 - 1;
+      const offsetX = tangentX * jitter * STUN_WIGGLE_RANGE;
+      const offsetY = tangentY * jitter * STUN_WIGGLE_RANGE;
+      points.push(`${(baseX + offsetX).toFixed(1)},${(baseY + offsetY).toFixed(1)}`);
     }
+    return points.join(" ");
+  }
+
+  private initStunGroup(group: SVGGElement): void {
+    const outerArc = document.createElementNS(SVG_NS, "polyline") as SVGPolylineElement;
+    outerArc.setAttribute("fill", "none");
+    outerArc.setAttribute("stroke", STUN_COLOR_OUTER);
+    outerArc.setAttribute("stroke-width", String(STUN_STROKE_OUTER));
+    outerArc.setAttribute("stroke-linecap", "round");
+    outerArc.setAttribute("stroke-linejoin", "round");
+    outerArc.setAttribute("filter", "url(#glow)");
+    group.appendChild(outerArc);
+
+    const innerArc = document.createElementNS(SVG_NS, "polyline") as SVGPolylineElement;
+    innerArc.setAttribute("fill", "none");
+    innerArc.setAttribute("stroke", STUN_COLOR_INNER);
+    innerArc.setAttribute("stroke-width", String(STUN_STROKE_INNER));
+    innerArc.setAttribute("stroke-linecap", "round");
+    innerArc.setAttribute("stroke-linejoin", "round");
+    innerArc.setAttribute("filter", "url(#glow)");
+    group.appendChild(innerArc);
   }
 
   private syncBuildPreview(

@@ -26,6 +26,7 @@ interface EnemyManagerRef {
     id: number;
     applySlow(amount: number, duration: number): void;
   }[];
+  getEnemyById(id: number): { id: number; removed: boolean; x: number; y: number; hp: number; pathIdx: number } | null;
 }
 
 interface ParticleManagerRef {

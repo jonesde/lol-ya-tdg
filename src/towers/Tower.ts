@@ -71,6 +71,7 @@ interface EnemyManagerRef {
     applySlow(amount: number, duration: number): void;
     applyStun?(duration: number): void;
   }[];
+  getEnemyById(id: number): { id: number; removed: boolean; x: number; y: number; hp: number; pathIdx: number } | null;
 }
 
 interface ProjectileManagerRef {
@@ -213,6 +214,7 @@ export class Tower {
   terrainHeight: number;
   chargeShotCount: number;
   iceBurstTimer: number;
+  cachedTargetId: number | null;
 
   constructor(
     type: string,
@@ -265,6 +267,7 @@ export class Tower {
     this._statsCacheKey = -1;
     this.chargeShotCount = 0;
     this.iceBurstTimer = 0;
+    this.cachedTargetId = null;
     if (grid?.tiles?.[tileY]?.[tileX]) {
       this.terrainHeight = grid.tiles[tileY][tileX].height || 1;
     } else {
@@ -648,41 +651,70 @@ export class Tower {
       }
     }
 
+    const tileSize = this.grid?.tileSize || 36;
+    const rangePx = stats.range * tileSize;
+    const rangeSquared = rangePx * rangePx;
+
     if (this.base.fixedAim && this.fixedAimDir) {
       const dirVectors = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] } as Record<string, [number, number]>;
       const [ddx, ddy] = dirVectors[this.fixedAimDir]!;
-      const tileSize = this.grid?.tileSize || 36;
-      const rangePx = stats.range * tileSize;
-      let targetEnemy: { x: number; y: number } | null = null;
-      for (const enemy of enemyManager.getEnemiesInRange(this.x, this.y, rangePx)) {
-        const edx = enemy.x - this.x;
-        const edy = enemy.y - this.y;
-        const dist = Math.hypot(edx, edy);
-        if (dist === 0) continue;
-        const dot = (edx / dist) * ddx + (edy / dist) * ddy;
-        if (dot > 0.5) {
-          if (!targetEnemy || dist < Math.hypot(targetEnemy.x - this.x, targetEnemy.y - this.y)) {
-            targetEnemy = enemy;
+      this.angle = Math.atan2(ddy, ddx);
+
+      let targetEnemy: { x: number; y: number; id: number } | null = null;
+      if (this.cachedTargetId !== null) {
+        const cached = enemyManager.getEnemyById(this.cachedTargetId);
+        if (cached && !cached.removed) {
+          const edx = cached.x - this.x;
+          const edy = cached.y - this.y;
+          const distSq = edx * edx + edy * edy;
+          if (distSq <= rangeSquared && distSq > 0) {
+            const dist = Math.sqrt(distSq);
+            const dot = (edx / dist) * ddx + (edy / dist) * ddy;
+            if (dot > 0.5) targetEnemy = cached;
           }
         }
       }
+      if (!targetEnemy) {
+        for (const enemy of enemyManager.getEnemiesInRange(this.x, this.y, rangePx)) {
+          const edx = enemy.x - this.x;
+          const edy = enemy.y - this.y;
+          const dist = Math.hypot(edx, edy);
+          if (dist === 0) continue;
+          const dot = (edx / dist) * ddx + (edy / dist) * ddy;
+          if (dot > 0.5) {
+            if (!targetEnemy || dist < Math.hypot(targetEnemy.x - this.x, targetEnemy.y - this.y)) {
+              targetEnemy = enemy;
+            }
+          }
+        }
+        this.cachedTargetId = targetEnemy ? targetEnemy.id : null;
+      }
       if (targetEnemy) {
-        this.angle = Math.atan2(ddy, ddx);
         if (this.cooldown <= 0) {
           const aimTarget = { x: this.x + ddx * rangePx, y: this.y + ddy * rangePx, id: 0 };
           this.fire(aimTarget, enemyManager, projectileManager, soundManager);
           this.cooldown = 1 / stats.fireRate;
         }
-      } else {
-        this.angle = Math.atan2(ddy, ddx);
       }
       return;
     }
 
-    const tileSize = this.grid?.tileSize || 36;
-    const rangePx = stats.range * tileSize;
-    const inRangeEnemies = enemyManager.getEnemiesInRange(this.x, this.y, rangePx);
-    const target = this.selectTarget(inRangeEnemies);
+    let target: { x: number; y: number; pathIdx: number; hp: number; id: number } | null = null;
+    if (this.cachedTargetId !== null) {
+      const cached = enemyManager.getEnemyById(this.cachedTargetId);
+      if (cached && !cached.removed) {
+        const dx = cached.x - this.x;
+        const dy = cached.y - this.y;
+        if (dx * dx + dy * dy <= rangeSquared) {
+          target = cached;
+        }
+      }
+    }
+    if (!target) {
+      const inRangeEnemies = enemyManager.getEnemiesInRange(this.x, this.y, rangePx);
+      target = this.selectTarget(inRangeEnemies);
+      this.cachedTargetId = target ? target.id : null;
+    }
     if (target) {
       this.angle = Math.atan2(target.y - this.y, target.x - this.x);
       if (this.cooldown <= 0) {

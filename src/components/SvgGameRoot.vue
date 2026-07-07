@@ -343,8 +343,8 @@ onMounted(async () => {
     engine.value.projectileManager.setOnLightningFlash((startX, startY, endX, endY) => {
       effectManager.addLightningEffect(startX, startY, endX, endY);
     });
-    engine.value.projectileManager.setOnStunEffect((x, y) => {
-      effectManager.addStunEffect(x, y);
+    engine.value.projectileManager.setOnStunEffect((x, y, duration) => {
+      effectManager.addStunEffect(x, y, duration);
     });
   }
 

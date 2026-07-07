@@ -107,12 +107,9 @@ const milestoneBonus = computed(() => {
   return null;
 });
 
-const targetingMode = ref(tower.value?.targeting || "first");
-
-watch(tower, (newTower) => {
-  if (newTower) {
-    targetingMode.value = newTower.targeting || "first";
-  }
+const targetingMode = computed(() => {
+  void tick.value;
+  return tower.value?.targeting || "first";
 });
 
 function handleTargetingChange(event: Event) {
