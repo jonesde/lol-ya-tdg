@@ -2,7 +2,6 @@
 import { computed, onUnmounted, ref, watch, watchEffect } from "vue";
 import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
 import { SELL_VALUE_RATIO, TOWER_META } from "@/game/ConstantsTower.js";
-import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -115,32 +114,32 @@ const targetingMode = computed(() => {
 function handleTargetingChange(event: Event) {
   const target = event.target as HTMLSelectElement;
   targetingMode.value = target.value;
-  getGameEngine()?.setTargeting(target.value);
+  gameStore.engine?.setTargeting(target.value);
 }
 
 function handleUpgrade() {
-  getGameEngine()?.upgradeSelected();
+  gameStore.engine?.upgradeSelected();
 }
 
 function handleSell() {
-  getGameEngine()?.sellSelected();
+  gameStore.engine?.sellSelected();
 }
 
 function handleSpecialize(variant: string) {
-  getGameEngine()?.specializeSelected(variant);
+  gameStore.engine?.specializeSelected(variant);
 }
 
 function handleCancelBuild() {
-  getGameEngine()?.cancelSelected();
+  gameStore.engine?.cancelSelected();
 }
 
 function handleDowngrade() {
-  getGameEngine()?.downgradeSelected();
+  gameStore.engine?.downgradeSelected();
 }
 
 function getUpgradeCost() {
   if (!tower.value) return 0;
-  return getGameEngine()?.getUpgradeCost(tower.value) || 0;
+  return gameStore.engine?.getUpgradeCost(tower.value) || 0;
 }
 
 const canAffordUpgrade = computed(() => {
@@ -203,7 +202,7 @@ const hasFixedAim = computed(() => tower.value?.base?.fixedAim || false);
 const fixedAimDir = computed(() => tower.value?.fixedAimDir);
 
 function handleFixedAim(dir: string | null) {
-  getGameEngine()?.setFixedAimDir(dir);
+  gameStore.engine?.setFixedAimDir(dir);
 }
 </script>
 

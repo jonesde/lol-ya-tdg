@@ -2,7 +2,6 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK } from "@/game/Constants.js";
-import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -33,7 +32,7 @@ function endRun() {
     confirmLabel: "End Run",
     cancelLabel: "Cancel",
     onConfirm: () => {
-      getGameEngine()?.endGame(false);
+      gameStore.engine?.endGame(false);
       router.push("/game-over");
     },
   });

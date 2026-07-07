@@ -12,7 +12,7 @@ import {
   StartingGold,
 } from "@/game/Constants.js";
 import { SELL_VALUE_RATIO, TOWER_META } from "@/game/ConstantsTower.js";
-import { GameEngine, getGameEngine } from "@/game/GameEngine.js";
+import { GameEngine } from "@/game/GameEngine.js";
 import type { useGameStore } from "@/stores/game.js";
 import type { usePersistStore } from "@/stores/persist.js";
 import type { Tower } from "@/towers/Tower.js";
@@ -34,11 +34,6 @@ describe("GameEngine", () => {
     it("stores references to stores", () => {
       expect(engine.gameStore).toBe(gameStore);
       expect(engine.persistStore).toBe(persistStore);
-    });
-
-    it("registers itself via getGameEngine()", () => {
-      expect(getGameEngine()).toBeTruthy();
-      expect(getGameEngine()?.constructor.name).toBe("GameEngine");
     });
 
     it("initializes with null managers", () => {
@@ -488,10 +483,9 @@ describe("GameEngine", () => {
   });
 
   describe("dispose", () => {
-    it("stops the engine and clears engine reference", () => {
+    it("stops the engine and sets state to MENU", () => {
       engine.gameStore.setState(GameState.PLAYING);
       engine.dispose();
-      expect(getGameEngine()).toBeNull();
       expect(gameStore.state).toBe(GameState.MENU);
     });
   });

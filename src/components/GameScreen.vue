@@ -2,7 +2,6 @@
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { GameState } from "@/game/Constants.js";
-import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
 import DebugPanel from "./DebugPanel.vue";
@@ -47,7 +46,7 @@ function onPopState() {
     cancelLabel: "Stay",
     onConfirm() {
       disposed.value = true;
-      getGameEngine()?.dispose();
+      gameStore.engine?.dispose();
       router.push("/map-select");
     },
     onCancel() {
@@ -69,8 +68,8 @@ onUnmounted(() => {
     window.removeEventListener("popstate", popstateHandler);
     popstateHandler = null;
   }
-  if (getGameEngine() && !disposed.value) {
-    getGameEngine()?.dispose();
+  if (gameStore.engine && !disposed.value) {
+    gameStore.engine.dispose();
   }
 });
 </script>

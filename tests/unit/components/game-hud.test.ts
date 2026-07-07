@@ -3,12 +3,9 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import GameHud from "@/components/GameHud.vue";
-import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
-
-vi.mock("@/game/GameEngine", () => ({ getGameEngine: vi.fn() }));
 
 interface MountResult {
   pinia: ReturnType<typeof createPinia>;
@@ -25,7 +22,7 @@ function mountGameHud(): MountResult {
   const persistStore = usePersistStore();
   const uiStore = useUiStore();
   const engineMock = { togglePause: vi.fn() };
-  vi.mocked(getGameEngine).mockReturnValue(engineMock as never);
+  gameStore.engine = engineMock as never;
   return { pinia, gameStore, persistStore, uiStore, engineMock };
 }
 

@@ -55,12 +55,6 @@ interface WaveManagerRef {
   startNextWave(): void;
 }
 
-let currentEngine: GameEngine | null = null;
-
-export function getGameEngine(): GameEngine | null {
-  return currentEngine;
-}
-
 export class GameEngine {
   gameStore: GameStore;
   persistStore: PersistStore;
@@ -93,8 +87,6 @@ export class GameEngine {
     if (this.theme) {
       this.setTheme(this.theme);
     }
-
-    currentEngine = this;
 
     this.sound = new SoundManager();
 
@@ -708,9 +700,6 @@ export class GameEngine {
     this.stop();
     this.sound.dispose();
     this.waveGraphTracker?.dispose();
-    if (currentEngine === this) {
-      currentEngine = null;
-    }
   }
 
   cancelBuildMode(): void {

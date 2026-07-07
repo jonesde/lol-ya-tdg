@@ -4,14 +4,11 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import TowerPanel from "@/components/TowerPanel.vue";
 import type { GameEngine } from "@/game/GameEngine.js";
-import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 import type { Tower } from "@/towers/Tower.js";
-
-vi.mock("@/game/GameEngine", () => ({ getGameEngine: vi.fn() }));
 
 interface TowerStats {
   damage: number;
@@ -115,7 +112,7 @@ function mountTowerPanel(tower: MockTower | null = null): MountResult {
     getUpgradeCost: () => 20,
     cancelSelected: vi.fn(),
   } as unknown as EngineMock;
-  vi.mocked(getGameEngine).mockReturnValue(engineMock);
+  gameStore.engine = engineMock;
   return { pinia, gameStore, themeStore, persistStore, uiStore, engineMock };
 }
 

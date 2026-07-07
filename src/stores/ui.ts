@@ -1,6 +1,5 @@
 import { defineStore } from "pinia";
 import { GameState } from "@/game/Constants.js";
-import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "./game";
 
 export interface UiStoreLike {
@@ -115,14 +114,15 @@ export const useUiStore = defineStore("ui", {
       const gameStore = useGameStore();
       this.wasPlayingWhenPauseOpened = gameStore.isPlaying;
       if (gameStore.isPlaying) {
-        getGameEngine()?.togglePause();
+        gameStore.engine?.togglePause();
       }
       this.showPauseMenu = true;
     },
 
     closePauseMenu() {
+      const gameStore = useGameStore();
       if (this.wasPlayingWhenPauseOpened) {
-        getGameEngine()?.togglePause();
+        gameStore.engine?.togglePause();
       }
       this.showPauseMenu = false;
       this.wasPlayingWhenPauseOpened = false;
@@ -132,15 +132,16 @@ export const useUiStore = defineStore("ui", {
       const gameStore = useGameStore();
       this.wasPlayingWhenSkillTreeOpened = this.wasPlayingWhenPauseOpened || gameStore.isPlaying;
       if (gameStore.isPlaying) {
-        getGameEngine()?.togglePause();
+        gameStore.engine?.togglePause();
       }
       this.showPauseMenu = false;
       this.showSkillTree = true;
     },
 
     closeSkillTree() {
+      const gameStore = useGameStore();
       if (this.wasPlayingWhenSkillTreeOpened) {
-        getGameEngine()?.togglePause();
+        gameStore.engine?.togglePause();
       }
       this.showSkillTree = false;
       this.wasPlayingWhenSkillTreeOpened = false;
@@ -158,7 +159,7 @@ export const useUiStore = defineStore("ui", {
       const gameStore = useGameStore();
       if (!this.showHelpDialog && gameStore.isPlaying) {
         this.wasPlayingWhenHelpOpened = true;
-        getGameEngine()?.togglePause();
+        gameStore.engine?.togglePause();
       } else {
         this.wasPlayingWhenHelpOpened = false;
       }
@@ -168,7 +169,7 @@ export const useUiStore = defineStore("ui", {
     closeHelpDialog() {
       const gameStore = useGameStore();
       if (this.wasPlayingWhenHelpOpened && gameStore.state === GameState.PAUSED) {
-        getGameEngine()?.togglePause();
+        gameStore.engine?.togglePause();
       }
       this.showHelpDialog = false;
       this.wasPlayingWhenHelpOpened = false;

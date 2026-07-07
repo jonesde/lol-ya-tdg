@@ -3,12 +3,9 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createRouter, createWebHistory } from "vue-router";
 import { GameState } from "@/game/Constants.js";
-import { getGameEngine } from "@/game/GameEngine.js";
 import type { GeneratedMap } from "@/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
-
-vi.mock("@/game/GameEngine", () => ({ getGameEngine: vi.fn() }));
 
 function createTestGameStore() {
   const pinia = createPinia();
@@ -53,7 +50,7 @@ function createRouterWithGuards(
 
     // Leaving /game — stop engine and save progress
     if (from.name === "game" && to.name !== "game") {
-      getGameEngine()?.dispose();
+      gameStore.engine?.dispose();
       persistStore.save();
     }
 
@@ -105,7 +102,7 @@ describe("Router — navigation guards", () => {
   describe("leaving /game", () => {
     it("calls engine.dispose() when leaving game route", async () => {
       const disposeMock = vi.fn();
-      vi.mocked(getGameEngine).mockReturnValue({ dispose: disposeMock } as never);
+      gameStore.engine = { dispose: disposeMock } as never;
       gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
       gameStore.mapIndex = 0;
       await router.push("/game");
@@ -115,7 +112,7 @@ describe("Router — navigation guards", () => {
 
     it("calls persistStore.save() when leaving game route", async () => {
       const saveMock = vi.spyOn(persistStore, "save");
-      vi.mocked(getGameEngine).mockReturnValue({ dispose: vi.fn() } as never);
+      gameStore.engine = { dispose: vi.fn() } as never;
       gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
       gameStore.mapIndex = 0;
       await router.push("/game");
@@ -126,7 +123,7 @@ describe("Router — navigation guards", () => {
     it("does not dispose/save when navigating game->game", async () => {
       const disposeMock = vi.fn();
       const saveMock = vi.spyOn(persistStore, "save");
-      vi.mocked(getGameEngine).mockReturnValue({ dispose: disposeMock } as never);
+      gameStore.engine = { dispose: disposeMock } as never;
       gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
       gameStore.mapIndex = 0;
       await router.push("/game");
@@ -151,7 +148,7 @@ describe("Router — navigation guards", () => {
       const disposeMock = vi.fn(() => {
         gameStore.setState(GameState.MENU);
       });
-      vi.mocked(getGameEngine).mockReturnValue({ dispose: disposeMock } as never);
+      gameStore.engine = { dispose: disposeMock } as never;
       await router.push("/game");
       // Now set terminal state and navigate away
       gameStore.state = GameState.GAME_OVER;
@@ -188,7 +185,7 @@ describe("Router — navigation guards", () => {
       const disposeMock = vi.fn(() => {
         gameStore.setState(GameState.MENU);
       });
-      vi.mocked(getGameEngine).mockReturnValue({ dispose: disposeMock } as never);
+      gameStore.engine = { dispose: disposeMock } as never;
       await router.push("/game");
       // Now set terminal state and navigate away
       gameStore.state = GameState.VICTORY;

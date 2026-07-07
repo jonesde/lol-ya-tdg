@@ -3,10 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GameState } from "@/game/Constants.js";
 import type { GameEngine } from "@/game/GameEngine.js";
-import { getGameEngine } from "@/game/GameEngine.js";
 import { createTestStores, createTestUiStore } from "../helpers/mock-stores";
-
-vi.mock("@/game/GameEngine", () => ({ getGameEngine: vi.fn() }));
 
 interface TogglePauseEngine extends GameEngine {
   togglePause: () => void;
@@ -137,7 +134,7 @@ describe("UiStore", () => {
     it("openPauseMenu does not toggle pause when engine is null", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
-      vi.mocked(getGameEngine).mockReturnValue(null);
+      stores.game.engine = null;
       stores.ui.openPauseMenu();
       expect(stores.game.state).toBe(GameState.PLAYING);
     });
@@ -146,7 +143,7 @@ describe("UiStore", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
       const togglePauseMock = vi.fn();
-      vi.mocked(getGameEngine).mockReturnValue({ togglePause: togglePauseMock } as unknown as TogglePauseEngine);
+      stores.game.engine = { togglePause: togglePauseMock } as unknown as TogglePauseEngine;
       stores.ui.openPauseMenu();
       expect(togglePauseMock).toHaveBeenCalled();
     });
@@ -182,7 +179,7 @@ describe("UiStore", () => {
     it("openSkillTreeFromGame does not toggle pause when engine is null", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
-      vi.mocked(getGameEngine).mockReturnValue(null);
+      stores.game.engine = null;
       stores.ui.openSkillTreeFromGame();
       expect(stores.game.state).toBe(GameState.PLAYING);
     });
@@ -191,7 +188,7 @@ describe("UiStore", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
       const togglePauseMock = vi.fn();
-      vi.mocked(getGameEngine).mockReturnValue({ togglePause: togglePauseMock } as unknown as TogglePauseEngine);
+      stores.game.engine = { togglePause: togglePauseMock } as unknown as TogglePauseEngine;
       stores.ui.openSkillTreeFromGame();
       expect(togglePauseMock).toHaveBeenCalled();
     });

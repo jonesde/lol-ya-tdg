@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
-import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -10,7 +9,7 @@ const gameStore = useGameStore();
 const uiStore = useUiStore();
 const themeStore = useMapThemeStore();
 
-const engine = computed(() => getGameEngine());
+const engine = computed(() => gameStore.engine);
 const waveManager = computed(() => engine.value?.waveManager);
 const enemyManager = computed(() => engine.value?.enemyManager);
 const towers = computed(() => engine.value?.towerManager?.towers || []);

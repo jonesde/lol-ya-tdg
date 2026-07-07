@@ -6,7 +6,6 @@ import {
   type RouteRecordRaw,
 } from "vue-router";
 import { GameState } from "@/game/Constants.js";
-import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -52,7 +51,7 @@ router.beforeEach((to: RouteLocationNormalized, from: RouteLocationNormalized, n
 
   // Leaving /game — stop engine and save progress
   if (from.name === "game" && to.name !== "game") {
-    getGameEngine()?.dispose();
+    gameStore.engine?.dispose();
     persistStore.save();
   }
 

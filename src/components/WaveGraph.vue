@@ -12,7 +12,6 @@ import {
   WAVE_GRAPH_HEIGHT,
   WAVE_GRAPH_INTERVAL_SECONDS,
 } from "@/game/Constants.js";
-import { getGameEngine } from "@/game/GameEngine.js";
 import type { WaveGraphDot } from "@/game/WaveGraphTracker.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -43,7 +42,7 @@ const tooltipPositionStyle = computed(() => ({ left: `${tooltipX.value}px`, top:
 const hoveredDotIndex = ref<number | null>(null);
 
 const timeAgo = computed(() => {
-  const engineRef = getGameEngine();
+  const engineRef = gameStore.engine;
   const tracker = engineRef?.waveGraphTracker;
   if (!tracker || !tooltipDot.value || hoveredDotIndex.value === null) return "";
 
@@ -75,7 +74,7 @@ const METRIC_COLORS: string[] = [
 ];
 
 let resizeObserver: ResizeObserver | null = null;
-let engine: ReturnType<typeof getGameEngine> = null;
+let engine: typeof gameStore.engine = null;
 let prevCallback: (() => void) | undefined;
 let pollId: ReturnType<typeof setInterval> | null = null;
 
@@ -83,7 +82,7 @@ function onResize(): void {
   if (!overlayRef.value) return;
   const newWidth = overlayRef.value.clientWidth;
   containerWidth.value = newWidth;
-  const engineRef = getGameEngine();
+  const engineRef = gameStore.engine;
   engineRef?.waveGraphTracker?.setContainerWidth(newWidth);
 }
 
@@ -143,7 +142,7 @@ function buildPathD(dots: WaveGraphDot[], metricIndex: number, maxVal: number): 
 }
 
 function updatePaths(): void {
-  const engineRef = getGameEngine();
+  const engineRef = gameStore.engine;
   const tracker = engineRef?.waveGraphTracker;
   if (!tracker) return;
 
@@ -197,7 +196,7 @@ function onMouseMove(event: MouseEvent): void {
   const relativeX = event.clientX - rect.left;
   const dotIndex = Math.floor(relativeX / WAVE_GRAPH_DOT_SPACING);
 
-  const engineRef = getGameEngine();
+  const engineRef = gameStore.engine;
   const tracker = engineRef?.waveGraphTracker;
   if (!tracker) return;
 
@@ -256,7 +255,7 @@ onMounted(() => {
   resizeObserver.observe(overlayRef.value);
 
   pollId = setInterval(() => {
-    const eng = getGameEngine();
+    const eng = gameStore.engine;
     if (!eng) return;
     clearInterval(pollId);
     pollId = null;

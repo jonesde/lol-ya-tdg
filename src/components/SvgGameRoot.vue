@@ -233,6 +233,7 @@ async function buildDefsImperative(staticContent: string, mapContent: string): P
 
 onMounted(async () => {
   engine.value = new GameEngine(gameStore, persistStore, themeStore.activeTheme);
+  gameStore.setEngine(engine.value);
 
   useInput(gameStore, engine.value, uiStore);
 
@@ -386,6 +387,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   pendingHoverScheduled = false;
+  gameStore.clearEngine();
   engine.value?.dispose();
   resizeObserver.value?.disconnect();
   resizeObserver.value = null;

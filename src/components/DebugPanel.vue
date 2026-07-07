@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onUnmounted, ref } from "vue";
 import { GameState } from "@/game/Constants.js";
-import { getGameEngine } from "@/game/GameEngine.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -66,7 +65,7 @@ function dbgLives() {
 }
 
 function dbgSkipWave() {
-  const engine = getGameEngine();
+  const engine = gameStore.engine;
   if (gameStore.state === GameState.PAUSED && engine?.waveManager) {
     engine.waveManager.startNextWave();
     gameStore.setWave(engine.waveManager.currentWave);
@@ -74,7 +73,7 @@ function dbgSkipWave() {
 }
 
 function dbgKillAll() {
-  const engine = getGameEngine();
+  const engine = gameStore.engine;
   if (engine?.enemyManager) {
     for (const enemy of engine.enemyManager.enemies) {
       enemy.removed = true;
@@ -83,7 +82,7 @@ function dbgKillAll() {
 }
 
 function dbgWave() {
-  const engine = getGameEngine();
+  const engine = gameStore.engine;
   if (engine?.waveManager) {
     engine.waveManager.currentWave = 50;
     gameStore.setWave(50);
@@ -96,7 +95,7 @@ function dbgUnlockAll() {
 }
 
 function dbgSpeed() {
-  gameStore.timeScale = gameStore.timeScale === 8 ? 1 : 8;
+  gameStore.timeScale = gameStore.timeScale === 16 ? 1 : 16;
 }
 </script>
 
@@ -114,7 +113,7 @@ function dbgSpeed() {
     <button @click="dbgKillAll">💀 Kill All</button>
     <button @click="dbgWave">🎯 Set Wave 50</button>
     <button @click="dbgUnlockAll">🔓 Unlock All Maps</button>
-    <button @click="dbgSpeed">⚡ Toggle 8x Speed</button>
+    <button @click="dbgSpeed">⚡ Toggle 16x Speed</button>
   </div>
 </template>
 
