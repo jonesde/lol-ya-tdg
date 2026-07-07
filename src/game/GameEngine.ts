@@ -688,6 +688,10 @@ export class GameEngine {
     return this.gameStore.cycleSpeed();
   }
 
+  cycleSpeedReverse(): number {
+    return this.gameStore.cycleSpeedReverse();
+  }
+
   stop(): void {
     this.gameStore.setState(GameState.MENU);
     if (this._rafId) {

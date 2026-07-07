@@ -605,6 +605,8 @@ Then, for each existing mutation, add the parallel write. Examples:
 | `this.persistStore.gems += afterRegion` (`GameEngine.ts:200`) | `this.persistState.gems += afterRegion` |
 | `this.gameStore.addGold(amount)` (`GameEngine.ts:393`, via `earnGold`) | `applyGold(this.runState, amount)` |
 
+**New method needed — `GameEngine.cycleSpeedReverse()`:** `cycleSpeed()` already exists on `GameEngine` (`GameEngine.ts:687-689`) as a thin delegation to `this.gameStore.cycleSpeed()`. `cycleSpeedReverse()` does **not** exist on `GameEngine` today — it exists only on the Pinia `gameStore` (`src/stores/game.ts:170-182`). Phase 1 must add the mirror method to `GameEngine` (same delegation pattern as `cycleSpeed()`) so Phase 6's `applyCommand` at line 1563 can call `engine.cycleSpeedReverse()` for the reverse direction case. The method body delegates to `this.gameStore.cycleSpeedReverse()` and writes the parallel `runState.timeScale` afterward (via `syncSetTimeScale` from `RunStateSync` once available, or directly for now).
+
 **Do not yet remove the Pinia writes.** Phase 1 is additive. The plain-state mirror is unused on the read path; it exists only to prove the mutation surface is fully covered.
 
 ### Drift prevention
