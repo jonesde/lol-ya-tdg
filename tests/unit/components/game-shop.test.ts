@@ -44,7 +44,7 @@ describe("GameShop", () => {
     const costs = wrapper.findAll(".tower-cost");
     expect(costs.length).toBe(6);
     costs.forEach((cost) => {
-      expect(cost.text()).toMatch(/\d+g/);
+      expect(cost.text()).toMatch(/🪙\s*\d+/);
     });
   });
 
@@ -54,7 +54,7 @@ describe("GameShop", () => {
     persistStore.generalAddons.sellActive = "discount";
     const wrapper = mount(GameShop, { global: { plugins: [pinia] } });
     const costs = wrapper.findAll(".tower-cost");
-    const firstCost = parseInt(costs[0].text(), 10);
+    const firstCost = parseInt(costs[0].text().match(/\d+/)[0], 10);
     expect(firstCost).toBe(15);
   });
 
