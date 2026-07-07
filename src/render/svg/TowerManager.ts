@@ -116,7 +116,7 @@ function computeTowerFrame(
   const refImages = animConfig.referenceImages;
   const frameCount = refImages?.length || 1;
   if (elapsed >= animConfig.duration) return 0;
-  return frameCount - 1 - Math.floor((elapsed / animConfig.duration) * frameCount);
+  return Math.floor((elapsed / animConfig.duration) * frameCount);
 }
 
 class TowerRenderProxy {

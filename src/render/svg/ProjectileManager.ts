@@ -5,6 +5,7 @@ export class ProjectileManager {
   private pool: SVGCircleElement[] = [];
   private idToIndex: Map<number, number> = new Map();
   private freeIndexStack: number[] = [];
+  private overflowIds: Set<number> = new Set();
 
   init(layer: SVGGElement): void {
     for (let i = PROJECTILE_POOL_SIZE - 1; i >= 0; i--) {
@@ -21,10 +22,12 @@ export class ProjectileManager {
   syncFromGameEngine(projectiles: Projectile[]): void {
     for (let i = 0; i < projectiles.length; i++) {
       const proj = projectiles[i]!;
-      if (!this.idToIndex.has(proj.id)) {
+      if (!this.idToIndex.has(proj.id) && !this.overflowIds.has(proj.id)) {
         const freeIndex = this.freeIndexStack.pop();
         if (freeIndex !== undefined) {
           this.idToIndex.set(proj.id, freeIndex);
+        } else {
+          this.overflowIds.add(proj.id);
         }
       }
       const poolIndex = this.idToIndex.get(proj.id);
@@ -45,6 +48,11 @@ export class ProjectileManager {
         this.idToIndex.delete(id);
       }
     }
+    for (const overflowId of this.overflowIds) {
+      if (!activeIds.has(overflowId)) {
+        this.overflowIds.delete(overflowId);
+      }
+    }
   }
 
   dispose(): void {
@@ -56,5 +64,6 @@ export class ProjectileManager {
     this.pool = [];
     this.idToIndex.clear();
     this.freeIndexStack = [];
+    this.overflowIds.clear();
   }
 }

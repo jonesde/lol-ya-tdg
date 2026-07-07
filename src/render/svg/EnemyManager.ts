@@ -55,7 +55,6 @@ class EnemyRenderProxy {
   private active: boolean = false;
   private walkingScaledElapsed: number = 0;
   private hitReactionStartElapsed: number = 0;
-  private lastHitAnimTime: number = 0;
   private lastTransform: string = "";
   private lastWidth: string = "";
   private lastHeight: string = "";
@@ -65,7 +64,6 @@ class EnemyRenderProxy {
     this.el = el;
     this.walkingScaledElapsed = 0;
     this.hitReactionStartElapsed = 0;
-    this.lastHitAnimTime = 0;
   }
 
   getEl(): SVGUseElement {
@@ -108,12 +106,9 @@ class EnemyRenderProxy {
 
     const hitReaction = (enemy as unknown as { hitReaction?: { duration: number; referenceImages?: unknown[] } | null })
       .hitReaction;
-    const hitOccurred = enemy.hitAnimTime > 0 && enemy.hitAnimTime !== this.lastHitAnimTime;
-
-    if (hitOccurred) {
+    if (enemy.hitAnimTime > 0 && this.hitReactionStartElapsed === 0) {
       this.hitReactionStartElapsed = this.walkingScaledElapsed;
     }
-    this.lastHitAnimTime = enemy.hitAnimTime;
 
     this.walkingScaledElapsed += dt;
 
@@ -172,7 +167,6 @@ class EnemyRenderProxy {
       this.lastSpriteId = "";
       this.walkingScaledElapsed = 0;
       this.hitReactionStartElapsed = 0;
-      this.lastHitAnimTime = 0;
       this.lastTransform = "";
       this.lastWidth = "";
       this.lastHeight = "";

@@ -153,6 +153,36 @@ describe("ProjectileManager", () => {
       expect(documentCreateElementNS.mock.calls.length).toBe(callCountAfterFirst);
     });
 
+    it("tracks overflow projectiles without re-attempting allocation on subsequent frames", () => {
+      const projectiles = Array.from({ length: PROJECTILE_POOL_SIZE + 5 }, (_, i) => ({
+        id: i + 1,
+        x: i,
+        y: i,
+        radius: 3,
+        color: "#fff",
+      }));
+      pm.syncFromGameEngine(projectiles);
+      const callCountAfterExhaust = documentCreateElementNS.mock.calls.length;
+      pm.syncFromGameEngine(projectiles);
+      expect(documentCreateElementNS.mock.calls.length).toBe(callCountAfterExhaust);
+    });
+
+    it("releases overflow tracking when projectile becomes inactive", () => {
+      const projectiles = Array.from({ length: PROJECTILE_POOL_SIZE + 3 }, (_, i) => ({
+        id: i + 1,
+        x: i,
+        y: i,
+        radius: 3,
+        color: "#fff",
+      }));
+      pm.syncFromGameEngine(projectiles);
+      const overflowIds = Array.from((pm as unknown as { overflowIds: Set<number> }).overflowIds);
+      expect(overflowIds.length).toBe(3);
+      pm.syncFromGameEngine(projectiles.slice(0, PROJECTILE_POOL_SIZE));
+      const overflowIdsAfter = Array.from((pm as unknown as { overflowIds: Set<number> }).overflowIds);
+      expect(overflowIdsAfter.length).toBe(0);
+    });
+
     it("defaults color to #ffffff when not provided", () => {
       pm.syncFromGameEngine([{ id: 1, x: 10, y: 20, radius: 3, color: "" }]);
       expect(layer.children[0].attributes.fill).toBe("#ffffff");

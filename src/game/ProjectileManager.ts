@@ -554,7 +554,7 @@ export class ProjectileManager {
     }
 
     if (projectile.knockback > 0) {
-      const knockAmount = projectile.knockback * (enemy.maxHp / RAILGUN_KNOCK_HP_DIVISOR);
+      const knockAmount = projectile.knockback * Math.max(0.1, Math.min(2, RAILGUN_KNOCK_HP_DIVISOR / enemy.maxHp));
       const dx = enemy.x - projectile.x;
       const dy = enemy.y - projectile.y;
       const knockDist = Math.sqrt(dx * dx + dy * dy);
