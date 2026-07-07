@@ -490,7 +490,7 @@ export class ProjectileManager {
 
     if (projectile.splashRadius > 0 && this.particles) {
       const splashRadiusPx = projectile.splashRadius * (this.grid?.tileSize ?? 1);
-      const splashEnemies = this.enemyManager.getEnemiesInRange(projectile.x, projectile.y, splashRadiusPx);
+      const splashEnemies = this.enemyManager.getEnemiesInRange(enemy.x, enemy.y, splashRadiusPx);
       for (const splashEnemy of splashEnemies) {
         if (splashEnemy.id !== enemy.id && (splashEnemy as { takeDamage?: unknown }).takeDamage) {
           const splashDamage = finalDamage * SPLASH_DAMAGE_RATIO;
