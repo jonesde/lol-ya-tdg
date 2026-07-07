@@ -207,7 +207,7 @@ onUnmounted(() => {
 <style scoped>
 .build-bar {
   position: absolute;
-  z-index: 99;
+  z-index: 10;
   background: rgba(20, 24, 50, 0.7);
   border-radius: 6px 6px 0 0;
   border: 1px solid var(--color-border);

@@ -290,7 +290,7 @@ function handleFixedAim(dir: string | null) {
   background: var(--color-panel);
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  z-index: 10;
+  z-index: 11;
   font-size: 12px;
 }
 
