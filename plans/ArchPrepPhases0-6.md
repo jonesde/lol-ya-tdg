@@ -870,6 +870,7 @@ constructor(
 | Call site | Current args | Phase 2 args |
 |---|---|---|
 | `TowerManager.ts:129` (`new Tower(type, tileX, tileY, save, grid, this.theme)`) | 6 args | `new Tower(type, tileX, tileY, save, grid, this.theme, this.defaultTowerVisuals[type] ?? null)` — 7 args (placedAt keeps its default) |
+| `EnemyManager.ts:53` (`new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick, this.theme)`) | 7 args | `new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick, this.theme, this.defaultEnemyVisuals[type] ?? null)` — 8 args (level/spawnIndex keep their defaults) |
 | `GameEngine.ts:136` (`new EnemyManager(this.grid, this.particleManager, diffTick, this.theme)`) | 4 args | `new EnemyManager(this.grid, this.particleManager, diffTick, this.theme, this.themeBundle.defaultEnemyVisuals)` — 5 args |
 | `GameEngine.ts:138-144` (`new TowerManager(grid, particles, projectiles, sound, theme)`) | 5 args | `new TowerManager(grid, particles, projectiles, sound, theme, this.themeBundle.defaultTowerVisuals)` — 6 args (NEW 6th param on `TowerManager` constructor) |
 
@@ -964,31 +965,33 @@ export function populateSkillTreeTheme(
 `main.ts` calls `populateSkillTreeTheme(...)` after the default theme is preloaded. The existing `try { useMapThemeStore() } catch {}` pattern (`SkillTree.ts:121-126`) goes away — the neutral defaults handle the pre-theme case, and the populate function handles the post-theme case deterministically. The current `main.ts` has no such call — it must be added explicitly:
 
 ```ts
-// src/main.ts (add the populate call inside the existing try block, after preloadDefault)
+// src/main.ts (extend the existing IIFE at lines 15-21)
 import { populateSkillTreeTheme } from "@/towers/SkillTree.js";
 import { TowerIds } from "@/game/ConstantsTower.js";
 
 // ... existing createApp, pinia, router setup ...
 
 usePersistStore().load();
-try {
-  await useMapThemeStore().preloadDefault();   // already present (main.ts:16)
-  // NEW: populate SKILL_TREE display fields from the now-loaded default theme.
-  const mapThemeStore = useMapThemeStore();
-  const defaultTowerVisuals: Record<string, TowerVisualMeta> = {};
-  for (const id of Object.values(TowerIds)) {
-    const visual = mapThemeStore.getDefaultTowerVisual(id);
-    if (visual) defaultTowerVisuals[id] = visual;
+(async () => {
+  try {
+    await useMapThemeStore().preloadDefault();   // already present (main.ts:17)
+    // NEW: populate SKILL_TREE display fields from the now-loaded default theme.
+    const mapThemeStore = useMapThemeStore();
+    const defaultTowerVisuals: Record<string, TowerVisualMeta> = {};
+    for (const id of Object.values(TowerIds)) {
+      const visual = mapThemeStore.getDefaultTowerVisual(id);
+      if (visual) defaultTowerVisuals[id] = visual;
+    }
+    populateSkillTreeTheme(defaultTowerVisuals);
+  } catch (err) {
+    console.error("Failed to preload default map theme:", err);
   }
-  populateSkillTreeTheme(defaultTowerVisuals);
-} catch (err) {
-  console.error("Failed to preload default map theme:", err);
-}
+})();
 
 app.mount("#app");
 ```
 
-**Top-level await note:** `main.ts` ALREADY uses top-level `await` at line 16 (`await useMapThemeStore().preloadDefault()`). Vite supports ESM top-level await in the dev server and production build, so no change to `main.ts`'s async nature is needed — the snippet above only adds the populate lines inside the existing `try` block. The `await` keyword is not new; only the `populateSkillTreeTheme(...)` call and its preceding loop are new.
+**IIFE context:** `main.ts` wraps the preload in an IIFE (`(async () => { ... })()`) at lines 15-21, NOT top-level await. The populate call goes inside this existing IIFE, immediately after `preloadDefault()` resolves and before the IIFE closes. The `await` keyword is not new; only the `populateSkillTreeTheme(...)` call and its preceding loop are new.
 
 **Ordering mitigation:** `main.ts` already `await`s `mapThemeStore.preloadDefault()` before `app.mount()` (per `README.md` line 365 — corrected: the call is awaited, not synchronous). The `populateSkillTreeTheme(...)` call goes immediately after `preloadDefault()` resolves and before `app.mount()`, so the populate runs before any route component (including `/skill-tree`) can mount. Additionally, add a defensive re-populate in `SkillTree.vue`'s setup that checks whether `SKILL_TREE` is still neutral (e.g., `SKILL_TREE.basic.name === ""`) and calls `populateSkillTreeTheme` again if so — this makes the ordering deterministic regardless of which route the user enters on first, and guards against any future change to `main.ts`'s init sequence.
 
