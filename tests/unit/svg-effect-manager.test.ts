@@ -135,7 +135,7 @@ describe("EffectManager", () => {
 
   describe("stun effects", () => {
     it("renders a single stun effect at the given coordinates", () => {
-      manager.addStunEffect(40, 50);
+      manager.addStunEffect(40, 50, 0.3);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
@@ -145,17 +145,17 @@ describe("EffectManager", () => {
       expect(transform).toContain("50.0");
     });
 
-    it("initializes star circles lazily inside the stun group", () => {
-      manager.addStunEffect(10, 10);
+    it("initializes two polylines lazily inside the stun group", () => {
+      manager.addStunEffect(10, 10, 0.3);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
-      const stars = groups[0]!.querySelectorAll("circle");
-      expect(stars.length).toBeGreaterThan(0);
+      const polylines = groups[0]!.querySelectorAll("polyline");
+      expect(polylines.length).toBe(2);
     });
 
     it("hides unused stun pool slots", () => {
-      manager.addStunEffect(10, 10);
+      manager.addStunEffect(10, 10, 0.3);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
@@ -166,9 +166,9 @@ describe("EffectManager", () => {
     });
 
     it("assigns multiple stun effects to sequential slots", () => {
-      manager.addStunEffect(10, 10);
-      manager.addStunEffect(20, 20);
-      manager.addStunEffect(30, 30);
+      manager.addStunEffect(10, 10, 0.3);
+      manager.addStunEffect(20, 20, 0.3);
+      manager.addStunEffect(30, 30, 0.3);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
@@ -182,12 +182,12 @@ describe("EffectManager", () => {
     });
 
     it("hides stun effect after its life expires", () => {
-      manager.addStunEffect(10, 10);
+      manager.addStunEffect(10, 10, 0.3);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.style.visibility).toBe("visible");
 
-      for (let frame = 0; frame < 35; frame++) {
+      for (let frame = 0; frame < 20; frame++) {
         manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       }
 
@@ -196,7 +196,7 @@ describe("EffectManager", () => {
 
     it("regression: renders stun effects after pool size is exceeded (original bug)", () => {
       for (let i = 0; i < STUN_POOL_SIZE + 5; i++) {
-        manager.addStunEffect(i, i);
+        manager.addStunEffect(i, i, 0.3);
       }
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
@@ -208,9 +208,9 @@ describe("EffectManager", () => {
   describe("lightning and stun use independent counters", () => {
     it("spawning both types does not cause cross-type slot collisions", () => {
       manager.addLightningEffect(0, 0, 10, 10);
-      manager.addStunEffect(20, 20);
+      manager.addStunEffect(20, 20, 0.3);
       manager.addLightningEffect(30, 30, 40, 40);
-      manager.addStunEffect(50, 50);
+      manager.addStunEffect(50, 50, 0.3);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
@@ -234,7 +234,7 @@ describe("EffectManager", () => {
 
     it("clears active effects so subsequent sync renders nothing", () => {
       manager.addLightningEffect(0, 0, 10, 10);
-      manager.addStunEffect(20, 20);
+      manager.addStunEffect(20, 20, 0.3);
       manager.dispose();
       manager.init(layer);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
