@@ -399,7 +399,8 @@ export function isGeneralUnlocked(save: SaveData, key: string, index: number): b
     if (index === 1) return generalAddons.sellDiscountUnlocked as boolean;
     return false;
   }
-  return generalAddons[key] === index;
+  const current = generalAddons[key] as number | null;
+  return current !== null && current >= index;
 }
 
 export function isGeneralAvailable(save: SaveData, key: string, index: number): boolean {
@@ -446,8 +447,10 @@ export function tryUnlockGeneral(save: SaveData, key: string, index: number) {
     return { ok: true };
   }
 
-  const current = save.generalAddons?.[key];
+  const current = save.generalAddons?.[key] as number | null | undefined;
   if (current === index) return { ok: false, reason: "Already unlocked" };
+  if (current !== undefined && current !== null && current > index)
+    return { ok: false, reason: "Already unlocked at higher tier" };
 
   save.gems -= cost;
   if (!save.generalAddons) save.generalAddons = {};
@@ -468,4 +471,92 @@ export function getGeneralAddonTierData(save: SaveData, key: string) {
   const def = GENERAL_ADDON_DEFS[key];
   if (!def || tier === null || tier === undefined) return null;
   return { tier, ...def.tiers[tier as number] };
+}
+
+export function canRefundGeneral(save: SaveData, key: string, index: number): number {
+  if (key === "sellOption") return 0;
+  const current = getGeneralAddonValue(save, key);
+  if (current !== index) return 0;
+  const def = GENERAL_ADDON_DEFS[key];
+  if (!def) return 0;
+  return def.costs[index]!;
+}
+
+export function tryRefundGeneral(save: SaveData, key: string, index: number) {
+  const refundAmount = canRefundGeneral(save, key, index);
+  if (refundAmount === 0) return { ok: false, reason: "Cannot refund this tier" };
+  if (index > 0) {
+    if (!save.generalAddons) save.generalAddons = {};
+    save.generalAddons[key] = index - 1;
+  } else {
+    if (!save.generalAddons) save.generalAddons = {};
+    save.generalAddons[key] = null;
+  }
+  save.gems += refundAmount;
+  return { ok: true, gems: refundAmount };
+}
+
+export function countRefundableGems(save: SaveData): number {
+  let total = 0;
+  for (const towerId of Object.keys(save.unlocked)) {
+    const unlocked = save.unlocked[towerId]!;
+    const anyVariantUnlocked = unlocked.variantA.some(Boolean) || unlocked.variantB.some(Boolean);
+
+    if (!anyVariantUnlocked) {
+      for (let i = unlocked.levels.length - 1; i >= 0; i--) {
+        if (unlocked.levels[i]) total += getCost("level", i);
+      }
+    }
+    for (let i = unlocked.variantA.length - 1; i >= 0; i--) {
+      if (unlocked.variantA[i]) total += getCost("variantA", i);
+    }
+    for (let i = unlocked.variantB.length - 1; i >= 0; i--) {
+      if (unlocked.variantB[i]) total += getCost("variantB", i);
+    }
+    for (let i = unlocked.addons.length - 1; i >= 0; i--) {
+      if (unlocked.addons[i]) total += getCost("addons", i);
+    }
+  }
+  for (const key of Object.keys(GENERAL_ADDON_DEFS)) {
+    if (key === "sellOption") continue;
+    const current = getGeneralAddonValue(save, key);
+    if (typeof current !== "number") continue;
+    const def = GENERAL_ADDON_DEFS[key];
+    if (!def) continue;
+    for (let i = 0; i <= current; i++) {
+      total += def.costs[i]!;
+    }
+  }
+  return total;
+}
+
+export function refundAllGems(save: SaveData) {
+  for (const towerId of Object.keys(save.unlocked)) {
+    const unlocked = save.unlocked[towerId]!;
+    for (let i = unlocked.variantA.length - 1; i >= 0; i--) {
+      if (unlocked.variantA[i]) tryRefund(save, towerId, "variantA", i);
+    }
+    for (let i = unlocked.variantB.length - 1; i >= 0; i--) {
+      if (unlocked.variantB[i]) tryRefund(save, towerId, "variantB", i);
+    }
+    for (let i = unlocked.addons.length - 1; i >= 0; i--) {
+      if (unlocked.addons[i]) tryRefund(save, towerId, "addons", i);
+    }
+    for (let i = unlocked.levels.length - 1; i >= 0; i--) {
+      if (unlocked.levels[i]) tryRefund(save, towerId, "level", i);
+    }
+  }
+  for (const key of Object.keys(GENERAL_ADDON_DEFS)) {
+    if (key === "sellOption") {
+      if (save.generalAddons) {
+        save.generalAddons.sellActive = null;
+      }
+      continue;
+    }
+    const current = getGeneralAddonValue(save, key);
+    if (typeof current !== "number") continue;
+    for (let i = current; i >= 0; i--) {
+      tryRefundGeneral(save, key, i);
+    }
+  }
 }

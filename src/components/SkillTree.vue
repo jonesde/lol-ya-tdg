@@ -8,6 +8,8 @@ import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 import {
   canRefund,
+  canRefundGeneral,
+  countRefundableGems,
   GENERAL_ADDON_CATEGORIES,
   GENERAL_ADDON_DEFS,
   getGeneralAddonValue,
@@ -15,8 +17,10 @@ import {
   isGeneralAvailable,
   isGeneralUnlocked,
   isUnlocked,
+  refundAllGems,
   SKILL_TREE,
   tryRefund,
+  tryRefundGeneral,
   tryUnlock,
   tryUnlockGeneral,
 } from "@/towers/SkillTree.js";
@@ -66,6 +70,13 @@ function handleGeneralClick(key: string, type: string | number, opt: string | nu
   }
 
   const idxNum = parseInt(type as string, 10);
+  if (isGeneralUnlocked(persistStore.$state, key, idxNum)) {
+    const refundGems = canRefundGeneral(persistStore.$state, key, idxNum);
+    if (refundGems > 0) {
+      showGeneralRefundConfirm(key, idxNum, refundGems);
+    }
+    return;
+  }
   if (!isGeneralAvailable(persistStore.$state, key, idxNum)) {
     flashElement(element);
     return;
@@ -88,6 +99,21 @@ function showRefundConfirm(towerId: TowerId, tier: string, index: number, gems: 
     cancelLabel: "Cancel",
     onConfirm: () => {
       tryRefund(persistStore.$state, towerId, tier, index);
+      persistStore.save();
+    },
+  });
+}
+
+function showGeneralRefundConfirm(key: string, index: number, gems: number) {
+  const def = GENERAL_ADDON_DEFS[key];
+  const label = def?.tiers[index]?.label || key;
+  uiStore.showConfirm({
+    title: "Refund Upgrade",
+    message: `Downgrade "${label}" and refund ${gems} 💎?`,
+    confirmLabel: "Refund",
+    cancelLabel: "Cancel",
+    onConfirm: () => {
+      tryRefundGeneral(persistStore.$state, key, index);
       persistStore.save();
     },
   });
@@ -120,6 +146,20 @@ function showResetConfirm() {
     cancelLabel: "Cancel",
     onConfirm: () => {
       persistStore.reset();
+    },
+  });
+}
+
+function showRefundAllConfirm() {
+  const refundGems = countRefundableGems(persistStore.$state);
+  uiStore.showConfirm({
+    title: "Refund All Gems",
+    message: `Re-lock all unlocked upgrades and refund ${refundGems} \u{1F48E}?`,
+    confirmLabel: "Refund All",
+    cancelLabel: "Cancel",
+    onConfirm: () => {
+      refundAllGems(persistStore.$state);
+      persistStore.save();
     },
   });
 }
@@ -294,6 +334,7 @@ function showResetConfirm() {
     </div>
 
     <div class="skill-footer">
+      <button class="refund-all-btn" @click="showRefundAllConfirm()">Refund All Gems</button>
       <button class="reset-btn" @click="showResetConfirm()">Reset Profile</button>
     </div>
   </div>
@@ -541,6 +582,21 @@ function showResetConfirm() {
 }
 
 .reset-btn:hover {
+  background: rgba(255, 68, 68, 0.2);
+}
+
+.refund-all-btn {
+  padding: 6px 12px;
+  font-size: 11px;
+  background: rgba(255, 68, 68, 0.1);
+  border: 1px solid rgba(255, 68, 68, 0.2);
+  color: var(--color-danger);
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.refund-all-btn:hover {
   background: rgba(255, 68, 68, 0.2);
 }
 </style>
