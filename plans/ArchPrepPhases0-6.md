@@ -25,19 +25,18 @@ src/sim/
 └── SnapshotSerializer.ts       # Phase 5 — entity → snapshot DTO conversion
 ```
 
-Adapters that depend on Pinia/DOM live **outside** `src/sim/` (they import from `src/sim/` but are not imported by the worker):
-- `src/sim/MainThreadHostBindings.ts` — Phase 0 adapter (imports `SoundManager`, `uiStore`, `persistStore`)
-- `src/sim/MainThreadCommandDispatcher.ts` — Phase 6 adapter (imports `GameEngine`)
+Adapters that depend on Pinia/DOM live **outside** `src/sim/` (they import from `src/sim/` but are not imported by the worker) — in a sibling directory `src/sim-adapters/`:
+- `src/sim-adapters/MainThreadHostBindings.ts` — Phase 0 adapter (imports `SoundManager`, `uiStore`, `persistStore`)
+- `src/sim-adapters/MainThreadCommandDispatcher.ts` — Phase 6 adapter (imports `GameEngine`)
 
-The split keeps `src/sim/` itself free of any `src/stores/` import, while the adapters — which the worker never imports — can reach into Pinia freely.
+The split keeps `src/sim/` itself free of any `src/stores/` import, while the adapters — which the worker never imports — can reach into Pinia freely. Putting the adapters in a separate directory (rather than under `src/sim/`) means the boundary grep on `src/sim/` doesn't need per-file exemptions.
 
-The directory forms a **build-time boundary**: it must not import anything from `src/stores/`, `src/components/`, `src/router/`, or `src/sound/`. **The project uses Biome (not ESLint) for linting** (see `biome.json` and `package.json`'s `lint` script), and Biome has no `no-restricted-imports`-equivalent rule. The boundary is therefore enforced by a **small custom script** wired into `package.json`:
+The directory forms a **build-time boundary**: it must not import anything from `src/stores/`, `src/components/`, `src/router/`, or `src/sound/`. **The project uses Biome (not ESLint) for linting** (see `biome.json` and `package.json`'s `lint` script), and Biome has no `no-restricted-imports`-equivalent rule. The boundary is enforced by a **CI check** wired into `package.json`. **Start with the grep one-liner** (no new dependency) and upgrade to a script only if false negatives appear:
 
-- Add `scripts/check-sim-boundary.ts` (run via `tsx` or compiled) that walks every `.ts` file under `src/sim/` and fails if any `import ... from "@/stores/..."`, `import ... from "@/components/..."`, `import ... from "@/router/..."`, or `import ... from "@/sound/..."` is found. The two `MainThread*` adapter files (`src/sim/MainThreadHostBindings.ts`, `src/sim/MainThreadCommandDispatcher.ts`) are the **only** files exempted — they live under `src/sim/` but explicitly import stores; the script's exemption list is exactly those two filenames (do **not** exempt by directory glob, or a future file would silently bypass the rule).
-- Add `"check:sim-boundary": "tsx scripts/check-sim-boundary.ts"` to `package.json` and chain it into the existing `lint` script (`"lint": "biome check . && npm run check:sim-boundary"`) so it runs in CI and on every `npm run lint`.
-- A grep-only fallback (one-liner in CI) is acceptable as a stopgap if `tsx` isn't already a dev dependency — but prefer the script so the failure message can name the offending file and import line.
+- **Phase 0/1 (start here): grep one-liner.** Add `"check:sim-boundary": "grep -rEn 'from \"@/(stores|components|router|sound)/' src/sim/ && exit 1 || exit 0"` to `package.json`, chained into `lint` (`"lint": "biome check . && npm run check:sim-boundary"`). This fails if any forbidden import is found under `src/sim/`. The grep matches the four forbidden path-aliases; it does **not** exempt the two `MainThread*` adapters (they would fail the check) — to handle them, either (a) move the adapters OUT of `src/sim/` into `src/sim-adapters/` (a sibling directory not covered by the grep), or (b) refine the grep to exclude those two filenames: `grep -rEn --exclude='MainThreadHostBindings.ts' --exclude='MainThreadCommandDispatcher.ts' 'from \"@/(stores|components|router|sound)/' src/sim/`. Option (a) is cleaner — the adapters are not part of the worker boundary, so they shouldn't live under `src/sim/` regardless. Recommend (a): create `src/sim-adapters/` for the two adapter files and grep only `src/sim/`.
+- **Upgrade path (only if needed):** if the grep proves too coarse (e.g., it can't exempt by import-kind — `import type` is allowed for non-adapter files through Phase 6), replace it with a small `scripts/check-sim-boundary.ts` script run via `tsx`. `tsx` is NOT currently a dev dependency — adding it is a new dependency, which is why the grep is the preferred starting point. Only add `tsx` and the script if profiling the false-positive rate in practice shows the grep is insufficient.
 
-This is what prevents accidental transitive coupling to Pinia — see Risk §7.5 in `ArchitecturePlan.md`. The rule is in place from Phase 1 onward (Phase 0 only adds `HostBindings.ts` and `MainThreadHostBindings.ts`; the script can be added in Phase 0 or Phase 1 — recommend Phase 0 so the boundary is enforced the moment `src/sim/` exists).
+This is what prevents accidental transitive coupling to Pinia — see Risk §7.5 in `ArchitecturePlan.md`. The rule is in place from Phase 1 onward (Phase 0 only adds `HostBindings.ts`; the check can be added in Phase 0 or Phase 1 — recommend Phase 0 so the boundary is enforced the moment `src/sim/` exists).
 
 ### Boundary policy for migration-target directories
 
@@ -137,10 +136,10 @@ export type SoundName =
 
 ### Main-thread adapter
 
-`src/sim/MainThreadHostBindings.ts` (lives outside the `sim/` boundary since it imports stores — this is fine, it's the *adapter*, not the contract):
+`src/sim-adapters/MainThreadHostBindings.ts` (lives outside the `sim/` boundary since it imports stores — this is fine, it's the *adapter*, not the contract):
 
 ```ts
-import type { HostBindings, ConfirmPayload, PersistStateSlice, UiEvent } from "./HostBindings.js";
+import type { HostBindings, ConfirmPayload, PersistStateSlice, UiEvent, SoundName } from "@/sim/HostBindings.js";
 import { SoundManager } from "@/sound/SoundManager.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -303,7 +302,10 @@ This is the part the earlier plan missed. The sound interface flows through thre
    - **Re-type 4 annotations**: `TowerManager.ts:99` (field `sound: SoundManagerRef` → `SoundPlayer`), `:110` (constructor param), `Tower.ts:664` (`soundManager: SoundManagerRef` param → `SoundPlayer`), `:776` (`sound: SoundManagerRef` param → `SoundPlayer`).
    - **Rename the method at 5 call sites**: `TowerManager.ts:136,147,157` (`this.sound.play("place"|"sell"|"cancel")` → `this.sound.playSound(...)`) and `Tower.ts:808,841` (`sound.play(\`shoot_${this.type}\`)` → `sound.playSound(\`shoot_${this.type}\` as SoundName)`).
 
-3. `TowerManager.ts:184` calls `tower.update(dt, enemyManager, this.projectiles, this.sound)`. The `sound` parameter on `Tower.update` (`Tower.ts:664,776`) is re-typed from `SoundManagerRef` to `SoundPlayer` (covered in step 2 above). The call sites at `Tower.ts:808,841` (`if (sound) sound.play(\`shoot_${this.type}\`)`) become `if (sound) sound.playSound(\`shoot_${this.type}\` as SoundName)`. (The cast is because template-literal types don't narrow to the union; see Phase 3's implementation note about making `SoundName` a template-literal type.)
+3. `TowerManager.ts:184` calls `tower.update(dt, enemyManager, this.projectiles, this.sound)`. The `Tower.update` method has TWO sound parameter declarations — `Tower.ts:664` (`soundManager: SoundManagerRef`) and `:776` (`sound: SoundManagerRef`) — both re-typed to `SoundPlayer` (covered in step 2 above; these are **parameter declarations**, not call sites). The **call sites** that invoke the method are `Tower.ts:808,841` (`if (sound) sound.play(\`shoot_${this.type}\`)`) — these become `if (sound) sound.playSound(\`shoot_${this.type}\` as SoundName)`. To disambiguate which line gets which change:
+   - **`:664, :776`** — parameter type annotations: `SoundManagerRef` → `SoundPlayer` (type change only, no call-site rename).
+   - **`:808, :841`** — method invocations: `sound.play(...)` → `sound.playSound(...)` (rename, with `as SoundName` cast).
+   The cast is because template-literal types don't narrow to the union; see Phase 3's implementation note about making `SoundName` a template-literal type (which eliminates the cast).
 
 ### What stays the same in Phase 0
 
@@ -441,10 +443,21 @@ export function togglePause(state: GameRunState): void {
 `src/sim/PersistState.ts`:
 
 ```ts
-import type { GeneralAddons } from "@/stores/persist.js";  // re-export the existing interface
+import type { GeneralAddons, TowerUnlocks } from "@/stores/persist.js";  // re-export the existing interfaces
+// NOTE: GeneralAddons is already exported (persist.ts:15). TowerUnlocks is
+// currently module-private (persist.ts:8 — `interface TowerUnlocks` with no
+// `export`). Phase 1 ADDS `export` to that interface so PersistState.ts can
+// import it as a type. (Type-only import from src/stores/ is permitted under
+// the boundary policy through Phase 6; removed in Phase 7 when TowerUnlocks
+// is re-homed into src/sim/ or a shared types module.)
 
-// Mirrors PersistStateShape in src/stores/persist.ts:28-47. Same caveat as
-// GameRunState: parallel mirror in Phase 1, authoritative in Phase 7.
+// Mirrors PersistStateShape in src/stores/persist.ts:28-47 — ALL 16 fields
+// enumerated explicitly (no ellipsis). The randomMap* / lastSelectedThemeId
+// fields aren't touched by the engine, but they MUST be present on the plain
+// state so that `structuredClone(this.persistStore.$state)` (Phase 1's
+// snapshotPersistState) produces a complete copy — otherwise those fields
+// would be `undefined` on the plain mirror and would overwrite the Pinia
+// values when the host flushes the plain state back to localStorage in Phase 7+.
 export interface PersistState {
   saveVersion: number;
   gems: number;
@@ -457,7 +470,13 @@ export interface PersistState {
   generalAddons: GeneralAddons;
   unlocked: Record<string, TowerUnlocks>;
   runHistory: unknown[];
-  // ... (copy PersistStateShape field-by-field)
+  randomMapRegion: number;
+  randomMapLevel: number;
+  randomMapStyle: string;
+  randomMapSeed: number | null;
+  randomMapWidth: number;
+  randomMapHeight: number;
+  lastSelectedThemeId: string;
 }
 
 // Pure functions extracted from persist.ts:191-298. These currently mutate
@@ -748,6 +767,26 @@ Update the `new WaveGraphTracker(...)` call at `GameEngine.ts:153-158` to pass `
 
 The plan stores both the Pinia value and the plain-mirror value in separate internal fields during Phase 1 (e.g., `_prevGems` and `_prevGemsPlain`) and reads both at each site. Phase 7 drops the Pinia fields; the `_plain` fields become the only ones. If a future read site is added, the same dual-read pattern applies — the boundary script does not catch reads (it catches imports only), so this is a code-review checklist item for `WaveGraphTracker` specifically.
 
+**Required in-code documentation:** add a comment block at the top of `src/game/WaveGraphTracker.ts` listing every dual-read site, so a future developer adding a new read sees the pattern and doesn't miss the paired plain-state read. Concretely:
+
+```ts
+// ─── DUAL-READ SITES (Phase 1 parallel-mirror pattern) ──────────────────
+// Every this.gameStore.<field> / this.persistStore.<field> read below has a
+// paired this.runState.<field> / this.persistState.<field> read. When adding
+// a new read, add the paired plain-state read in the same block. Phase 7
+// drops the Pinia reads; the plain-state reads become authoritative.
+//
+// Current dual-read sites:
+//   :64-65  constructor — persistStore.gems→_prevGems / persistState.gems→_prevGemsPlain
+//                        gameStore.lives→_intervalMinLives / runState.lives→_intervalMinLivesPlain
+//   :81     this.persistStore.gems  /  this.persistState.gems
+//   :88     this.gameStore.lives    /  this.runState.lives
+//   :89,147 this.gameStore.lives    /  this.runState.lives  (write to _intervalMinLives[_Plain])
+// ────────────────────────────────────────────────────────────────────────
+```
+
+This comment is the lightweight enforcement mechanism (since the boundary script can't catch read drift). Keep it in sync with the actual read sites whenever a new one is added.
+
 ### Test impact
 
 No test bodies change. `mock-stores.ts` adds construction of the plain-state objects (a fresh `GameRunState` initialized to defaults; a deep clone of the mock persist state). Tests that construct `GameEngine` directly need the plain-state arguments added — mechanical, low risk.
@@ -778,10 +817,10 @@ Remove direct `useUiStore()` and `useMapThemeStore()` calls from `GameEngine`, `
 
 Both constructors already accept a `theme: MapThemeData | null` parameter and read the active theme's visual off it (`Enemy.ts:113`, `Tower.ts:253`). The fallback to `useMapThemeStore()` is for the *default* theme visuals. Inject that as an explicit parameter.
 
-**Note on current constructor signatures** (to avoid confusion — verify against the source when implementing):
+**Note on current constructor signatures** (verified against source):
 
 - `Enemy.ts:100-108` currently takes `(type, level, spawnIndex, grid, wave, difficultyTick, theme)` — **7 parameters** with `spawnIndex` and `difficultyTick` already present as separate parameters. Phase 2 adds `defaultVisual` as the **8th**. No other parameter changes.
-- `Tower.ts:232-241` currently takes `(type, tileX, tileY, save, grid, theme, placedAt)` — **7 parameters**, no sound parameter (sound is passed to `Tower.update`, not the constructor). Phase 2 adds `defaultVisual` as the **8th** (after `placedAt`). Phase 3 does **not** change the Tower constructor — it changes the `Tower.update` method signature (`Tower.ts:664,776`) from `update(dt, enemyManager, projectileManager, soundManager)` to `update(dt, enemyManager, projectileManager, soundPlayer)` where `soundPlayer: SoundPlayer`. The constructor is unaffected by Phase 3.
+- `Tower.ts:233-241` currently takes `(type, tileX, tileY, save, grid, theme, placedAt)` — **7 parameters**. Both `theme` (6th, `= null`) and `placedAt` (7th, `= Date.now()`) have defaults. Phase 2 adds `defaultVisual` as the **7th** param (after `theme`, **before** `placedAt`), with a default `= null`. Placing it before `placedAt` preserves `placedAt`'s default so existing call sites that don't pass `placedAt` (notably `TowerManager.build` at `TowerManager.ts:129`, which passes only 6 args) only need to add the 7th arg; tests that pass 5 args (`tests/unit/towers.test.ts` — `new Tower("basic", 5, 3, makeSave(), makeMockGrid())`) continue to work via the defaults on params 6-8. Phase 3 does **not** change the Tower constructor — it changes the `Tower.update` method signature (`Tower.ts:664,776`) from `update(dt, enemyManager, projectileManager, soundManager)` to `update(dt, enemyManager, projectileManager, soundPlayer)` where `soundPlayer: SoundPlayer`. The constructor is unaffected by Phase 3.
 
 ```ts
 // Enemy.ts constructor signature change (100-108):
@@ -803,7 +842,38 @@ constructor(
   this.shape  = enemyVisual?.shape  || defaultVisual?.shape  || "circle";
   // ... etc, dropping the themeStore.getDefaultEnemyVisual call
 }
+
+// Tower.ts constructor signature change (233-241):
+//   (type, tileX, tileY, save, grid, theme, placedAt)                 → 7 params (theme & placedAt have defaults)
+//   (type, tileX, tileY, save, grid, theme, defaultVisual, placedAt)  → 8 params (defaultVisual 7th, before placedAt)
+constructor(
+  type: string,
+  tileX: number,
+  tileY: number,
+  save: SaveData | undefined,
+  grid: GridRef,
+  theme: MapThemeData | null = null,
+  defaultVisual: TowerVisualMeta | null = null,   // NEW — 7th param (before placedAt)
+  placedAt: number = Date.now(),
+) {
+  // ...
+  const towerVisual = (theme?.towers[type] ?? null) as TowerVisualMeta | null;
+  this.color = towerVisual?.color || defaultVisual?.color || "#8fbc8f";
+  this.icon  = towerVisual?.icon  || defaultVisual?.icon  ?? "";
+  this.name  = towerVisual?.name  || defaultVisual?.name  || type;
+  // ... etc, dropping the themeStore.getDefaultTowerVisual call
+}
 ```
+
+**Explicit call-site changes for Phase 2** (these are the concrete diffs the implementing agent must make):
+
+| Call site | Current args | Phase 2 args |
+|---|---|---|
+| `TowerManager.ts:129` (`new Tower(type, tileX, tileY, save, grid, this.theme)`) | 6 args | `new Tower(type, tileX, tileY, save, grid, this.theme, this.defaultTowerVisuals[type] ?? null)` — 7 args (placedAt keeps its default) |
+| `GameEngine.ts:136` (`new EnemyManager(this.grid, this.particleManager, diffTick, this.theme)`) | 4 args | `new EnemyManager(this.grid, this.particleManager, diffTick, this.theme, this.themeBundle.defaultEnemyVisuals)` — 5 args |
+| `GameEngine.ts:138-144` (`new TowerManager(grid, particles, projectiles, sound, theme)`) | 5 args | `new TowerManager(grid, particles, projectiles, sound, theme, this.themeBundle.defaultTowerVisuals)` — 6 args (NEW 6th param on `TowerManager` constructor) |
+
+`TowerManager` and `EnemyManager` constructors each gain a `defaultVisuals: Record<...>` param as their last parameter (6th for `TowerManager`, 5th for `EnemyManager`), stored as a field and forwarded to each `new Tower(...)` / `new Enemy(...)` call. `TowerManager.build` reads `this.defaultTowerVisuals[type]` to pass the per-type visual into the `Tower` constructor.
 
 `EnemyManager` (`src/enemies/EnemyManager.ts`) currently receives `theme` in its constructor (passed from `GameEngine.ts:136`). Extend it to also receive a `defaultVisuals: EnemyVisualIndex` — a plain `Record<EnemyType, EnemyVisualMeta>` — sourced from `mapThemeStore.defaultTheme`. `GameEngine` looks this up once at construction and passes it through. Same shape for `TowerManager` and `Tower`.
 
@@ -894,7 +964,7 @@ export function populateSkillTreeTheme(
 `main.ts` calls `populateSkillTreeTheme(...)` after the default theme is preloaded. The existing `try { useMapThemeStore() } catch {}` pattern (`SkillTree.ts:121-126`) goes away — the neutral defaults handle the pre-theme case, and the populate function handles the post-theme case deterministically. The current `main.ts` has no such call — it must be added explicitly:
 
 ```ts
-// src/main.ts (add the populate call after preloadDefault, before app.mount)
+// src/main.ts (add the populate call inside the existing try block, after preloadDefault)
 import { populateSkillTreeTheme } from "@/towers/SkillTree.js";
 import { TowerIds } from "@/game/ConstantsTower.js";
 
@@ -902,7 +972,7 @@ import { TowerIds } from "@/game/ConstantsTower.js";
 
 usePersistStore().load();
 try {
-  await useMapThemeStore().preloadDefault();
+  await useMapThemeStore().preloadDefault();   // already present (main.ts:16)
   // NEW: populate SKILL_TREE display fields from the now-loaded default theme.
   const mapThemeStore = useMapThemeStore();
   const defaultTowerVisuals: Record<string, TowerVisualMeta> = {};
@@ -918,7 +988,9 @@ try {
 app.mount("#app");
 ```
 
-**Ordering mitigation:** `main.ts` already calls `mapThemeStore.preloadDefault()` synchronously before `app.mount()` (per `README.md` line 365). The `populateSkillTreeTheme(...)` call goes immediately after `preloadDefault()` and before `app.mount()`, so the populate runs before any route component (including `/skill-tree`) can mount. Additionally, add a defensive re-populate in `SkillTree.vue`'s setup that checks whether `SKILL_TREE` is still neutral (e.g., `SKILL_TREE.basic.name === ""`) and calls `populateSkillTreeTheme` again if so — this makes the ordering deterministic regardless of which route the user enters on first, and guards against any future change to `main.ts`'s init sequence.
+**Top-level await note:** `main.ts` ALREADY uses top-level `await` at line 16 (`await useMapThemeStore().preloadDefault()`). Vite supports ESM top-level await in the dev server and production build, so no change to `main.ts`'s async nature is needed — the snippet above only adds the populate lines inside the existing `try` block. The `await` keyword is not new; only the `populateSkillTreeTheme(...)` call and its preceding loop are new.
+
+**Ordering mitigation:** `main.ts` already `await`s `mapThemeStore.preloadDefault()` before `app.mount()` (per `README.md` line 365 — corrected: the call is awaited, not synchronous). The `populateSkillTreeTheme(...)` call goes immediately after `preloadDefault()` resolves and before `app.mount()`, so the populate runs before any route component (including `/skill-tree`) can mount. Additionally, add a defensive re-populate in `SkillTree.vue`'s setup that checks whether `SKILL_TREE` is still neutral (e.g., `SKILL_TREE.basic.name === ""`) and calls `populateSkillTreeTheme` again if so — this makes the ordering deterministic regardless of which route the user enters on first, and guards against any future change to `main.ts`'s init sequence.
 
 ### Test impact
 
@@ -1032,6 +1104,21 @@ executeSellById(towerId: string): void {
   this.runState.selectedTowerId = null;  // Phase 1 parallel-mirror write
 }
 ```
+
+### SaveData → PersistState call-site migration (Phase 4)
+
+`TowerManager.sell` isn't the only method that takes a `SaveData` (alias for the persist-state shape) argument. `Tower.specialize` (`Tower.ts:556`), `Tower.doUpgrade` (`Tower.ts:574`), and `Tower.canUpgrade` all take `SaveData` and are called from `GameEngine` with `this.persistStore.$state`. Phase 4 switches **all** of these call sites to `this.persistState` for consistency with `executeSellById` above — otherwise the dual-mirror pattern breaks (some persist reads/writes go through the Pinia proxy, others through the plain mirror, and they can diverge).
+
+Full enumeration of `SaveData`-taking method call sites in `GameEngine` (audit `GameEngine.ts` for `this.persistStore.$state`):
+
+| Call site | Method | Current arg | Phase 4 arg |
+|---|---|---|---|
+| `GameEngine.ts:598` | `tower.specialize(variant, ...)` | `this.persistStore.$state` | `this.persistState` |
+| `GameEngine.ts` (upgrade path) | `tower.doUpgrade(save, ...)` / `tower.canUpgrade(save)` | `this.persistStore.$state` | `this.persistState` |
+| `GameEngine.ts` (build path) | `towerManager.build(type, x, y, save, grid)` | `this.persistStore.$state` (or `undefined`) | `this.persistState` |
+| `GameEngine.ts` (sell path) | `towerManager.sell(tower, save)` | `this.persistStore.$state` | `this.persistState` (shown in `executeSellById` above) |
+
+The method signatures on `Tower` and `TowerManager` change their `SaveData` parameter type to `PersistState` (`src/sim/PersistState.ts`). This is a structural type change — `SaveData` and `PersistState` describe the same shape — so it's a type-rename, not a runtime change. `TowerManager.build`'s `SaveData | undefined` param becomes `PersistState | undefined`; the `undefined` case (initial build before save data exists) is preserved. `TowerManager`/`Tower`'s local `SaveData` interface (`TowerManager.ts:82-86`, `Tower.ts` equivalent) is deleted in Phase 4 in favor of `import type { PersistState } from "@/sim/PersistState.js"`.
 
 ### Why `async` is safe here
 
@@ -1241,15 +1328,20 @@ export type ParticleSnapshot = ReturnType<ParticleSystem["getRenderData"]>[numbe
 // ProjectileManager.ts / ParticleSystem.ts, populate it in getRenderData(),
 // and it flows through here automatically. Do NOT define a parallel type.
 
-// Mirrors SpawnState from src/render/themes/index.ts:71-74 — plain data,
-// no methods. The render manager at SvgGameRoot.vue:329-330 reads spawnStates
-// directly via SpawnManager.sync (src/render/svg/SpawnManager.ts), which
-// reads only `spawnState.visualState`. The closeTransitionTimer field is
-// included for completeness and matches the source shape.
-export interface SpawnStateSnapshot {
-  visualState: "closed" | "transition" | "open";
-  closeTransitionTimer: number;
-}
+// SpawnStateSnapshot: the existing SpawnState at src/render/themes/index.ts:71-74
+// is ALREADY plain data ({ visualState: SpawnVisualState; closeTransitionTimer: number }).
+// Reuse it via a type alias — do NOT define a duplicate interface that must
+// be kept in sync. The render manager at SvgGameRoot.vue:329-330 reads
+// spawnStates directly via SpawnManager.sync (src/render/svg/SpawnManager.ts),
+// which reads only `spawnState.visualState`, so the existing shape is the
+// contract. Importing from src/render/themes/ is permitted (the boundary
+// policy forbids src/stores/, src/components/, src/router/, src/sound/ —
+// src/render/themes/ is allowed; the worker imports theme types from there
+// per the Phase 7 boundary policy). If a future cleanup wants to remove the
+// sim→render layering wrinkle, move SpawnState into src/sim/ and have
+// render/themes re-export it; that's out of scope for Phase 5.
+import type { SpawnState } from "@/render/themes/index.js";
+export type SpawnStateSnapshot = SpawnState;
 ```
 
 ### `SnapshotSerializer`
@@ -1419,9 +1511,9 @@ export interface CommandDispatcher {
 ### Main-thread direct dispatcher (Phase 6)
 
 ```ts
-// src/sim/MainThreadCommandDispatcher.ts
-import type { Command } from "./Command.js";
-import type { CommandDispatcher } from "./CommandDispatcher.js";
+// src/sim-adapters/MainThreadCommandDispatcher.ts
+import type { Command } from "@/sim/Command.js";
+import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
 import type { GameEngine } from "@/game/GameEngine.js";
 
 export class MainThreadCommandDispatcher implements CommandDispatcher {
@@ -1542,7 +1634,7 @@ useInput(gameStore, dispatcher, uiStore);
 
 ## Phase 0–6 completion criteria
 
-- [ ] `src/sim/` directory exists; the custom `check:sim-boundary` script (chained into `npm run lint` alongside Biome) prevents imports from `src/stores/`, `src/components/`, `src/router/`, `src/sound/` inside it (the two `MainThread*` adapter files are the only exempted filenames).
+- [ ] `src/sim/` directory exists (adapters live in sibling `src/sim-adapters/`); the `check:sim-boundary` grep (chained into `npm run lint` alongside Biome) prevents imports from `src/stores/`, `src/components/`, `src/router/`, `src/sound/` inside `src/sim/`.
 - [ ] Boundary policy enforced: `src/game/`, `src/towers/`, `src/enemies/` have zero *runtime* `useXxxStore()` calls by end of Phase 2; type-only imports allowed through Phase 6, removed in Phase 7.
 - [ ] `GameEngine`, `TowerManager`, `Tower`, `Enemy`, `EnemyManager`, `WaveGraphTracker` have zero runtime calls to `useUiStore()`/`useMapThemeStore()`/`useGameStore()`/`usePersistStore()`.
 - [ ] `SoundManager` is owned by the host; `GameEngine` references sound via `HostBindings.playSound`, `TowerManager`/`Tower` via the narrower `SoundPlayer.playSound`.
