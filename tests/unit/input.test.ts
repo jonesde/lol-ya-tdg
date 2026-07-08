@@ -5,6 +5,7 @@ import { useInput } from "@/game/Input.js";
 import type { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
 import type { Command } from "@/sim/Command.js";
+import { setCommandDispatcher } from "@/sim/commandBus.js";
 import type { Tower } from "@/towers/Tower.js";
 import { createTestGameStore, createTestUiStore } from "../helpers/mock-stores";
 
@@ -36,10 +37,14 @@ describe("useInput", () => {
     gameStore = createTestGameStore();
     uiStore = createTestUiStore();
     dispatcher = makeDispatcher();
+    // Tower selection is routed through the global command bus; wire it to the
+    // test dispatcher so action:selectTower commands are captured.
+    setCommandDispatcher(dispatcher);
   });
 
   afterEach(() => {
     window.removeEventListener("keydown", () => {});
+    setCommandDispatcher(null);
     warnSpy.mockRestore();
   });
 
@@ -56,6 +61,15 @@ describe("useInput", () => {
       Extract<Command, { type: T }>
     >;
     return matches[matches.length - 1];
+  }
+
+  // In the worker architecture, tower selection is applied via an
+  // action:selectTower command (handled by the worker and reflected in the
+  // snapshot), not by mutating gameStore.selectedTower synchronously. These
+  // helpers assert on the dispatched command instead.
+  function lastSelectedTowerId(): string | null | undefined {
+    const command = lastOfType("action:selectTower");
+    return command ? command.towerId : undefined;
   }
 
   describe("returns early in non-play states", () => {
@@ -137,7 +151,7 @@ describe("useInput", () => {
       gameStore.selectedTower = { id: 1 } as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("Escape");
-      expect(gameStore.selectedTower).toBeNull();
+      expect(lastSelectedTowerId()).toBeNull();
     });
 
     it("opens pause menu when no dialog is open and no tower is selected", () => {
@@ -224,7 +238,7 @@ describe("useInput", () => {
       gameStore.selectedTower = below as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
-      expect(gameStore.selectedTower).toEqual(above);
+      expect(lastSelectedTowerId()).toBe(above.id);
     });
 
     it("selects topmost tower when no tower selected", () => {
@@ -238,7 +252,7 @@ describe("useInput", () => {
       gameStore.selectedTower = null;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
-      expect(gameStore.selectedTower).toEqual(t2);
+      expect(lastSelectedTowerId()).toBe(t2.id);
     });
   });
 
@@ -313,7 +327,7 @@ describe("useInput", () => {
       gameStore.selectedTower = above as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
-      expect(gameStore.selectedTower).toEqual(below);
+      expect(lastSelectedTowerId()).toBe(below.id);
     });
 
     it("selects bottommost tower when no tower selected", () => {
@@ -327,7 +341,7 @@ describe("useInput", () => {
       gameStore.selectedTower = null;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
-      expect(gameStore.selectedTower).toEqual(t1);
+      expect(lastSelectedTowerId()).toBe(t1.id);
     });
   });
 
@@ -388,7 +402,7 @@ describe("useInput", () => {
       gameStore.selectedTower = left as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
-      expect(gameStore.selectedTower).toEqual(right);
+      expect(lastSelectedTowerId()).toBe(right.id);
     });
 
     it("selects rightmost tower when no tower selected", () => {
@@ -402,7 +416,7 @@ describe("useInput", () => {
       gameStore.selectedTower = null;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
-      expect(gameStore.selectedTower).toEqual(t2);
+      expect(lastSelectedTowerId()).toBe(t2.id);
     });
 
     it("prefers same row over diagonal when moving right", () => {
@@ -417,7 +431,7 @@ describe("useInput", () => {
       gameStore.selectedTower = center as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
-      expect(gameStore.selectedTower).toEqual(sameRow);
+      expect(lastSelectedTowerId()).toBe(sameRow.id);
     });
   });
 
@@ -463,7 +477,7 @@ describe("useInput", () => {
       gameStore.selectedTower = right as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
-      expect(gameStore.selectedTower).toEqual(left);
+      expect(lastSelectedTowerId()).toBe(left.id);
     });
 
     it("selects leftmost tower when no tower selected", () => {
@@ -477,7 +491,7 @@ describe("useInput", () => {
       gameStore.selectedTower = null;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
-      expect(gameStore.selectedTower).toEqual(t1);
+      expect(lastSelectedTowerId()).toBe(t1.id);
     });
   });
 
@@ -499,7 +513,7 @@ describe("useInput", () => {
       gameStore.selectedTower = rightmost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
-      expect(gameStore.selectedTower).toEqual(leftmost);
+      expect(lastSelectedTowerId()).toBe(leftmost.id);
     });
 
     it("wraps left from leftmost tower to rightmost tower on same row", () => {
@@ -519,7 +533,7 @@ describe("useInput", () => {
       gameStore.selectedTower = leftmost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
-      expect(gameStore.selectedTower).toEqual(rightmost);
+      expect(lastSelectedTowerId()).toBe(rightmost.id);
     });
 
     it("wraps up from topmost tower to bottommost tower on same column", () => {
@@ -539,7 +553,7 @@ describe("useInput", () => {
       gameStore.selectedTower = topmost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
-      expect(gameStore.selectedTower).toEqual(bottommost);
+      expect(lastSelectedTowerId()).toBe(bottommost.id);
     });
 
     it("wraps down from bottommost tower to topmost tower on same column", () => {
@@ -559,7 +573,7 @@ describe("useInput", () => {
       gameStore.selectedTower = bottommost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
-      expect(gameStore.selectedTower).toEqual(topmost);
+      expect(lastSelectedTowerId()).toBe(topmost.id);
     });
 
     it("finds tower at x+1,y-2 when pressing down from (x,y)", () => {
@@ -579,7 +593,7 @@ describe("useInput", () => {
       gameStore.selectedTower = origin as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
-      expect(gameStore.selectedTower).toEqual(offAxis);
+      expect(lastSelectedTowerId()).toBe(offAxis.id);
     });
 
     it("finds tower at x-2,y+1 when pressing left from (x,y)", () => {
@@ -599,7 +613,7 @@ describe("useInput", () => {
       gameStore.selectedTower = origin as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
-      expect(gameStore.selectedTower).toEqual(offAxis);
+      expect(lastSelectedTowerId()).toBe(offAxis.id);
     });
   });
 

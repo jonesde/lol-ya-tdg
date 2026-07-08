@@ -1,6 +1,7 @@
 import type { TowerId } from "@/game/ConstantsTower.js";
 import type { EnemyVisualMeta, MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
 import type { EndScreenPayload } from "./GameRunState.js";
+import type { PersistState } from "./PersistState.js";
 
 // Canonical sound-name type — replaces the module-private declaration in SoundManager.ts.
 // Uses a template-literal for tower shoot sounds to give compile-time safety against typos.
@@ -25,13 +26,18 @@ export interface ConfirmPayload {
 }
 
 // Subset of PersistState the host needs to write to localStorage.
-// Full PersistState is defined in Phase 1.
+// Full PersistState is defined in Phase 1. Must cover every field the worker
+// can mutate so a batched flush fully replaces the persisted slice.
 export interface PersistStateSlice {
   gems: number;
+  highestUnlockedMap: number;
   bestWaves: Record<string, number>;
   activeWaves: Record<string, number>;
+  difficulty: { multiplierTick: number };
   firstTimeMilestones: Record<string, boolean>;
   firstClears: Record<string, boolean>;
+  generalAddons: PersistState["generalAddons"];
+  unlocked: PersistState["unlocked"];
   runHistory: unknown[];
 }
 

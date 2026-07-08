@@ -2,6 +2,8 @@
 import { computed, onUnmounted, ref, watch, watchEffect } from "vue";
 import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
 import { SELL_VALUE_RATIO, TOWER_META } from "@/game/ConstantsTower.js";
+import { dispatchCommand } from "@/sim/commandBus.js";
+import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -11,9 +13,12 @@ const gameStore = useGameStore();
 const persistStore = usePersistStore();
 const themeStore = useMapThemeStore();
 
-const tower = computed(() => gameStore.selectedTower);
-const upgradeCheck = computed(() => tower.value?.canUpgrade(persistStore.$state));
-const sellValue = computed(() => tower.value?.sellValue() || 0);
+// selectedTower is the worker-projected TowerSnapshot (cast to Tower by
+// SnapshotStore). We read it through the snapshot shape here so the UI only
+// reads plain data fields — never calls tower methods.
+const tower = computed(() => gameStore.selectedTower as unknown as TowerSnapshot | null);
+const upgradeCheck = computed(() => tower.value?.canUpgrade ?? null);
+const sellValue = computed(() => tower.value?.sellValue ?? 0);
 
 function getTowerName(type: string): string {
   return themeStore.getTowerVisual(type)?.name || type;
@@ -101,7 +106,7 @@ onUnmounted(() => {
 const milestoneTier = computed(() => persistStore.generalAddons?.damageMilestoneBonus);
 const milestoneBonus = computed(() => {
   if (milestoneTier.value !== null && milestoneTier.value !== undefined && tower.value) {
-    return tower.value.currentMilestoneBonus();
+    return tower.value.milestoneBonus;
   }
   return null;
 });
@@ -114,32 +119,32 @@ const targetingMode = computed(() => {
 function handleTargetingChange(event: Event) {
   const target = event.target as HTMLSelectElement;
   targetingMode.value = target.value;
-  gameStore.engine?.setTargeting(target.value);
+  dispatchCommand({ commandId: 0, type: "action:setTargeting", mode: target.value });
 }
 
 function handleUpgrade() {
-  gameStore.engine?.upgradeSelected();
+  gameStore.upgradeBtnClickAnim = 0.4;
+  dispatchCommand({ commandId: 0, type: "action:upgradeSelected" });
 }
 
 function handleSell() {
-  gameStore.engine?.sellSelected();
+  dispatchCommand({ commandId: 0, type: "action:sellSelected" });
 }
 
 function handleSpecialize(variant: string) {
-  gameStore.engine?.specializeSelected(variant);
+  dispatchCommand({ commandId: 0, type: "action:specialize", variant: variant as "A" | "B" });
 }
 
 function handleCancelBuild() {
-  gameStore.engine?.cancelSelected();
+  dispatchCommand({ commandId: 0, type: "action:cancelSelected" });
 }
 
 function handleDowngrade() {
-  gameStore.engine?.downgradeSelected();
+  dispatchCommand({ commandId: 0, type: "action:downgradeSelected" });
 }
 
 function getUpgradeCost() {
-  if (!tower.value) return 0;
-  return gameStore.engine?.getUpgradeCost(tower.value) || 0;
+  return upgradeCheck.value?.cost ?? 0;
 }
 
 const canAffordUpgrade = computed(() => {
@@ -150,7 +155,8 @@ const sellDisabled = computed(() => persistStore.generalAddons && persistStore.g
 
 const downgradeRefund = computed(() => {
   if (!tower.value || tower.value.level <= 1) return 0;
-  const delta = tower.value.levelCosts[tower.value.level - 1] || 0;
+  const levelCosts = tower.value.levelCosts;
+  const delta = levelCosts[tower.value.level - 1] || 0;
   const isRefund = persistStore.generalAddons?.sellActive === "refund";
   return isRefund ? delta : Math.round(delta * SELL_VALUE_RATIO);
 });
@@ -173,7 +179,7 @@ const variantBUnlocked = computed(() => {
 // Phase 3: level 5 cost for specialization
 const lv5Cost = computed(() => {
   if (!tower.value) return 0;
-  const cost = tower.value.upgradeCost(5);
+  const cost = tower.value.upgradeCostAt5;
   const ucrTier = persistStore.generalAddons?.upgradeCostReduction;
   if (ucrTier !== null && ucrTier !== undefined) {
     const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
@@ -188,13 +194,13 @@ const canAffordSpecialize = computed(() => {
 
 // Phase 4: cancel build
 const canCancel = computed(() => {
-  return tower.value?.canCancel() || false;
+  return tower.value?.canCancel ?? false;
 });
 
 const cancelRemaining = computed(() => {
   if (!tower.value) return 0;
   void tick.value;
-  return Math.ceil(tower.value.cancelRemainingMs() / 1000);
+  return Math.ceil((tower.value.cancelRemainingMs ?? 0) / 1000);
 });
 
 // Phase 6: Fixed aim for railgun
@@ -202,7 +208,7 @@ const hasFixedAim = computed(() => tower.value?.base?.fixedAim || false);
 const fixedAimDir = computed(() => tower.value?.fixedAimDir);
 
 function handleFixedAim(dir: string | null) {
-  gameStore.engine?.setFixedAimDir(dir);
+  dispatchCommand({ commandId: 0, type: "action:setFixedAimDir", dir: dir as "N" | "E" | "S" | "W" | null });
 }
 </script>
 

@@ -46,8 +46,10 @@ function onPopState() {
     cancelLabel: "Stay",
     onConfirm() {
       disposed.value = true;
-      gameStore.engine?.dispose();
-      router.push("/map-select");
+      gameStore.worker?.postMessage({ type: "dispose" });
+      gameStore.worker?.terminate();
+      gameStore.clearWorker();
+      router.push("/game-over");
     },
     onCancel() {
       awaitingConfirm = false;
@@ -68,8 +70,10 @@ onUnmounted(() => {
     window.removeEventListener("popstate", popstateHandler);
     popstateHandler = null;
   }
-  if (gameStore.engine && !disposed.value) {
-    gameStore.engine.dispose();
+  if (gameStore.worker && !disposed.value) {
+    gameStore.worker.postMessage({ type: "dispose" });
+    gameStore.worker.terminate();
+    gameStore.clearWorker();
   }
 });
 </script>

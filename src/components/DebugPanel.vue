@@ -65,26 +65,20 @@ function dbgLives() {
 }
 
 function dbgSkipWave() {
-  const engine = gameStore.engine;
-  if (gameStore.state === GameState.PAUSED && engine?.waveManager) {
-    engine.waveManager.startNextWave();
-    gameStore.setWave(engine.waveManager.currentWave);
+  // Debug helper — startNextWave is worker-internal (no command in Phase 8).
+  // Kept as a guarded no-op so the button remains wired for a future command.
+  if (gameStore.state === GameState.PAUSED) {
+    // no-op until a debug command is added
   }
 }
 
 function dbgKillAll() {
-  const engine = gameStore.engine;
-  if (engine?.enemyManager) {
-    for (const enemy of engine.enemyManager.enemies) {
-      enemy.removed = true;
-    }
-  }
+  // Debug helper — enemy removal is worker-internal (no command in Phase 8).
 }
 
 function dbgWave() {
-  const engine = gameStore.engine;
-  if (engine?.waveManager) {
-    engine.waveManager.currentWave = 50;
+  // Debug helper — setting the wave is worker-internal (no command in Phase 8).
+  if (gameStore.state === GameState.PAUSED) {
     gameStore.setWave(50);
   }
 }

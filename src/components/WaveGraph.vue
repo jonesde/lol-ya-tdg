@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
-  WAVE_GRAPH_COLOR_DAMAGE,
-  WAVE_GRAPH_COLOR_GEMS_EARNED,
-  WAVE_GRAPH_COLOR_GOLD_EARNED,
-  WAVE_GRAPH_COLOR_MAX_ENEMY_HEALTH,
   WAVE_GRAPH_DOT_OPACITY,
   WAVE_GRAPH_DOT_OPACITY_WAVE_START,
   WAVE_GRAPH_DOT_SIZE,
@@ -12,7 +8,6 @@ import {
   WAVE_GRAPH_HEIGHT,
   WAVE_GRAPH_INTERVAL_SECONDS,
 } from "@/game/Constants.js";
-import type { WaveGraphDot } from "@/game/WaveGraphTracker.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
 
@@ -42,20 +37,11 @@ const tooltipPositionStyle = computed(() => ({ left: `${tooltipX.value}px`, top:
 const hoveredDotIndex = ref<number | null>(null);
 
 const timeAgo = computed(() => {
-  const engineRef = gameStore.engine;
-  const tracker = engineRef?.waveGraphTracker;
-  if (!tracker || !tooltipDot.value || hoveredDotIndex.value === null) return "";
-
-  const dots = tracker.getDots();
-  if (dots.length === 0) return "";
-
-  const intervalsAgo = dots.length - 1 - hoveredDotIndex.value;
-  const totalSeconds = intervalsAgo * WAVE_GRAPH_INTERVAL_SECONDS;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  const mm = String(minutes).padStart(2, "0");
-  const ss = String(seconds).padStart(2, "0");
-  return `-${mm}:${ss}`;
+  // The wave-graph tracker lives in the worker and is not surfaced in the
+  // snapshot (Phase 8). Without it we cannot compute "time ago" for a hovered
+  // dot, so the tooltip shows no relative time.
+  if (!tooltipDot.value || hoveredDotIndex.value === null) return "";
+  return "";
 });
 
 interface PathData {
@@ -66,127 +52,19 @@ interface PathData {
 
 const paths = ref<PathData[]>(Array(5).fill({ d: "", opacity: 0, stroke: "" }));
 
-const METRIC_COLORS: string[] = [
-  WAVE_GRAPH_COLOR_DAMAGE,
-  WAVE_GRAPH_COLOR_MAX_ENEMY_HEALTH,
-  WAVE_GRAPH_COLOR_GOLD_EARNED,
-  WAVE_GRAPH_COLOR_GEMS_EARNED,
-];
-
 let resizeObserver: ResizeObserver | null = null;
-let engine: typeof gameStore.engine = null;
-let prevCallback: (() => void) | undefined;
 let pollId: ReturnType<typeof setInterval> | null = null;
 
 function onResize(): void {
   if (!overlayRef.value) return;
   const newWidth = overlayRef.value.clientWidth;
   containerWidth.value = newWidth;
-  const engineRef = gameStore.engine;
-  engineRef?.waveGraphTracker?.setContainerWidth(newWidth);
-}
-
-function getMetricValue(dot: WaveGraphDot, metricIndex: number): number {
-  switch (metricIndex) {
-    case 0:
-      return dot.damage;
-    case 1:
-      return dot.peakEnemyHp;
-    case 2:
-      return dot.gold;
-    case 3:
-      return dot.gems;
-    case 4:
-      return dot.baseHealth;
-    default:
-      return 0;
-  }
-}
-
-function getMetricColor(metricIndex: number): string {
-  if (metricIndex >= 0 && metricIndex < METRIC_COLORS.length) {
-    return METRIC_COLORS[metricIndex]!;
-  }
-  return METRIC_COLORS[0] ?? "";
-}
-
-function computeMaxForMetric(dots: WaveGraphDot[], metricIndex: number): number {
-  let max = 0;
-  for (const dot of dots) {
-    const value = getMetricValue(dot, metricIndex);
-    if (value > max) {
-      max = value;
-    }
-  }
-  return max;
-}
-
-function buildPathD(dots: WaveGraphDot[], metricIndex: number, maxVal: number): string {
-  if (dots.length === 0) return "";
-  const parts: string[] = [];
-  for (let i = 0; i < dots.length; i++) {
-    const dot = dots[i];
-    if (!dot) continue;
-    const x = i * WAVE_GRAPH_DOT_SPACING;
-    const value = getMetricValue(dot, metricIndex);
-    let y: number;
-    if (value <= 0 || maxVal <= 0) {
-      y = WAVE_GRAPH_HEIGHT;
-    } else {
-      const normalized = value / maxVal;
-      y = WAVE_GRAPH_HEIGHT - normalized * WAVE_GRAPH_HEIGHT;
-    }
-    parts.push(`${i === 0 ? "M" : "L"} ${x} ${y}`);
-  }
-  return parts.join(" ");
 }
 
 function updatePaths(): void {
-  const engineRef = gameStore.engine;
-  const tracker = engineRef?.waveGraphTracker;
-  if (!tracker) return;
-
-  const dots = tracker.getDots();
-  const maxDots = Math.ceil(containerWidth.value / WAVE_GRAPH_DOT_SPACING);
-  if (maxDots <= 0) return;
-
-  const visibleStart = Math.max(0, dots.length - maxDots);
-  const visibleCount = Math.min(maxDots, dots.length);
-
-  if (visibleCount === 0) {
-    for (let m = 0; m < 5; m++) {
-      paths.value[m] = { d: "", opacity: 0, stroke: getMetricColor(m) };
-    }
-    return;
-  }
-
-  const visibleDots: WaveGraphDot[] = [];
-  for (let i = 0; i < visibleCount; i++) {
-    const dot = dots[visibleStart + i];
-    if (dot) {
-      visibleDots.push(dot);
-    }
-  }
-
-  for (let m = 0; m < 5; m++) {
-    const maxVal = computeMaxForMetric(visibleDots, m);
-    const d = buildPathD(visibleDots, m, maxVal);
-
-    let opacity = 0;
-    let stroke = getMetricColor(m);
-
-    if (maxVal > 0) {
-      const anyWaveStart = visibleDots.some((dot) => dot.waveStart);
-      opacity = anyWaveStart ? WAVE_GRAPH_DOT_OPACITY_WAVE_START : WAVE_GRAPH_DOT_OPACITY;
-
-      if (m === 4) {
-        const lastDot = visibleDots[visibleDots.length - 1];
-        stroke = lastDot?.baseHealthColor ?? getMetricColor(0);
-      }
-    }
-
-    paths.value[m] = { d, opacity, stroke };
-  }
+  // The wave-graph tracker is worker-internal and not in the snapshot, so there
+  // are no dots to plot in the worker model (Phase 8). Degrade to an empty graph.
+  return;
 }
 
 function onMouseMove(event: MouseEvent): void {
@@ -195,36 +73,7 @@ function onMouseMove(event: MouseEvent): void {
   const rect = overlayRef.value.getBoundingClientRect();
   const relativeX = event.clientX - rect.left;
   const dotIndex = Math.floor(relativeX / WAVE_GRAPH_DOT_SPACING);
-
-  const engineRef = gameStore.engine;
-  const tracker = engineRef?.waveGraphTracker;
-  if (!tracker) return;
-
-  const dots = tracker.getDots();
-  const maxDots = Math.ceil(containerWidth.value / WAVE_GRAPH_DOT_SPACING);
-  const visibleStart = Math.max(0, dots.length - maxDots);
-  const actualIndex = dotIndex + visibleStart;
-
-  if (actualIndex >= 0 && actualIndex < dots.length) {
-    const dot = dots[actualIndex];
-    tooltipDot.value = dot;
-    hoveredDotIndex.value = actualIndex;
-    tooltipVisible.value = true;
-
-    let posX = event.clientX - rect.left;
-    const tooltipWidth = 160;
-    if (posX + tooltipWidth > rect.width) {
-      posX = rect.width - tooltipWidth;
-    }
-    if (posX < 0) posX = 0;
-
-    tooltipX.value = posX;
-    tooltipY.value = -60;
-  } else {
-    tooltipVisible.value = false;
-    tooltipDot.value = null;
-    hoveredDotIndex.value = null;
-  }
+  void dotIndex;
 }
 
 watch(
@@ -254,25 +103,15 @@ onMounted(() => {
   });
   resizeObserver.observe(overlayRef.value);
 
-  pollId = setInterval(() => {
-    const eng = gameStore.engine;
-    if (!eng) return;
-    clearInterval(pollId);
-    pollId = null;
-    engine = eng;
-    prevCallback = eng.renderCallback;
-    eng.renderCallback = () => {
-      prevCallback?.();
-      updatePaths();
-    };
-  }, 1000);
-
+  // In the worker model the wave-graph tracker is worker-internal and the
+  // engine's renderCallback no longer exists (Phase 8). The graph cannot be
+  // driven from the main thread, so we render an empty graph. (A future phase
+  // can surface tracker dots via the snapshot.)
   onResize();
 });
 
 onUnmounted(() => {
   if (pollId) clearInterval(pollId);
-  if (engine) engine.renderCallback = prevCallback;
   resizeObserver?.disconnect();
   resizeObserver = null;
 });

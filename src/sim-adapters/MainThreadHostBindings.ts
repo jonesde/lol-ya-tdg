@@ -36,12 +36,18 @@ export class MainThreadHostBindings implements HostBindings {
 
   schedulePersistSave(state: PersistStateSlice): void {
     const persistStore = usePersistStore();
+    // Field-by-field assignment to preserve Pinia reactivity on each field.
+    // Object.assign on $state can break reactivity in some Pinia versions.
     persistStore.gems = state.gems;
-    if (state.bestWaves) persistStore.bestWaves = { ...state.bestWaves };
-    if (state.activeWaves) persistStore.activeWaves = { ...state.activeWaves };
-    if (state.firstTimeMilestones) persistStore.firstTimeMilestones = { ...state.firstTimeMilestones };
-    if (state.firstClears) persistStore.firstClears = { ...state.firstClears };
-    if (state.runHistory) persistStore.runHistory = [...state.runHistory];
+    persistStore.highestUnlockedMap = state.highestUnlockedMap;
+    persistStore.bestWaves = { ...state.bestWaves };
+    persistStore.activeWaves = { ...state.activeWaves };
+    persistStore.difficulty = { ...state.difficulty };
+    persistStore.firstTimeMilestones = { ...state.firstTimeMilestones };
+    persistStore.firstClears = { ...state.firstClears };
+    persistStore.generalAddons = { ...state.generalAddons };
+    persistStore.unlocked = structuredClone(state.unlocked);
+    persistStore.runHistory = [...state.runHistory];
     persistStore.save();
   }
 

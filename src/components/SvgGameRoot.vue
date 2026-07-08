@@ -21,7 +21,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { GameState, SELL_DISCOUNT_PCT } from "@/game/Constants.js";
 import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
 import { TOWER_META, TowerIds } from "@/game/ConstantsTower.js";
-import { GameEngine } from "@/game/GameEngine.js";
 import { useInput } from "@/game/Input.js";
 import { fitToGrid } from "@/render/svg/cameraUtils.js";
 import { EffectManager } from "@/render/svg/EffectManager.js";
@@ -30,23 +29,20 @@ import { ParticleManager } from "@/render/svg/ParticleManager.js";
 import { ProjectileManager } from "@/render/svg/ProjectileManager.js";
 import { SpawnManager } from "@/render/svg/SpawnManager.js";
 import { TowerManager } from "@/render/svg/TowerManager.js";
-import type { Particle, Projectile } from "@/render/svg/types.js";
-import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
-import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
 import type { EnemyVisualMeta, TowerVisualMeta } from "@/render/themes/index.js";
+import { setCommandDispatcher } from "@/sim/commandBus.js";
 import type { ThemeBundle } from "@/sim/HostBindings.js";
 import type { PersistState } from "@/sim/PersistState.js";
-import { createDefaultPersistState } from "@/sim/PersistState.js";
-import type { SimulationSnapshot } from "@/sim/SimulationSnapshot.js";
-import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
-import { MainThreadCommandDispatcher } from "@/sim-adapters/MainThreadCommandDispatcher.js";
+import { SnapshotStore } from "@/sim/SnapshotStore.js";
+import { WorkerCommandDispatcher } from "@/sim/WorkerCommandDispatcher.js";
+import GameWorker from "@/sim/WorkerEntry.ts?worker";
+import type { WorkerToMainMessage } from "@/sim/WorkerProtocol.js";
 import { MainThreadHostBindings } from "@/sim-adapters/MainThreadHostBindings.js";
 import { SoundManager } from "@/sound/SoundManager.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
-import { STORAGE_KEY, usePersistStore } from "@/stores/persist.js";
+import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
-import type { Tower } from "@/towers/Tower.js";
 
 const svgRoot = ref<SVGSVGElement | null>(null);
 const defsLayer = ref<SVGDefsElement | null>(null);
@@ -97,8 +93,6 @@ const buildPreviewColor = computed(() => {
   return themeStore.getTowerVisual(gameStore.selectedTowerType)?.color ?? null;
 });
 
-const engine = ref<GameEngine | null>(null);
-
 const viewSize = ref({ w: 800, h: 600 });
 
 const mapTileSize = 36;
@@ -121,11 +115,6 @@ let pathHighlightsGroup: SVGGElement | null = null;
 
 let cameraTransformString = "translate(0,0) scale(1)";
 
-// Monotonic id echoed into each snapshot so a future host dispatcher can
-// correlate command application. Phase 5 has no command dispatch yet, so it
-// stays constant; Phase 6 assigns real ids when dispatching.
-let lastAppliedCommandId = 0;
-
 // Monotonic id source for click commands dispatched to the dispatcher. The
 // dispatcher reassigns ids when undefined; click handlers always supply their
 // own so each click carries a distinct commandId for tracing.
@@ -145,6 +134,12 @@ const CLICK_DEDUP_MS = 50;
 let lastMouseDownTime: number = 0;
 let lastMouseDownX: number = 0;
 let lastMouseDownY: number = 0;
+
+// Worker-owned simulation: the worker owns the engine; the main thread owns a
+// SnapshotStore projection and a WorkerCommandDispatcher that posts commands.
+let worker: Worker | null = null;
+let dispatcher: WorkerCommandDispatcher | null = null;
+const snapshotStore = new SnapshotStore(gameStore);
 
 const updateCachedCtm = (): void => {
   if (!worldLayer.value) return;
@@ -180,6 +175,8 @@ const scheduleHover = (clientX: number, clientY: number): void => {
   }
 };
 
+// Hover is main-thread-only in Phase 7 — compute the hovered tile here and
+// write it directly to gameStore (the worker echoes it back unchanged).
 const flushHover = (): void => {
   pendingHoverScheduled = false;
   if (!svgRoot.value || !cachedInverseCtm) return;
@@ -191,9 +188,31 @@ const flushHover = (): void => {
 
   mouseWorldPos.value = worldPos;
 
-  if (engine.value) {
-    engine.value.setHover(worldPos.x, worldPos.y);
+  const grid = gameStore.grid;
+  const tileSize = grid?.tileSize ?? mapTileSize;
+  const tileX = Math.floor(worldPos.x / tileSize);
+  const tileY = Math.floor(worldPos.y / tileSize);
+  if (grid?.inBounds(tileX, tileY)) {
+    gameStore.setHoverTile({ tileX, tileY });
+  } else {
+    gameStore.setHoverTile(null);
   }
+
+  gameStore.setHoverUpgradeBtn(computeHoverUpgradeBtn(worldPos.x, worldPos.y));
+};
+
+// The upgrade button hit-test that used to live on GameEngine.setHover. It
+// depends only on the selected tower's tile + the grid tile size, both of which
+// are available from the snapshot/grid on the main thread.
+const computeHoverUpgradeBtn = (worldX: number, worldY: number): boolean => {
+  const selectedTower = snapshotStore.resolveSelectedTower();
+  if (!selectedTower || gameStore.selectedTowerType) return false;
+  const grid = gameStore.grid;
+  if (!grid) return false;
+  const tileSize = grid.tileSize || mapTileSize;
+  const buildX = (selectedTower.tileX + 1) * tileSize - 12;
+  const buildY = selectedTower.tileY * tileSize + 2;
+  return worldX >= buildX && worldX <= buildX + 10 && worldY >= buildY && worldY <= buildY + 10;
 };
 
 const onMouseMove = (e: MouseEvent): void => {
@@ -201,20 +220,23 @@ const onMouseMove = (e: MouseEvent): void => {
   scheduleHover(e.clientX, e.clientY);
 };
 
-const onMouseDown = (e: MouseEvent): void => {
-  if (e.button !== 0) return;
-  if (!svgRoot.value || !worldLayer.value || !engine.value) return;
+const dispatchClick = (clientX: number, clientY: number): void => {
+  if (!svgRoot.value || !worldLayer.value || !dispatcher) return;
 
   const inverseCtm = worldLayer.value.getScreenCTM()?.inverse() ?? null;
   if (!inverseCtm) return;
 
   const pt = svgRoot.value.createSVGPoint();
-  pt.x = e.clientX;
-  pt.y = e.clientY;
+  pt.x = clientX;
+  pt.y = clientY;
   const worldPos = pt.matrixTransform(inverseCtm);
 
   dispatcher.dispatch({ commandId: nextClickCommandId++, type: "input:click", worldX: worldPos.x, worldY: worldPos.y });
+};
 
+const onMouseDown = (e: MouseEvent): void => {
+  if (e.button !== 0) return;
+  dispatchClick(e.clientX, e.clientY);
   lastMouseDownTime = performance.now();
   lastMouseDownX = e.clientX;
   lastMouseDownY = e.clientY;
@@ -226,18 +248,7 @@ const onClick = (e: MouseEvent): void => {
   const dx = e.clientX - lastMouseDownX;
   const dy = e.clientY - lastMouseDownY;
   if (elapsed < CLICK_DEDUP_MS && dx * dx + dy * dy < 16) return;
-
-  if (!svgRoot.value || !worldLayer.value || !engine.value) return;
-
-  const inverseCtm = worldLayer.value.getScreenCTM()?.inverse() ?? null;
-  if (!inverseCtm) return;
-
-  const pt = svgRoot.value.createSVGPoint();
-  pt.x = e.clientX;
-  pt.y = e.clientY;
-  const worldPos = pt.matrixTransform(inverseCtm);
-
-  dispatcher.dispatch({ commandId: nextClickCommandId++, type: "input:click", worldX: worldPos.x, worldY: worldPos.y });
+  dispatchClick(e.clientX, e.clientY);
 };
 
 const resizeObserver = ref<ResizeObserver | null>(null);
@@ -249,16 +260,6 @@ async function buildDefsImperative(staticContent: string, mapContent: string): P
     defsLayer.value.removeChild(defsLayer.value.firstChild);
   }
   defsLayer.value.innerHTML = staticContent + mapContent;
-}
-
-function loadPersistState(): PersistState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as PersistState;
-  } catch {
-    /* corrupt save — use defaults */
-  }
-  return createDefaultPersistState();
 }
 
 function buildThemeBundle(): ThemeBundle {
@@ -275,51 +276,119 @@ function buildThemeBundle(): ThemeBundle {
   return { active: themeStore.activeTheme, defaultTowerVisuals, defaultEnemyVisuals };
 }
 
-// One-way projection: engine.runState -> snapshot -> gameStore. The simulation
-// writes to runState; this reads from the snapshot and writes to gameStore so
-// Vue components (HUD, shop, TowerPanel) see live values again. In Phase 7+
-// this becomes the reactive mirror receiving snapshots from the worker.
-//
-// Host-authoritative fields (selectedTower, selectedTowerType, hoverTile,
-// hoverUpgradeBtn, upgradeBtnClickAnim) are intentionally NOT projected here:
-// they are driven locally by Input.ts/SvgGameRoot.vue against gameStore and
-// would be clobbered by the engine's not-yet-authoritative runState mirrors.
-function projectSnapshotMeta(snapshot: SimulationSnapshot, gameStore: ReturnType<typeof useGameStore>): void {
-  const meta = snapshot.meta;
-  gameStore.state = meta.state;
-  gameStore.lives = meta.lives;
-  gameStore.gold = meta.gold;
-  gameStore.currentWave = meta.currentWave;
-  gameStore.waveCountdown = meta.waveCountdown;
-  gameStore.timeScale = meta.timeScale;
-  gameStore.runGemsEarned = meta.runGemsEarned;
-  gameStore.bossesKilledThisRun = meta.bossesKilledThisRun;
-  gameStore.bossesReachedBaseThisRun = meta.bossesReachedBaseThisRun;
-  gameStore.gemBreakdown = meta.gemBreakdown;
-  gameStore.endScreenData = meta.endScreenData;
+// Wire worker → main messages. Snapshots are projected into the gameStore by
+// SnapshotStore; sound/UI/persist/confirm are handled by the main-thread host.
+function handleWorkerMessage(event: MessageEvent): void {
+  const msg = event.data as WorkerToMainMessage;
+  switch (msg.type) {
+    case "snapshot":
+      snapshotStore.apply(msg.snapshot);
+      break;
+    case "playSound":
+      host.playSound(msg.name);
+      break;
+    case "notifyUi":
+      host.notifyUi(msg.event);
+      break;
+    case "schedulePersistSave":
+      host.schedulePersistSave(msg.state);
+      break;
+    case "requestConfirm": {
+      // The main-thread host shows the dialog and posts the result back.
+      host.requestConfirm(msg.payload).then((confirmed) => {
+        worker?.postMessage({ type: "confirmResult", requestId: msg.requestId, confirmed });
+      });
+      break;
+    }
+    case "workerReady":
+      // Worker initialized; the simulation loop is running.
+      break;
+    case "workerError":
+      console.error("Worker error:", msg.message, msg.stack);
+      break;
+  }
 }
+
+function renderLoop(): void {
+  const snapshot = snapshotStore.get();
+  if (!snapshot) {
+    requestAnimationFrame(renderLoop);
+    return;
+  }
+
+  const cam = gameStore.camera;
+  cameraTransformString = `translate(${cam.x}, ${cam.y}) scale(${cam.zoom})`;
+  worldLayer.value?.setAttribute("transform", cameraTransformString);
+
+  enemyManager.syncFromGameEngine(snapshot.enemies);
+  towerManager.syncFromGameEngine(snapshot.towers, snapshot.meta.lastScaledDt);
+  projectileManager.syncFromGameEngine(snapshot.projectiles);
+  particleManager.syncFromGameEngine(snapshot.particles);
+
+  const selectedTower = snapshotStore.resolveSelectedTower();
+
+  effectManager.syncFromGameEngine(
+    buildPreviewTilePos.value,
+    gameStore.selectedTowerType || null,
+    buildPreviewColor.value,
+    selectedTower,
+    buildPreviewValid.value,
+    snapshot.meta.lastScaledDt,
+  );
+  uiOverlayManager.syncFromGameEngine(snapshot.enemies, selectedTower);
+  if (gameStore.grid) {
+    uiOverlayManager.syncPendingQueueOverlays(gameStore.grid, snapshot.spawnStates);
+  }
+  spawnManager.sync(snapshot.spawnStates);
+
+  // Imperative path highlights — appended to grid-layer, not Vue-managed
+  const grid = gameStore.grid;
+  const gridLayer = svgRoot.value?.querySelector(".grid-layer") as SVGGElement | null;
+  if (gridLayer && grid?.paths) {
+    if (!pathHighlightsGroup?.parentNode) {
+      pathHighlightsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      pathHighlightsGroup.setAttribute("id", "path-highlights");
+      gridLayer.appendChild(pathHighlightsGroup);
+    }
+    let pathSvg = "";
+    for (const path of grid.paths) {
+      if (!path) continue;
+      const points = path
+        .map((tile) => `${tile.x * mapTileSize + mapTileSize / 2},${tile.y * mapTileSize + mapTileSize / 2}`)
+        .join(" ");
+      pathSvg += `<polyline points="${points}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4" />`;
+    }
+    pathHighlightsGroup.innerHTML = pathSvg;
+  }
+
+  requestAnimationFrame(renderLoop);
+}
+
+let host: MainThreadHostBindings;
 
 onMounted(async () => {
   const sound = new SoundManager();
   soundManager.value = sound;
-  const persistState = loadPersistState();
-  const themeBundle = buildThemeBundle();
-  engine.value = new GameEngine(themeBundle, new MainThreadHostBindings(sound));
-  gameStore.setEngine(engine.value);
+  host = new MainThreadHostBindings(sound);
 
-  const dispatcher = new MainThreadCommandDispatcher(engine.value);
-  useInput(gameStore, dispatcher, uiStore);
+  worker = new GameWorker();
+  gameStore.setWorker(worker);
+  worker.addEventListener("message", handleWorkerMessage);
+
+  dispatcher = new WorkerCommandDispatcher(worker);
+  setCommandDispatcher(dispatcher);
+
+  const themeBundle = buildThemeBundle();
+  const persistState = structuredClone(persistStore.$state) as unknown as PersistState;
 
   const staticContent = staticDefsContent.value;
   const mapContent = mapDefsContent.value;
-
   await buildDefsImperative(staticContent, mapContent);
 
   const el = entityLayer.value;
   const uol = uiOverlayLayer.value;
   const pl = projectileLayer.value;
   const ef = effectLayer.value;
-
   if (!el || !uol || !pl || !ef) return;
 
   enemyManager = new EnemyManager();
@@ -347,7 +416,6 @@ onMounted(async () => {
     resizeObserver.value.observe(svgRoot.value);
   }
 
-  // Invalidate cached CTM when camera or view size changes
   watch(
     () => gameStore.camera,
     () => {
@@ -363,117 +431,44 @@ onMounted(async () => {
     { deep: true },
   );
 
-  engine.value.renderCallback = () => {
-    const cam = gameStore.camera;
-    cameraTransformString = `translate(${cam.x}, ${cam.y}) scale(${cam.zoom})`;
-    worldLayer.value?.setAttribute("transform", cameraTransformString);
+  useInput(gameStore, dispatcher, uiStore);
 
-    if (engine.value) {
-      const eng = engine.value;
-      const snapshot = buildSnapshot(eng, lastAppliedCommandId);
-      // Restore Vue reactivity: project the engine-owned scalar sim state
-      // into the Pinia gameStore so HUD / shop / TowerPanel render live values.
-      projectSnapshotMeta(snapshot, gameStore);
-
-      enemyManager.syncFromGameEngine(snapshot.enemies);
-      towerManager.syncFromGameEngine(snapshot.towers, snapshot.meta.lastScaledDt);
-      projectileManager.syncFromGameEngine(snapshot.projectiles);
-      particleManager.syncFromGameEngine(snapshot.particles);
-
-      // Resolve selected tower from the snapshot (mirrors engine's selectedTowerId).
-      const selectedTower = snapshot.meta.selectedTowerId
-        ? (snapshot.towers.find((tower) => tower.id === snapshot.meta.selectedTowerId) ?? null)
-        : null;
-
-      effectManager.syncFromGameEngine(
-        buildPreviewTilePos.value,
-        gameStore.selectedTowerType || null,
-        buildPreviewColor.value,
-        selectedTower,
-        buildPreviewValid.value,
-        snapshot.meta.lastScaledDt,
-      );
-      uiOverlayManager.syncFromGameEngine(snapshot.enemies, selectedTower);
-      if (eng.runState.grid) {
-        uiOverlayManager.syncPendingQueueOverlays(eng.runState.grid, snapshot.spawnStates);
-      }
-      spawnManager.sync(snapshot.spawnStates);
-
-      // Imperative path highlights — appended to grid-layer, not Vue-managed
-      const grid = eng.runState.grid;
-      const gridLayer = svgRoot.value?.querySelector(".grid-layer") as SVGGElement | null;
-      if (gridLayer && grid?.paths) {
-        if (!pathHighlightsGroup?.parentNode) {
-          pathHighlightsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-          pathHighlightsGroup.setAttribute("id", "path-highlights");
-          gridLayer.appendChild(pathHighlightsGroup);
-        }
-        let pathSvg = "";
-        for (const path of grid.paths) {
-          if (!path) continue;
-          const points = path
-            .map((t) => `${t.x * mapTileSize + mapTileSize / 2},${t.y * mapTileSize + mapTileSize / 2}`)
-            .join(" ");
-          pathSvg += `<polyline points="${points}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4" />`;
-        }
-        pathHighlightsGroup.innerHTML = pathSvg;
-      }
-    }
-  };
-
-  if (gameStore.mapIndex === -1 && gameStore.randomMapParams) {
-    const p = gameStore.randomMapParams as {
-      width: number;
-      height: number;
-      level: number;
-      style: string;
-      regionId: number;
-      seed: number;
-    };
-    engine.value.loadRandomMap(p.width, p.height, p.level, p.style, p.regionId, p.seed, persistState);
-  } else {
-    engine.value.loadMap(gameStore.mapIndex, persistState);
-  }
-
-  // Phase 1: engine no longer writes to gameStore; sync map reference for camera + Vue reactivity
-  if (engine.value.runState.map) {
-    gameStore.map = engine.value.runState.map;
-    gameStore.mapIndex = engine.value.runState.mapIndex;
-    gameStore.grid = engine.value.runState.grid;
-    const initialCam = fitToGrid(
-      engine.value.runState.map!.width,
-      engine.value.runState.map!.height,
-      viewSize.value.w,
-      viewSize.value.h - 104,
-    );
+  // The main thread builds its own static Grid from the same map data so that
+  // click-coordinate conversion and path highlights work without the engine.
+  if (gameStore.map) {
+    const { Grid } = await import("@/grid/Grid.js");
+    const grid = new Grid(gameStore.map);
+    gameStore.grid = grid;
+    const initialCam = fitToGrid(gameStore.map.width, gameStore.map.height, viewSize.value.w, viewSize.value.h - 104);
     cameraTransformString = `translate(${initialCam.x}, ${initialCam.y}) scale(${initialCam.zoom})`;
     worldLayer.value?.setAttribute("transform", cameraTransformString);
     gameStore.setCamera(initialCam.x, initialCam.y, initialCam.zoom);
   }
 
-  await nextTick();
-  const postLoadMap = engine.value.runState.map;
-  if (svgRoot.value && postLoadMap) {
-    spawnManager.init(svgRoot.value, postLoadMap.spawns.length);
-  }
+  worker.postMessage({
+    type: "init",
+    persistState,
+    themeBundle,
+    mapIndex: gameStore.mapIndex,
+    randomMapParams: gameStore.randomMapParams ?? undefined,
+  });
 
-  if (engine.value.projectileManager) {
-    engine.value.projectileManager.setOnLightningFlash((startX, startY, endX, endY) => {
-      effectManager.addLightningEffect(startX, startY, endX, endY);
-    });
-    engine.value.projectileManager.setOnStunEffect((x, y, duration) => {
-      effectManager.addStunEffect(x, y, duration);
-    });
+  if (gameStore.map) {
+    spawnManager.init(svgRoot.value!, gameStore.map.spawns.length);
   }
 
   gameStore.setState(GameState.PAUSED);
-  engine.value.start();
+  requestAnimationFrame(renderLoop);
 });
 
 onUnmounted(() => {
   pendingHoverScheduled = false;
-  gameStore.clearEngine();
-  engine.value?.dispose();
+  worker?.postMessage({ type: "dispose" });
+  worker?.terminate();
+  gameStore.clearWorker();
+  setCommandDispatcher(null);
+  worker = null;
+  dispatcher = null;
   soundManager.value?.dispose();
   resizeObserver.value?.disconnect();
   resizeObserver.value = null;

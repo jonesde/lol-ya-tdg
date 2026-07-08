@@ -12,8 +12,13 @@ import {
 } from "../../helpers/mock-stores";
 
 function makeEngine() {
-  const engine = new GameEngine(createTestThemeBundle(mockDefaultTheme), new MockHostBindings());
-  engine.loadMap(0, createTestPersistState());
+  const engine = new GameEngine(
+    createTestPersistState(),
+    createTestThemeBundle(mockDefaultTheme),
+    new MockHostBindings(),
+    0,
+  );
+  engine.loadMap(0);
   return engine;
 }
 
@@ -52,6 +57,7 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(snap.particles).toBeInstanceOf(Array);
     expect(snap.spawnStates.length).toBe(grid.spawns.length);
     expect(typeof snap.spawnStates[0].pendingCount).toBe("number");
+    expect(typeof snap.persistDirty).toBe("boolean");
   });
 
   it("carries expected entity fields", () => {

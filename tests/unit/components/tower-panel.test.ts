@@ -1,71 +1,73 @@
 // @ts-nocheck
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import TowerPanel from "@/components/TowerPanel.vue";
-import type { GameEngine } from "@/game/GameEngine.js";
+import type { Command } from "@/sim/Command.js";
+import { setCommandDispatcher } from "@/sim/commandBus.js";
+import type { TowerUpgradeCheck } from "@/sim/SimulationSnapshot.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 import type { Tower } from "@/towers/Tower.js";
 
-interface TowerStats {
+interface TowerStatsSnapshot {
   damage: number;
   range: number;
   fireRate: number;
   splash: number;
+  chain: number;
 }
 
+// The selected tower is the worker-projected TowerSnapshot (read-only plain
+// data). The panel reads these fields directly and dispatches commands for
+// actions rather than calling engine methods.
 interface MockTower {
+  id: string;
   type: string;
   level: number;
   color: string;
   targeting: string;
   variant: string | null;
-  stats: TowerStats;
+  stats: TowerStatsSnapshot;
   totalDamageDealt: number;
   waveDamage: number;
-  canUpgrade: () => Record<string, unknown>;
-  upgradeCost: () => number;
-  sellValue: () => number;
-  currentMilestoneBonus: () => unknown;
-  canCancel: () => boolean;
-  cancelRemainingMs: () => number;
-  totalInvested: number;
+  canUpgrade: TowerUpgradeCheck;
+  upgradeCostAt5: number;
   levelCosts: number[];
-}
-
-interface EngineMock extends GameEngine {
-  upgradeSelected: Mock;
-  sellSelected: Mock;
-  downgradeSelected: Mock;
-  specializeSelected: Mock;
-  setTargeting: Mock;
-  getUpgradeCost: () => number;
-  cancelSelected: Mock;
+  canCancel: boolean;
+  cancelRemainingMs: number;
+  totalInvested: number;
+  sellValue: number;
+  milestoneBonus: { damagePct: number; speedPct: number; tiers: number };
+  base: { fixedAim: boolean };
+  fixedAimDir: string | null;
 }
 
 function makeMockTower(overrides: Partial<MockTower> = {}): MockTower {
   const level = overrides.level ?? 1;
   const levelCosts = overrides.levelCosts ?? Array.from({ length: level }, (_, i) => 20 + i * 10);
   return {
+    id: "t1",
     type: "basic",
     level,
     color: "#8fbc8f",
     targeting: "first",
     variant: null,
-    stats: { damage: 8, range: 3.5, fireRate: 1.2, splash: 0 },
+    stats: { damage: 8, range: 3.5, fireRate: 1.2, splash: 0, chain: 0 },
     totalDamageDealt: 100,
     waveDamage: 50,
-    canUpgrade: () => ({ ok: true, nextLevel: 2 }),
-    upgradeCost: () => 20,
-    sellValue: () => 12,
-    currentMilestoneBonus: () => null,
-    canCancel: () => false,
-    cancelRemainingMs: () => 0,
-    totalInvested: 20,
+    canUpgrade: { ok: true, nextLevel: 2, cost: 20 },
+    upgradeCostAt5: 100,
     levelCosts,
+    canCancel: false,
+    cancelRemainingMs: 0,
+    totalInvested: 20,
+    sellValue: 12,
+    milestoneBonus: { damagePct: 0, speedPct: 0, tiers: 0 },
+    base: { fixedAim: false },
+    fixedAimDir: null,
     ...overrides,
   };
 }
@@ -76,7 +78,7 @@ interface MountResult {
   themeStore: ReturnType<typeof useMapThemeStore>;
   persistStore: ReturnType<typeof usePersistStore>;
   uiStore: ReturnType<typeof useUiStore>;
-  engineMock: EngineMock;
+  commands: Command[];
 }
 
 function mountTowerPanel(tower: MockTower | null = null): MountResult {
@@ -103,23 +105,21 @@ function mountTowerPanel(tower: MockTower | null = null): MountResult {
   themeStore.activeTheme = themeStore.defaultTheme;
   gameStore.selectedTower = tower as unknown as Tower;
   gameStore.gold = 500;
-  const engineMock = {
-    upgradeSelected: vi.fn(),
-    sellSelected: vi.fn(),
-    downgradeSelected: vi.fn(),
-    specializeSelected: vi.fn(),
-    setTargeting: vi.fn(),
-    getUpgradeCost: () => 20,
-    cancelSelected: vi.fn(),
-  } as unknown as EngineMock;
-  gameStore.engine = engineMock;
-  return { pinia, gameStore, themeStore, persistStore, uiStore, engineMock };
+  const commands: Command[] = [];
+  const dispatcher = { dispatch: (command: Command) => commands.push(command) };
+  // Tower actions are routed through the global command bus (worker dispatch).
+  setCommandDispatcher(dispatcher as never);
+  return { pinia, gameStore, themeStore, persistStore, uiStore, commands };
 }
 
 describe("TowerPanel", () => {
   beforeEach(() => {
     createPinia();
     setActivePinia(createPinia());
+  });
+
+  afterEach(() => {
+    setCommandDispatcher(null);
   });
 
   it("renders when a tower is selected", () => {
@@ -162,9 +162,10 @@ describe("TowerPanel", () => {
 
   it("disables upgrade when cannot afford", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore, engineMock } = mountTowerPanel(makeMockTower());
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
+      makeMockTower({ canUpgrade: { ok: true, nextLevel: 2, cost: 100 } }),
+    );
     gameStore.gold = 0;
-    engineMock.getUpgradeCost = () => 100;
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     const upgradeBtn = wrapper.find("button.action-btn:not(.sell-btn)");
     expect(upgradeBtn.attributes("disabled")).toBeDefined();
@@ -172,7 +173,7 @@ describe("TowerPanel", () => {
 
   it("shows sell button with refund value", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ sellValue: () => 12 }));
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ sellValue: 12 }));
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.text()).toContain("Sell");
     expect(wrapper.text()).toContain("12g");
@@ -196,19 +197,19 @@ describe("TowerPanel", () => {
     expect(downgradeBtn!.attributes("disabled")).toBeDefined();
   });
 
-  it("calls engine.downgradeSelected when downgrade button is clicked", async () => {
+  it("dispatches action:downgradeSelected when downgrade button is clicked", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore, engineMock } = mountTowerPanel(makeMockTower({ level: 3 }));
+    const { pinia, gameStore, persistStore, uiStore, commands } = mountTowerPanel(makeMockTower({ level: 3 }));
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     const downgradeBtn = wrapper.findAll("button.action-btn").find((btn) => btn.text().includes("Downgrade"));
     await downgradeBtn?.trigger("click");
-    expect(engineMock.downgradeSelected).toHaveBeenCalled();
+    expect(commands.some((command) => command.type === "action:downgradeSelected")).toBe(true);
   });
 
   it("shows specialization options at level 4", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
-      makeMockTower({ level: 4, canUpgrade: () => ({ needVariant: true }) }),
+      makeMockTower({ level: 4, canUpgrade: { ok: false, needVariant: true } }),
     );
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.text()).toContain("Choose Specialization");
@@ -223,15 +224,17 @@ describe("TowerPanel", () => {
     expect((select.element as HTMLOptionElement).value).toBe("last");
   });
 
-  it("calls engine.setTargeting when targeting changes", async () => {
+  it("dispatches action:setTargeting when targeting changes", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore, engineMock } = mountTowerPanel(
+    const { pinia, gameStore, persistStore, uiStore, commands } = mountTowerPanel(
       makeMockTower({ targeting: "first" }),
     );
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     const select = wrapper.find(".target-select");
     await select.setValue("closest");
-    expect(engineMock.setTargeting).toHaveBeenCalledWith("closest");
+    const command = commands.find((command) => command.type === "action:setTargeting");
+    expect(command).toBeDefined();
+    expect((command as { mode: string }).mode).toBe("closest");
   });
 
   it("displays wave damage stat", () => {
@@ -244,7 +247,7 @@ describe("TowerPanel", () => {
   it("shows cancel build button when tower can be canceled", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
-      makeMockTower({ level: 1, canCancel: () => true, cancelRemainingMs: () => 45000, totalInvested: 20 }),
+      makeMockTower({ level: 1, canCancel: true, cancelRemainingMs: 45000, totalInvested: 20 }),
     );
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.text()).toContain("Cancel Build");
@@ -252,7 +255,7 @@ describe("TowerPanel", () => {
 
   it("does not show cancel build button when tower cannot be canceled", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ canCancel: () => false }));
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ canCancel: false }));
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.text()).not.toContain("Cancel Build");
   });
@@ -260,7 +263,7 @@ describe("TowerPanel", () => {
   it("shows specialization badge for specialized tower", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
-      makeMockTower({ level: 5, variant: "A", canUpgrade: () => ({ ok: true, nextLevel: 6 }) }),
+      makeMockTower({ level: 5, variant: "A", canUpgrade: { ok: true, nextLevel: 6 } }),
     );
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.find(".spec-badge").exists()).toBe(true);

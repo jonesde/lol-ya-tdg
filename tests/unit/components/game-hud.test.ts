@@ -1,8 +1,10 @@
 // @ts-nocheck
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import GameHud from "@/components/GameHud.vue";
+import type { Command } from "@/sim/Command.js";
+import { setCommandDispatcher } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -12,7 +14,7 @@ interface MountResult {
   gameStore: ReturnType<typeof useGameStore>;
   persistStore: ReturnType<typeof usePersistStore>;
   uiStore: ReturnType<typeof useUiStore>;
-  engineMock: { togglePause: Mock };
+  commands: Command[];
 }
 
 function mountGameHud(): MountResult {
@@ -21,15 +23,21 @@ function mountGameHud(): MountResult {
   const gameStore = useGameStore();
   const persistStore = usePersistStore();
   const uiStore = useUiStore();
-  const engineMock = { togglePause: vi.fn() };
-  gameStore.engine = engineMock as never;
-  return { pinia, gameStore, persistStore, uiStore, engineMock };
+  const commands: Command[] = [];
+  const dispatcher = { dispatch: (command: Command) => commands.push(command) };
+  // The pause button routes through the global command bus (worker dispatch).
+  setCommandDispatcher(dispatcher as never);
+  return { pinia, gameStore, persistStore, uiStore, commands };
 }
 
 describe("GameHud", () => {
   beforeEach(() => {
     createPinia();
     setActivePinia(createPinia());
+  });
+
+  afterEach(() => {
+    setCommandDispatcher(null);
   });
 
   it("displays current lives", () => {
@@ -85,11 +93,11 @@ describe("GameHud", () => {
 
   it("toggles pause on pause button click", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore, engineMock } = mountGameHud();
+    const { pinia, gameStore, persistStore, uiStore, commands } = mountGameHud();
     gameStore.state = "playing";
     const wrapper = mount(GameHud, { global: { plugins: [pinia] } });
     const pauseBtn = wrapper.find("#pauseBtn");
     await pauseBtn.trigger("click");
-    expect(engineMock.togglePause).toHaveBeenCalled();
+    expect(commands.some((command) => command.type === "action:togglePause")).toBe(true);
   });
 });

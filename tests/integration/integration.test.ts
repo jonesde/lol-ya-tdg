@@ -32,8 +32,8 @@ describe("Integration: Single Wave Simulation", () => {
     setupPinia();
     persistState = createTestPersistState();
     mockHost = new MockHostBindings();
-    engine = new GameEngine(createTestThemeBundle(), mockHost);
-    engine.loadMap(0, persistState);
+    engine = new GameEngine(persistState, createTestThemeBundle(), mockHost, 0);
+    engine.loadMap(0);
   });
 
   it("kills all enemies in wave 1 with adequate tower defense", () => {
@@ -94,8 +94,8 @@ describe("Integration: Tower Placement Flow", () => {
     setupPinia();
     persistState = createTestPersistState();
     mockHost = new MockHostBindings();
-    engine = new GameEngine(createTestThemeBundle(), mockHost);
-    engine.loadMap(0, persistState);
+    engine = new GameEngine(persistState, createTestThemeBundle(), mockHost, 0);
+    engine.loadMap(0);
   });
 
   it("placing a tower does not block the path in non-critical positions", () => {
@@ -150,8 +150,8 @@ describe("Integration: Economy Flow", () => {
     setupPinia();
     persistState = createTestPersistState();
     mockHost = new MockHostBindings();
-    engine = new GameEngine(createTestThemeBundle(), mockHost);
-    engine.loadMap(0, persistState);
+    engine = new GameEngine(persistState, createTestThemeBundle(), mockHost, 0);
+    engine.loadMap(0);
   });
 
   it("buying towers reduces gold correctly", () => {
@@ -206,8 +206,8 @@ describe("Integration: Economy Flow", () => {
     const newPersistState = createTestPersistState();
     newPersistState.generalAddons.startingGold = 0;
     newPersistState.generalAddons.extraHealth = 0;
-    const newEngine = new GameEngine(createTestThemeBundle(), new MockHostBindings());
-    newEngine.loadMap(0, newPersistState);
+    const newEngine = new GameEngine(newPersistState, createTestThemeBundle(), new MockHostBindings(), 0);
+    newEngine.loadMap(0);
 
     expect(newEngine.runState.gold).toBe(StartingGold[0] + STARTING_GOLD_BONUS[0]);
     expect(newEngine.runState.lives).toBe(20 + STARTING_HEALTH_BONUS[0]);

@@ -5,5 +5,6 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [vue()],
   resolve: { alias: { "@": resolve(__dirname, "src") } },
+  worker: { format: "es" },
   server: { port: 3000 },
 });

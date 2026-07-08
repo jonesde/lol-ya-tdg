@@ -49,9 +49,14 @@ router.beforeEach((to: RouteLocationNormalized, from: RouteLocationNormalized, n
   // Capture terminal state BEFORE dispose() overwrites it with MENU
   const prevState = gameStore.state;
 
-  // Leaving /game — stop engine and save progress
+  // Leaving /game — dispose the worker, terminate it, and save progress
   if (from.name === "game" && to.name !== "game") {
-    gameStore.engine?.dispose();
+    const worker = gameStore.worker;
+    if (worker) {
+      worker.postMessage({ type: "dispose" });
+      worker.terminate();
+      gameStore.clearWorker();
+    }
     persistStore.save();
   }
 

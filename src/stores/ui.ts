@@ -114,7 +114,7 @@ export const useUiStore = defineStore("ui", {
       const gameStore = useGameStore();
       this.wasPlayingWhenPauseOpened = gameStore.isPlaying;
       if (gameStore.isPlaying) {
-        gameStore.engine?.togglePause();
+        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
       }
       this.showPauseMenu = true;
     },
@@ -122,7 +122,7 @@ export const useUiStore = defineStore("ui", {
     closePauseMenu() {
       const gameStore = useGameStore();
       if (this.wasPlayingWhenPauseOpened) {
-        gameStore.engine?.togglePause();
+        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
       }
       this.showPauseMenu = false;
       this.wasPlayingWhenPauseOpened = false;
@@ -132,7 +132,7 @@ export const useUiStore = defineStore("ui", {
       const gameStore = useGameStore();
       this.wasPlayingWhenSkillTreeOpened = this.wasPlayingWhenPauseOpened || gameStore.isPlaying;
       if (gameStore.isPlaying) {
-        gameStore.engine?.togglePause();
+        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
       }
       this.showPauseMenu = false;
       this.showSkillTree = true;
@@ -141,7 +141,7 @@ export const useUiStore = defineStore("ui", {
     closeSkillTree() {
       const gameStore = useGameStore();
       if (this.wasPlayingWhenSkillTreeOpened) {
-        gameStore.engine?.togglePause();
+        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
       }
       this.showSkillTree = false;
       this.wasPlayingWhenSkillTreeOpened = false;
@@ -159,7 +159,7 @@ export const useUiStore = defineStore("ui", {
       const gameStore = useGameStore();
       if (!this.showHelpDialog && gameStore.isPlaying) {
         this.wasPlayingWhenHelpOpened = true;
-        gameStore.engine?.togglePause();
+        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
       } else {
         this.wasPlayingWhenHelpOpened = false;
       }
@@ -169,7 +169,7 @@ export const useUiStore = defineStore("ui", {
     closeHelpDialog() {
       const gameStore = useGameStore();
       if (this.wasPlayingWhenHelpOpened && gameStore.state === GameState.PAUSED) {
-        gameStore.engine?.togglePause();
+        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
       }
       this.showHelpDialog = false;
       this.wasPlayingWhenHelpOpened = false;

@@ -2,12 +2,7 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GameState } from "@/game/Constants.js";
-import type { GameEngine } from "@/game/GameEngine.js";
 import { createTestStores, createTestUiStore } from "../helpers/mock-stores";
-
-interface TogglePauseEngine extends GameEngine {
-  togglePause: () => void;
-}
 
 describe("UiStore", () => {
   let store: ReturnType<typeof createTestUiStore>;
@@ -131,21 +126,23 @@ describe("UiStore", () => {
       expect(stores.ui.showPauseMenu).toBe(true);
     });
 
-    it("openPauseMenu does not toggle pause when engine is null", () => {
+    it("openPauseMenu does not toggle pause when worker is null", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
-      stores.game.engine = null;
+      stores.game.worker = null;
       stores.ui.openPauseMenu();
       expect(stores.game.state).toBe(GameState.PLAYING);
     });
 
-    it("openPauseMenu toggles pause when engine exists", () => {
+    it("openPauseMenu toggles pause via command when worker exists", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
-      const togglePauseMock = vi.fn();
-      stores.game.engine = { togglePause: togglePauseMock } as unknown as TogglePauseEngine;
+      const worker = { postMessage: vi.fn() } as unknown as Worker;
+      stores.game.worker = worker;
       stores.ui.openPauseMenu();
-      expect(togglePauseMock).toHaveBeenCalled();
+      expect(worker.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "command", command: expect.objectContaining({ type: "action:togglePause" }) }),
+      );
     });
 
     it("closePauseMenu hides menu and restores playing state", () => {
@@ -176,21 +173,23 @@ describe("UiStore", () => {
       expect(stores.ui.showPauseMenu).toBe(false);
     });
 
-    it("openSkillTreeFromGame does not toggle pause when engine is null", () => {
+    it("openSkillTreeFromGame does not toggle pause when worker is null", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
-      stores.game.engine = null;
+      stores.game.worker = null;
       stores.ui.openSkillTreeFromGame();
       expect(stores.game.state).toBe(GameState.PLAYING);
     });
 
-    it("openSkillTreeFromGame toggles pause when engine exists", () => {
+    it("openSkillTreeFromGame toggles pause via command when worker exists", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
-      const togglePauseMock = vi.fn();
-      stores.game.engine = { togglePause: togglePauseMock } as unknown as TogglePauseEngine;
+      const worker = { postMessage: vi.fn() } as unknown as Worker;
+      stores.game.worker = worker;
       stores.ui.openSkillTreeFromGame();
-      expect(togglePauseMock).toHaveBeenCalled();
+      expect(worker.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "command", command: expect.objectContaining({ type: "action:togglePause" }) }),
+      );
     });
 
     it("closeSkillTree hides skill tree and restores playing state", () => {

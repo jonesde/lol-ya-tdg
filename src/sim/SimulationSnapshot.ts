@@ -13,6 +13,10 @@ export interface SimulationSnapshot {
   projectiles: ProjectileSnapshot[];
   particles: ParticleSnapshot[];
   spawnStates: SpawnStateSnapshot[]; // for spawn-queue overlay renderer
+  // Set by the worker when a persist-mutating event occurred since the last
+  // snapshot. The host uses this (together with flush triggers) to throttle
+  // schedulePersistSave calls instead of saving on every mutation.
+  persistDirty: boolean;
 }
 
 export interface SnapshotMeta {
@@ -79,6 +83,26 @@ export interface StatusEffectSnapshot {
   magnitude: number;
 }
 
+// Result of Tower.canUpgrade — precomputed by the serializer (in the worker,
+// where the live Tower and PersistState live) so the render/UI path can only
+// *read* the decision without calling a method on the snapshot.
+export interface TowerUpgradeCheck {
+  ok: boolean;
+  cost?: number;
+  nextLevel?: number;
+  reason?: string;
+  needVariant?: boolean;
+}
+
+// Subset of Tower.stats the UI binds to. Plain data only.
+export interface TowerStatsSnapshot {
+  damage: number;
+  range: number;
+  fireRate: number;
+  splash: number;
+  chain: number;
+}
+
 export interface TowerSnapshot {
   id: string;
   type: string;
@@ -99,6 +123,16 @@ export interface TowerSnapshot {
   sellValue: number;
   color: string;
   animation: MapThemeAnimation | null;
+  // Precomputed UI-decision fields (Phase 8 — replace method calls on the
+  // selectedTower snapshot, which would break since it is a plain data object).
+  canUpgrade: TowerUpgradeCheck;
+  upgradeCostAt5: number; // cost to specialize to level 5
+  levelCosts: number[];
+  canCancel: boolean;
+  cancelRemainingMs: number;
+  milestoneBonus: { damagePct: number; speedPct: number; tiers: number };
+  stats: TowerStatsSnapshot;
+  base: { fixedAim: boolean };
 }
 
 // Projectile and Particle snapshots: REUSE the existing DTO types.

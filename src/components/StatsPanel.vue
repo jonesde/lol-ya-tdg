@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
+import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -9,10 +10,13 @@ const gameStore = useGameStore();
 const uiStore = useUiStore();
 const themeStore = useMapThemeStore();
 
-const engine = computed(() => gameStore.engine);
-const waveManager = computed(() => engine.value?.waveManager);
-const enemyManager = computed(() => engine.value?.enemyManager);
-const towers = computed(() => engine.value?.towerManager?.towers || []);
+const snapshot = computed(() => getLatestSnapshot());
+// Wave composition / starting lives / healing / gold are worker-internal
+// aggregates not surfaced in the snapshot yet (Phase 8). The stats panel reads
+// what the snapshot provides; the rest degrades gracefully.
+const waveManager = computed(() => null);
+const enemyManager = computed(() => null);
+const towers = computed(() => snapshot.value?.towers ?? []);
 
 const waveComposition = computed(() => {
   const comp = waveManager.value?.waveComposition || {};
@@ -35,17 +39,19 @@ interface EnemyStat {
 }
 
 const activeEnemies = computed<EnemyStat[]>(() => {
-  const enemies = enemyManager.value?.enemies || [];
-  return enemies.map((enemy) => ({
-    id: enemy.id,
-    type: enemy.type,
-    name: themeStore.getEnemyVisual(enemy.type)?.name || ENEMY_TYPES[enemy.type]?.name || enemy.type,
-    level: enemy.level,
-    hp: enemy.hp,
-    maxHp: enemy.maxHp,
-    color: enemy.color,
-    shape: enemy.shape,
-  }));
+  const enemies = snapshot.value?.enemies ?? [];
+  return enemies
+    .filter((enemy) => !enemy.removed)
+    .map((enemy) => ({
+      id: String(enemy.id),
+      type: enemy.type,
+      name: themeStore.getEnemyVisual(enemy.type)?.name || ENEMY_TYPES[enemy.type]?.name || enemy.type,
+      level: enemy.level,
+      hp: enemy.hp,
+      maxHp: enemy.maxHp,
+      color: "",
+      shape: "",
+    }));
 });
 
 const totalDamageDealt = computed(() => {
@@ -56,10 +62,10 @@ const totalDamageDealt = computed(() => {
   return Math.round(total);
 });
 
-const startingLives = computed(() => engine.value?.startingLives ?? gameStore.lives);
+const startingLives = computed(() => gameStore.lives);
 const livesLost = computed(() => Math.max(0, startingLives.value - gameStore.lives));
-const healingReceived = computed(() => engine.value?.totalHealingReceived || 0);
-const goldEarned = computed(() => engine.value?.totalGoldEarned || 0);
+const healingReceived = computed(() => 0);
+const goldEarned = computed(() => 0);
 const gemsEarned = computed(() => gameStore.runGemsEarned);
 const deadBosses = computed(() => gameStore.bossesKilledThisRun);
 const basedBosses = computed(() => gameStore.bossesReachedBaseThisRun);

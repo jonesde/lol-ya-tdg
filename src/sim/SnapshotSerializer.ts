@@ -1,6 +1,7 @@
 import type { Enemy } from "@/enemies/Enemy.js";
 import type { GameEngine } from "@/game/GameEngine.js";
 import type { Tower } from "@/towers/Tower.js";
+import type { PersistState } from "./PersistState.js";
 import type {
   EnemySnapshot,
   ParticleSnapshot,
@@ -16,6 +17,7 @@ let nextFrameId = 1;
 export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number): SimulationSnapshot {
   const enemies = engine.enemyManager?.enemies ?? [];
   const towers = engine.towerManager?.towers ?? [];
+  const persistState = engine.persistState;
 
   return {
     schemaVersion: 1,
@@ -23,16 +25,16 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
     lastAppliedCommandId,
     meta: buildMeta(engine),
     enemies: enemies.map(snapshotEnemy),
-    towers: towers.map(snapshotTower),
+    towers: towers.map((tower) => snapshotTower(tower, persistState)),
     projectiles: (engine.projectileManager?.getRenderData() ?? []) as ProjectileSnapshot[],
     particles: (engine.particleManager?.getRenderData() ?? []) as ParticleSnapshot[],
     spawnStates: (engine.waveManager?.spawnStates ?? []).map((state, spawnIndex) => ({
       ...state,
       pendingCount: engine.enemyManager?.getPendingCountForSpawn(spawnIndex) ?? 0,
     })),
-    // No persistDirty — the engine writes to localStorage directly in
-    // _savePersistState(). Phase 7+ will signal persist flushes via
-    // HostBindings instead.
+    // Persist batching signal: the worker/host flush this to localStorage only
+    // on significant events (wave change / game end / milestone claim / dispose).
+    persistDirty: engine.persistDirty,
   };
 }
 
@@ -104,7 +106,7 @@ function buildEnemyStatusEffects(e: Enemy): StatusEffectSnapshot[] {
   return effects;
 }
 
-function snapshotTower(t: Tower): TowerSnapshot {
+function snapshotTower(t: Tower, persistState: PersistState): TowerSnapshot {
   return {
     id: t.id,
     type: t.type,
@@ -125,5 +127,19 @@ function snapshotTower(t: Tower): TowerSnapshot {
     sellValue: t.sellValue(),
     color: t.color,
     animation: t.animation,
+    canUpgrade: t.canUpgrade(persistState),
+    upgradeCostAt5: t.upgradeCost(5),
+    levelCosts: [...t.levelCosts],
+    canCancel: t.canCancel(),
+    cancelRemainingMs: t.cancelRemainingMs(),
+    milestoneBonus: t.currentMilestoneBonus(),
+    stats: {
+      damage: t.stats.damage,
+      range: t.stats.range,
+      fireRate: t.stats.fireRate,
+      splash: t.stats.splash,
+      chain: t.stats.chain,
+    },
+    base: { fixedAim: t.base.fixedAim ?? false },
   };
 }

@@ -32,7 +32,9 @@ function endRun() {
     confirmLabel: "End Run",
     cancelLabel: "Cancel",
     onConfirm: () => {
-      gameStore.engine?.endGame(false);
+      // The run is ended by navigating away; GameScreen's onUnmounted disposes
+      // the worker. (The old engine.endGame(false) is gone in the worker model —
+      // see Phase 8. A dedicated end-run command can be added in Phase 9.)
       router.push("/game-over");
     },
   });

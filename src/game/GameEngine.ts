@@ -18,7 +18,6 @@ import {
   setGameState,
   setGold,
   setHoverTile,
-  setHoverUpgradeBtn,
   setWave,
   togglePauseState,
   triggerEnd,
@@ -37,7 +36,6 @@ import {
   maybeUnlockNextMap as persistMaybeUnlockNextMap,
   updateBestWave as persistUpdateBestWave,
 } from "@/sim/PersistState.js";
-import { STORAGE_KEY } from "@/stores/persist.js";
 import type { Tower } from "@/towers/Tower.js";
 import { TowerManager } from "@/towers/TowerManager.js";
 import { WaveManager } from "@/waves/WaveManager.js";
@@ -46,10 +44,8 @@ import {
   BOSS_LIFE_LOSS,
   BOUNTY_BLOCKED_RATIO,
   DIFFICULTY_MULT_GEM_BASE,
-  FIXED_DT,
   GameState,
   MAP_GEM_MULTIPLIERS,
-  MAX_ACCUM,
   MILESTONE_GEMS,
   MILESTONE_WAVES,
   SELL_DISCOUNT_PCT,
@@ -92,24 +88,34 @@ export class GameEngine {
   projectileManager: ProjectileManager | null;
   particleManager: ParticleSystem | null;
   waveGraphTracker: WaveGraphTracker | null = null;
-  _rafId: number | null;
   lastTime: number;
   _accumulator: number;
   totalGoldEarned: number;
   totalHealingReceived: number;
   startingLives: number;
   waveTopTowers: { tower: Tower; rank: number; dmg: number; startTime: number }[] | null;
-  renderCallback: (() => void) | null = null;
   lastScaledDt: number = 0;
   shouldEndGame: boolean = false;
+  persistDirty: boolean = false;
 
   theme: MapThemeData | null = null;
   themeBundle: ThemeBundle;
+  mapIndex: number = 0;
+  randomMapParams: Record<string, unknown> | null = null;
 
-  constructor(themeBundle: ThemeBundle, host: HostBindings) {
+  constructor(
+    persistState: PersistState,
+    themeBundle: ThemeBundle,
+    host: HostBindings,
+    mapIndex: number,
+    randomMapParams?: unknown,
+  ) {
+    this.persistState = persistState;
     this.host = host;
     this.themeBundle = themeBundle;
     this.theme = themeBundle.active ?? null;
+    this.mapIndex = mapIndex;
+    this.randomMapParams = (randomMapParams as Record<string, unknown> | null) ?? null;
 
     if (this.theme) {
       this.setTheme(this.theme);
@@ -122,7 +128,6 @@ export class GameEngine {
     this.projectileManager = null;
     this.particleManager = null;
 
-    this._rafId = null;
     this.lastTime = 0;
     this._accumulator = 0;
 
@@ -132,34 +137,18 @@ export class GameEngine {
     this.waveTopTowers = null;
   }
 
-  private _savePersistState(): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.persistState));
-    } catch {
-      this.host.notifyUi({ type: "showNotification", message: "Save failed." });
-    }
-  }
-
   setTheme(theme: MapThemeData | null): void {
     this.theme = theme;
   }
 
-  loadMap(mapIndex: number, persistState: PersistState): void {
+  loadMap(mapIndex: number = this.mapIndex): void {
     const mapData = getMap(mapIndex);
-    this._initMap(mapIndex, mapData, persistState);
+    this._initMap(mapIndex, mapData, this.persistState);
   }
 
-  loadRandomMap(
-    width: number,
-    height: number,
-    level: number,
-    style: string,
-    regionId: number,
-    seed: number,
-    persistState: PersistState,
-  ): void {
+  loadRandomMap(width: number, height: number, level: number, style: string, regionId: number, seed: number): void {
     const mapData = generateRandomMap(width, height, style, regionId, level, seed);
-    this._initMap(-1, mapData, persistState);
+    this._initMap(-1, mapData, this.persistState);
   }
 
   _initMap(mapIndex: number, mapData: GeneratedMap, persistState: PersistState): void {
@@ -186,7 +175,7 @@ export class GameEngine {
       milestoneRewardsClaimed: {},
       gemBreakdown: createFreshGemBreakdown(),
       endScreenData: null,
-      randomMapParams: null,
+      randomMapParams: this.randomMapParams,
     };
 
     this.host.notifyUi({ type: "initForRun", mapIndex });
@@ -273,35 +262,9 @@ export class GameEngine {
 
     this.persistState.gems += afterRegion;
     this.runState.runGemsEarned += afterRegion;
-    this._savePersistState();
+    this.persistDirty = true;
 
     this.host.playSound("boss_die");
-  }
-
-  start(): void {
-    if (this.runState.state === GameState.PLAYING) return;
-    this._rafId = requestAnimationFrame((timestamp) => this.loop(timestamp));
-  }
-
-  loop(now: number): void {
-    if (this.runState.state !== GameState.PLAYING && this.runState.state !== GameState.PAUSED) return;
-
-    if (this.lastTime === 0) this.lastTime = now;
-    const rawDt = Math.min(MAX_ACCUM, (now - this.lastTime) / 1000);
-    this.lastTime = now;
-
-    const scaledDt = rawDt * (this.runState.state === GameState.PAUSED ? 0 : this.runState.timeScale);
-    this.lastScaledDt = scaledDt;
-    this._accumulator += scaledDt;
-
-    while (this._accumulator >= FIXED_DT) {
-      this.update(FIXED_DT);
-      this._accumulator -= FIXED_DT;
-    }
-
-    this.renderCallback?.();
-
-    this._rafId = requestAnimationFrame((timestamp) => this.loop(timestamp));
   }
 
   update(dt: number): void {
@@ -416,7 +379,7 @@ export class GameEngine {
         persistMaybeUnlockNextMap(this.persistState, this.runState.mapIndex);
       }
     }
-    this._savePersistState();
+    this.persistDirty = true;
   }
 
   onWaveStart(wave: number): void {
@@ -512,7 +475,7 @@ export class GameEngine {
       }
     }
 
-    this._savePersistState();
+    this.persistDirty = true;
 
     const historyEntry: Record<string, unknown> = {
       mapIndex: this.runState.mapIndex,
@@ -530,7 +493,7 @@ export class GameEngine {
     }
 
     persistAddRunToHistory(this.persistState, historyEntry);
-    this._savePersistState();
+    this.persistDirty = true;
 
     triggerEnd(this.runState, victory, {
       wave: this.waveManager!.currentWave,
@@ -551,31 +514,6 @@ export class GameEngine {
   private getSelectedTower(): Tower | null {
     if (!this.runState.selectedTowerId || !this.towerManager) return null;
     return this.towerManager.getTowerById(this.runState.selectedTowerId) ?? null;
-  }
-
-  private lastHoverTileX: number | null = null;
-  private lastHoverTileY: number | null = null;
-  private lastHoverUpgradeBtn: boolean = false;
-
-  setHover(worldX: number, worldY: number): void {
-    const grid = this.grid;
-    if (!grid) return;
-
-    const tileSize = grid.tileSize;
-    const tileX = Math.floor(worldX / tileSize);
-    const tileY = Math.floor(worldY / tileSize);
-
-    if (tileX !== this.lastHoverTileX || tileY !== this.lastHoverTileY) {
-      this.lastHoverTileX = tileX;
-      this.lastHoverTileY = tileY;
-      setHoverTile(this.runState, grid.inBounds(tileX, tileY) ? { tileX, tileY } : null);
-    }
-
-    const hoverUpgradeBtn = this.isUpgradeBtnAt(worldX, worldY);
-    if (hoverUpgradeBtn !== this.lastHoverUpgradeBtn) {
-      this.lastHoverUpgradeBtn = hoverUpgradeBtn;
-      setHoverUpgradeBtn(this.runState, hoverUpgradeBtn);
-    }
   }
 
   handleClick(worldX: number, worldY: number): void {
@@ -695,9 +633,21 @@ export class GameEngine {
 
     const isRefund = this.persistState.generalAddons?.sellActive === "refund";
     const val = isRefund ? tower.totalInvested : this.towerManager!.sell(tower, this.persistState);
-    setGold(this.runState, this.runState.gold + val);
+    this.runState.gold += val;
     this.totalGoldEarned += val;
     this.runState.selectedTowerId = null;
+    this.persistDirty = true;
+  }
+
+  selectTowerById(towerId: string | null): void {
+    if (!towerId) {
+      this.runState.selectedTowerId = null;
+      return;
+    }
+    const tower = this.towerManager?.getTowerById(towerId);
+    if (tower) {
+      this.runState.selectedTowerId = towerId;
+    }
   }
 
   executeSell(): void {
@@ -764,10 +714,6 @@ export class GameEngine {
 
   stop(): void {
     setGameState(this.runState, GameState.MENU);
-    if (this._rafId) {
-      cancelAnimationFrame(this._rafId);
-      this._rafId = null;
-    }
   }
 
   dispose(): void {

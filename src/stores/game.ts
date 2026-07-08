@@ -1,7 +1,6 @@
 import { defineStore } from "pinia";
 import type { EnemyManager } from "@/enemies/EnemyManager.js";
 import { GameState, StartingGold } from "@/game/Constants.js";
-import type { GameEngine } from "@/game/GameEngine.js";
 import type { ParticleSystem } from "@/game/ParticleSystem.js";
 import type { ProjectileManager } from "@/game/ProjectileManager.js";
 import type { Grid } from "@/grid/Grid.js";
@@ -102,7 +101,7 @@ interface GameStateShape {
   projectileManager: ProjectileManager | null;
   particleManager: ParticleSystem | null;
   randomMapParams: Record<string, unknown> | null;
-  engine: GameEngine | null;
+  worker: Worker | null;
 }
 
 export const useGameStore = defineStore("game", {
@@ -140,7 +139,7 @@ export const useGameStore = defineStore("game", {
     projectileManager: null,
     particleManager: null,
     randomMapParams: null,
-    engine: null,
+    worker: null,
   }),
 
   getters: {
@@ -253,12 +252,12 @@ export const useGameStore = defineStore("game", {
       this.camera = { x, y, zoom };
     },
 
-    setEngine(engine: GameEngine) {
-      this.engine = engine;
+    setWorker(worker: Worker) {
+      this.worker = worker;
     },
 
-    clearEngine() {
-      this.engine = null;
+    clearWorker() {
+      this.worker = null;
     },
 
     claimMilestone(wave: number) {

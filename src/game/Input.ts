@@ -3,6 +3,7 @@ import { GameState } from "@/game/Constants.js";
 import { type TowerId, TowerIds } from "@/game/ConstantsTower.js";
 import type { Command } from "@/sim/Command.js";
 import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
+import { dispatchCommand } from "@/sim/commandBus.js";
 import type { GameStoreLike } from "@/stores/game.js";
 import type { UiStoreLike } from "@/stores/ui.js";
 import type { Tower } from "@/towers/Tower.js";
@@ -61,7 +62,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         } else if (gs.selectedTowerType) {
           dispatch({ commandId: nextInputCommandId++, type: "action:cancelBuildMode" });
         } else if (gs.selectedTower) {
-          gs.selectedTower = null;
+          dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: null });
         } else {
           uiStore.openPauseMenu();
         }
@@ -206,12 +207,20 @@ function handleTabCycle(gameStore: GameStoreLike, previous: boolean): void {
     if (selectedIndex >= 0) {
       const offset = previous ? -1 : 1;
       const nextIndex = (selectedIndex + offset + sortedTowers.length) % sortedTowers.length;
-      gameStore.selectTower(sortedTowers[nextIndex]!);
+      dispatchCommand({
+        commandId: nextInputCommandId++,
+        type: "action:selectTower",
+        towerId: sortedTowers[nextIndex]!.id,
+      });
     }
   } else if (previous) {
-    gameStore.selectTower(sortedTowers[sortedTowers.length - 1]!);
+    dispatchCommand({
+      commandId: nextInputCommandId++,
+      type: "action:selectTower",
+      towerId: sortedTowers[sortedTowers.length - 1]!.id,
+    });
   } else {
-    gameStore.selectTower(sortedTowers[0]!);
+    dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: sortedTowers[0]!.id });
   }
 }
 
@@ -235,7 +244,9 @@ function moveBuildPosition(gameStore: GameStoreLike, dx: number, dy: number): vo
   tileY = Math.max(0, Math.min(tileY, grid.height - 1));
 
   const towerAtNewPos = gameStore.towerManager?.towerAt(tileX, tileY);
-  if (towerAtNewPos) gameStore.selectTower(towerAtNewPos);
+  if (towerAtNewPos) {
+    dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: towerAtNewPos.id });
+  }
 
   gameStore.setHoverTile({ tileX, tileY });
 }
@@ -310,7 +321,7 @@ function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): voi
       if (direction === "left") return a.tileX - b.tileX || a.tileY - b.tileY;
       return b.tileX - a.tileX || a.tileY - b.tileY;
     });
-    gameStore.selectTower(sorted[0]!);
+    dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: sorted[0]!.id });
     return;
   }
 
@@ -348,6 +359,6 @@ function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): voi
   }
 
   if (target) {
-    gameStore.selectTower(target);
+    dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: target.id });
   }
 }

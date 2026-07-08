@@ -27,10 +27,18 @@ describe("GameEngine", () => {
   let _gameStore: ReturnType<typeof createTestGameStore>;
   let mockHost: MockHostBindings;
 
+  // New architecture: persistState is a constructor argument; loadMap(mapIndex)
+  // no longer takes it. This helper constructs a fully-initialized engine.
+  function initEngine(mapIndex: number, persistState: ReturnType<typeof createTestPersistState>): GameEngine {
+    engine = new GameEngine(persistState, createTestThemeBundle(), mockHost, mapIndex);
+    engine.loadMap(mapIndex);
+    return engine;
+  }
+
   beforeEach(() => {
     _gameStore = createTestGameStore();
     mockHost = new MockHostBindings();
-    engine = new GameEngine(createTestThemeBundle(), mockHost);
+    engine = new GameEngine(createTestPersistState(), createTestThemeBundle(), mockHost, 0);
   });
 
   describe("constructor", () => {
@@ -49,7 +57,7 @@ describe("GameEngine", () => {
   describe("loadMap", () => {
     it("initializes all subsystems", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       expect(engine.grid).not.toBeNull();
       expect(engine.enemyManager).not.toBeNull();
       expect(engine.towerManager!).not.toBeNull();
@@ -58,27 +66,27 @@ describe("GameEngine", () => {
 
     it("sets starting gold based on region", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       expect(engine.runState.gold).toBe(StartingGold[0]);
     });
 
     it("resets lives to 20", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       engine.runState.lives = 100;
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       expect(engine.runState.lives).toBe(20);
     });
 
     it("sets currentWave to 0", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       expect(engine.runState.currentWave).toBe(0);
     });
 
     it("resets gem breakdown", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       expect(engine.runState.gemBreakdown.bossKills.base).toBe(0);
       expect(engine.runState.gemBreakdown.milestones.base).toBe(0);
       expect(engine.runState.gemBreakdown.waveCompletion.base).toBe(0);
@@ -86,25 +94,25 @@ describe("GameEngine", () => {
 
     it("resets selected tower and build type", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       engine.runState.selectedTowerId = "1";
       engine.runState.selectedTowerType = "basic";
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       expect(engine.runState.selectedTowerId).toBeNull();
       expect(engine.runState.selectedTowerType).toBeNull();
     });
 
     it("resets milestone rewards", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       engine.runState.milestoneRewardsClaimed[15] = true;
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       expect(engine.runState.milestoneRewardsClaimed[15]).toBeUndefined();
     });
 
     it("sets mapIndex and map reference", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       expect(engine.runState.mapIndex).toBe(0);
       expect(engine.runState.map).not.toBeNull();
     });
@@ -112,7 +120,7 @@ describe("GameEngine", () => {
     it("applies starting gold bonus from general addons", () => {
       const persistState = createTestPersistState();
       persistState.generalAddons.startingGold = 0;
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       const expected = StartingGold[0] + 50;
       expect(engine.runState.gold).toBe(expected);
     });
@@ -120,7 +128,7 @@ describe("GameEngine", () => {
     it("applies starting health bonus from general addons", () => {
       const persistState = createTestPersistState();
       persistState.generalAddons.extraHealth = 0;
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       expect(engine.runState.lives).toBe(20 + 10);
     });
   });
@@ -128,7 +136,7 @@ describe("GameEngine", () => {
   describe("onBossKilled", () => {
     beforeEach(() => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
     });
 
     it("awards gems based on difficulty and map multipliers", () => {
@@ -158,16 +166,16 @@ describe("GameEngine", () => {
       expect(engine.runState.gemBreakdown.bossKills.afterFirstTime).toBeGreaterThan(0);
     });
 
-    it("saves to localStorage", () => {
+    it("marks persistState dirty instead of saving to localStorage", () => {
       engine.onBossKilled();
-      expect(localStorage.setItem).toHaveBeenCalled();
+      expect(engine.persistDirty).toBe(true);
     });
   });
 
   describe("milestone rewards", () => {
     it("awards gems at milestone waves", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       engine.runState.mapIndex = 0;
       const gemsBefore = engine.persistState.gems;
       const wave = 15;
@@ -187,7 +195,7 @@ describe("GameEngine", () => {
 
     it("awards 2x on first-time milestone", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       const wave = 15;
       const base = MILESTONE_GEMS[wave];
       const diffMult = getDifficultyMultiplier(engine.persistState);
@@ -205,7 +213,7 @@ describe("GameEngine", () => {
   describe("economy", () => {
     beforeEach(() => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
     });
 
     it("addGold increases gold", () => {
@@ -238,7 +246,7 @@ describe("GameEngine", () => {
   describe("tower actions", () => {
     beforeEach(() => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
     });
 
     it("builds a tower via click on valid terrain", () => {
@@ -405,7 +413,7 @@ describe("GameEngine", () => {
   describe("time control", () => {
     it("cycleSpeed cycles through [1, 2, 4, 8]", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       engine.runState.timeScale = 1;
       expect(engine.cycleSpeed()).toBe(2);
       expect(engine.cycleSpeed()).toBe(4);
@@ -415,7 +423,7 @@ describe("GameEngine", () => {
 
     it("togglePause switches between playing and paused", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       engine.runState.state = GameState.PLAYING;
       engine.togglePause();
       expect(engine.runState.state).toBe(GameState.PAUSED);
@@ -427,14 +435,14 @@ describe("GameEngine", () => {
   describe("state management", () => {
     it("setState changes game state", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       engine.runState.state = GameState.MENU;
       expect(engine.runState.state).toBe(GameState.MENU);
     });
 
     it("stop sets state to MENU and cancels RAF", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       engine.runState.state = GameState.PLAYING;
       engine.stop();
       expect(engine.runState.state).toBe(GameState.MENU);
@@ -444,7 +452,7 @@ describe("GameEngine", () => {
   describe("endGame conditions", () => {
     beforeEach(() => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
     });
 
     it("triggerEnd sets victory state and data", () => {
@@ -527,7 +535,7 @@ describe("GameEngine", () => {
   describe("first clear bonus calculation", () => {
     it("sums afterFirstTime from all gem sources", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       engine.runState.gemBreakdown.bossKills.afterFirstTime = 10;
       engine.runState.gemBreakdown.milestones.afterFirstTime = 20;
       engine.runState.gemBreakdown.waveCompletion.afterFirstTime = 30;
@@ -543,7 +551,7 @@ describe("GameEngine", () => {
   describe("dispose", () => {
     it("stops the engine and sets state to MENU", () => {
       const persistState = createTestPersistState();
-      engine.loadMap(0, persistState);
+      initEngine(0, persistState);
       engine.runState.state = GameState.PLAYING;
       engine.dispose();
       expect(engine.runState.state).toBe(GameState.MENU);
