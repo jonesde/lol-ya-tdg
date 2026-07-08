@@ -1,4 +1,4 @@
-import type { Tower } from "../../towers/Tower.js";
+import type { TowerSnapshot } from "../../sim/SimulationSnapshot.js";
 import { SVG_NS, TOWER_SCALED_SIZE } from "./types.js";
 
 export class TowerManager {
@@ -10,7 +10,7 @@ export class TowerManager {
     this.layer = layer;
   }
 
-  syncFromGameEngine(towers: Tower[], dt: number): void {
+  syncFromGameEngine(towers: TowerSnapshot[], dt: number): void {
     if (!this.layer) return;
 
     this.activeIds.clear();
@@ -139,18 +139,17 @@ class TowerRenderProxy {
     return this.el;
   }
 
-  sync(tower: Tower, dt: number): void {
+  sync(tower: TowerSnapshot, dt: number): void {
     this.el.style.visibility = "visible";
     if (tower.color !== this.lastColor) {
       this.el.style.color = tower.color;
       this.lastColor = tower.color;
     }
 
-    const fireAnimTime = (tower as unknown as { fireAnimTime: number }).fireAnimTime;
+    const fireAnimTime = tower.fireAnimTime;
     if (fireAnimTime > 0 && fireAnimTime !== this.lastSeenFireAnimTime) {
       this.lastSeenFireAnimTime = fireAnimTime;
-      const config = (tower as unknown as { animation: { duration: number; referenceImages?: unknown[] } | null })
-        .animation;
+      const config = tower.animation;
       if (config && config.duration > 0) {
         this.animConfig = config;
         this.animStartElapsed = this.scaledElapsed;

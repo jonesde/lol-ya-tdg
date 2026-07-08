@@ -4,20 +4,21 @@ import { TowerIds } from "@/game/ConstantsTower.js";
 import { useInput } from "@/game/Input.js";
 import type { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
+import type { Command } from "@/sim/Command.js";
 import type { Tower } from "@/towers/Tower.js";
 import { createTestGameStore, createTestUiStore } from "../helpers/mock-stores";
 
 const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-function makeEngine() {
+type Dispatcher = { commands: Command[]; dispatch(command: Command): void };
+
+function makeDispatcher(): Dispatcher {
+  const commands: Command[] = [];
   return {
-    togglePause: vi.fn(),
-    upgradeSelected: vi.fn(),
-    sellSelected: vi.fn(),
-    downgradeSelected: vi.fn(),
-    cancelBuildMode: vi.fn(),
-    setTargeting: vi.fn(),
-    handleClick: vi.fn(),
+    commands,
+    dispatch(command: Command): void {
+      commands.push(command);
+    },
   };
 }
 
@@ -29,12 +30,12 @@ function makeEvent(key: string, opts: Record<string, unknown> = {}) {
 describe("useInput", () => {
   let gameStore: ReturnType<typeof createTestGameStore>;
   let uiStore: ReturnType<typeof createTestUiStore>;
-  let engine: ReturnType<typeof makeEngine>;
+  let dispatcher: Dispatcher;
 
   beforeEach(() => {
     gameStore = createTestGameStore();
     uiStore = createTestUiStore();
-    engine = makeEngine();
+    dispatcher = makeDispatcher();
   });
 
   afterEach(() => {
@@ -46,35 +47,46 @@ describe("useInput", () => {
     window.dispatchEvent(makeEvent(key, opts));
   }
 
+  function dispatched(type: Command["type"]): boolean {
+    return dispatcher.commands.some((command) => command.type === type);
+  }
+
+  function lastOfType<T extends Command["type"]>(type: T): Extract<Command, { type: T }> | undefined {
+    const matches = dispatcher.commands.filter((command) => command.type === type) as Array<
+      Extract<Command, { type: T }>
+    >;
+    return matches[matches.length - 1];
+  }
+
   describe("returns early in non-play states", () => {
     it("returns early in MENU state", () => {
       gameStore.setState(GameState.MENU);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput(" ");
-      expect(engine.togglePause).not.toHaveBeenCalled();
+      expect(dispatched("action:togglePause")).toBe(false);
     });
 
     it("returns early in GAME_OVER state", () => {
       gameStore.setState(GameState.GAME_OVER);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput(" ");
-      expect(engine.togglePause).not.toHaveBeenCalled();
+      expect(dispatched("action:togglePause")).toBe(false);
     });
 
     it("returns early in VICTORY state", () => {
       gameStore.setState(GameState.VICTORY);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput(" ");
-      expect(engine.togglePause).not.toHaveBeenCalled();
+      expect(dispatched("action:togglePause")).toBe(false);
     });
   });
 
   describe("Space bar", () => {
-    it("toggles pause via engine", () => {
+    it("toggles pause via command", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput(" ");
-      expect(engine.togglePause).toHaveBeenCalled();
+      expect(dispatched("action:togglePause")).toBe(true);
     });
 
     it("calls preventDefault", () => {
@@ -85,7 +97,7 @@ describe("useInput", () => {
         if (event === "keydown") capturedHandler = handler;
         originalAddEventListener.call(window, event, handler as unknown as EventListener);
       }) as never;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       window.addEventListener = originalAddEventListener;
       expect(capturedHandler).toBeDefined();
       const testEvent = makeEvent(" ");
@@ -97,7 +109,7 @@ describe("useInput", () => {
     it("closes pause menu and unpauses when menu is open", () => {
       gameStore.setState(GameState.PAUSED);
       uiStore.openPauseMenu();
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput(" ");
       expect(uiStore.showPauseMenu).toBe(false);
     });
@@ -106,7 +118,7 @@ describe("useInput", () => {
   describe("Escape key", () => {
     it("closes all dialogs when a dialog is open", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       uiStore.showConfirm({ title: "T", message: "M" });
       triggerInput("Escape");
       expect(uiStore.confirmDialog).toBeNull();
@@ -115,22 +127,22 @@ describe("useInput", () => {
     it("cancels build mode when build mode is active", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTowerType = "cannon";
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Escape");
-      expect(engine.cancelBuildMode).toHaveBeenCalled();
+      expect(dispatched("action:cancelBuildMode")).toBe(true);
     });
 
     it("deselects tower when a tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTower = { id: 1 } as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Escape");
       expect(gameStore.selectedTower).toBeNull();
     });
 
     it("opens pause menu when no dialog is open and no tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Escape");
       expect(uiStore.showPauseMenu).toBe(true);
     });
@@ -138,7 +150,7 @@ describe("useInput", () => {
     it("closes pause menu on second press", () => {
       gameStore.setState(GameState.PAUSED);
       uiStore.openPauseMenu();
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Escape");
       expect(uiStore.showPauseMenu).toBe(false);
     });
@@ -146,27 +158,27 @@ describe("useInput", () => {
     it("closes debug panel when visible", () => {
       gameStore.setState(GameState.PLAYING);
       uiStore.debugPanelVisible = true;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Escape");
       expect(uiStore.debugPanelVisible).toBe(false);
     });
   });
 
   describe("u key (upgrade)", () => {
-    it("calls engine.upgradeSelected when tower is selected", () => {
+    it("dispatches upgradeSelected when tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTower = { id: 1 } as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("u");
-      expect(engine.upgradeSelected).toHaveBeenCalled();
+      expect(dispatched("action:upgradeSelected")).toBe(true);
     });
 
     it("does nothing when no tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTower = null;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("u");
-      expect(engine.upgradeSelected).not.toHaveBeenCalled();
+      expect(dispatched("action:upgradeSelected")).toBe(false);
     });
   });
 
@@ -181,7 +193,7 @@ describe("useInput", () => {
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = { tileX: 5, tileY: 3 };
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
       expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 2 });
     });
@@ -196,7 +208,7 @@ describe("useInput", () => {
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = { tileX: 5, tileY: 0 };
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
       expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 0 });
     });
@@ -210,7 +222,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [below, above] };
       gameStore.selectedTower = below as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
       expect(gameStore.selectedTower).toEqual(above);
     });
@@ -224,38 +236,38 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [t1, t2] };
       gameStore.selectedTower = null;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
       expect(gameStore.selectedTower).toEqual(t2);
     });
   });
 
   describe("s key (downgrade/sell)", () => {
-    it("calls engine.downgradeSelected when tower level > 1", () => {
+    it("dispatches downgradeSelected when tower level > 1", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTower = { id: 1, level: 3 } as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("s");
-      expect(engine.downgradeSelected).toHaveBeenCalled();
-      expect(engine.sellSelected).not.toHaveBeenCalled();
+      expect(dispatched("action:downgradeSelected")).toBe(true);
+      expect(dispatched("action:sellSelected")).toBe(false);
     });
 
-    it("calls engine.sellSelected when tower level === 1", () => {
+    it("dispatches sellSelected when tower level === 1", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTower = { id: 1, level: 1 } as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("s");
-      expect(engine.sellSelected).toHaveBeenCalled();
-      expect(engine.downgradeSelected).not.toHaveBeenCalled();
+      expect(dispatched("action:sellSelected")).toBe(true);
+      expect(dispatched("action:downgradeSelected")).toBe(false);
     });
 
     it("does nothing when no tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTower = null;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("s");
-      expect(engine.sellSelected).not.toHaveBeenCalled();
-      expect(engine.downgradeSelected).not.toHaveBeenCalled();
+      expect(dispatched("action:sellSelected")).toBe(false);
+      expect(dispatched("action:downgradeSelected")).toBe(false);
     });
   });
 
@@ -270,7 +282,7 @@ describe("useInput", () => {
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = { tileX: 5, tileY: 3 };
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
       expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 4 });
     });
@@ -285,7 +297,7 @@ describe("useInput", () => {
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = { tileX: 5, tileY: 9 };
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
       expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 9 });
     });
@@ -299,7 +311,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [above, below] };
       gameStore.selectedTower = above as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
       expect(gameStore.selectedTower).toEqual(below);
     });
@@ -313,7 +325,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [t1, t2] };
       gameStore.selectedTower = null;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
       expect(gameStore.selectedTower).toEqual(t1);
     });
@@ -330,7 +342,7 @@ describe("useInput", () => {
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = { tileX: 3, tileY: 2 };
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
       expect(gameStore.hoverTile).toEqual({ tileX: 4, tileY: 2 });
     });
@@ -345,7 +357,7 @@ describe("useInput", () => {
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = { tileX: 9, tileY: 5 };
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
       expect(gameStore.hoverTile).toEqual({ tileX: 9, tileY: 5 });
     });
@@ -360,7 +372,7 @@ describe("useInput", () => {
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = null;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
       expect(gameStore.hoverTile).toEqual({ tileX: 5, tileY: 5 });
     });
@@ -374,7 +386,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [left, right] };
       gameStore.selectedTower = left as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
       expect(gameStore.selectedTower).toEqual(right);
     });
@@ -388,7 +400,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [t1, t2] };
       gameStore.selectedTower = null;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
       expect(gameStore.selectedTower).toEqual(t2);
     });
@@ -403,7 +415,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [center, diagonal, sameRow] };
       gameStore.selectedTower = center as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
       expect(gameStore.selectedTower).toEqual(sameRow);
     });
@@ -420,7 +432,7 @@ describe("useInput", () => {
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = { tileX: 5, tileY: 3 };
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
       expect(gameStore.hoverTile).toEqual({ tileX: 4, tileY: 3 });
     });
@@ -435,7 +447,7 @@ describe("useInput", () => {
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = { tileX: 0, tileY: 5 };
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
       expect(gameStore.hoverTile).toEqual({ tileX: 0, tileY: 5 });
     });
@@ -449,7 +461,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [left, right] };
       gameStore.selectedTower = right as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
       expect(gameStore.selectedTower).toEqual(left);
     });
@@ -463,7 +475,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [t1, t2] };
       gameStore.selectedTower = null;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
       expect(gameStore.selectedTower).toEqual(t1);
     });
@@ -485,7 +497,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [rightmost, leftmost] };
       gameStore.selectedTower = rightmost as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
       expect(gameStore.selectedTower).toEqual(leftmost);
     });
@@ -505,7 +517,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [rightmost, leftmost] };
       gameStore.selectedTower = leftmost as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
       expect(gameStore.selectedTower).toEqual(rightmost);
     });
@@ -525,7 +537,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [topmost, bottommost] };
       gameStore.selectedTower = topmost as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
       expect(gameStore.selectedTower).toEqual(bottommost);
     });
@@ -545,7 +557,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [topmost, bottommost] };
       gameStore.selectedTower = bottommost as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
       expect(gameStore.selectedTower).toEqual(topmost);
     });
@@ -565,7 +577,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [origin, offAxis] };
       gameStore.selectedTower = origin as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
       expect(gameStore.selectedTower).toEqual(offAxis);
     });
@@ -585,7 +597,7 @@ describe("useInput", () => {
       };
       storeRecord.towerManager = { towers: [origin, offAxis] };
       gameStore.selectedTower = origin as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
       expect(gameStore.selectedTower).toEqual(offAxis);
     });
@@ -594,42 +606,42 @@ describe("useInput", () => {
   describe("number keys 1-9 (build mode)", () => {
     it("key 1 activates first tower build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("1");
       expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
     });
 
     it("key 2 activates second tower build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("2");
       expect(gameStore.selectedTowerType).toBe(TowerIds.ICE);
     });
 
     it("key 6 activates sixth tower build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("6");
       expect(gameStore.selectedTowerType).toBe(TowerIds.RAILGUN);
     });
 
     it("key 7 wraps to first tower", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("7");
       expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
     });
 
     it("key 9 wraps to third tower", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("9");
       expect(gameStore.selectedTowerType).toBe(TowerIds.SNIPER);
     });
 
     it("non-digit keys are ignored", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("x");
       expect(gameStore.selectedTowerType).toBeNull();
     });
@@ -639,7 +651,7 @@ describe("useInput", () => {
     it("cycles build mode to next tower type", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTowerType = TowerIds.BASIC;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Tab");
       expect(gameStore.selectedTowerType).toBe(TowerIds.ICE);
     });
@@ -647,7 +659,7 @@ describe("useInput", () => {
     it("cycles from last tower back to first in build mode", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTowerType = TowerIds.RAILGUN;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Tab");
       expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
     });
@@ -655,7 +667,7 @@ describe("useInput", () => {
     it("cycles speed forward outside build mode", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.timeScale = 1;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Tab");
       expect(gameStore.timeScale).toBe(2);
     });
@@ -663,7 +675,7 @@ describe("useInput", () => {
     it("cycles speed from 8x back to 1x outside build mode", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.timeScale = 8;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Tab");
       expect(gameStore.timeScale).toBe(1);
     });
@@ -673,7 +685,7 @@ describe("useInput", () => {
     it("cycles build mode to previous tower type", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTowerType = TowerIds.ICE;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Tab", { shiftKey: true });
       expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
     });
@@ -681,7 +693,7 @@ describe("useInput", () => {
     it("cycles speed reverse outside build mode", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.timeScale = 1;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Tab", { shiftKey: true });
       expect(gameStore.timeScale).toBe(8);
     });
@@ -689,7 +701,7 @@ describe("useInput", () => {
     it("cycles speed reverse from 2x to 1x", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.timeScale = 2;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Tab", { shiftKey: true });
       expect(gameStore.timeScale).toBe(1);
     });
@@ -698,7 +710,7 @@ describe("useInput", () => {
   describe("Enter key (confirm dialog)", () => {
     it("executes confirm when dialog is active", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       uiStore.showConfirm({ title: "T", message: "M", onConfirm: () => {} });
       triggerInput("Enter");
       expect(uiStore.confirmDialog).toBeNull();
@@ -706,7 +718,7 @@ describe("useInput", () => {
 
     it("does nothing when no confirm dialog is active", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Enter");
       expect(gameStore.state).toBe(GameState.PLAYING);
     });
@@ -721,27 +733,29 @@ describe("useInput", () => {
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = { tileX: 5, tileY: 3 };
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Enter");
-      expect(engine.handleClick).toHaveBeenCalledWith(5 * 36 + 18, 3 * 36 + 18);
+      const click = lastOfType("input:click");
+      expect(click?.worldX).toBe(5 * 36 + 18);
+      expect(click?.worldY).toBe(3 * 36 + 18);
     });
 
     it("does nothing when in build mode but hoverTile is null", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = null;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Enter");
-      expect(engine.handleClick).not.toHaveBeenCalled();
+      expect(dispatched("input:click")).toBe(false);
     });
 
     it("does nothing when not in build mode", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTowerType = null;
       gameStore.hoverTile = { tileX: 5, tileY: 3 };
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("Enter");
-      expect(engine.handleClick).not.toHaveBeenCalled();
+      expect(dispatched("input:click")).toBe(false);
     });
   });
 
@@ -749,7 +763,7 @@ describe("useInput", () => {
     it("cycles timeScale forward", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.timeScale = 1;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("d");
       expect(gameStore.timeScale).toBe(2);
     });
@@ -757,27 +771,27 @@ describe("useInput", () => {
     it("cycles from 8x back to 1x", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.timeScale = 8;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("d");
       expect(gameStore.timeScale).toBe(1);
     });
   });
 
   describe("w key (upgrade)", () => {
-    it("calls engine.upgradeSelected when tower is selected", () => {
+    it("dispatches upgradeSelected when tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTower = { id: 1 } as unknown as Tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("w");
-      expect(engine.upgradeSelected).toHaveBeenCalled();
+      expect(dispatched("action:upgradeSelected")).toBe(true);
     });
 
     it("does nothing when no tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTower = null;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("w");
-      expect(engine.upgradeSelected).not.toHaveBeenCalled();
+      expect(dispatched("action:upgradeSelected")).toBe(false);
     });
   });
 
@@ -785,7 +799,7 @@ describe("useInput", () => {
     it("cycles timeScale reverse", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.timeScale = 1;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("a");
       expect(gameStore.timeScale).toBe(8);
     });
@@ -793,7 +807,7 @@ describe("useInput", () => {
     it("cycles from 2x to 1x", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.timeScale = 2;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("a");
       expect(gameStore.timeScale).toBe(1);
     });
@@ -804,56 +818,56 @@ describe("useInput", () => {
       gameStore.setState(GameState.PLAYING);
       const tower = { id: 1, targeting: "first" } as unknown as Tower;
       gameStore.selectedTower = tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("f");
-      expect(engine.setTargeting).toHaveBeenCalledWith("last");
+      expect(lastOfType("action:setTargeting")?.mode).toBe("last");
     });
 
     it("cycles through all targeting modes", () => {
       gameStore.setState(GameState.PLAYING);
       const tower = { id: 1, targeting: "last" } as unknown as Tower;
       gameStore.selectedTower = tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("f");
-      expect(engine.setTargeting).toHaveBeenCalledWith("closest");
+      expect(lastOfType("action:setTargeting")?.mode).toBe("closest");
     });
 
     it("wraps from furthest back to first", () => {
       gameStore.setState(GameState.PLAYING);
       const tower = { id: 1, targeting: "furthest" } as unknown as Tower;
       gameStore.selectedTower = tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("f");
-      expect(engine.setTargeting).toHaveBeenCalledWith("first");
+      expect(lastOfType("action:setTargeting")?.mode).toBe("first");
     });
 
     it("defaults to first when targeting is undefined", () => {
       gameStore.setState(GameState.PLAYING);
       const tower = { id: 1 } as unknown as Tower;
       gameStore.selectedTower = tower;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("f");
-      expect(engine.setTargeting).toHaveBeenCalledWith("last");
+      expect(lastOfType("action:setTargeting")?.mode).toBe("last");
     });
 
     it("does nothing when no tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTower = null;
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("f");
-      expect(engine.setTargeting).not.toHaveBeenCalled();
+      expect(dispatched("action:setTargeting")).toBe(false);
     });
   });
 
   describe("unknown keys", () => {
     it("does nothing for unknown keys", () => {
       gameStore.setState(GameState.PLAYING);
-      useInput(gameStore, engine, uiStore);
+      useInput(gameStore, dispatcher, uiStore);
       triggerInput("x");
-      expect(engine.togglePause).not.toHaveBeenCalled();
-      expect(engine.upgradeSelected).not.toHaveBeenCalled();
-      expect(engine.sellSelected).not.toHaveBeenCalled();
-      expect(engine.downgradeSelected).not.toHaveBeenCalled();
+      expect(dispatched("action:togglePause")).toBe(false);
+      expect(dispatched("action:upgradeSelected")).toBe(false);
+      expect(dispatched("action:sellSelected")).toBe(false);
+      expect(dispatched("action:downgradeSelected")).toBe(false);
     });
   });
 });

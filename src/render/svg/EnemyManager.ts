@@ -1,4 +1,4 @@
-import type { Enemy } from "../../enemies/Enemy.js";
+import type { EnemySnapshot } from "../../sim/SimulationSnapshot.js";
 import { ENEMY_POOL_SIZE, SVG_NS } from "./types.js";
 
 export class EnemyManager {
@@ -14,7 +14,7 @@ export class EnemyManager {
     }
   }
 
-  syncFromGameEngine(enemies: Enemy[]): void {
+  syncFromGameEngine(enemies: EnemySnapshot[]): void {
     let proxyIndex = 0;
 
     for (const enemy of enemies) {
@@ -41,8 +41,8 @@ export class EnemyManager {
   }
 }
 
-function computeEnemyFrame(enemy: Enemy, scaledElapsed: number): number {
-  const walking = (enemy as unknown as { walking: { duration: number; referenceImages?: unknown[] } | null }).walking;
+function computeEnemyFrame(enemy: EnemySnapshot, scaledElapsed: number): number {
+  const walking = enemy.walking;
   if (!walking || walking.duration <= 0) return 0;
   const refImages = walking.referenceImages;
   const frameCount = refImages?.length || 1;
@@ -67,7 +67,7 @@ class EnemyRenderProxy {
     return this.el;
   }
 
-  sync(enemy: Enemy): void {
+  sync(enemy: EnemySnapshot): void {
     if (!this.active) {
       this.lastSpriteId = "";
     }
@@ -76,10 +76,10 @@ class EnemyRenderProxy {
 
     const spriteSize = enemy.radius * 4;
     const halfSize = spriteSize / 2;
-    const angleDeg = enemy.moveAngle * (180 / Math.PI);
+    const angleDeg = enemy.angle * (180 / Math.PI);
     const posX = enemy.x - halfSize;
     const posY = enemy.y - halfSize;
-    const facingLeft = Math.cos(enemy.moveAngle) < 0;
+    const facingLeft = Math.cos(enemy.angle) < 0;
     let transform: string;
     if (facingLeft) {
       const adjustDeg = 180 - angleDeg;
@@ -94,17 +94,16 @@ class EnemyRenderProxy {
       this.lastTransform = transform;
     }
 
-    const hitReaction = (enemy as unknown as { hitReaction?: { duration: number; referenceImages?: unknown[] } | null })
-      .hitReaction;
+    const hitReaction = enemy.hitReaction;
     const gameSeconds = enemy.gameSeconds;
     const inHitReaction =
       hitReaction && enemy.hitAnimTime > 0 && gameSeconds - enemy.hitAnimTime < hitReaction.duration;
 
     if (inHitReaction) {
       const elapsedInHit = gameSeconds - enemy.hitAnimTime;
-      const refImages = hitReaction.referenceImages;
+      const refImages = hitReaction!.referenceImages;
       const frameCount = refImages?.length || 1;
-      const hitFrameIdx = Math.floor((elapsedInHit / hitReaction.duration) * frameCount) % frameCount;
+      const hitFrameIdx = Math.floor((elapsedInHit / hitReaction!.duration) * frameCount) % frameCount;
       const spriteId = `enemy-${enemy.type}-hit-f${hitFrameIdx}`;
       if (spriteId !== this.lastSpriteId) {
         this.el.setAttribute("href", `#${spriteId}`);

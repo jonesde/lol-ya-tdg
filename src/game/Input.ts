@@ -1,31 +1,29 @@
 import { onUnmounted } from "vue";
 import { GameState } from "@/game/Constants.js";
 import { type TowerId, TowerIds } from "@/game/ConstantsTower.js";
+import type { Command } from "@/sim/Command.js";
+import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
 import type { GameStoreLike } from "@/stores/game.js";
 import type { UiStoreLike } from "@/stores/ui.js";
 import type { Tower } from "@/towers/Tower.js";
-
-interface EngineLike {
-  togglePause?: () => void;
-  cancelBuildMode?: () => void;
-  upgradeSelected?: () => void;
-  sellSelected?: () => void;
-  downgradeSelected?: () => void;
-  setTargeting?: (mode: string) => void;
-  handleClick?: (worldX: number, worldY: number) => void;
-}
 
 const towerIdList = Object.values(TowerIds) as TowerId[];
 const targetingModes = ["first", "last", "closest", "strong", "furthest"] as const;
 
 /**
  * Keyboard input handler as a Vue composable.
- * Dispatches actions to Pinia datastores and game engine.
+ * Dispatches actions to Pinia datastores (host-authoritative UI state) and to
+ * the simulation via the CommandDispatcher seam.
  */
 const KEY_REPEAT_INTERVAL = 500;
+let nextInputCommandId = 1;
 
-export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: UiStoreLike): void {
+export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher, uiStore: UiStoreLike): void {
   let lastActionTime = 0;
+
+  const dispatch = (command: Command): void => {
+    dispatcher.dispatch(command);
+  };
 
   function canActNow(): boolean {
     const now = performance.now();
@@ -45,7 +43,7 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
         if (uiStore.showPauseMenu) {
           uiStore.closeAllDialogs();
         } else {
-          engine?.togglePause?.();
+          dispatch({ commandId: nextInputCommandId++, type: "action:togglePause" });
         }
         event.preventDefault();
         break;
@@ -61,7 +59,7 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
         ) {
           uiStore.closeAllDialogs();
         } else if (gs.selectedTowerType) {
-          engine?.cancelBuildMode?.();
+          dispatch({ commandId: nextInputCommandId++, type: "action:cancelBuildMode" });
         } else if (gs.selectedTower) {
           gs.selectedTower = null;
         } else {
@@ -111,12 +109,12 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
         break;
       case "w":
         if (canActNow() && gs.selectedTower) {
-          engine?.upgradeSelected?.();
+          dispatch({ commandId: nextInputCommandId++, type: "action:upgradeSelected" });
         }
         break;
       case "u":
         if (canActNow() && gs.selectedTower) {
-          engine?.upgradeSelected?.();
+          dispatch({ commandId: nextInputCommandId++, type: "action:upgradeSelected" });
         }
         break;
       case "a":
@@ -127,9 +125,9 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
       case "s":
         if (canActNow() && gs.selectedTower) {
           if (gs.selectedTower.level > 1) {
-            engine?.downgradeSelected?.();
+            dispatch({ commandId: nextInputCommandId++, type: "action:downgradeSelected" });
           } else {
-            engine?.sellSelected?.();
+            dispatch({ commandId: nextInputCommandId++, type: "action:sellSelected" });
           }
         }
         break;
@@ -143,7 +141,7 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
           const currentMode = gs.selectedTower.targeting || "first";
           const currentIndex = targetingModes.indexOf(currentMode as (typeof targetingModes)[number]);
           const nextIndex = (currentIndex + 1) % targetingModes.length;
-          engine?.setTargeting?.(targetingModes[nextIndex]!);
+          dispatch({ commandId: nextInputCommandId++, type: "action:setTargeting", mode: targetingModes[nextIndex]! });
         }
         break;
       case "Enter":
@@ -155,7 +153,7 @@ export function useInput(gameStore: GameStoreLike, engine: EngineLike, uiStore: 
           ).grid;
           if (grid) {
             const worldPos = grid.tileToWorld(gs.hoverTile.tileX, gs.hoverTile.tileY);
-            engine?.handleClick?.(worldPos.x, worldPos.y);
+            dispatch({ commandId: nextInputCommandId++, type: "input:click", worldX: worldPos.x, worldY: worldPos.y });
           }
         }
         break;

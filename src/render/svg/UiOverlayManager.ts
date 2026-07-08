@@ -1,7 +1,5 @@
-import type { Enemy } from "../../enemies/Enemy.js";
-import type { EnemyManager } from "../../enemies/EnemyManager.js";
 import type { Grid } from "../../grid/Grid.js";
-import type { Tower } from "../../towers/Tower.js";
+import type { EnemySnapshot, SpawnStateSnapshot, TowerSnapshot } from "../../sim/SimulationSnapshot.js";
 import { BOSS_TEXT_POOL_SIZE, HP_BAR_POOL_SIZE, SHIELD_BAR_POOL_SIZE, SVG_NS } from "./types.js";
 
 export class UiOverlayManager {
@@ -113,7 +111,7 @@ export class UiOverlayManager {
     }
   }
 
-  syncFromGameEngine(enemies: Enemy[], _selectedTower: Tower | null): void {
+  syncFromGameEngine(enemies: EnemySnapshot[], _selectedTower: TowerSnapshot | null): void {
     let barIndex = 0;
     let shieldIndex = 0;
     let bossIndex = 0;
@@ -219,10 +217,11 @@ export class UiOverlayManager {
     }
   }
 
-  syncPendingQueueOverlays(grid: Grid, enemyManager: EnemyManager): void {
+  syncPendingQueueOverlays(grid: Grid, spawnStates: SpawnStateSnapshot[]): void {
     let textIndex = 0;
     for (let spawnIndex = 0; spawnIndex < grid.spawns.length; spawnIndex++) {
-      const pendingCount = enemyManager.getPendingCountForSpawn(spawnIndex);
+      const spawnState = spawnStates[spawnIndex];
+      const pendingCount = spawnState?.pendingCount ?? 0;
       if (pendingCount <= 0) continue;
       if (textIndex >= this.pendingTextPool.length) break;
 

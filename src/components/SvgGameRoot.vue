@@ -37,6 +37,9 @@ import type { EnemyVisualMeta, TowerVisualMeta } from "@/render/themes/index.js"
 import type { ThemeBundle } from "@/sim/HostBindings.js";
 import type { PersistState } from "@/sim/PersistState.js";
 import { createDefaultPersistState } from "@/sim/PersistState.js";
+import type { SimulationSnapshot } from "@/sim/SimulationSnapshot.js";
+import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
+import { MainThreadCommandDispatcher } from "@/sim-adapters/MainThreadCommandDispatcher.js";
 import { MainThreadHostBindings } from "@/sim-adapters/MainThreadHostBindings.js";
 import { SoundManager } from "@/sound/SoundManager.js";
 import { useGameStore } from "@/stores/game.js";
@@ -117,6 +120,16 @@ let spawnManager!: SpawnManager;
 let pathHighlightsGroup: SVGGElement | null = null;
 
 let cameraTransformString = "translate(0,0) scale(1)";
+
+// Monotonic id echoed into each snapshot so a future host dispatcher can
+// correlate command application. Phase 5 has no command dispatch yet, so it
+// stays constant; Phase 6 assigns real ids when dispatching.
+let lastAppliedCommandId = 0;
+
+// Monotonic id source for click commands dispatched to the dispatcher. The
+// dispatcher reassigns ids when undefined; click handlers always supply their
+// own so each click carries a distinct commandId for tracing.
+let nextClickCommandId = 1;
 
 // Cached inverse CTM -- only recomputed when camera or view size changes
 let cachedInverseCtm: DOMMatrix | null = null;
@@ -200,7 +213,7 @@ const onMouseDown = (e: MouseEvent): void => {
   pt.y = e.clientY;
   const worldPos = pt.matrixTransform(inverseCtm);
 
-  engine.value.handleClick(worldPos.x, worldPos.y);
+  dispatcher.dispatch({ commandId: nextClickCommandId++, type: "input:click", worldX: worldPos.x, worldY: worldPos.y });
 
   lastMouseDownTime = performance.now();
   lastMouseDownX = e.clientX;
@@ -224,7 +237,7 @@ const onClick = (e: MouseEvent): void => {
   pt.y = e.clientY;
   const worldPos = pt.matrixTransform(inverseCtm);
 
-  engine.value.handleClick(worldPos.x, worldPos.y);
+  dispatcher.dispatch({ commandId: nextClickCommandId++, type: "input:click", worldX: worldPos.x, worldY: worldPos.y });
 };
 
 const resizeObserver = ref<ResizeObserver | null>(null);
@@ -262,6 +275,30 @@ function buildThemeBundle(): ThemeBundle {
   return { active: themeStore.activeTheme, defaultTowerVisuals, defaultEnemyVisuals };
 }
 
+// One-way projection: engine.runState -> snapshot -> gameStore. The simulation
+// writes to runState; this reads from the snapshot and writes to gameStore so
+// Vue components (HUD, shop, TowerPanel) see live values again. In Phase 7+
+// this becomes the reactive mirror receiving snapshots from the worker.
+//
+// Host-authoritative fields (selectedTower, selectedTowerType, hoverTile,
+// hoverUpgradeBtn, upgradeBtnClickAnim) are intentionally NOT projected here:
+// they are driven locally by Input.ts/SvgGameRoot.vue against gameStore and
+// would be clobbered by the engine's not-yet-authoritative runState mirrors.
+function projectSnapshotMeta(snapshot: SimulationSnapshot, gameStore: ReturnType<typeof useGameStore>): void {
+  const meta = snapshot.meta;
+  gameStore.state = meta.state;
+  gameStore.lives = meta.lives;
+  gameStore.gold = meta.gold;
+  gameStore.currentWave = meta.currentWave;
+  gameStore.waveCountdown = meta.waveCountdown;
+  gameStore.timeScale = meta.timeScale;
+  gameStore.runGemsEarned = meta.runGemsEarned;
+  gameStore.bossesKilledThisRun = meta.bossesKilledThisRun;
+  gameStore.bossesReachedBaseThisRun = meta.bossesReachedBaseThisRun;
+  gameStore.gemBreakdown = meta.gemBreakdown;
+  gameStore.endScreenData = meta.endScreenData;
+}
+
 onMounted(async () => {
   const sound = new SoundManager();
   soundManager.value = sound;
@@ -270,7 +307,8 @@ onMounted(async () => {
   engine.value = new GameEngine(themeBundle, new MainThreadHostBindings(sound));
   gameStore.setEngine(engine.value);
 
-  useInput(gameStore, engine.value, uiStore);
+  const dispatcher = new MainThreadCommandDispatcher(engine.value);
+  useInput(gameStore, dispatcher, uiStore);
 
   const staticContent = staticDefsContent.value;
   const mapContent = mapDefsContent.value;
@@ -332,19 +370,19 @@ onMounted(async () => {
 
     if (engine.value) {
       const eng = engine.value;
-      const dt = eng.lastScaledDt;
-      const enemies = eng.enemyManager?.enemies || [];
-      const towers = eng.towerManager?.towers || [];
-      const projectiles = eng.projectileManager?.getRenderData() || [];
-      const particles = eng.particleManager?.getRenderData() || [];
-      enemyManager.syncFromGameEngine(enemies);
-      towerManager.syncFromGameEngine(towers, dt);
-      projectileManager.syncFromGameEngine(projectiles, dt);
-      particleManager.syncFromGameEngine(particles);
+      const snapshot = buildSnapshot(eng, lastAppliedCommandId);
+      // Restore Vue reactivity: project the engine-owned scalar sim state
+      // into the Pinia gameStore so HUD / shop / TowerPanel render live values.
+      projectSnapshotMeta(snapshot, gameStore);
 
-      // Resolve selected tower from engine state
-      const selectedTower = eng.runState.selectedTowerId
-        ? (eng.towerManager?.getTowerById(eng.runState.selectedTowerId) ?? null)
+      enemyManager.syncFromGameEngine(snapshot.enemies);
+      towerManager.syncFromGameEngine(snapshot.towers, snapshot.meta.lastScaledDt);
+      projectileManager.syncFromGameEngine(snapshot.projectiles);
+      particleManager.syncFromGameEngine(snapshot.particles);
+
+      // Resolve selected tower from the snapshot (mirrors engine's selectedTowerId).
+      const selectedTower = snapshot.meta.selectedTowerId
+        ? (snapshot.towers.find((tower) => tower.id === snapshot.meta.selectedTowerId) ?? null)
         : null;
 
       effectManager.syncFromGameEngine(
@@ -353,15 +391,13 @@ onMounted(async () => {
         buildPreviewColor.value,
         selectedTower,
         buildPreviewValid.value,
-        dt,
+        snapshot.meta.lastScaledDt,
       );
-      uiOverlayManager.syncFromGameEngine(enemies, selectedTower);
-      if (eng.runState.grid && eng.enemyManager) {
-        uiOverlayManager.syncPendingQueueOverlays(eng.runState.grid, eng.enemyManager);
+      uiOverlayManager.syncFromGameEngine(snapshot.enemies, selectedTower);
+      if (eng.runState.grid) {
+        uiOverlayManager.syncPendingQueueOverlays(eng.runState.grid, snapshot.spawnStates);
       }
-      if (eng.waveManager?.spawnStates) {
-        spawnManager.sync(eng.waveManager.spawnStates);
-      }
+      spawnManager.sync(snapshot.spawnStates);
 
       // Imperative path highlights — appended to grid-layer, not Vue-managed
       const grid = eng.runState.grid;
