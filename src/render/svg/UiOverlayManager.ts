@@ -203,11 +203,13 @@ export class UiOverlayManager {
     }
 
     for (let g = hpBarGroup; g < this.hpLastTransform.length; g++) {
+      if (g * 3 + 2 >= this.hpBarPool.length) break;
       this.hpBarPool[g * 3]!.style.visibility = "hidden";
       this.hpBarPool[g * 3 + 1]!.style.visibility = "hidden";
       this.hpBarPool[g * 3 + 2]!.style.visibility = "hidden";
     }
     for (let g = shieldBarGroup; g < this.shieldLastTransform.length; g++) {
+      if (g * 3 + 2 >= this.shieldBarPool.length) break;
       this.shieldBarPool[g * 3]!.style.visibility = "hidden";
       this.shieldBarPool[g * 3 + 1]!.style.visibility = "hidden";
       this.shieldBarPool[g * 3 + 2]!.style.visibility = "hidden";
@@ -253,21 +255,30 @@ export class UiOverlayManager {
         el.parentNode.removeChild(el);
       }
     }
+    this.hpLastTransform = [];
+    this.hpLastWidth = [];
+    this.hpLastFill = [];
     for (const el of this.shieldBarPool) {
       if (el.parentNode) {
         el.parentNode.removeChild(el);
       }
     }
+    this.shieldLastTransform = [];
+    this.shieldLastWidth = [];
     for (const el of this.bossTextPool) {
       if (el.parentNode) {
         el.parentNode.removeChild(el);
       }
     }
+    this.bossLastTransform = [];
+    this.bossLastText = [];
     for (const el of this.pendingTextPool) {
       if (el.parentNode) {
         el.parentNode.removeChild(el);
       }
     }
+    this.pendingLastTransform = [];
+    this.pendingLastText = [];
     this.hpBarPool = [];
     this.shieldBarPool = [];
     this.bossTextPool = [];

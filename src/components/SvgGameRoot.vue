@@ -113,6 +113,11 @@ let uiOverlayManager!: UiOverlayManager;
 let spawnManager!: SpawnManager;
 let pathHighlightsGroup: SVGGElement | null = null;
 
+// rAF lifecycle: the render loop must be stopped when the component unmounts
+// (route change) so a late frame never touches managers that have been disposed.
+let disposed = false;
+let renderFrameHandle: number | null = null;
+
 let cameraTransformString = "translate(0,0) scale(1)";
 
 // Monotonic id source for click commands dispatched to the dispatcher. The
@@ -326,9 +331,10 @@ function handleWorkerMessage(event: MessageEvent): void {
 }
 
 function renderLoop(): void {
+  if (disposed) return;
   const snapshot = snapshotStore.get();
   if (!snapshot) {
-    requestAnimationFrame(renderLoop);
+    renderFrameHandle = requestAnimationFrame(renderLoop);
     return;
   }
 
@@ -379,7 +385,7 @@ function renderLoop(): void {
     pathHighlightsGroup.innerHTML = pathSvg;
   }
 
-  requestAnimationFrame(renderLoop);
+  renderFrameHandle = requestAnimationFrame(renderLoop);
 }
 
 let host: MainThreadHostBindings;
@@ -486,6 +492,11 @@ onMounted(async () => {
 
 onUnmounted(() => {
   pendingHoverScheduled = false;
+  disposed = true;
+  if (renderFrameHandle !== null) {
+    cancelAnimationFrame(renderFrameHandle);
+    renderFrameHandle = null;
+  }
   // Ask the worker to flush any dirty persist state and dispose, then wait for
   // the "disposed" ack before terminating so the final flush is not dropped
   // (fix #3). A short safety timeout prevents a hung worker from blocking unmount.
