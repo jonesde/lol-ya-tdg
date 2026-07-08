@@ -459,7 +459,7 @@ export class ProjectileManager {
     const dy = enemy.y - projectile.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    const maxRange = projectile.range * (this.grid?.tileSize ?? GRID_TILE_SIZE) * 2;
+    const maxRange = projectile.range * (this.grid?.tileSize ?? GRID_TILE_SIZE);
     if (dist > maxRange) {
       this.removeProjectile(projectile, "out-of-range");
       return;
@@ -511,6 +511,9 @@ export class ProjectileManager {
       if (this.particles) {
         this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, { speed: 30, life: 0.2 });
       }
+      if (projectile.isCrit && projectile.goldOnCrit > 0 && this.onGoldReward) {
+        this.onGoldReward(projectile.goldOnCrit);
+      }
       this.removeProjectile(projectile, "hit");
       return;
     }
@@ -528,6 +531,9 @@ export class ProjectileManager {
       }
       if (this.particles) {
         this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, { speed: 30, life: 0.2 });
+      }
+      if (projectile.isCrit && projectile.goldOnCrit > 0 && this.onGoldReward) {
+        this.onGoldReward(projectile.goldOnCrit);
       }
       this.removeProjectile(projectile, "hit");
       return;
@@ -571,7 +577,10 @@ export class ProjectileManager {
     }
 
     if (projectile.knockback > 0) {
-      const knockAmount = projectile.knockback * Math.max(0.1, Math.min(2, RAILGUN_KNOCK_HP_DIVISOR / enemy.maxHp));
+      const knockAmount =
+        projectile.knockback *
+        (this.grid?.tileSize ?? GRID_TILE_SIZE) *
+        Math.max(0.1, Math.min(2, RAILGUN_KNOCK_HP_DIVISOR / enemy.maxHp));
       const dx = enemy.x - projectile.x;
       const dy = enemy.y - projectile.y;
       const knockDist = Math.sqrt(dx * dx + dy * dy);

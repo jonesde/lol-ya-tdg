@@ -52,7 +52,7 @@ export class EnemyManager {
     resetEnemyId();
   }
 
-  spawn(type: string, level: number, spawnIndex: number, wave: number): Enemy {
+  spawn(type: string, level: number, spawnIndex: number, wave: number): Enemy | null {
     const enemy = new Enemy(
       type,
       level,
@@ -63,6 +63,9 @@ export class EnemyManager {
       this.theme,
       this.defaultEnemyVisuals[type] ?? null,
     );
+    if (!enemy.path) {
+      return null;
+    }
     this.enemies.push(enemy);
     this.idToEnemy.set(enemy.id, enemy);
     this.addToSpatialHash(enemy);

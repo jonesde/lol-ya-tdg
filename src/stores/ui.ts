@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { GameState } from "@/game/Constants.js";
+import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "./game";
 
 export interface UiStoreLike {
@@ -114,15 +115,14 @@ export const useUiStore = defineStore("ui", {
       const gameStore = useGameStore();
       this.wasPlayingWhenPauseOpened = gameStore.isPlaying;
       if (gameStore.isPlaying) {
-        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
+        dispatchCommand({ commandId: 0, type: "action:togglePause" });
       }
       this.showPauseMenu = true;
     },
 
     closePauseMenu() {
-      const gameStore = useGameStore();
       if (this.wasPlayingWhenPauseOpened) {
-        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
+        dispatchCommand({ commandId: 0, type: "action:togglePause" });
       }
       this.showPauseMenu = false;
       this.wasPlayingWhenPauseOpened = false;
@@ -132,16 +132,15 @@ export const useUiStore = defineStore("ui", {
       const gameStore = useGameStore();
       this.wasPlayingWhenSkillTreeOpened = this.wasPlayingWhenPauseOpened || gameStore.isPlaying;
       if (gameStore.isPlaying) {
-        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
+        dispatchCommand({ commandId: 0, type: "action:togglePause" });
       }
       this.showPauseMenu = false;
       this.showSkillTree = true;
     },
 
     closeSkillTree() {
-      const gameStore = useGameStore();
       if (this.wasPlayingWhenSkillTreeOpened) {
-        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
+        dispatchCommand({ commandId: 0, type: "action:togglePause" });
       }
       this.showSkillTree = false;
       this.wasPlayingWhenSkillTreeOpened = false;
@@ -163,7 +162,7 @@ export const useUiStore = defineStore("ui", {
       const gameStore = useGameStore();
       if (gameStore.isPlaying) {
         this.wasPlayingWhenHelpOpened = true;
-        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
+        dispatchCommand({ commandId: 0, type: "action:togglePause" });
       }
       this.showHelpDialog = true;
     },
@@ -171,7 +170,7 @@ export const useUiStore = defineStore("ui", {
     closeHelpDialog() {
       const gameStore = useGameStore();
       if (this.wasPlayingWhenHelpOpened && gameStore.state === GameState.PAUSED) {
-        gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
+        dispatchCommand({ commandId: 0, type: "action:togglePause" });
       }
       this.showHelpDialog = false;
       this.wasPlayingWhenHelpOpened = false;

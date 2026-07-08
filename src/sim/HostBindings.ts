@@ -51,6 +51,7 @@ export interface SoundPlayer {
 export interface HostBindings extends SoundPlayer {
   notifyUi(event: UiEvent): void;
   schedulePersistSave(state: PersistStateSlice): void;
+  syncGridTower(x: number, y: number, placed: boolean): void;
   requestConfirm(payload: ConfirmPayload): Promise<boolean>;
 }
 

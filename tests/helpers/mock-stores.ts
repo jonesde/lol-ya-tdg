@@ -146,6 +146,7 @@ export class MockHostBindings implements HostBindings {
   schedulePersistSave(state: PersistStateSlice): void {
     this.persistSaves.push(state);
   }
+  syncGridTower(_x: number, _y: number, _placed: boolean): void {}
   requestConfirm(payload: ConfirmPayload): Promise<boolean> {
     this.confirmPayloads.push(payload);
     return Promise.resolve(this.confirmResult);

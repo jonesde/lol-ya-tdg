@@ -97,6 +97,10 @@ export const FIXED_DT = 1 / 60;
 export const PROJECTILE_HIT_THRESHOLD = 8;
 // max accumulated time before skipping updates to prevent spiral-of-death: Math.min(MAX_ACCUM, acc) (Game.js)
 export const MAX_ACCUM = 0.1;
+// Max fixed steps processed in a single worker frame. Caps the post-timescale
+// accumulator so a slow frame can't burst dozens of steps (spiral-of-death).
+// timeScale 8 at 60fps naturally needs 8 steps/frame, so 12 leaves headroom.
+export const MAX_STEPS_PER_FRAME = 12;
 // boss reaching base costs BOSS_LIFE_LOSS lives instead of 1 (Game.js)
 export const BOSS_LIFE_LOSS = 5;
 // wave at which victory is triggered (Game.js, WaveManager.js)

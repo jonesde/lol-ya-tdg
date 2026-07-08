@@ -550,6 +550,7 @@ export class GameEngine {
           if (tower) {
             setGold(this.runState, this.runState.gold - cost);
             this.runState.selectedTowerId = String(tower.id);
+            this.host.syncGridTower(tx, ty, true);
           }
         }
       }
@@ -634,6 +635,7 @@ export class GameEngine {
     const isRefund = this.persistState.generalAddons?.sellActive === "refund";
     // Always unregister the tower from the grid/managers via sell().
     const sellValue = this.towerManager!.sell(tower, this.persistState);
+    this.host.syncGridTower(tower.tileX, tower.tileY, false);
     const val = isRefund ? tower.totalInvested : sellValue;
     this.runState.gold += val;
     this.totalGoldEarned += val;
@@ -666,6 +668,7 @@ export class GameEngine {
 
     const refund = tower.totalInvested;
     this.towerManager!.cancelBuild(tower);
+    this.host.syncGridTower(tower.tileX, tower.tileY, false);
     setGold(this.runState, this.runState.gold + refund);
     this.totalGoldEarned += refund;
     this.runState.selectedTowerId = null;

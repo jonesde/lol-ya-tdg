@@ -44,6 +44,7 @@ export class Grid {
     this.base = map.base as Point;
     this.blocked = new Set();
     this.terrainTowers = new Set();
+    this.regionId = map.regionId ?? 0;
     this.recomputePaths();
   }
 
@@ -72,6 +73,7 @@ export class Grid {
   }
 
   getHeight(x: number, y: number): number {
+    if (!this.inBounds(x, y)) return 0;
     return this.tiles[y]![x]!.height;
   }
 
@@ -138,7 +140,6 @@ export class Grid {
   }
 
   recomputePathsForTile(x: number, y: number) {
-    if (!this.paths) return;
     for (let i = 0; i < this.paths.length; i++) {
       const path = this.paths[i];
       if (path?.some((p) => p.x === x && p.y === y)) {

@@ -9,6 +9,7 @@ export type WorkerToMainMessage =
   | { type: "playSound"; name: SoundName }
   | { type: "notifyUi"; event: UiEvent }
   | { type: "schedulePersistSave"; state: PersistStateSlice }
+  | { type: "gridTowerSync"; x: number; y: number; placed: boolean }
   | { type: "requestConfirm"; payload: ConfirmPayload; requestId: number }
   | { type: "workerReady" }
   | { type: "disposed" }

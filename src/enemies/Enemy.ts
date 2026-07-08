@@ -279,8 +279,8 @@ export class Enemy {
       this.x = target.x;
       this.y = target.y;
       this.pathIdx++;
-      if (this.pathIdx < this.path.length) {
-        const next = this.path[this.pathIdx]!;
+      if (this.pathIdx + 1 < this.path.length) {
+        const next = this.path[this.pathIdx + 1]!;
         if (this.grid.blocked.has(`${next.x},${next.y}`)) {
           const newPath = this.grid.getPathFor(this.spawnIndex);
           if (newPath) {
@@ -328,6 +328,10 @@ export class Enemy {
             this.removed = true;
           }
         }
+      }
+      if (!this.removed && this.pathIdx < this.path.length - 1) {
+        const nextWaypoint = this.grid.tileToWorld(this.path[this.pathIdx + 1]!.x, this.path[this.pathIdx + 1]!.y);
+        this.moveAngle = Math.atan2(nextWaypoint.y - this.y, nextWaypoint.x - this.x);
       }
     } else {
       this.x += (deltaX / dist) * step;

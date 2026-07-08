@@ -376,7 +376,7 @@ describe("ProjectileManager", () => {
     });
 
     it("keeps projectile when target is within max range", () => {
-      const enemy = createMockEnemy({ id: 1, x: 350, y: 200, hp: 100, maxHp: 100 });
+      const enemy = createMockEnemy({ id: 1, x: 260, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
       manager = new ProjectileManager(enemyManager, particles);
 
@@ -396,7 +396,7 @@ describe("ProjectileManager", () => {
     });
 
     it("keeps projectile when target is exactly at max range boundary", () => {
-      const enemy = createMockEnemy({ id: 1, x: 360, y: 200, hp: 100, maxHp: 100 });
+      const enemy = createMockEnemy({ id: 1, x: 280, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
       manager = new ProjectileManager(enemyManager, particles);
 

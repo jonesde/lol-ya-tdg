@@ -3,6 +3,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GameState } from "@/game/Constants.js";
 import { createTestStores, createTestUiStore } from "../helpers/mock-stores";
+import { setCommandDispatcher } from "@/sim/commandBus.js";
+import { WorkerCommandDispatcher } from "@/sim/WorkerCommandDispatcher.js";
 
 describe("UiStore", () => {
   let store: ReturnType<typeof createTestUiStore>;
@@ -139,7 +141,9 @@ describe("UiStore", () => {
       stores.game.setState(GameState.PLAYING);
       const worker = { postMessage: vi.fn() } as unknown as Worker;
       stores.game.worker = worker;
+      setCommandDispatcher(new WorkerCommandDispatcher(worker));
       stores.ui.openPauseMenu();
+      setCommandDispatcher(null);
       expect(worker.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({ type: "command", command: expect.objectContaining({ type: "action:togglePause" }) }),
       );
@@ -186,7 +190,9 @@ describe("UiStore", () => {
       stores.game.setState(GameState.PLAYING);
       const worker = { postMessage: vi.fn() } as unknown as Worker;
       stores.game.worker = worker;
+      setCommandDispatcher(new WorkerCommandDispatcher(worker));
       stores.ui.openSkillTreeFromGame();
+      setCommandDispatcher(null);
       expect(worker.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({ type: "command", command: expect.objectContaining({ type: "action:togglePause" }) }),
       );

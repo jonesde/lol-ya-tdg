@@ -29,6 +29,10 @@ export class WorkerHostBindings implements HostBindings {
     self.postMessage({ type: "schedulePersistSave", state });
   }
 
+  syncGridTower(x: number, y: number, placed: boolean): void {
+    self.postMessage({ type: "gridTowerSync", x, y, placed });
+  }
+
   async requestConfirm(payload: ConfirmPayload): Promise<boolean> {
     const requestId = ++this.confirmRequestCounter;
     return new Promise<boolean>((resolve) => {

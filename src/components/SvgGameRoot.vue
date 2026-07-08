@@ -324,6 +324,14 @@ function handleWorkerMessage(event: MessageEvent): void {
     case "workerReady":
       // Worker initialized; the simulation loop is running.
       break;
+    case "gridTowerSync": {
+      const grid = gameStore.grid;
+      if (grid) {
+        if (msg.placed) grid.registerTower(msg.x, msg.y);
+        else grid.unregisterTower(msg.x, msg.y);
+      }
+      break;
+    }
     case "workerError":
       console.error("Worker error:", msg.message, msg.stack);
       break;

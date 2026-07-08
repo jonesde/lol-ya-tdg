@@ -35,6 +35,8 @@ export class MainThreadHostBindings implements HostBindings {
     }
   }
 
+  syncGridTower(_x: number, _y: number, _placed: boolean): void {}
+
   schedulePersistSave(state: PersistStateSlice): void {
     const persistStore = usePersistStore();
     // Field-by-field assignment to preserve Pinia reactivity on each field.

@@ -1,4 +1,4 @@
-import { FIXED_DT, GameState, type GameStateValue, MAX_ACCUM } from "@/game/Constants.js";
+import { FIXED_DT, GameState, type GameStateValue, MAX_ACCUM, MAX_STEPS_PER_FRAME } from "@/game/Constants.js";
 import { GameEngine } from "@/game/GameEngine.js";
 import { applyCommand } from "./applyCommand.js";
 import type { Command } from "./Command.js";
@@ -95,6 +95,7 @@ function tick(): void {
   const scaledDt = rawDt * (engine.runState.state === GameState.PAUSED ? 0 : engine.runState.timeScale);
   engine.lastScaledDt = scaledDt;
   accumulator += scaledDt;
+  accumulator = Math.min(accumulator, FIXED_DT * MAX_STEPS_PER_FRAME);
   while (accumulator >= FIXED_DT) {
     engine.update(FIXED_DT);
     accumulator -= FIXED_DT;

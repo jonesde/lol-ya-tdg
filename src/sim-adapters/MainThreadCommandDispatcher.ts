@@ -10,16 +10,12 @@ import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
 // so both the worker and this adapter share one implementation.
 export class MainThreadCommandDispatcher implements CommandDispatcher {
   private targetEngine: GameEngine;
-  private nextCommandId = 1;
 
   constructor(engine: GameEngine) {
     this.targetEngine = engine;
   }
 
   dispatch(command: Command): void {
-    if (command.commandId === undefined) {
-      (command as { commandId: number }).commandId = this.nextCommandId++;
-    }
     applyCommand(this.targetEngine, command);
   }
 }
