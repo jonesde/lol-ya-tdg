@@ -34,6 +34,8 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
       pendingCount: engine.enemyManager?.getPendingCountForSpawn(spawnIndex) ?? 0,
     })),
     paths: engine.grid?.paths ?? [],
+    lightningEffects: engine.projectileManager?.getRenderVisualEffects().lightning ?? [],
+    stunEffects: engine.projectileManager?.getRenderVisualEffects().stuns ?? [],
   };
 }
 

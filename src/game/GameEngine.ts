@@ -194,7 +194,7 @@ export class GameEngine {
       this.theme,
       this.themeBundle.defaultEnemyVisuals,
     );
-    this.projectileManager = new ProjectileManager(this.enemyManager, this.particleManager, null, null, this.grid);
+    this.projectileManager = new ProjectileManager(this.enemyManager, this.particleManager, null, this.grid);
     this.towerManager = new TowerManager(
       this.grid,
       this.particleManager,

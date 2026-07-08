@@ -184,6 +184,18 @@ export class EffectManager {
     this.syncUpgradeButton(selectedTower);
   }
 
+  syncVisualEffectsFromSnapshot(
+    lightningEffects: Array<{ x1: number; y1: number; x2: number; y2: number }>,
+    stunEffects: Array<{ x: number; y: number }>,
+  ): void {
+    for (const bolt of lightningEffects) {
+      this.addLightningEffect(bolt.x1, bolt.y1, bolt.x2, bolt.y2);
+    }
+    for (const stun of stunEffects) {
+      this.addStunEffect(stun.x, stun.y, 0.3);
+    }
+  }
+
   private syncLightning(dt: number): void {
     let slotIndex = 0;
     for (const effect of this.lightningEffects.values()) {

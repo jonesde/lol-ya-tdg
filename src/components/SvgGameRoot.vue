@@ -347,6 +347,8 @@ function renderLoop(): void {
   projectileManager.syncFromGameEngine(snapshot.projectiles);
   particleManager.syncFromGameEngine(snapshot.particles);
 
+  effectManager.syncVisualEffectsFromSnapshot(snapshot.lightningEffects, snapshot.stunEffects);
+
   const selectedTower = snapshotStore.resolveSelectedTower();
 
   effectManager.syncFromGameEngine(

@@ -80,15 +80,11 @@ describe("ProjectileManager", () => {
   let manager: ProjectileManager;
   let enemyManager: MockEnemyManager;
   let particles: MockParticleSystem;
-  let lightningSparks: Array<{ x1: number; y1: number; x2: number; y2: number }>;
 
   beforeEach(() => {
     enemyManager = createMockEnemyManager([]);
     particles = createMockParticleSystem();
-    lightningSparks = [];
-    manager = new ProjectileManager(enemyManager, particles, (x1, y1, x2, y2) => {
-      lightningSparks.push({ x1, y1, x2, y2 });
-    });
+    manager = new ProjectileManager(enemyManager, particles);
   });
 
   describe("spawn()", () => {
@@ -135,7 +131,7 @@ describe("ProjectileManager", () => {
     it("moves toward target each frame", () => {
       const enemy = createMockEnemy({ id: 1, x: 200, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -159,7 +155,7 @@ describe("ProjectileManager", () => {
     it("removes projectile when target is removed", () => {
       const enemy = createMockEnemy({ id: 1, x: 200, y: 200, hp: 100, maxHp: 100, removed: true });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -197,7 +193,7 @@ describe("ProjectileManager", () => {
       const takeDamage = vi.fn();
       enemy.takeDamage = takeDamage;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -223,7 +219,7 @@ describe("ProjectileManager", () => {
     it("spawns particles on hit", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -249,7 +245,7 @@ describe("ProjectileManager", () => {
       const takeDamage = vi.fn();
       enemy.takeDamage = takeDamage;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -279,7 +275,7 @@ describe("ProjectileManager", () => {
       enemy1.takeDamage = takeDamage1;
       enemy2.takeDamage = takeDamage2;
       enemyManager = createMockEnemyManager([enemy1, enemy2]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -309,7 +305,7 @@ describe("ProjectileManager", () => {
       const takeDamage1 = vi.fn();
       enemy1.takeDamage = takeDamage1;
       enemyManager = createMockEnemyManager([enemy1]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -336,7 +332,7 @@ describe("ProjectileManager", () => {
     it("removes projectile when target is beyond max range (no grid)", () => {
       const enemy = createMockEnemy({ id: 1, x: 5000, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -356,7 +352,7 @@ describe("ProjectileManager", () => {
     it("removes projectile when target is beyond max range (with grid)", () => {
       const enemy = createMockEnemy({ id: 1, x: 5000, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null, null, {
+      manager = new ProjectileManager(enemyManager, particles, null, {
         width: 20,
         height: 20,
         tileSize: 36,
@@ -382,7 +378,7 @@ describe("ProjectileManager", () => {
     it("keeps projectile when target is within max range", () => {
       const enemy = createMockEnemy({ id: 1, x: 350, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -402,7 +398,7 @@ describe("ProjectileManager", () => {
     it("keeps projectile when target is exactly at max range boundary", () => {
       const enemy = createMockEnemy({ id: 1, x: 360, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -429,15 +425,13 @@ describe("ProjectileManager", () => {
       enemy1.takeDamage = takeDamage1;
       enemy2.takeDamage = takeDamage2;
       enemyManager = createMockEnemyManager([enemy1, enemy2]);
-      manager = new ProjectileManager(
-        enemyManager,
-        particles,
-        (x1, y1, x2, y2) => {
-          lightningSparks.push({ x1, y1, x2, y2 });
-        },
-        null,
-        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
-      );
+      manager = new ProjectileManager(enemyManager, particles, null, {
+        width: 10,
+        height: 10,
+        tileSize: 36,
+        tiles: [],
+        blocked: new Set(),
+      });
 
       // Force non-crit so damage values are deterministic
       const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
@@ -450,8 +444,9 @@ describe("ProjectileManager", () => {
       expect(takeDamage1).toHaveBeenCalledWith(20);
       // enemy2: single chain hop from enemy1 (falloff applied once); not re-chained
       expect(takeDamage2).toHaveBeenCalledWith(20 * 0.8 ** 1);
+      const effects = manager.getRenderVisualEffects();
       // 1 tower->target flash + 1 chain hop flash
-      expect(lightningSparks).toHaveLength(2);
+      expect(effects.lightning).toHaveLength(2);
     });
 
     it("chains more hops at higher tower level", () => {
@@ -460,24 +455,22 @@ describe("ProjectileManager", () => {
       const enemy3 = createMockEnemy({ id: 3, x: 165, y: 200, hp: 10000, maxHp: 10000 });
       const enemy4 = createMockEnemy({ id: 4, x: 195, y: 200, hp: 10000, maxHp: 10000 });
       enemyManager = createMockEnemyManager([enemy1, enemy2, enemy3, enemy4]);
-      manager = new ProjectileManager(
-        enemyManager,
-        particles,
-        (x1, y1, x2, y2) => {
-          lightningSparks.push({ x1, y1, x2, y2 });
-        },
-        null,
-        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
-      );
+      manager = new ProjectileManager(enemyManager, particles, null, {
+        width: 10,
+        height: 10,
+        tileSize: 36,
+        tiles: [],
+        blocked: new Set(),
+      });
 
       // Level 1 -> tier 0 -> 2 chain hops (origin flash + 2 hops = 3 sparks)
       manager.fireLightning({ originX: 100, originY: 200, damage: 20, towerLevel: 1, targetId: 1, stunDuration: 0.1 });
-      expect(lightningSparks).toHaveLength(3);
+      expect(manager.getRenderVisualEffects().lightning).toHaveLength(3);
+      manager.clear();
 
-      lightningSparks.length = 0;
       // Level 5 -> tier 1 -> 3 chain hops (origin flash + 3 hops = 4 sparks)
       manager.fireLightning({ originX: 100, originY: 200, damage: 20, towerLevel: 5, targetId: 1, stunDuration: 0.1 });
-      expect(lightningSparks).toHaveLength(4);
+      expect(manager.getRenderVisualEffects().lightning).toHaveLength(4);
     });
   });
 
@@ -487,7 +480,7 @@ describe("ProjectileManager", () => {
       const applyBurn = vi.fn();
       enemy.applyBurn = applyBurn;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -516,7 +509,7 @@ describe("ProjectileManager", () => {
     it("applies knockback to target", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -545,7 +538,7 @@ describe("ProjectileManager", () => {
       const applyStun = vi.fn();
       enemy.applyStun = applyStun;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -568,7 +561,7 @@ describe("ProjectileManager", () => {
     it("returns only active projectiles", () => {
       const enemy = createMockEnemy({ id: 1, x: 200, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -611,7 +604,7 @@ describe("ProjectileManager", () => {
       enemyManager = createMockEnemyManager([
         { id: 1, x: 200, y: 200, hp: 100, maxHp: 100, removed: false, takeDamage: vi.fn() },
       ]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -640,56 +633,11 @@ describe("ProjectileManager", () => {
     });
   });
 
-  describe("setOnLightningFlash()", () => {
-    it("updates the callback", () => {
-      const newSparks: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
-
-      const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
-      enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, (x1, y1, x2, y2) => {
-        lightningSparks.push({ x1, y1, x2, y2 });
-      });
-
-      manager.setOnLightningFlash((x1, y1, x2, y2) => {
-        newSparks.push({ x1, y1, x2, y2 });
-      });
-
-      manager.fireLightning({ originX: 100, originY: 200, damage: 20, towerLevel: 1, targetId: 1, stunDuration: 0.1 });
-
-      expect(newSparks).toHaveLength(1);
-      expect(lightningSparks).toHaveLength(0);
-    });
-
-    it("disables callback when set to null", () => {
-      const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
-      enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, (x1, y1, x2, y2) => {
-        lightningSparks.push({ x1, y1, x2, y2 });
-      });
-
-      manager.spawn({
-        x: 100,
-        y: 200,
-        damage: 10,
-        speed: 100,
-        range: 5,
-        towerType: "railgun",
-        towerLevel: 1,
-        targetId: 1,
-      });
-
-      manager.setOnLightningFlash(null);
-      manager.update(0.016);
-
-      expect(lightningSparks).toHaveLength(0);
-    });
-  });
-
   describe("no particle system", () => {
     it("does not crash when particles is null", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, null, null);
+      manager = new ProjectileManager(enemyManager, null);
 
       manager.spawn({
         x: 100,
@@ -710,7 +658,7 @@ describe("ProjectileManager", () => {
     it("stores slowFactor and slowDuration from spawn opts", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -736,7 +684,7 @@ describe("ProjectileManager", () => {
       const applySlow = vi.fn();
       enemy.applySlow = applySlow;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -765,7 +713,7 @@ describe("ProjectileManager", () => {
       const applySlow = vi.fn();
       enemy.applySlow = applySlow;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -788,23 +736,20 @@ describe("ProjectileManager", () => {
     it("fires lightning flash for lightning tower stun", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, (x1, y1, x2, y2) => {
-        lightningSparks.push({ x1, y1, x2, y2 });
-      });
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.fireLightning({ originX: 100, originY: 200, damage: 4, towerLevel: 1, targetId: 1, stunDuration: 0.1 });
 
+      const effects = manager.getRenderVisualEffects();
       // Tower->target flash originates from the tower (origin), not the enemy pos
-      const stunFlash = lightningSparks.find((spark) => spark.x1 === 100 && spark.y1 === 200);
+      const stunFlash = effects.lightning.find((spark) => spark.x1 === 100 && spark.y1 === 200);
       expect(stunFlash).toBeDefined();
     });
 
     it("does not fire lightning flash for railgun stun", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, (x1, y1, x2, y2) => {
-        lightningSparks.push({ x1, y1, x2, y2 });
-      });
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -825,16 +770,15 @@ describe("ProjectileManager", () => {
 
       manager.update(0.016);
 
-      const stunFlash = lightningSparks.find((spark) => spark.x1 === 104 && spark.y1 === 200);
+      const effects = manager.getRenderVisualEffects();
+      const stunFlash = effects.lightning.find((spark) => spark.x1 === 104 && spark.y1 === 200);
       expect(stunFlash).toBeUndefined();
     });
 
     it("does not fire lightning flash for sniper stun", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, (x1, y1, x2, y2) => {
-        lightningSparks.push({ x1, y1, x2, y2 });
-      });
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -855,7 +799,8 @@ describe("ProjectileManager", () => {
 
       manager.update(0.016);
 
-      const stunFlash = lightningSparks.find((spark) => spark.x1 === 104 && spark.y1 === 200);
+      const effects = manager.getRenderVisualEffects();
+      const stunFlash = effects.lightning.find((spark) => spark.x1 === 104 && spark.y1 === 200);
       expect(stunFlash).toBeUndefined();
     });
   });
@@ -864,7 +809,7 @@ describe("ProjectileManager", () => {
     it("base sniper projectile has stunDuration from TOWER_BASE", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -886,7 +831,7 @@ describe("ProjectileManager", () => {
     it("sniper Marksman variant A has stunDuration", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -909,7 +854,7 @@ describe("ProjectileManager", () => {
     it("sniper Piercer variant B has stunDuration", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -936,7 +881,7 @@ describe("ProjectileManager", () => {
       const applyStun = vi.fn();
       enemy.applyStun = applyStun;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -959,7 +904,7 @@ describe("ProjectileManager", () => {
   describe("fixed-aim projectile (targetId === 0)", () => {
     it("travels toward target position without enemy lookup", () => {
       enemyManager = createMockEnemyManager([]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -984,7 +929,7 @@ describe("ProjectileManager", () => {
 
     it("does not get removed on frame one when no enemy has id 0", () => {
       enemyManager = createMockEnemyManager([]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -1009,7 +954,7 @@ describe("ProjectileManager", () => {
       const takeDamage = vi.fn();
       enemy.takeDamage = takeDamage;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -1038,7 +983,7 @@ describe("ProjectileManager", () => {
       const takeDamage2 = vi.fn();
       enemy2.takeDamage = takeDamage2;
       enemyManager = createMockEnemyManager([enemy1, enemy2]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -1064,7 +1009,7 @@ describe("ProjectileManager", () => {
 
     it("expires at target position when no enemies in path", () => {
       enemyManager = createMockEnemyManager([]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -1095,7 +1040,7 @@ describe("ProjectileManager", () => {
       const takeDamage3 = vi.fn();
       enemy3.takeDamage = takeDamage3;
       enemyManager = createMockEnemyManager([enemy1, enemy2, enemy3]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -1130,7 +1075,7 @@ describe("ProjectileManager", () => {
       const takeDamage2 = vi.fn();
       enemy2.takeDamage = takeDamage2;
       enemyManager = createMockEnemyManager([enemy1, enemy2]);
-      manager = new ProjectileManager(enemyManager, particles, null, null, {
+      manager = new ProjectileManager(enemyManager, particles, null, {
         width: 10,
         height: 10,
         tileSize: 36,
@@ -1165,7 +1110,7 @@ describe("ProjectileManager", () => {
       const takeDamage = vi.fn();
       enemy.takeDamage = takeDamage;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
       manager.spawn({
@@ -1190,7 +1135,7 @@ describe("ProjectileManager", () => {
       const takeDamage = vi.fn();
       enemy.takeDamage = takeDamage;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
       manager.spawn({
@@ -1224,7 +1169,7 @@ describe("ProjectileManager", () => {
       const takeDamage3 = vi.fn();
       enemy3.takeDamage = takeDamage3;
       enemyManager = createMockEnemyManager([enemy1, enemy2, enemy3]);
-      manager = new ProjectileManager(enemyManager, particles, null);
+      manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
         x: 100,
@@ -1275,15 +1220,13 @@ describe("ProjectileManager", () => {
       });
 
       enemyManager = createMockEnemyManager(enemies);
-      manager = new ProjectileManager(
-        enemyManager,
-        particles,
-        (x1, y1, x2, y2) => {
-          lightningSparks.push({ x1, y1, x2, y2 });
-        },
-        null,
-        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
-      );
+      manager = new ProjectileManager(enemyManager, particles, null, {
+        width: 10,
+        height: 10,
+        tileSize: 36,
+        tiles: [],
+        blocked: new Set(),
+      });
 
       const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
       // chain:1 -> a single chain hop that must target the nearest (enemy2)
@@ -1311,15 +1254,13 @@ describe("ProjectileManager", () => {
         enemies.push(createMockEnemy({ id: i, x: 100 + i * 2, y: 200, hp: 10000, maxHp: 10000 }));
       }
       enemyManager = createMockEnemyManager(enemies);
-      manager = new ProjectileManager(
-        enemyManager,
-        particles,
-        (x1, y1, x2, y2) => {
-          lightningSparks.push({ x1, y1, x2, y2 });
-        },
-        null,
-        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
-      );
+      manager = new ProjectileManager(enemyManager, particles, null, {
+        width: 10,
+        height: 10,
+        tileSize: 36,
+        tiles: [],
+        blocked: new Set(),
+      });
 
       // chain:5 at tier 0 -> 5 chain hops + 1 tower->target flash = 6 sparks
       manager.fireLightning({
@@ -1331,7 +1272,7 @@ describe("ProjectileManager", () => {
         stunDuration: 0.1,
         chain: 5,
       });
-      expect(lightningSparks).toHaveLength(6);
+      expect(manager.getRenderVisualEffects().lightning).toHaveLength(6);
     });
 
     it("stormcall strikes a random enemy in a wide area", () => {
@@ -1344,15 +1285,13 @@ describe("ProjectileManager", () => {
       wideEnemy.applyStun = applyStunWide;
 
       enemyManager = createMockEnemyManager([target, chainEnemy, wideEnemy]);
-      manager = new ProjectileManager(
-        enemyManager,
-        particles,
-        (x1, y1, x2, y2) => {
-          lightningSparks.push({ x1, y1, x2, y2 });
-        },
-        null,
-        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
-      );
+      manager = new ProjectileManager(enemyManager, particles, null, {
+        width: 10,
+        height: 10,
+        tileSize: 36,
+        tiles: [],
+        blocked: new Set(),
+      });
 
       const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
       manager.fireLightning({
@@ -1370,6 +1309,13 @@ describe("ProjectileManager", () => {
       // stormcall wide range (3*72 = 216px), so it must be struck.
       expect(takeDamageWide).toHaveBeenCalledWith(20 * CHAIN_DAMAGE_FALLOFF);
       expect(applyStunWide).toHaveBeenCalledWith(0.1);
+      const effects = manager.getRenderVisualEffects();
+      // chain hop flash + stormcall flash + tower->target flash = 3 lightning bolts
+      expect(effects.lightning).toHaveLength(3);
+      // stun effect on wideEnemy
+      expect(effects.stuns).toHaveLength(3);
+      expect(effects.stuns.map((s) => s.x).includes(wideEnemy.x)).toBe(true);
+      expect(effects.stuns.map((s) => s.y).includes(wideEnemy.y)).toBe(true);
     });
   });
 });

@@ -17,6 +17,11 @@ export interface SimulationSnapshot {
   // blocks a path. The main thread renders path highlights from this rather than
   // its own Grid copy, so the highlight stays in sync with the simulation.
   paths: Array<Array<{ x: number; y: number }> | null>;
+  // Ephemeral visual effects generated this tick: lightning bolt segments and
+  // stun aura positions. Cleared each tick on the worker side; the main thread
+  // renders them once and discards.
+  lightningEffects: Array<{ x1: number; y1: number; x2: number; y2: number }>;
+  stunEffects: Array<{ x: number; y: number }>;
 }
 
 export interface SnapshotMeta {

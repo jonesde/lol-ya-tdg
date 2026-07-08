@@ -77,7 +77,6 @@ interface ProjectileManagerRef {
     chain?: number;
     stormcall?: boolean;
   }): void;
-  setOnLightningFlash(callback: (startX: number, startY: number, endX: number, endY: number) => void): void;
 }
 
 interface GridRef {

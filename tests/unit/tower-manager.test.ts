@@ -100,12 +100,7 @@ describe("TowerManager", () => {
 
     particles = makeParticleSystem();
     sound = makeSoundManager();
-    const projectiles = {
-      spawn: () => {},
-      fireLightning: () => {},
-      spawnLightningFlash: () => {},
-      setOnLightningFlash: () => {},
-    };
+    const projectiles = { spawn: () => {}, fireLightning: () => {}, spawnLightningFlash: () => {} };
     manager = new TowerManager(realGrid, particles, projectiles, sound);
   });
 

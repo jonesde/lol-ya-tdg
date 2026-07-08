@@ -130,25 +130,36 @@ export interface ParticleSystem {
   spawn(x: number, y: number, color: string, count: number, opts: { speed: number; life: number }): void;
 }
 
-export type OnLightningFlashCallback = (startX: number, startY: number, endX: number, endY: number) => void;
 export type OnStunEffectCallback = (x: number, y: number, duration: number) => void;
 export type OnGoldRewardCallback = (amount: number) => void;
+
+export interface LightningVisualEffect {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+export interface StunVisualEffect {
+  x: number;
+  y: number;
+}
 
 export class ProjectileManager {
   private projectiles: ProjectileGame[];
   private enemyManager: EnemyManager;
   private particles: ParticleSystem | null;
   private grid: GridRef | null;
-  private onLightningFlash: OnLightningFlashCallback | null;
   private onStunEffect: OnStunEffectCallback | null;
   private onGoldReward: OnGoldRewardCallback | null;
   private nextProjectileId: number;
   private towerLookup: ((towerId: string) => Tower | null) | null = null;
+  private pendingLightning: LightningVisualEffect[];
+  private pendingStuns: StunVisualEffect[];
 
   constructor(
     enemyManager: EnemyManager,
     particles: ParticleSystem | null,
-    onLightningFlash: OnLightningFlashCallback | null,
     towerLookup: ((towerId: string) => Tower | null) | null = null,
     grid: GridRef | null = null,
   ) {
@@ -156,11 +167,12 @@ export class ProjectileManager {
     this.enemyManager = enemyManager;
     this.particles = particles;
     this.grid = grid;
-    this.onLightningFlash = onLightningFlash;
     this.onStunEffect = null;
     this.onGoldReward = null;
     this.nextProjectileId = 1;
     this.towerLookup = towerLookup;
+    this.pendingLightning = [];
+    this.pendingStuns = [];
   }
 
   setOnGoldReward(callback: OnGoldRewardCallback | null): void {
@@ -169,10 +181,6 @@ export class ProjectileManager {
 
   setTowerLookup(callback: ((towerId: string) => Tower | null) | null): void {
     this.towerLookup = callback;
-  }
-
-  setOnLightningFlash(callback: OnLightningFlashCallback | null): void {
-    this.onLightningFlash = callback;
   }
 
   setOnStunEffect(callback: OnStunEffectCallback | null): void {
@@ -376,6 +384,7 @@ export class ProjectileManager {
       projectile.age += dt;
       this.updateCircleProjectile(projectile, dt);
     }
+    this.clearVisualEffects();
   }
 
   private updateCircleProjectile(projectile: ProjectileGame, dt: number): void {
@@ -701,9 +710,7 @@ export class ProjectileManager {
       if (opts.burnCircuit && nextTarget.applyBurn) {
         nextTarget.applyBurn(chainDamage * BURN_CIRCUIT_DMG_MULT, BURN_CIRCUIT_DURATION);
       }
-      if (this.onLightningFlash) {
-        this.onLightningFlash(current.x, current.y, nextTarget.x, nextTarget.y);
-      }
+      this.pendingLightning.push({ x1: current.x, y1: current.y, x2: nextTarget.x, y2: nextTarget.y });
       chainsUsed++;
       remainingChains--;
       current = nextTarget;
@@ -729,20 +736,16 @@ export class ProjectileManager {
         if (this.particles) {
           this.particles.spawn(stormTarget.x, stormTarget.y, "#ffcf4d", 3, { speed: 30, life: 0.2 });
         }
-        if (this.onLightningFlash) {
-          this.onLightningFlash(opts.originX, opts.originY, stormTarget.x, stormTarget.y);
-        }
+        this.pendingLightning.push({ x1: opts.originX, y1: opts.originY, x2: stormTarget.x, y2: stormTarget.y });
       }
     }
 
     if (opts.stunDuration > 0) {
       for (const target of chainTargets) {
         if (target.applyStun) target.applyStun(opts.stunDuration);
-        if (this.onStunEffect) this.onStunEffect(target.x, target.y, opts.stunDuration);
+        this.pendingStuns.push({ x: target.x, y: target.y });
       }
-      if (this.onLightningFlash) {
-        this.onLightningFlash(opts.originX, opts.originY, current.x, current.y);
-      }
+      this.pendingLightning.push({ x1: opts.originX, y1: opts.originY, x2: current.x, y2: current.y });
     }
 
     // Double Discharge: 10% chance to fire a second bolt to a different target
@@ -765,9 +768,7 @@ export class ProjectileManager {
         if (opts.stunDuration > 0 && secondTarget.applyStun) {
           secondTarget.applyStun(opts.stunDuration);
         }
-        if (this.onLightningFlash) {
-          this.onLightningFlash(opts.originX, opts.originY, secondTarget.x, secondTarget.y);
-        }
+        this.pendingLightning.push({ x1: opts.originX, y1: opts.originY, x2: secondTarget.x, y2: secondTarget.y });
       }
     }
   }
@@ -862,7 +863,18 @@ export class ProjectileManager {
     return result;
   }
 
+  getRenderVisualEffects(): { lightning: LightningVisualEffect[]; stuns: StunVisualEffect[] } {
+    return { lightning: [...this.pendingLightning], stuns: [...this.pendingStuns] };
+  }
+
+  private clearVisualEffects(): void {
+    this.pendingLightning = [];
+    this.pendingStuns = [];
+  }
+
   clear(): void {
     this.projectiles = [];
+    this.pendingLightning = [];
+    this.pendingStuns = [];
   }
 }
