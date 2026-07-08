@@ -273,7 +273,7 @@ export function maxLevelFor(save: PersistState, towerId: string, variant: "A" | 
 }
 
 export const GENERAL_ADDON_CATEGORIES: Record<string, GeneralAddonCategory> = {
-  economy: { label: "Economy", addons: ["startingGold", "sellOption", "upgradeCostReduction"] },
+  economy: { label: "Economy", addons: ["sellOption", "startingGold", "upgradeCostReduction"] },
   health: { label: "Health", addons: ["extraHealth", "slowHealing"] },
   damage: { label: "Damage", addons: ["terrainHeightBonus", "terrainHeightRangeBonus", "damageMilestoneBonus"] },
 };
