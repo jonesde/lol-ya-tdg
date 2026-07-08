@@ -11,10 +11,12 @@ export type Command =
   // ---- Input events (low-level, from Input.ts and SvgGameRoot click handlers) ----
   | { commandId: number; type: "input:click"; worldX: number; worldY: number }
   | { commandId: number; type: "input:key"; key: string; direction: "down" | "up" }
-  // NOTE: hover is NOT a command — it's main-thread-only UI state (see §6.2 of ArchitecturePlan.md)
-  // NOTE: selectBuildType is NOT a command — `selectedTowerType` is host-authoritative
-  //   (updated directly on gameStore by Input.ts/SvgGameRoot.vue, echoed back in the
-  //   snapshot's meta.selectedTowerType unchanged by the worker). See §6.2 of ArchitecturePlan.md.
+  // NOTE: hover is NOT a command — it's main-thread-only UI state (see §6.2 of ArchitecturePlan.md).
+  // NOTE: selectBuildType IS a command (action:selectBuildType) — the main thread sets
+  //   gameStore.selectedTowerType for the local build preview AND dispatches this command so the
+  //   worker learns the active build type (the worker needs it to place towers on input:click).
+  //   The worker is authoritative for runState.selectedTowerType; the snapshot mirrors it back
+  //   into gameStore so build mode clears on off-grid / existing-tower clicks. See fix #1.
 
   // ---- High-level actions (wrapping GameEngine public methods) ----
   | { commandId: number; type: "action:togglePause" }
@@ -28,11 +30,9 @@ export type Command =
   | { commandId: number; type: "action:setTargeting"; mode: string }
   | { commandId: number; type: "action:setFixedAimDir"; dir: "N" | "E" | "S" | "W" | null }
   | { commandId: number; type: "action:cancelBuildMode" }
-  // @tech-debt PHASE 6 STUB — this command variant is DEFINED in the schema
-  // here in Phase 5 but is NOT DISPATCHED by Phase 6's applyCommand (it's a
-  // no-op `break` there). Phase 7 implements engine.selectTowerById(id) and
-  // wires this case. For Phase 6, the existing gameStore.selectTower(tower)
-  // calls in Input.ts and SvgGameRoot.vue stay direct (not via the dispatcher).
+  | { commandId: number; type: "action:selectBuildType"; towerType: string | null }
+  // action:selectTower is implemented (Phase 7) via engine.selectTowerById; it is dispatched
+  // by Input.ts / SvgGameRoot.vue for keyboard and click tower selection.
   | { commandId: number; type: "action:selectTower"; towerId: string | null }
 
   // ---- Lifecycle ----

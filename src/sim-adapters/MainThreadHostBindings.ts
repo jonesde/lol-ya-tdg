@@ -1,3 +1,4 @@
+import type { EndScreenPayload } from "@/sim/GameRunState.js";
 import type { ConfirmPayload, HostBindings, PersistStateSlice, SoundName, UiEvent } from "@/sim/HostBindings.js";
 import type { SoundManager } from "@/sound/SoundManager.js";
 import { useGameStore } from "@/stores/game.js";
@@ -28,7 +29,7 @@ export class MainThreadHostBindings implements HostBindings {
       case "endGame": {
         const gameStore = useGameStore();
         const { victory, ...data } = event.payload;
-        gameStore.triggerEnd(victory, data as any);
+        gameStore.triggerEnd(victory, data as Omit<EndScreenPayload, "victory">);
         break;
       }
     }

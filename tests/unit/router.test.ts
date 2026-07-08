@@ -48,9 +48,14 @@ function createRouterWithGuards(
     // Capture terminal state BEFORE dispose() overwrites it with MENU
     const prevState = gameStore.state;
 
-    // Leaving /game — stop engine and save progress
+    // Leaving /game — dispose the worker, terminate it, and save progress
     if (from.name === "game" && to.name !== "game") {
-      gameStore.engine?.dispose();
+      const worker = gameStore.worker;
+      if (worker) {
+        worker.postMessage({ type: "dispose" });
+        worker.terminate();
+        gameStore.clearWorker();
+      }
       persistStore.save();
     }
 
@@ -100,19 +105,26 @@ describe("Router — navigation guards", () => {
   });
 
   describe("leaving /game", () => {
-    it("calls engine.dispose() when leaving game route", async () => {
-      const disposeMock = vi.fn();
-      gameStore.engine = { dispose: disposeMock } as never;
+    function makeMockWorker() {
+      return { postMessage: vi.fn(), terminate: vi.fn() } as unknown as Worker;
+    }
+
+    it("posts dispose and terminates worker when leaving game route", async () => {
+      const worker = makeMockWorker();
+      gameStore.worker = worker;
       gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
       gameStore.mapIndex = 0;
       await router.push("/game");
       await router.push("/map-select");
-      expect(disposeMock).toHaveBeenCalled();
+      expect(worker.postMessage).toHaveBeenCalledWith({ type: "dispose" });
+      expect(worker.terminate).toHaveBeenCalled();
+      expect(gameStore.worker).toBeNull();
     });
 
     it("calls persistStore.save() when leaving game route", async () => {
       const saveMock = vi.spyOn(persistStore, "save");
-      gameStore.engine = { dispose: vi.fn() } as never;
+      const worker = makeMockWorker();
+      gameStore.worker = worker;
       gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
       gameStore.mapIndex = 0;
       await router.push("/game");
@@ -120,15 +132,16 @@ describe("Router — navigation guards", () => {
       expect(saveMock).toHaveBeenCalled();
     });
 
-    it("does not dispose/save when navigating game->game", async () => {
-      const disposeMock = vi.fn();
+    it("does not dispose or save when navigating game->game", async () => {
+      const worker = makeMockWorker();
       const saveMock = vi.spyOn(persistStore, "save");
-      gameStore.engine = { dispose: disposeMock } as never;
+      gameStore.worker = worker;
       gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
       gameStore.mapIndex = 0;
       await router.push("/game");
       await router.push("/game");
-      expect(disposeMock).not.toHaveBeenCalled();
+      expect(worker.postMessage).not.toHaveBeenCalled();
+      expect(worker.terminate).not.toHaveBeenCalled();
       expect(saveMock).not.toHaveBeenCalled();
     });
   });
@@ -140,20 +153,18 @@ describe("Router — navigation guards", () => {
       expect(router.currentRoute.value.path).toBe("/game-over");
     });
 
-    it("redirects to /game-over even when dispose resets state to MENU", async () => {
+    it("redirects to /game-over even when navigating from /game", async () => {
       // Start in PLAYING so we can navigate to /game first
       gameStore.state = GameState.PLAYING;
       gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
       gameStore.mapIndex = 0;
-      const disposeMock = vi.fn(() => {
-        gameStore.setState(GameState.MENU);
-      });
-      gameStore.engine = { dispose: disposeMock } as never;
+      const worker = { postMessage: vi.fn(), terminate: vi.fn() } as unknown as Worker;
+      gameStore.worker = worker;
       await router.push("/game");
       // Now set terminal state and navigate away
       gameStore.state = GameState.GAME_OVER;
       await router.push("/map-select");
-      expect(disposeMock).toHaveBeenCalled();
+      expect(worker.postMessage).toHaveBeenCalledWith({ type: "dispose" });
       expect(router.currentRoute.value.path).toBe("/game-over");
     });
 
@@ -177,20 +188,18 @@ describe("Router — navigation guards", () => {
       expect(router.currentRoute.value.path).toBe("/victory");
     });
 
-    it("redirects to /victory even when dispose resets state to MENU", async () => {
+    it("redirects to /victory even when navigating from /game", async () => {
       // Start in PLAYING so we can navigate to /game first
       gameStore.state = GameState.PLAYING;
       gameStore.map = { name: "Test Map", regionId: 0 } as unknown as GeneratedMap;
       gameStore.mapIndex = 0;
-      const disposeMock = vi.fn(() => {
-        gameStore.setState(GameState.MENU);
-      });
-      gameStore.engine = { dispose: disposeMock } as never;
+      const worker = { postMessage: vi.fn(), terminate: vi.fn() } as unknown as Worker;
+      gameStore.worker = worker;
       await router.push("/game");
       // Now set terminal state and navigate away
       gameStore.state = GameState.VICTORY;
       await router.push("/map-select");
-      expect(disposeMock).toHaveBeenCalled();
+      expect(worker.postMessage).toHaveBeenCalledWith({ type: "dispose" });
       expect(router.currentRoute.value.path).toBe("/victory");
     });
 

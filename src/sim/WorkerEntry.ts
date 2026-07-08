@@ -92,6 +92,7 @@ function tick(): void {
   // Fixed-timestep accumulator. timeScale comes from runState, which input
   // commands may have updated.
   const scaledDt = rawDt * (engine.runState.state === GameState.PAUSED ? 0 : engine.runState.timeScale);
+  engine.lastScaledDt = scaledDt;
   accumulator += scaledDt;
   while (accumulator >= FIXED_DT) {
     engine.update(FIXED_DT);
@@ -211,7 +212,9 @@ self.onmessage = (event: MessageEvent<MainToWorkerMessage>) => {
         engine.dispose();
         engine = null;
       }
-      postMessage({ type: "workerReady" }); // signal safe to terminate
+      // Signal the main thread that it is safe to terminate — the final persist
+      // flush (if any) has been posted. Fix #3.
+      postMessage({ type: "disposed" });
       break;
     }
   }

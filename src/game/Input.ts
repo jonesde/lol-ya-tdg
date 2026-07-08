@@ -4,12 +4,21 @@ import { type TowerId, TowerIds } from "@/game/ConstantsTower.js";
 import type { Command } from "@/sim/Command.js";
 import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
+import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import type { GameStoreLike } from "@/stores/game.js";
 import type { UiStoreLike } from "@/stores/ui.js";
-import type { Tower } from "@/towers/Tower.js";
 
 const towerIdList = Object.values(TowerIds) as TowerId[];
 const targetingModes = ["first", "last", "closest", "strong", "furthest"] as const;
+
+// Sets the local build-type preview AND informs the worker via the command seam
+// so it can place towers on input:click. The snapshot mirrors runState.selectedTowerType
+// back into gameStore for the worker-cleared cases (off-grid / existing-tower clicks,
+// cancelBuildMode). Fix #1.
+function selectBuildType(gameStore: GameStoreLike, type: TowerId | null): void {
+  gameStore.selectBuildType(type);
+  dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectBuildType", towerType: type });
+}
 
 /**
  * Keyboard input handler as a Vue composable.
@@ -73,8 +82,10 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         } else {
           if (event.shiftKey) {
             gs.cycleSpeedReverse();
+            dispatch({ commandId: nextInputCommandId++, type: "action:cycleSpeed", direction: -1 });
           } else {
             gs.cycleSpeed();
+            dispatch({ commandId: nextInputCommandId++, type: "action:cycleSpeed", direction: 1 });
           }
         }
         event.preventDefault();
@@ -121,6 +132,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
       case "a":
         if (canActNow()) {
           gs.cycleSpeedReverse();
+          dispatch({ commandId: nextInputCommandId++, type: "action:cycleSpeed", direction: -1 });
         }
         break;
       case "s":
@@ -135,6 +147,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
       case "d":
         if (canActNow()) {
           gs.cycleSpeed();
+          dispatch({ commandId: nextInputCommandId++, type: "action:cycleSpeed", direction: 1 });
         }
         break;
       case "f":
@@ -162,7 +175,8 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         const digit = parseInt(event.key, 10);
         if (digit >= 1 && digit <= 9) {
           const towerIndex = (digit - 1) % towerIdList.length;
-          gs.selectBuildType(towerIdList[towerIndex]!);
+          const towerType = towerIdList[towerIndex]!;
+          selectBuildType(gs, gs.selectedTowerType === towerType ? null : towerType);
           if (gs.selectedTower && !gs.hoverTile) {
             gs.setHoverTile({ tileX: gs.selectedTower.tileX, tileY: gs.selectedTower.tileY });
           }
@@ -189,14 +203,14 @@ function handleTabCycle(gameStore: GameStoreLike, previous: boolean): void {
     const towerIndex = towerIdList.indexOf(gameStore.selectedTowerType);
     const offset = previous ? -1 : 1;
     const nextIndex = (towerIndex + offset + towerIdList.length) % towerIdList.length;
-    gameStore.selectBuildType(towerIdList[nextIndex]!);
+    selectBuildType(gameStore, towerIdList[nextIndex]!);
     return;
   }
 
-  const towerManager = gameStore.towerManager;
-  if (!towerManager || towerManager.towers.length === 0) return;
+  const towers = getNavigableTowers(gameStore);
+  if (towers.length === 0) return;
 
-  const sortedTowers = [...towerManager.towers].sort((a, b) => {
+  const sortedTowers = [...towers].sort((a, b) => {
     if (a.tileY !== b.tileY) return a.tileY - b.tileY;
     return a.tileX - b.tileX;
   });
@@ -243,7 +257,7 @@ function moveBuildPosition(gameStore: GameStoreLike, dx: number, dy: number): vo
   tileX = Math.max(0, Math.min(tileX, grid.width - 1));
   tileY = Math.max(0, Math.min(tileY, grid.height - 1));
 
-  const towerAtNewPos = gameStore.towerManager?.towerAt(tileX, tileY);
+  const towerAtNewPos = getNavigableTowers(gameStore).find((tower) => tower.tileX === tileX && tower.tileY === tileY);
   if (towerAtNewPos) {
     dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: towerAtNewPos.id });
   }
@@ -294,12 +308,25 @@ function buildSearchOrder(direction: Direction): Array<{ dx: number; dy: number 
   return searchOrder;
 }
 
+type TowerLite = { id: string; tileX: number; tileY: number };
+
+// Tower navigation (Tab / arrow keys) reads the snapshot projection in the
+// worker build (the live manager is null on the main thread). Fall back to the
+// live manager when no snapshot is available (legacy / test path). Fix #5.
+function getNavigableTowers(gameStore: GameStoreLike): TowerLite[] {
+  const snapshot = getLatestSnapshot();
+  if (snapshot && snapshot.towers.length > 0) return snapshot.towers;
+  const manager = gameStore.towerManager;
+  if (manager && manager.towers.length > 0) return manager.towers;
+  return [];
+}
+
 function searchTowers(
   searchOrder: Array<{ dx: number; dy: number }>,
   originX: number,
   originY: number,
-  towerSet: Map<string, Tower>,
-): Tower | null {
+  towerSet: Map<string, TowerLite>,
+): TowerLite | null {
   for (const offset of searchOrder) {
     const target = towerSet.get(`${originX + offset.dx},${originY + offset.dy}`);
     if (target) {
@@ -310,12 +337,12 @@ function searchTowers(
 }
 
 function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): void {
-  const towerManager = gameStore.towerManager;
-  if (!towerManager || towerManager.towers.length === 0) return;
+  const towers = getNavigableTowers(gameStore);
+  if (towers.length === 0) return;
 
   const selected = gameStore.selectedTower;
   if (!selected) {
-    const sorted = [...towerManager.towers].sort((a, b) => {
+    const sorted = [...towers].sort((a, b) => {
       if (direction === "up") return a.tileY - b.tileY || a.tileX - b.tileX;
       if (direction === "down") return b.tileY - a.tileY || a.tileX - b.tileX;
       if (direction === "left") return a.tileX - b.tileX || a.tileY - b.tileY;
@@ -327,8 +354,8 @@ function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): voi
 
   const originX = selected.tileX;
   const originY = selected.tileY;
-  const towerSet = new Map<string, Tower>();
-  for (const tower of towerManager.towers) {
+  const towerSet = new Map<string, TowerLite>();
+  for (const tower of towers) {
     if (tower.id !== selected.id) {
       towerSet.set(`${tower.tileX},${tower.tileY}`, tower);
     }

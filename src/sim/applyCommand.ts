@@ -1,3 +1,4 @@
+import type { TowerId } from "@/game/ConstantsTower.js";
 import type { GameEngine } from "@/game/GameEngine.js";
 import type { Command } from "./Command.js";
 
@@ -50,11 +51,12 @@ export function applyCommand(engine: GameEngine, command: Command): void {
     case "action:cancelBuildMode":
       engine.cancelBuildMode();
       break;
-    // NOTE: action:selectBuildType is intentionally absent — selectedTowerType
-    // is host-authoritative (updated directly on gameStore by Input.ts /
-    // SvgGameRoot.vue on the main thread, echoed back in the snapshot's
-    // meta.selectedTowerType unchanged by the worker). The worker does NOT
-    // write selectedTowerType.
+    case "action:selectBuildType":
+      // The worker is authoritative for runState.selectedTowerType; the main thread
+      // sets gameStore.selectedTowerType for the local build preview and dispatches
+      // this command so the worker can place towers on input:click. Fix #1.
+      engine.runState.selectedTowerType = command.towerType as TowerId | null;
+      break;
     case "action:selectTower":
       // Phase 7 implements selectTowerById (was tech debt in Phase 6).
       engine.selectTowerById(command.towerId);

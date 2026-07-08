@@ -11,6 +11,7 @@ export type WorkerToMainMessage =
   | { type: "schedulePersistSave"; state: PersistStateSlice }
   | { type: "requestConfirm"; payload: ConfirmPayload; requestId: number }
   | { type: "workerReady" }
+  | { type: "disposed" }
   | { type: "workerError"; message: string; stack?: string };
 
 // Main → Worker

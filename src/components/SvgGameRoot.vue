@@ -119,6 +119,8 @@ let cameraTransformString = "translate(0,0) scale(1)";
 // dispatcher reassigns ids when undefined; click handlers always supply their
 // own so each click carries a distinct commandId for tracing.
 let nextClickCommandId = 1;
+// Separate id source for sell-confirm-initiated executeSell commands (fix #7).
+let nextConfirmCommandId = 1;
 
 // Cached inverse CTM -- only recomputed when camera or view size changes
 let cachedInverseCtm: DOMMatrix | null = null;
@@ -294,8 +296,18 @@ function handleWorkerMessage(event: MessageEvent): void {
       host.schedulePersistSave(msg.state);
       break;
     case "requestConfirm": {
-      // The main-thread host shows the dialog and posts the result back.
+      // The main-thread host shows the dialog. On confirm we dispatch an
+      // action:executeSell command (the worker re-validates and performs the
+      // sell through the command seam — fix #7). We always post the result back
+      // so the worker can clear its pending-confirm entry.
       host.requestConfirm(msg.payload).then((confirmed) => {
+        if (confirmed && dispatcher) {
+          dispatcher.dispatch({
+            commandId: nextConfirmCommandId++,
+            type: "action:executeSell",
+            towerId: msg.payload.towerId,
+          });
+        }
         worker?.postMessage({ type: "confirmResult", requestId: msg.requestId, confirmed });
       });
       break;
@@ -463,8 +475,27 @@ onMounted(async () => {
 
 onUnmounted(() => {
   pendingHoverScheduled = false;
-  worker?.postMessage({ type: "dispose" });
-  worker?.terminate();
+  // Ask the worker to flush any dirty persist state and dispose, then wait for
+  // the "disposed" ack before terminating so the final flush is not dropped
+  // (fix #3). A short safety timeout prevents a hung worker from blocking unmount.
+  const workerRef = worker;
+  if (workerRef) {
+    const disposeDone = new Promise<void>((resolve) => {
+      const onDisposed = (event: MessageEvent): void => {
+        const data = event.data as { type?: string } | null;
+        if (data && data.type === "disposed") {
+          workerRef.removeEventListener("message", onDisposed);
+          resolve();
+        }
+      };
+      workerRef.addEventListener("message", onDisposed);
+      workerRef.postMessage({ type: "dispose" });
+      setTimeout(resolve, 500);
+    });
+    void disposeDone.then(() => {
+      workerRef.terminate();
+    });
+  }
   gameStore.clearWorker();
   setCommandDispatcher(null);
   worker = null;

@@ -6,6 +6,7 @@ import {
   type RouteRecordRaw,
 } from "vue-router";
 import { GameState } from "@/game/Constants.js";
+import type { WorkerToMainMessage } from "@/sim/WorkerProtocol.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -27,7 +28,7 @@ const routes: RouteRecordRaw[] = [
 
 const router = createRouter({ history: createWebHistory(), routes });
 
-router.beforeEach((to: RouteLocationNormalized, from: RouteLocationNormalized, next: NavigationGuardNext) => {
+router.beforeEach(async (to: RouteLocationNormalized, from: RouteLocationNormalized, next: NavigationGuardNext) => {
   const gameStore = useGameStore();
   const persistStore = usePersistStore();
 
@@ -49,11 +50,23 @@ router.beforeEach((to: RouteLocationNormalized, from: RouteLocationNormalized, n
   // Capture terminal state BEFORE dispose() overwrites it with MENU
   const prevState = gameStore.state;
 
-  // Leaving /game — dispose the worker, terminate it, and save progress
+  // Leaving /game — dispose the worker, wait for the "disposed" ack so the
+  // final persist flush is not dropped, then terminate and save progress (fix #3).
   if (from.name === "game" && to.name !== "game") {
     const worker = gameStore.worker;
     if (worker) {
-      worker.postMessage({ type: "dispose" });
+      await new Promise<void>((resolve) => {
+        const onDisposed = (event: MessageEvent): void => {
+          const data = event.data as WorkerToMainMessage | null;
+          if (data && data.type === "disposed") {
+            worker.removeEventListener("message", onDisposed);
+            resolve();
+          }
+        };
+        worker.addEventListener("message", onDisposed);
+        worker.postMessage({ type: "dispose" });
+        setTimeout(resolve, 500);
+      });
       worker.terminate();
       gameStore.clearWorker();
     }

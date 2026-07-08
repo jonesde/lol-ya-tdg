@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { FOOTER_HEIGHT, HEADER_HEIGHT, SELL_DISCOUNT_PCT } from "@/game/Constants.js";
 import type { TowerId } from "@/game/ConstantsTower.js";
 import { TOWER_META, TowerIds } from "@/game/ConstantsTower.js";
+import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -18,7 +19,9 @@ const discount = computed(() => {
 const towerList = Object.values(TowerIds) as TowerId[];
 
 function toggleBuild(type: TowerId) {
-  gameStore.selectBuildType(gameStore.selectedTowerType === type ? null : type);
+  const nextType = gameStore.selectedTowerType === type ? null : type;
+  gameStore.selectBuildType(nextType);
+  dispatchCommand({ commandId: 0, type: "action:selectBuildType", towerType: nextType });
 }
 
 function getCost(type: TowerId) {
@@ -50,8 +53,8 @@ let currentTouchEnd: (() => void) | null = null;
 const barRef = ref<HTMLElement | null>(null);
 const barStyle = computed(() => ({ top: `${gameStore.gameShopPos.y}px`, left: `${gameStore.gameShopPos.x}px` }));
 
-let prevWidth = window.innerWidth;
-let prevHeight = window.innerHeight;
+let prevWidth = typeof window !== "undefined" ? window.innerWidth : 0;
+let prevHeight = typeof window !== "undefined" ? window.innerHeight : 0;
 
 function setInitialPosition() {
   // NOTE: 160 is width per button as per CSS; 84 = 20 (header/hud) + 64 (footer)
@@ -105,11 +108,16 @@ function onResize() {
   prevHeight = innerHeight;
 }
 
+let initTimerId: ReturnType<typeof setTimeout> | null = null;
+
 onMounted(() => {
-  setTimeout(() => {
+  initTimerId = setTimeout(() => {
     setInitialPosition();
     onResize();
-    window.addEventListener("resize", onResize);
+    if (typeof window !== "undefined") {
+      window.addEventListener("resize", onResize);
+    }
+    initTimerId = null;
   }, 20);
 });
 
@@ -178,7 +186,13 @@ function cleanupTouchListeners() {
 }
 
 onUnmounted(() => {
-  window.removeEventListener("resize", onResize);
+  if (initTimerId !== null) {
+    clearTimeout(initTimerId);
+    initTimerId = null;
+  }
+  if (typeof window !== "undefined") {
+    window.removeEventListener("resize", onResize);
+  }
   cleanupDragListeners();
   cleanupTouchListeners();
 });

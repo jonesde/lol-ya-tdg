@@ -13,7 +13,7 @@ This application is primarily AI generated with lazy human auditing (no full hum
 
 **Rendering Architecture**
 
-The entire rendered area of the game uses a single `<svg>` root element where every map tile, tower, enemy, projectile, and visual effect is an SVG element. Sprite definitions are generated from `<symbol>` templates in `<defs>` and instantiated via `<use>` elements with imperatively-set `href` attributes. A single `requestAnimationFrame` loop drives both game logic (via `GameEngine`) and imperative DOM writes (via per-entity `Manager` classes that read from the engine and write to pooled SVG elements). This eliminates the previous hybrid Canvas + DOM overlay architecture.
+The entire rendered area of the game uses a single `<svg>` root element where every map tile, tower, enemy, projectile, and visual effect is an SVG element. Sprite definitions are generated from `<symbol>` templates in `<defs>` and instantiated via `<use>` elements with imperatively-set `href` attributes. A single `requestAnimationFrame` loop on the main thread drives imperative DOM writes by reading the latest `SimulationSnapshot` produced by the simulation, which runs in a Web Worker. This eliminates the previous hybrid Canvas + DOM overlay architecture. See the new "Simulation Spine (Worker / Snapshot / Command)" design decision below.
 
 ## Overview
 
@@ -76,7 +76,7 @@ src/
 │   └── cameraUtils.ts           # Vue composable: reactive camera CTM transform + world/screen coordinate conversion
 ├── components/
 │   ├── GameScreen.vue           # Root game layout: SvgGameRoot + HUD + shop + tower panel + wave countdown + debug + wave graph + pause menu
-│   ├── SvgGameRoot.vue          # Single SVG root: owns RAF loop, GameEngine, imperative DOM rendering, SpawnManager
+│   ├── SvgGameRoot.vue          # Single SVG root: creates the simulation Web Worker, owns SnapshotStore (render loop reads snapshots) and WorkerCommandDispatcher, imperative DOM rendering, SpawnManager
 │   ├── GameHud.vue              # Top HUD bar: lives, gold, gems, wave, speed/pause/menu buttons
 │   ├── GameShop.vue             # Tower shop bar: build selection with cost display and discount support
 │   ├── TowerPanel.vue           # Tower detail panel: stats, targeting, upgrade/sell, specialization
@@ -116,23 +116,23 @@ src/
 ├── waves/
 │   └── WaveManager.ts           # Wave composition, boss cadence, inter-wave timer
 ├── sim/
-│   ├── Command.ts               # Command definition types for simulation operations
-│   ├── CommandDispatcher.ts     # Central command dispatch for simulation
-│   ├── GameRunState.ts          # Per-run simulation state
-│   ├── HostBindings.ts          # Host-side bindings interface for simulation
-│   ├── PersistState.ts          # Persist state access for simulation
-│   ├── SimulationSnapshot.ts    # Snapshot type for simulation state
-│   ├── SnapshotSerializer.ts    # Serialize/deserialize simulation snapshots
-│   ├── SnapshotStore.ts         # Snapshot storage and management
-│   ├── WorkerCommandDispatcher.ts # Worker-side command dispatch
-│   ├── WorkerEntry.ts           # Web Worker entry point
-│   ├── WorkerHostBindings.ts    # Worker-side host bindings implementation
-│   ├── WorkerProtocol.ts        # Worker↔main thread protocol
-│   ├── applyCommand.ts          # Applies a command to simulation state
-│   ├── commandBus.ts            # Command bus for the simulation
+│   ├── Command.ts               # Command discriminated-union types (input/action/lifecycle/llm) for simulation intent
+│   ├── CommandDispatcher.ts     # CommandDispatcher interface — the dispatch seam every intent flows through
+│   ├── GameRunState.ts          # Per-run plain simulation state interface + pure helper functions (formerly gameStore logic)
+│   ├── HostBindings.ts          # HostBindings interface — the only way the sim reaches the outside world (sound/UI/persist/confirm)
+│   ├── PersistState.ts          # Plain persist state interface + pure mutation helpers (formerly persistStore logic)
+│   ├── SimulationSnapshot.ts    # SimulationSnapshot + entity/meta snapshot types
+│   ├── SnapshotSerializer.ts    # buildSnapshot(): serializes the engine into a plain SimulationSnapshot
+│   ├── SnapshotStore.ts         # Main-thread store: holds latest snapshot and mirrors meta into gameStore
+│   ├── WorkerCommandDispatcher.ts # Main-thread dispatcher: forwards commands to the worker via postMessage
+│   ├── WorkerEntry.ts           # Web Worker entry: owns GameEngine, fixed-timestep loop, command-queue drain, snapshot post
+│   ├── WorkerHostBindings.ts    # Worker-side HostBindings: posts sound/UI/persist/confirm messages to main thread
+│   ├── WorkerProtocol.ts        # Worker↔main thread message protocol types
+│   ├── applyCommand.ts          # Maps a Command → GameEngine method (shared by worker and main-thread dispatcher)
+│   ├── commandBus.ts            # Module-level dispatch seam (setCommandDispatcher / dispatchCommand)
 ├── sim-adapters/
-│   ├── MainThreadCommandDispatcher.ts # Main-thread command dispatcher adapter
-│   └── MainThreadHostBindings.ts      # Main-thread host bindings adapter
+│   ├── MainThreadCommandDispatcher.ts # Main-thread CommandDispatcher adapter (engine-direct; legacy/non-worker path)
+│   └── MainThreadHostBindings.ts      # Main-thread HostBindings adapter: SoundManager/uiStore/persistStore
 ├── render/
 │   ├── themes/
 │   │   ├── index.ts             # Theme registry: MAP_THEME_MANIFEST, lazy loaders, visual meta types
@@ -163,8 +163,8 @@ src/
 The game uses a single `<svg>` root element managed by `SvgGameRoot.vue`, replacing the previous two-layer Canvas + DOM overlay architecture. All visual content — grid tiles, towers, enemies, projectiles, particles, and effects — is rendered as SVG elements.
 
 - **Vue (Declarative):** Manages structural changes (map loading, building/selling towers, opening shops). Mounts the root SVG and static layers via `v-html` for the grid.
-- **GameEngine (Logic):** Orchestrates all game logic (enemy movement, tower targeting, projectile updates, wave management). Constructor takes `(gameStore, persistStore)` — no canvas reference. `handleClick()` and `setHover()` accept world coordinates.
-- **Direct DOM (Imperative Rendering):** A single `requestAnimationFrame` loop calls `GameEngine.update(dt)` for logic, then reads entity state and writes per-frame properties via `setAttribute` and `style.transform`. Bypasses Vue's reactivity system for hot paths.
+- **GameEngine (Logic, in Web Worker):** Orchestrates all game logic (enemy movement, tower targeting, projectile updates, wave management). Constructor takes plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle` — no Pinia, no canvas reference. `handleClick()` accepts world coordinates; `setHover` was removed (hover is main-thread-only UI state). The engine runs inside the Web Worker (`src/sim/WorkerEntry.ts`), not on the main thread.
+- **Direct DOM (Imperative Rendering):** A main-thread `requestAnimationFrame` loop reads the latest `SimulationSnapshot` from the `SnapshotStore` and writes per-frame properties via `setAttribute` and `style.transform`. It does not call the engine directly — all intent flows in as `Command`s and all state flows out as snapshots. Bypasses Vue's reactivity system for hot paths.
 
 The SVG structure is:
 ```
@@ -186,15 +186,26 @@ The SVG structure is:
 - CTM-based input: Mouse coordinates are converted to world space via `worldLayer.getScreenCTM().inverse()`, which includes the camera transform (unlike `svgRoot.getScreenCTM()` which only accounts for the viewBox).
 - Click handling is centralized on the SVG root — no per-element `@click` handlers. `gameEngine.handleClick(worldX, worldY)` determines what was hit programmatically.
 
-`GameScreen.vue` renders `<SvgGameRoot>` as a sibling with HUD/shop/tower panel overlays. Vue does **not** touch per-frame rendering. The component initializes `GameEngine` on mount, reads reactive state from Pinia stores, and cleans up on unmount. The SVG mounts/unmounts with the `/game` route.
+`GameScreen.vue` renders `<SvgGameRoot>` as a sibling with HUD/shop/tower panel overlays. Vue does **not** touch per-frame rendering. The component creates the Web Worker, posts `lifecycle:init` (with `persistState` + `themeBundle`), owns `SnapshotStore` and the `WorkerCommandDispatcher`, reads the reactive snapshot mirror from Pinia stores, and cleans up on unmount (posts `lifecycle:dispose`, awaits the worker's `disposed` ack, then terminates). The SVG mounts/unmounts with the `/game` route.
 
 ### Three Pinia Stores
-- **`gameStore`** — volatile per-run state (lives, gold, wave, game state, selected tower, hover tile, time scale, camera). Reset when starting a new map.
+- **`gameStore`** — reactive mirror/projection of the simulation `SimulationSnapshot`. The worker is authoritative for simulation state; `gameStore` holds the subset the Vue UI binds to (lives, gold, wave, game state, selection, time scale, dialog visibility) and is updated by snapshot diffs each frame. Main-thread-only state (camera, hover tile, hover-upgrade-button) also lives here. Reset when starting a new map.
 - **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons). Auto-saved to `localStorage` via manual `save()` calls.
 - **`uiStore`** — UI overlay visibility and confirm dialog state.
 
 ### Confirm Dialogs as a Single Component
 `ConfirmDialog.vue` is mounted globally in `App.vue` and uses `<Teleport to="body">` to render above all layers. Driven by `uiStore.confirmDialog` state.
+
+### Simulation Spine (Worker / Snapshot / Command)
+
+The simulation runs in a Web Worker; the main thread renders and produces intent. They communicate only through a **snapshot + command stream** (the "spine"), as detailed in `plans/ArchitecturePlan.md` §3.
+
+- **Worker owns the engine.** `src/sim/WorkerEntry.ts` constructs `GameEngine` (with plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle`, not Pinia), runs a `setTimeout` fixed-timestep loop, drains a command queue at the start of each tick, and posts a `SimulationSnapshot` every tick. `requestAnimationFrame` is unavailable in a worker, so a `setTimeout`-driven loop is used instead.
+- **Commands in (`src/sim/Command.ts`).** All intent is a typed `Command`: `input:*` (e.g. `input:click`), `action:*` (pause, cycle speed, upgrade, sell, select tower/build type, targeting, …), `lifecycle:*` (`init`/`dispose`), and future `llm:*`. The main thread dispatches via `commandBus.dispatchCommand` → `WorkerCommandDispatcher`, which forwards through `postMessage`. Hover and camera are main-thread-only and never become commands.
+- **Snapshots out (`src/sim/SimulationSnapshot.ts`, `SnapshotSerializer.ts`).** Each tick the worker serializes plain-data DTOs — `enemies`, `towers`, `projectiles`, `particles`, `spawnStates`, plus a `meta` scalar block (lives, gold, wave, selection, `lastScaledDt`, etc.) and a `persistDirty` flag. `SnapshotSerializer.buildSnapshot` reads entity fields directly; the render managers' `syncFromGameEngine` signatures now take these snapshot arrays.
+- **Reactive mirror (`src/sim/SnapshotStore.ts`).** On the main thread, `SnapshotStore` holds the latest snapshot and diff-mirrors `meta` into `gameStore` (the reactive projection). The rAF render loop reads from the `SnapshotStore`, never from the engine. `gameStore` is a cache; the worker is authoritative, and reconciliation happens within one frame.
+- **HostBindings seam (`src/sim/HostBindings.ts`).** The sim reaches the outside world only through `HostBindings`: `playSound`, `notifyUi`, `schedulePersistSave`, `requestConfirm`. Implemented twice — `WorkerHostBindings` (worker → `postMessage`) and `MainThreadHostBindings` in `src/sim-adapters/` (main thread → `SoundManager`/`uiStore`/`persistStore`). This seam is what made the worker migration behavior-preserving at every step.
+- **Persistence batching.** The worker sets `persistDirty` on persist mutations and the host flushes `schedulePersistSave` only on significant events (wave change, game-over/victory, new milestone claim, or a 5s fallback), avoiding a `localStorage` write per mutation.
 
 ### Router Navigation Guards
 `router.beforeEach` disposes the game engine and saves progress when leaving `/game`. Auto-redirects to `/game-over` or `/victory` when the game state transitions.
@@ -257,7 +268,7 @@ The SVG structure is:
 ### Game Engine
 | File | Description |
 |---|---|
-| `src/game/GameEngine.ts` | Core loop: RAF driver, update/render, wave/enemy/tower management, rewards, end game; accepts active theme, passes visual meta to Tower/Enemy constructors |
+| `src/game/GameEngine.ts` | Simulation core: no rendering. Takes plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle`; runs inside the Web Worker (`src/sim/WorkerEntry.ts`) on a `setTimeout` fixed-timestep loop; produces a `SimulationSnapshot` each tick and applies `Command`s via `applyCommand`; passes visual meta to Tower/Enemy constructors |
 | `src/game/Constants.ts` | Shared game constants: wave config, map levels, boss cadence, gem rewards; `Regions` slimmed (visual fields moved to theme) |
 | `src/game/ConstantsTower.ts` | Tower constants: TowerIds, tower stats/cost, specialization variants, milestone/splash/crit config; visual fields (name, color, icon, animation, walking) moved to theme |
 | `src/game/ConstantsEnemy.ts` | Enemy constants: EnemyType union, stats-only ENEMY_TYPES (baseHp, speed, bounty, radius, shield, heal, resist, etc.); visual fields moved to theme |
@@ -301,7 +312,7 @@ The SVG structure is:
 | `src/render/svg/useSvgStaticContent.ts` | Composable: builds `<defs>` (symbols from active theme's tower/enemy frames, region gradients, filters) and grid layer SVG strings (tile images + base art from theme) |
 | `src/render/svg/cameraUtils.ts` | `fitToGrid()` plus pixel-space `screenToWorld()`/`worldToScreen()` helpers for the SVG camera |
 | `src/render/svg/types.ts` | Shared types for render proxies and managers |
-| `src/components/SvgGameRoot.vue` | Single SVG root: RAF loop, imperative DOM writes, CTM-based mouse coordinate conversion, centralized click routing; passes active theme to GameEngine and useSvgStaticContent, initializes SpawnManager |
+| `src/components/SvgGameRoot.vue` | Single SVG root: creates the simulation Web Worker, owns `SnapshotStore` (render loop reads snapshots) and `WorkerCommandDispatcher` (click/key intents → commands); rAF render loop does imperative DOM writes; CTM-based mouse→world coordinate conversion, centralized click routing; passes theme bundle to worker at `lifecycle:init` and to `useSvgStaticContent`; initializes SpawnManager |
 | `src/composables/cameraUtils.ts` | Vue composable: reactive camera CTM transform (`useCameraCTM`) and world/screen coordinate conversion backed by `gameStore.camera` |
 
 ### Audio

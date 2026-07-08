@@ -56,10 +56,17 @@ export class SnapshotStore {
       gs.bossesReachedBaseThisRun = meta.bossesReachedBaseThisRun;
     }
     if (gs.endScreenData !== meta.endScreenData) gs.endScreenData = meta.endScreenData;
-    // selectedTowerType / hoverTile / upgradeBtnClickAnim are host-authoritative
-    // (updated directly on gameStore by Input.ts / SvgGameRoot.vue, echoed back
-    // unchanged by the worker) — do NOT mirror them or they would clobber the
-    // main-thread values. camera is main-thread-only — NOT mirrored.
+    // selectedTowerType IS mirrored: the worker is authoritative for
+    // runState.selectedTowerType (it clears it on off-grid / existing-tower
+    // clicks and on cancelBuildMode), so we reflect it back into gameStore so
+    // the build preview stays in sync. The main thread also sets it locally for
+    // immediate feedback; the mirror reconciles the two within a frame.
+    if (gs.selectedTowerType !== meta.selectedTowerType) {
+      gs.selectedTowerType = meta.selectedTowerType as typeof gs.selectedTowerType;
+    }
+    // hoverTile / upgradeBtnClickAnim are host-authoritative (updated directly on
+    // gameStore by Input.ts / SvgGameRoot.vue) — do NOT mirror them or they would
+    // clobber the main-thread values. camera is main-thread-only — NOT mirrored.
     //
     // selectedTower IS mirrored: it is the projection of the worker-authorized
     // meta.selectedTowerId. We only reassign when the selected *id* changes so
