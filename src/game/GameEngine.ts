@@ -546,7 +546,7 @@ export class GameEngine {
         const discount = this.persistState.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
         const cost = Math.floor(meta.cost * discount);
         if (this.runState.gold >= cost && this.grid.canBuild(tx, ty)) {
-          const tower = this.towerManager?.build(towerType, tx, ty, this.persistState, this.grid);
+          const tower = this.towerManager?.build(towerType, tx, ty, this.persistState, this.grid, cost);
           if (tower) {
             setGold(this.runState, this.runState.gold - cost);
             this.runState.selectedTowerId = String(tower.id);
@@ -618,17 +618,11 @@ export class GameEngine {
     const towerId = tower.id;
     const isRefund = this.persistState.generalAddons.sellActive === "refund";
     const val = isRefund ? tower.totalInvested : tower.sellValue();
-
-    // Request confirmation from the host. On confirm, the main thread dispatches
-    // an action:executeSell command (which re-validates in executeSellById); we
-    // intentionally do NOT execute here so the sell runs through the command seam.
-    void this.host.requestConfirm({
-      towerId,
-      towerType: tower.type,
-      towerLevel: tower.level,
-      sellValue: val,
-      isRefund,
-    });
+    void this.host
+      .requestConfirm({ towerId, towerType: tower.type, towerLevel: tower.level, sellValue: val, isRefund })
+      .then((confirmed) => {
+        if (confirmed) this.executeSellById(towerId);
+      });
   }
 
   executeSellById(towerId: string): void {
@@ -666,6 +660,7 @@ export class GameEngine {
   cancelSelected(): void {
     const tower = this.getSelectedTower();
     if (!tower) return;
+    if (this.persistState.generalAddons.sellActive === "discount") return;
 
     if (!tower.canCancel()) return;
 

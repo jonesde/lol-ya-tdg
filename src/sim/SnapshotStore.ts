@@ -19,6 +19,8 @@ export function getLatestSnapshot(): SimulationSnapshot | null {
 export class SnapshotStore {
   private current: SimulationSnapshot | null = null;
   private gameStore: GameStore;
+  private lastSelectedTowerId: string | null = null;
+  private cachedSelectedTower: Tower | null = null;
 
   constructor(gameStore: GameStore) {
     this.gameStore = gameStore;
@@ -53,24 +55,35 @@ export class SnapshotStore {
       gs.bossesReachedBaseThisRun = meta.bossesReachedBaseThisRun;
     }
     if (gs.endScreenData !== meta.endScreenData) gs.endScreenData = meta.endScreenData;
-    // selectedTowerType IS mirrored: the worker is authoritative for
-    // runState.selectedTowerType (it clears it on off-grid / existing-tower
-    // clicks and on cancelBuildMode), so we reflect it back into gameStore so
-    // the build preview stays in sync. The main thread also sets it locally for
-    // immediate feedback; the mirror reconciles the two within a frame.
-    if (gs.selectedTowerType !== meta.selectedTowerType) {
-      gs.selectedTowerType = meta.selectedTowerType as typeof gs.selectedTowerType;
-    }
+    // selectedTowerType: the worker clears runState.selectedTowerType on
+    // off-grid / existing-tower clicks and on cancelBuildMode, and those
+    // clears must reach gameStore so the build preview turns off. The main
+    // thread sets the value locally for immediate feedback on every
+    // user-initiated build-type change (Input.selectBuildType / GameShop), so
+    // we must NOT let a lagging snapshot overwrite a freshly-set non-null
+    // local value (that causes a 1-frame flicker). Mirror only the CLEAR:
+    // when the worker has nulled it, null the preview; never overwrite a
+    // non-null local value from the snapshot.
+    if (meta.selectedTowerType === null) gs.selectedTowerType = null;
     // hoverTile / upgradeBtnClickAnim are host-authoritative (updated directly on
     // gameStore by Input.ts / SvgGameRoot.vue) — do NOT mirror them or they would
     // clobber the main-thread values. camera is main-thread-only — NOT mirrored.
     //
     // selectedTower IS mirrored: it is the projection of the worker-authorized
-    // meta.selectedTowerId. Reassign every frame so the panel reflects the
-    // tower's mutable fields (level, stats, totalDamageDealt, etc.) as they
-    // change. TowerPanel keys its interval setup on the selected *id*, so this
-    // per-frame reassignment does not tear that interval down each frame.
-    gs.selectedTower = this.resolveSelectedTower();
+    // meta.selectedTowerId. TowerPanel keys its interval setup on the selected
+    // *id*, so a per-frame reassignment would not tear that interval down, but
+    // it would still produce a brand-new object reference each tick (defeating
+    // Vue identity stability) and the object is a snapshot cast as Tower (any
+    // method call would throw). Keep the reference stable and refresh the
+    // tower's mutable fields in place instead.
+    if (this.lastSelectedTowerId !== meta.selectedTowerId || !this.cachedSelectedTower) {
+      this.cachedSelectedTower = this.resolveSelectedTower();
+      this.lastSelectedTowerId = meta.selectedTowerId;
+      gs.selectedTower = this.cachedSelectedTower;
+    } else if (this.cachedSelectedTower) {
+      const fresh = this.resolveSelectedTower();
+      if (fresh) Object.assign(this.cachedSelectedTower, fresh);
+    }
     // hoverUpgradeBtn is intentionally NOT mirrored here — the engine no longer
     // writes it (GameEngine.setHover was removed in Phase 7), so mirroring would
     // clobber the main-thread value with the engine's always-false default.

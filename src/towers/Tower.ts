@@ -233,6 +233,7 @@ export class Tower {
     theme: MapThemeData | null = null,
     defaultVisual: TowerVisualMeta | null = null,
     placedAt: number = Date.now(),
+    paidCost?: number,
   ) {
     this.type = type;
     this.id = "";
@@ -254,8 +255,9 @@ export class Tower {
     this.visualMeta = towerVisual;
 
     this.level = 1;
-    this.totalInvested = this.meta.cost;
-    this.levelCosts = [this.meta.cost];
+    const buildCost = paidCost ?? this.meta.cost;
+    this.totalInvested = buildCost;
+    this.levelCosts = [buildCost];
     this.totalDamageDealt = 0;
     this.waveDamage = 0;
     this.targeting = type === "sniper" ? "strong" : "first";

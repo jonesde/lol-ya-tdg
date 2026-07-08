@@ -122,9 +122,26 @@ export class TowerManager {
     this.tileMap.clear();
   }
 
-  build(type: string, tileX: number, tileY: number, save: PersistState | undefined, grid: GridRef): Tower | null {
+  build(
+    type: string,
+    tileX: number,
+    tileY: number,
+    save: PersistState | undefined,
+    grid: GridRef,
+    paidCost?: number,
+  ): Tower | null {
     if (!this.grid.canBuild(tileX, tileY)) return null;
-    const tower = new Tower(type, tileX, tileY, save, grid, this.theme, this.defaultTowerVisuals[type] ?? null);
+    const tower = new Tower(
+      type,
+      tileX,
+      tileY,
+      save,
+      grid,
+      this.theme,
+      this.defaultTowerVisuals[type] ?? null,
+      undefined,
+      paidCost,
+    );
     tower.id = `tower-${++this.nextTowerId}`;
     if (!this.grid.registerTower(tileX, tileY)) return null;
     this.towers.push(tower);

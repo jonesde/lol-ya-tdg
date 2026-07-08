@@ -234,12 +234,19 @@ describe("Enemy", () => {
       expect(enemy.slowStack[0].eff).toBeCloseTo(expectedEff, 4);
     });
 
-    it("merges with existing entry of same or lower strength", () => {
+    it("keeps distinct strengths as separate multiplicative entries", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applySlow(0.3, 1.0);
       enemy.applySlow(0.4, 2.0);
+      expect(enemy.slowStack).toHaveLength(2);
+      expect(enemy.slowFactor).toBeCloseTo(0.7 * 0.6, 4);
+    });
+
+    it("refreshes duration of an existing entry with the same strength", () => {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+      enemy.applySlow(0.3, 1.0);
+      enemy.applySlow(0.3, 2.0);
       expect(enemy.slowStack).toHaveLength(1);
-      expect(enemy.slowStack[0].eff).toBe(0.4);
       expect(enemy.slowStack[0].remaining).toBe(2.0);
     });
 

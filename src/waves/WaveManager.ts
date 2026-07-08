@@ -257,14 +257,12 @@ export class WaveManager {
     if (this.spawnTimer <= 0) {
       const next = this.queue.shift();
       if (!next || !ENEMY_TYPES[next.type]) {
-        if (next) {
-          this.waveComposition[next.type] = (this.waveComposition[next.type] || 0) - 1;
-        }
         return;
       }
       const spawnIdx = Math.floor(this.rng() * this.map.spawns.length);
       this.markSpawnUsed(spawnIdx);
       this.enemyManager.enqueueOrSpawn(next.type, next.level, spawnIdx, this.currentWave);
+      this.waveComposition[next.type] = (this.waveComposition[next.type] || 0) - 1;
       this.spawnTimer = next.delay;
     }
   }

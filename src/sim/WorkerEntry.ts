@@ -52,6 +52,7 @@ function startLoop(): void {
   if (running) return;
   running = true;
   lastTime = 0; // re-anchored on first tick
+  accumulator = 0;
   scheduleTick();
 }
 

@@ -19,6 +19,8 @@ export interface RenderParticle {
   opacity: number;
 }
 
+const MAX_PARTICLES = 400;
+
 export class ParticleSystem {
   particles: ParticleGame[];
   private nextParticleId: number;
@@ -53,6 +55,10 @@ export class ParticleSystem {
         color,
         size,
       });
+    }
+
+    if (this.particles.length > MAX_PARTICLES) {
+      this.particles.splice(0, this.particles.length - MAX_PARTICLES);
     }
   }
 

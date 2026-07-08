@@ -682,16 +682,18 @@ export class ProjectileManager {
       this.particles.spawn(current.x, current.y, "#ffcf4d", 3, { speed: 30, life: 0.2 });
     }
 
+    const chainedIds = new Set<number>([current.id]);
     let chainsUsed = 0;
     while (remainingChains > 0) {
       const chainRangePx = CHAIN_RANGE * (this.grid?.tileSize ?? 1);
-      const nextTarget = this.findNearestEnemy(current.x, current.y, chainRangePx, current.id);
+      const nextTarget = this.findNearestEnemy(current.x, current.y, chainRangePx, undefined, chainedIds);
       if (!nextTarget) break;
 
       const chainDamage = finalDamage * CHAIN_DAMAGE_FALLOFF ** (chainsUsed + 1);
       nextTarget.takeDamage(chainDamage);
       this.recordDamage(opts.towerId, chainDamage);
       chainTargets.push(nextTarget);
+      chainedIds.add(nextTarget.id);
       if (this.particles) {
         this.particles.spawn(nextTarget.x, nextTarget.y, "#ffcf4d", 3, { speed: 30, life: 0.2 });
       }
@@ -780,7 +782,13 @@ export class ProjectileManager {
     }
   }
 
-  private findNearestEnemy(x: number, y: number, range: number, excludeId: number): LightningTarget | null {
+  private findNearestEnemy(
+    x: number,
+    y: number,
+    range: number,
+    excludeId?: number,
+    excludeIds?: Set<number>,
+  ): LightningTarget | null {
     const fullRangeEnemies = this.enemyManager.getEnemiesInRange(x, y, range);
 
     if (fullRangeEnemies.length <= 8) {
@@ -788,6 +796,7 @@ export class ProjectileManager {
       let closestDist = Infinity;
       for (const enemy of fullRangeEnemies) {
         if (enemy.id === excludeId) continue;
+        if (excludeIds?.has(enemy.id)) continue;
         const dx = enemy.x - x;
         const dy = enemy.y - y;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -811,6 +820,7 @@ export class ProjectileManager {
       let closestDist = Infinity;
       for (const enemy of subEnemies) {
         if (enemy.id === excludeId) continue;
+        if (excludeIds?.has(enemy.id)) continue;
         const dx = enemy.x - x;
         const dy = enemy.y - y;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -826,6 +836,7 @@ export class ProjectileManager {
     let fallbackDist = Infinity;
     for (const enemy of fullRangeEnemies) {
       if (enemy.id === excludeId) continue;
+      if (excludeIds?.has(enemy.id)) continue;
       const dx = enemy.x - x;
       const dy = enemy.y - y;
       const dist = Math.sqrt(dx * dx + dy * dy);

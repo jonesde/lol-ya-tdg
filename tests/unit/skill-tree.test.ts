@@ -504,8 +504,16 @@ describe("SkillTree — General Add-ons", () => {
 
     it("returns tier index when unlocked", () => {
       const save = freshSave();
+      tryUnlockGeneral(save, "extraHealth", 0);
       tryUnlockGeneral(save, "extraHealth", 1);
       expect(getGeneralAddonValue(save, "extraHealth")).toBe(1);
+    });
+
+    it("blocks unlocking a higher tier before the previous one", () => {
+      const save = freshSave();
+      const result = tryUnlockGeneral(save, "extraHealth", 1);
+      expect(result.ok).toBe(false);
+      expect(getGeneralAddonValue(save, "extraHealth")).toBeNull();
     });
 
     it("returns sellActive for sellOption", () => {

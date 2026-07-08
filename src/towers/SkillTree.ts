@@ -402,6 +402,11 @@ export function tryUnlockGeneral(save: PersistState, key: string, index: number)
   const cost = def.costs[index]!;
   if (save.gems < cost) return { ok: false, reason: "Not enough gems" };
 
+  if (index >= 1 && key !== "sellOption") {
+    const prevUnlocked = isGeneralUnlocked(save, key, index - 1);
+    if (!prevUnlocked) return { ok: false, reason: "Unlock previous tier first" };
+  }
+
   if (key === "sellOption") {
     const generalAddons = save.generalAddons;
     const target = index === 0 ? "refund" : "discount";

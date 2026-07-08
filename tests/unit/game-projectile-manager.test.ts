@@ -446,19 +446,20 @@ describe("ProjectileManager", () => {
 
       randomSpy.mockRestore();
 
-      // enemy1: full damage, then a chain back from enemy2 (second hop, falloff applied twice)
+      // enemy1: initial target, full damage (no ping-pong re-hit)
       expect(takeDamage1).toHaveBeenCalledWith(20);
-      expect(takeDamage1).toHaveBeenCalledWith(20 * 0.8 ** 2);
-      // enemy2: chain from initial target (first hop, falloff applied once), no further chains remain
+      // enemy2: single chain hop from enemy1 (falloff applied once); not re-chained
       expect(takeDamage2).toHaveBeenCalledWith(20 * 0.8 ** 1);
-      // 2 chain hops + 1 tower->final-target flash
-      expect(lightningSparks).toHaveLength(3);
+      // 1 tower->target flash + 1 chain hop flash
+      expect(lightningSparks).toHaveLength(2);
     });
 
     it("chains more hops at higher tower level", () => {
       const enemy1 = createMockEnemy({ id: 1, x: 105, y: 200, hp: 10000, maxHp: 10000 });
-      const enemy2 = createMockEnemy({ id: 2, x: 108, y: 200, hp: 10000, maxHp: 10000 });
-      enemyManager = createMockEnemyManager([enemy1, enemy2]);
+      const enemy2 = createMockEnemy({ id: 2, x: 135, y: 200, hp: 10000, maxHp: 10000 });
+      const enemy3 = createMockEnemy({ id: 3, x: 165, y: 200, hp: 10000, maxHp: 10000 });
+      const enemy4 = createMockEnemy({ id: 4, x: 195, y: 200, hp: 10000, maxHp: 10000 });
+      enemyManager = createMockEnemyManager([enemy1, enemy2, enemy3, enemy4]);
       manager = new ProjectileManager(
         enemyManager,
         particles,
@@ -469,8 +470,13 @@ describe("ProjectileManager", () => {
         { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
       );
 
+      // Level 1 -> tier 0 -> 2 chain hops (origin flash + 2 hops = 3 sparks)
+      manager.fireLightning({ originX: 100, originY: 200, damage: 20, towerLevel: 1, targetId: 1, stunDuration: 0.1 });
+      expect(lightningSparks).toHaveLength(3);
+
+      lightningSparks.length = 0;
+      // Level 5 -> tier 1 -> 3 chain hops (origin flash + 3 hops = 4 sparks)
       manager.fireLightning({ originX: 100, originY: 200, damage: 20, towerLevel: 5, targetId: 1, stunDuration: 0.1 });
-      // level 5 -> tier 1 -> 3 chain hops + 1 tower->target flash
       expect(lightningSparks).toHaveLength(4);
     });
   });

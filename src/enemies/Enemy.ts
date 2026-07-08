@@ -167,9 +167,8 @@ export class Enemy {
   applySlow(amount: number, duration: number) {
     const eff = amount * (1 - this.slowResist);
     if (eff <= 0) return;
-    const existing = this.slowStack.find((slowEntry) => slowEntry.eff <= eff && slowEntry.remaining > 0);
+    const existing = this.slowStack.find((slowEntry) => slowEntry.eff === eff && slowEntry.remaining > 0);
     if (existing) {
-      existing.eff = eff;
       existing.remaining = Math.max(existing.remaining, duration);
     } else {
       this.slowStack.push({ eff, remaining: duration });
@@ -259,6 +258,7 @@ export class Enemy {
       const nearbyAllies = enemyManager.getEnemiesInRange(this.x, this.y, this.healRange);
       for (const ally of nearbyAllies) {
         if (ally === this) continue;
+        if (ally.antiHealTimer > 0) continue;
         ally.hp = Math.min(ally.maxHp, ally.hp + ally.maxHp * this.heal * dt);
       }
     }
@@ -319,6 +319,10 @@ export class Enemy {
               }
               this.pathIdx = forwardFallbackIdx >= 0 ? forwardFallbackIdx : nearestIdx;
             }
+            const anchorTile = newPath[this.pathIdx]!;
+            const anchorWorld = this.grid.tileToWorld(anchorTile.x, anchorTile.y);
+            this.x = anchorWorld.x;
+            this.y = anchorWorld.y;
           } else {
             this.onPathBlocked = true;
             this.removed = true;
