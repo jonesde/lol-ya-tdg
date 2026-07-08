@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch, watchEffect } from "vue";
+import { computed, onUnmounted } from "vue";
 import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
 import { SELL_VALUE_RATIO, TOWER_META } from "@/game/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
@@ -24,27 +24,12 @@ function getTowerName(type: string): string {
   return themeStore.getTowerVisual(type)?.name || type;
 }
 
-// Reactive damage tracking (Phase 2)
-// Tower properties are plain JS fields, not Vue-reactive, so a periodic tick
-// forces recomputation of the computed properties that depend on them.
-const tick = ref(0);
-
-watch(
-  () => tower.value?.id,
-  (newId, _oldValue, onCleanup) => {
-    if (!newId) return;
-    const intervalId = setInterval(() => {
-      tick.value++;
-    }, 1000);
-    onCleanup(() => clearInterval(intervalId));
-  },
-  { immediate: true },
-);
-
+// Reactive damage tracking
+// The selected tower is a reactive projection mirrored by SnapshotStore through
+// the gameStore proxy every frame, so these fields update without a manual tick.
 const damageStats = computed(() => {
   const selectedTower = tower.value;
   if (!selectedTower) return null;
-  void tick.value;
   return { total: Math.round(selectedTower.totalDamageDealt), wave: Math.round(selectedTower.waveDamage) };
 });
 
@@ -112,7 +97,6 @@ const milestoneBonus = computed(() => {
 });
 
 const targetingMode = computed(() => {
-  void tick.value;
   return tower.value?.targeting || "first";
 });
 
@@ -199,7 +183,6 @@ const canCancel = computed(() => {
 
 const cancelRemaining = computed(() => {
   if (!tower.value) return 0;
-  void tick.value;
   return Math.ceil((tower.value.cancelRemainingMs ?? 0) / 1000);
 });
 

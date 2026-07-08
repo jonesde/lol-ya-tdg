@@ -48,6 +48,10 @@ export class SnapshotStore {
     if (gs.timeScale !== meta.timeScale) gs.timeScale = meta.timeScale;
     if (gs.state !== meta.state) gs.setState(meta.state);
     if (gs.runGemsEarned !== meta.runGemsEarned) gs.runGemsEarned = meta.runGemsEarned;
+    // frameId increments every tick, so the reactive mirror always advances.
+    // Non-reactive snapshot readers (e.g. StatsPanel via getLatestSnapshot)
+    // depend on it to re-evaluate each frame.
+    gs.frameId = snapshot.frameId;
     if (gs.bossesKilledThisRun !== meta.bossesKilledThisRun) {
       gs.bossesKilledThisRun = meta.bossesKilledThisRun;
     }
@@ -82,7 +86,17 @@ export class SnapshotStore {
       gs.selectedTower = this.cachedSelectedTower;
     } else if (this.cachedSelectedTower) {
       const fresh = this.resolveSelectedTower();
-      if (fresh) Object.assign(this.cachedSelectedTower, fresh);
+      if (fresh) {
+        // Mutate through the reactive proxy (gs.selectedTower) rather than the
+        // raw cachedSelectedTower. Object.assign on the raw target updates the
+        // values Vue reads, but does NOT fire the proxy's set traps, so dependent
+        // computeds (e.g. TowerPanel's `upgradeCheck` driving the Upgrade button's
+        // cost/level) never re-evaluate and the panel stays stale after an
+        // upgrade. Writing via the proxy triggers reactivity and keeps the cached
+        // raw object in sync (proxy and raw share the same target).
+        const proxy = gs.selectedTower;
+        if (proxy) Object.assign(proxy, fresh);
+      }
     }
     // hoverUpgradeBtn is intentionally NOT mirrored here — the engine no longer
     // writes it (GameEngine.setHover was removed in Phase 7), so mirroring would

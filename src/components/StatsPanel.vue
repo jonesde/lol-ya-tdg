@@ -10,7 +10,13 @@ const gameStore = useGameStore();
 const uiStore = useUiStore();
 const themeStore = useMapThemeStore();
 
-const snapshot = computed(() => getLatestSnapshot());
+// getLatestSnapshot() returns a module-level non-reactive variable, so this
+// computed must depend on a reactive per-frame signal (gameStore.frameId,
+// mirrored from the snapshot every tick) to re-evaluate as new snapshots arrive.
+const snapshot = computed(() => {
+  void gameStore.frameId;
+  return getLatestSnapshot();
+});
 // Wave composition / starting lives / healing / gold are worker-internal
 // aggregates not surfaced in the snapshot yet (Phase 8). The stats panel reads
 // what the snapshot provides; the rest degrades gracefully.

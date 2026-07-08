@@ -89,6 +89,7 @@ interface GameStateShape {
   hoverTile: HoverTile | null;
   hoverUpgradeBtn: boolean;
   upgradeBtnClickAnim: number;
+  frameId: number;
   runGemsEarned: number;
   bossesKilledThisRun: number;
   bossesReachedBaseThisRun: number;
@@ -122,6 +123,7 @@ export const useGameStore = defineStore("game", {
     hoverTile: null,
     hoverUpgradeBtn: false,
     upgradeBtnClickAnim: 0,
+    frameId: 0,
     runGemsEarned: 0,
     bossesKilledThisRun: 0,
     bossesReachedBaseThisRun: 0,
