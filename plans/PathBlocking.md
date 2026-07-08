@@ -8,6 +8,50 @@
 
 ---
 
+## Original Functional Plan
+
+**DO NOT MODIFY - FOR REFERENCE ONLY**
+```
+Path Blocking, Enemy Attack ability (vary damage done by enemy), Tower Health
+- Give towers a health attribute and a varying amount of health per tower
+	- all existing towers can be used for path blocking but are not meant for that, so give them only small amounts of health meaning they will be destroyed relatively quickly of deployed this way
+	- when a tower loses all health turn it into a 'ghost' that looks translucent (use CSS transparency to modify SVG image?) and that no longer blocks the path (as long as the tower is in the ghost state) and run a short (2 second) particle explosion effect with the tower's primary color; the visual effect for the ghost state will be an opacity adjustment (down to ~0.5 opacity)
+	- a tower stays in the ghost state for (50 - level x 5) seconds (at tower level 7: 50-35=15s), and is then restored with full health; at the spawn of each enemy wave all ghost towers are restored
+	- a tower in the ghost state cannot be sold, upgraded, or downgraded
+- Give enemies an attack ability 
+	- attack speed and damage done varying by enemy
+	- add attack animation support similar to current current hit reaction approach, allow arbitrary number of frames and include 3 frames in map theme data
+	- stunned enemies cannot attack and pauses their current attack timer (does not reset, enemies do not have to start their next attack wait over)
+	- slowed enemies have attack speed slowed by the same amount as motion speed is slowed
+	- add an attack animation support following the same pattern as the hit reaction animation
+	- add attack animations (3 frames each like hit reaction) to each enemy in default-map-theme.json (the-aftermath.json out of scope for this plan, to be done seaprately); enemy images are oriented to rightward movement (the right side is the front), have the default theme use simple geometric extensions that emerge from the main shape
+- Allow towers to block the path even if no other paths to base/end are available
+	- When no 'open' path is available to the base/end, calculate and draw a path that stays only on path tiles and goes through the lowest health towers needed to get to the end/base (ie find weakest/easiest path)
+	- Use a Dijkstra search with tower health as edge weight to find optimal path; change current path logic to include this improvement and handle paths through towers by health, in other words:
+		- Modify canPlaceWithoutBlocking to allow path-tile placements, and to ignore towers in the ghost state
+		- Update Grid.recomputePaths() to fall back to Dijkstra when BFS path is blocked, considering ghost state and live tower remaining health
+		- Update Enemy.update() to follow Dijkstra paths instead of setting onPathBlocked = true
+- Add collision detection to enemy movement so that two enemies cannot occupy the same space (faster enemies must walk around slower enemies
+	- have slower enemies move to the right side of the path and faster enemies to the left side in order to pass instead of colliding)
+	- when the path is blocked allow enemies to move to the side but within the boundaries of the path tiles to stack up against the tower blocking the path
+	- when enemies are blocked from motion and adjacent to a tower they start attacking that tower
+	- if an enemy is blocked from motion and contacting two different towers it will always attack the lower health tower
+	- use existing get nearby enemies function with spatial hash already implemented
+- Add two high health towers:
+	- 'Sturdy Wall' tower that does no damage
+		- has one specialization option that does thorn damage (percentage of damage done by enemy is reflected back to enemy, 30%/60%/100% at levels 5/6/7)
+		- the other specialization does damage like the lightning tower when enemies touch it (electric fence) and also stuns the enemy for a short time (which stops motion and attacks)
+	- 'Shotgun Tank' tower that is like the basic tower but has low range (starting at 1 tile), much higher health (10x), and costs 50% more than a basic tower
+		- one specialization increases tower health
+		- the other is a knockback effect like the railgun tower that pushes enemies away from the Tank; make initial shotgun tower knockback config value 50% stronger than current railgun knockback, ie SHOTGUN_KNOCKBASE = 0.45 (= RAILGUN_KNOCKBASE * 1.5)
+	- For each tower:
+		- add to unlock upgrades (skill tree)
+		- define/create specializations (data, activation logic, skill tree unlocks)
+		- add SVG images to default-map-theme.json (the-aftermath.json not in scope for this, to be done later)
+```
+
+---
+
 ## Execution Order (recommended phases)
 
 1. **Phase 0 — Constants & data model** (health, ghost timing, attack stats, new towers).
