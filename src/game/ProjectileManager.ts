@@ -384,7 +384,6 @@ export class ProjectileManager {
       projectile.age += dt;
       this.updateCircleProjectile(projectile, dt);
     }
-    this.clearVisualEffects();
   }
 
   private updateCircleProjectile(projectile: ProjectileGame, dt: number): void {
@@ -865,6 +864,12 @@ export class ProjectileManager {
 
   getRenderVisualEffects(): { lightning: LightningVisualEffect[]; stuns: StunVisualEffect[] } {
     return { lightning: [...this.pendingLightning], stuns: [...this.pendingStuns] };
+  }
+
+  consumeRenderVisualEffects(): { lightning: LightningVisualEffect[]; stuns: StunVisualEffect[] } {
+    const effects = { lightning: [...this.pendingLightning], stuns: [...this.pendingStuns] };
+    this.clearVisualEffects();
+    return effects;
   }
 
   private clearVisualEffects(): void {

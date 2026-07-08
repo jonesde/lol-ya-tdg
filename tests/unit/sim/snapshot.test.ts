@@ -101,4 +101,34 @@ describe("SnapshotSerializer (Phase 5)", () => {
     // Mutating the engine after snapshot must not retroactively change the snapshot.
     expect(snap.meta.gold).toBe(originalGold);
   });
+
+  it("emits empty lightning/stun effects for a fresh (paused) engine", () => {
+    const engine = makeEngine();
+    const snap = buildSnapshot(engine, 0);
+    expect(snap.lightningEffects).toHaveLength(0);
+    expect(snap.stunEffects).toHaveLength(0);
+  });
+
+  it("consumes ephemeral lightning/stun effects so a paused tick does not replay them", () => {
+    const engine = makeEngine();
+    const enemy = engine.enemyManager.spawn("minion", 1, 0, 1);
+    engine.projectileManager.fireLightning({
+      originX: 100,
+      originY: 200,
+      damage: 4,
+      towerLevel: 1,
+      targetId: enemy.id,
+      stunDuration: 0.1,
+    });
+
+    const first = buildSnapshot(engine, 0);
+    expect(first.lightningEffects.length).toBeGreaterThan(0);
+    expect(first.stunEffects.length).toBeGreaterThan(0);
+
+    // Without an intervening update(), the effects must be consumed and blank —
+    // this guards against perpetual lightning while the game is paused.
+    const second = buildSnapshot(engine, 0);
+    expect(second.lightningEffects).toHaveLength(0);
+    expect(second.stunEffects).toHaveLength(0);
+  });
 });

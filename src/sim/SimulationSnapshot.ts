@@ -18,8 +18,9 @@ export interface SimulationSnapshot {
   // its own Grid copy, so the highlight stays in sync with the simulation.
   paths: Array<Array<{ x: number; y: number }> | null>;
   // Ephemeral visual effects generated this tick: lightning bolt segments and
-  // stun aura positions. Cleared each tick on the worker side; the main thread
-  // renders them once and discards.
+  // stun aura positions. Populated by the simulation during update() and
+  // consumed (cleared) when this snapshot is built, so the main thread renders
+  // each effect exactly once; effects from a paused/empty tick are blank.
   lightningEffects: Array<{ x1: number; y1: number; x2: number; y2: number }>;
   stunEffects: Array<{ x: number; y: number }>;
 }
