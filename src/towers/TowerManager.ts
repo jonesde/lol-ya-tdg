@@ -1,6 +1,6 @@
 import type { MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
 import type { SoundPlayer } from "@/sim/HostBindings.js";
-import type { GeneralAddons, TowerUnlocks } from "@/stores/persist.js";
+import type { PersistState } from "@/sim/PersistState.js";
 import { Tower } from "./Tower.js";
 
 interface EnemyManagerRef {
@@ -77,12 +77,6 @@ interface ProjectileManagerRef {
   setOnLightningFlash(callback: (startX: number, startY: number, endX: number, endY: number) => void): void;
 }
 
-interface SaveData {
-  gems: number;
-  unlocked: Record<string, TowerUnlocks>;
-  generalAddons?: GeneralAddons;
-}
-
 interface GridRef {
   tileSize: number;
   canBuild(x: number, y: number): boolean;
@@ -125,7 +119,7 @@ export class TowerManager {
     this.tileMap.clear();
   }
 
-  build(type: string, tileX: number, tileY: number, save: SaveData | undefined, grid: GridRef): Tower | null {
+  build(type: string, tileX: number, tileY: number, save: PersistState | undefined, grid: GridRef): Tower | null {
     if (!this.grid.canBuild(tileX, tileY)) return null;
     const tower = new Tower(type, tileX, tileY, save, grid, this.theme, this.defaultTowerVisuals[type] ?? null);
     tower.id = `tower-${++this.nextTowerId}`;
@@ -138,7 +132,7 @@ export class TowerManager {
     return tower;
   }
 
-  sell(tower: Tower, _save: SaveData | undefined): number {
+  sell(tower: Tower, _save: PersistState | undefined): number {
     const val = tower.sellValue();
     this.grid.unregisterTower(tower.tileX, tower.tileY);
     this.towers = this.towers.filter((t) => t.id !== tower.id);

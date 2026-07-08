@@ -1,16 +1,10 @@
 import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "../game/Constants.js";
 import { TowerIds } from "../game/ConstantsTower.js";
 import type { TowerVisualMeta } from "../render/themes/index.js";
-import type { GeneralAddons, TowerUnlocks } from "../stores/persist.js";
+import type { PersistState } from "../sim/PersistState.js";
 
 const LEVEL_COSTS = [0, 0, 16, 32, 64, 128, 256];
 const ADDON_COSTS = [100, 300, 900];
-
-interface SaveData {
-  gems: number;
-  unlocked: Record<string, TowerUnlocks>;
-  generalAddons?: GeneralAddons;
-}
 
 interface SkillNode {
   tier: string;
@@ -181,7 +175,7 @@ function getCost(tier: string, index: number): number {
   return 0;
 }
 
-export function isUnlocked(save: SaveData, towerId: string, tier: string, index: number): boolean {
+export function isUnlocked(save: PersistState, towerId: string, tier: string, index: number): boolean {
   const unlocked = save.unlocked[towerId];
   if (!unlocked) return false;
   if (tier === "level") return !!unlocked.levels[index];
@@ -191,7 +185,7 @@ export function isUnlocked(save: SaveData, towerId: string, tier: string, index:
   return false;
 }
 
-export function isAvailable(save: SaveData, towerId: string, tier: string, index: number, cost: number): boolean {
+export function isAvailable(save: PersistState, towerId: string, tier: string, index: number, cost: number): boolean {
   if (isUnlocked(save, towerId, tier, index)) return true;
   if (save.gems < cost) return false;
   const unlocked = save.unlocked[towerId]!;
@@ -206,7 +200,7 @@ export function unlockCost(tier: string, index: number): number {
   return getCost(tier, index);
 }
 
-export function canRefund(save: SaveData, towerId: string, tier: string, index: number): number {
+export function canRefund(save: PersistState, towerId: string, tier: string, index: number): number {
   if (!isUnlocked(save, towerId, tier, index)) return 0;
   const unlocked = save.unlocked[towerId]!;
 
@@ -226,7 +220,7 @@ export function canRefund(save: SaveData, towerId: string, tier: string, index: 
   return getCost(tier, index);
 }
 
-export function tryRefund(save: SaveData, towerId: string, tier: string, index: number) {
+export function tryRefund(save: PersistState, towerId: string, tier: string, index: number) {
   const refundAmount = canRefund(save, towerId, tier, index);
   if (refundAmount === 0) return { ok: false, reason: "Cannot refund: dependent unlocks active" };
   const unlocked = save.unlocked[towerId]!;
@@ -237,7 +231,7 @@ export function tryRefund(save: SaveData, towerId: string, tier: string, index: 
   return { ok: true, gems: refundAmount };
 }
 
-export function tryUnlock(save: SaveData, towerId: string, tier: string, index: number) {
+export function tryUnlock(save: PersistState, towerId: string, tier: string, index: number) {
   if (isUnlocked(save, towerId, tier, index)) return { ok: false, reason: "Already unlocked" };
   const cost = getCost(tier, index);
   if (save.gems < cost) return { ok: false, reason: "Not enough gems" };
@@ -262,7 +256,7 @@ export function tryUnlock(save: SaveData, towerId: string, tier: string, index: 
   return { ok: true };
 }
 
-export function maxLevelFor(save: SaveData, towerId: string, variant: "A" | "B" | null): number {
+export function maxLevelFor(save: PersistState, towerId: string, variant: "A" | "B" | null): number {
   const unlocked = save.unlocked[towerId]!;
   let max = 2;
   if (unlocked.levels[2]) max = 3;
@@ -375,8 +369,8 @@ export const GENERAL_ADDON_DEFS: Record<string, GeneralAddonDef> = {
   },
 };
 
-export function isGeneralUnlocked(save: SaveData, key: string, index: number): boolean {
-  const generalAddons = save.generalAddons ?? ({} as GeneralAddons);
+export function isGeneralUnlocked(save: PersistState, key: string, index: number): boolean {
+  const generalAddons = save.generalAddons;
   if (key === "sellOption") {
     if (index === 0) return generalAddons.sellRefundUnlocked as boolean;
     if (index === 1) return generalAddons.sellDiscountUnlocked as boolean;
@@ -386,7 +380,7 @@ export function isGeneralUnlocked(save: SaveData, key: string, index: number): b
   return current !== null && current >= index;
 }
 
-export function isGeneralAvailable(save: SaveData, key: string, index: number): boolean {
+export function isGeneralAvailable(save: PersistState, key: string, index: number): boolean {
   if (isGeneralUnlocked(save, key, index)) return true;
   const def = GENERAL_ADDON_DEFS[key];
   if (!def) return false;
@@ -399,7 +393,7 @@ export function isGeneralAvailable(save: SaveData, key: string, index: number): 
   return true;
 }
 
-export function tryUnlockGeneral(save: SaveData, key: string, index: number) {
+export function tryUnlockGeneral(save: PersistState, key: string, index: number) {
   if (isGeneralUnlocked(save, key, index)) return { ok: false, reason: "Already unlocked" };
   const def = GENERAL_ADDON_DEFS[key];
   if (!def) return { ok: false, reason: "Unknown add-on" };
@@ -407,7 +401,7 @@ export function tryUnlockGeneral(save: SaveData, key: string, index: number) {
   if (save.gems < cost) return { ok: false, reason: "Not enough gems" };
 
   if (key === "sellOption") {
-    const generalAddons = save.generalAddons ?? ({} as GeneralAddons);
+    const generalAddons = save.generalAddons;
     if (index === 0) {
       if (generalAddons.sellDiscountUnlocked as boolean) {
         generalAddons.sellActive = "refund";
@@ -436,27 +430,26 @@ export function tryUnlockGeneral(save: SaveData, key: string, index: number) {
     return { ok: false, reason: "Already unlocked at higher tier" };
 
   save.gems -= cost;
-  if (!save.generalAddons) save.generalAddons = {} as GeneralAddons;
   save.generalAddons[key] = index;
   return { ok: true };
 }
 
-export function getGeneralAddonValue(save: SaveData, key: string): number | string | null {
-  const generalAddons = save.generalAddons ?? ({} as GeneralAddons);
+export function getGeneralAddonValue(save: PersistState, key: string): number | string | null {
+  const generalAddons = save.generalAddons;
   if (key === "sellOption") {
     return generalAddons.sellActive as string | null;
   }
   return generalAddons[key] as number | null;
 }
 
-export function getGeneralAddonTierData(save: SaveData, key: string) {
+export function getGeneralAddonTierData(save: PersistState, key: string) {
   const tier = getGeneralAddonValue(save, key);
   const def = GENERAL_ADDON_DEFS[key];
   if (!def || tier === null || tier === undefined) return null;
   return { tier, ...def.tiers[tier as number] };
 }
 
-export function canRefundGeneral(save: SaveData, key: string, index: number): number {
+export function canRefundGeneral(save: PersistState, key: string, index: number): number {
   if (key === "sellOption") return 0;
   const current = getGeneralAddonValue(save, key);
   if (current !== index) return 0;
@@ -465,21 +458,19 @@ export function canRefundGeneral(save: SaveData, key: string, index: number): nu
   return def.costs[index]!;
 }
 
-export function tryRefundGeneral(save: SaveData, key: string, index: number) {
+export function tryRefundGeneral(save: PersistState, key: string, index: number) {
   const refundAmount = canRefundGeneral(save, key, index);
   if (refundAmount === 0) return { ok: false, reason: "Cannot refund this tier" };
   if (index > 0) {
-    if (!save.generalAddons) save.generalAddons = {} as GeneralAddons;
     save.generalAddons[key] = index - 1;
   } else {
-    if (!save.generalAddons) save.generalAddons = {} as GeneralAddons;
     save.generalAddons[key] = null;
   }
   save.gems += refundAmount;
   return { ok: true, gems: refundAmount };
 }
 
-export function countRefundableGems(save: SaveData): number {
+export function countRefundableGems(save: PersistState): number {
   let total = 0;
   for (const towerId of Object.keys(save.unlocked)) {
     const unlocked = save.unlocked[towerId]!;
@@ -513,7 +504,7 @@ export function countRefundableGems(save: SaveData): number {
   return total;
 }
 
-export function refundAllGems(save: SaveData) {
+export function refundAllGems(save: PersistState) {
   for (const towerId of Object.keys(save.unlocked)) {
     const unlocked = save.unlocked[towerId]!;
     for (let i = unlocked.variantA.length - 1; i >= 0; i--) {

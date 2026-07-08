@@ -31,14 +31,8 @@ import {
 } from "../game/ConstantsTower.js";
 import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "../render/themes/index.js";
 import type { SoundPlayer } from "../sim/HostBindings.js";
-import type { GeneralAddons, TowerUnlocks } from "../stores/persist.js";
+import type { PersistState } from "../sim/PersistState.js";
 import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
-
-interface SaveData {
-  gems: number;
-  unlocked: Record<string, TowerUnlocks>;
-  generalAddons?: GeneralAddons;
-}
 
 interface GridRef {
   tileSize: number;
@@ -219,7 +213,7 @@ export class Tower {
   fixedAimDir: "N" | "E" | "S" | "W" | null;
   placedAt: number;
   addons: number[];
-  save: SaveData | undefined;
+  save: PersistState | undefined;
   _statsCache: TowerStats | null;
   _statsCacheKey: number;
   terrainHeight: number;
@@ -231,7 +225,7 @@ export class Tower {
     type: string,
     tileX: number,
     tileY: number,
-    save: SaveData | undefined,
+    save: PersistState | undefined,
     grid: GridRef,
     theme: MapThemeData | null = null,
     defaultVisual: TowerVisualMeta | null = null,
@@ -538,7 +532,7 @@ export class Tower {
     return Math.round(this.meta.cost * UPGRADE_COST_BASE ** (nextLevel - 2));
   }
 
-  canUpgrade(save: SaveData | undefined): CanUpgradeResult {
+  canUpgrade(save: PersistState | undefined): CanUpgradeResult {
     const cost = this.upgradeCost(this.level + 1);
     if (this.level === 4 && this.variant === null) {
       return { ok: false, reason: "Choose specialization", needVariant: true };
@@ -549,7 +543,7 @@ export class Tower {
     return { ok: true, cost, nextLevel: this.level + 1 };
   }
 
-  specialize(variant: "A" | "B", save: SaveData, actualCost?: number): boolean {
+  specialize(variant: "A" | "B", save: PersistState, actualCost?: number): boolean {
     if (this.level !== 4) return false;
     const unlocked = save.unlocked[this.type];
     if (!unlocked) return false;
@@ -567,7 +561,7 @@ export class Tower {
     return true;
   }
 
-  doUpgrade(save: SaveData, actualCost?: number): CanUpgradeResult {
+  doUpgrade(save: PersistState, actualCost?: number): CanUpgradeResult {
     const check = this.canUpgrade(save);
     if (!check.ok) return check;
     this.level++;
