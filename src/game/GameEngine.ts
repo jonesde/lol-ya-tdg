@@ -638,7 +638,9 @@ export class GameEngine {
     if (this.persistState.generalAddons?.sellActive === "discount") return;
 
     const isRefund = this.persistState.generalAddons?.sellActive === "refund";
-    const val = isRefund ? tower.totalInvested : this.towerManager!.sell(tower, this.persistState);
+    // Always unregister the tower from the grid/managers via sell().
+    const sellValue = this.towerManager!.sell(tower, this.persistState);
+    const val = isRefund ? tower.totalInvested : sellValue;
     this.runState.gold += val;
     this.totalGoldEarned += val;
     this.runState.selectedTowerId = null;

@@ -583,7 +583,12 @@ export class ProjectileManager {
         // not re-home onto an enemy — continue straight and hit whatever lies
         // along the aim line (handled by the targetId === 0 branch next frame).
         if (!projectile.fixedAim) {
-          const nextTarget = this.findNearestEnemy(projectile.x, projectile.y, projectile.range, enemy.id);
+          const nextTarget = this.findNearestEnemy(
+            projectile.x,
+            projectile.y,
+            projectile.range * (this.grid?.tileSize ?? 36),
+            enemy.id,
+          );
           if (nextTarget) {
             projectile.targetId = nextTarget.id;
             return;
@@ -614,7 +619,12 @@ export class ProjectileManager {
     // Bounce Shot: redirect projectile to 1 nearby enemy (max 1 bounce).
     // Fixed-aim projectiles keep their aim point instead of re-homing.
     if (projectile.bounceShot && projectile.bounceCount < 1 && !projectile.fixedAim) {
-      const bounceTarget = this.findNearestEnemy(projectile.x, projectile.y, projectile.range, enemy.id);
+      const bounceTarget = this.findNearestEnemy(
+        projectile.x,
+        projectile.y,
+        projectile.range * (this.grid?.tileSize ?? 36),
+        enemy.id,
+      );
       if (bounceTarget) {
         projectile.targetId = bounceTarget.id;
         projectile.damage *= BOUNCE_DAMAGE_FALLOFF;
