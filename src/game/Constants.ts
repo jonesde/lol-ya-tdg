@@ -328,6 +328,7 @@ export const FOOTER_HEIGHT = 64;
 // Wave Graph — real-time metric chart overlay
 export const WAVE_GRAPH_INTERVAL_SECONDS = 5;
 export const WAVE_GRAPH_HEIGHT = 60;
+export const WAVE_GRAPH_WIDTH = 60;
 export const WAVE_GRAPH_DOT_SIZE = 2;
 export const WAVE_GRAPH_DOT_SPACING = 8;
 export const WAVE_GRAPH_DOT_OPACITY = 0.2;

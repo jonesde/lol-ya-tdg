@@ -2,9 +2,9 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GameState } from "@/game/Constants.js";
-import { createTestStores, createTestUiStore } from "../helpers/mock-stores";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import { WorkerCommandDispatcher } from "@/sim/WorkerCommandDispatcher.js";
+import { createTestStores, createTestUiStore } from "../helpers/mock-stores";
 
 describe("UiStore", () => {
   let store: ReturnType<typeof createTestUiStore>;

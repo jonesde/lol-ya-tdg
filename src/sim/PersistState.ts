@@ -1,3 +1,4 @@
+import { TOTAL_MAPS } from "@/game/Constants.js";
 import type { GeneralAddons, TowerUnlocks } from "@/stores/persist.js";
 
 // Authoritative persist state — ALL fields enumerated explicitly. The
@@ -99,7 +100,7 @@ export function updateBestWave(state: PersistState, mapIndex: number, wave: numb
 }
 
 export function maybeUnlockNextMap(state: PersistState, mapIndex: number): boolean {
-  if (mapIndex >= 0 && mapIndex + 1 < 36) {
+  if (mapIndex >= 0 && mapIndex + 1 < TOTAL_MAPS) {
     state.highestUnlockedMap = Math.max(state.highestUnlockedMap, mapIndex + 1);
     return true;
   }

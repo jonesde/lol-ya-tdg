@@ -181,7 +181,10 @@ export const TOWER_VARIANTS: Record<TowerId, { A: TowerVariantConfig; B: TowerVa
     B: { name: "Napalm", apply: (s, _t) => ({ ...s, napalm: true }) },
   },
   lightning: {
-    A: { name: "Overload", apply: (s, tierIdx) => ({ ...s, chain: s.chain + 2 * tierIdx, damage: s.damage * 1.2 }) },
+    A: {
+      name: "Overload",
+      apply: (s, tierIdx) => ({ ...s, chain: s.chain + 2 * tierIdx, damage: s.damage * 1.2 ** tierIdx }),
+    },
     B: { name: "Stormcall", apply: (s, _t) => ({ ...s, stormcall: true }) },
   },
   railgun: {

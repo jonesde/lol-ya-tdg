@@ -66,6 +66,7 @@ function buildMeta(engine: GameEngine): SnapshotMeta {
 }
 
 function snapshotEnemy(e: Enemy): EnemySnapshot {
+  const maxSlowRemaining = e.slowStack?.reduce((max, s) => Math.max(max, s.remaining), 0) ?? 0;
   return {
     id: e.id,
     type: e.type,
@@ -82,24 +83,23 @@ function snapshotEnemy(e: Enemy): EnemySnapshot {
     onPathBlocked: e.onPathBlocked,
     removed: e.removed,
     slowFactor: e.slowFactor,
-    slowTimer: e.slowStack?.reduce((max, s) => Math.max(max, s.remaining), 0) ?? 0,
+    slowTimer: maxSlowRemaining,
     burnTimer: e.burnTimer,
     hitFlash: 0,
     gameSeconds: e.gameSeconds,
     hitAnimTime: e.hitAnimTime,
     walkingFrameIndex: 0,
     isBoss: e.type === "boss",
-    statusEffects: buildEnemyStatusEffects(e),
+    statusEffects: buildEnemyStatusEffects(e, maxSlowRemaining),
     walking: e.walking,
     hitReaction: e.hitReaction,
   };
 }
 
-function buildEnemyStatusEffects(e: Enemy): StatusEffectSnapshot[] {
+function buildEnemyStatusEffects(e: Enemy, maxSlowRemaining: number): StatusEffectSnapshot[] {
   const effects: StatusEffectSnapshot[] = [];
   if (e.slowFactor < 1) {
-    const maxRemaining = e.slowStack?.reduce((max, s) => Math.max(max, s.remaining), 0) ?? 0;
-    effects.push({ kind: "slow", remaining: maxRemaining, magnitude: 1 - e.slowFactor });
+    effects.push({ kind: "slow", remaining: maxSlowRemaining, magnitude: 1 - e.slowFactor });
   }
   if (e.stunTimer > 0) effects.push({ kind: "stun", remaining: e.stunTimer, magnitude: 1 });
   if (e.burnTimer > 0) effects.push({ kind: "burn", remaining: e.burnTimer, magnitude: e.burnDps ?? 0 });

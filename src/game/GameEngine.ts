@@ -562,7 +562,18 @@ export class GameEngine {
 
   getUpgradeCost(tower: Tower): number {
     const check = tower.canUpgrade(this.persistState);
-    if (!check.ok) return 0;
+    if (!check.ok) {
+      if (check.needVariant) {
+        const specializationCost = tower.upgradeCost(5);
+        const ucrTier = this.persistState.generalAddons.upgradeCostReduction;
+        if (ucrTier !== null && ucrTier !== undefined) {
+          const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
+          return Math.floor(specializationCost * (1 - reduction));
+        }
+        return specializationCost;
+      }
+      return 0;
+    }
     const cost = check.cost ?? 0;
     const ucrTier = this.persistState.generalAddons.upgradeCostReduction;
     if (ucrTier !== null && ucrTier !== undefined) {

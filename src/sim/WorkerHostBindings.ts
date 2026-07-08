@@ -33,7 +33,7 @@ export class WorkerHostBindings implements HostBindings {
     self.postMessage({ type: "gridTowerSync", x, y, placed });
   }
 
-  async requestConfirm(payload: ConfirmPayload): Promise<boolean> {
+  requestConfirm(payload: ConfirmPayload): Promise<boolean> {
     const requestId = ++this.confirmRequestCounter;
     return new Promise<boolean>((resolve) => {
       this.pendingConfirms.set(requestId, resolve);

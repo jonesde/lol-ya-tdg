@@ -247,15 +247,16 @@ describe("Tower", () => {
       expect(tower.stats.splash).toBe(1.5);
     });
 
-    it("Variant A (Overload) increases chain by 2*t and damage by 1.2x", () => {
+    it("Variant A (Overload) increases chain by 2*t and damage by 1.2^t per tier", () => {
       const tower = new Tower("lightning", 0, 0, makeSave(), makeMockGrid());
-      tower.level = 5;
+      tower.level = 7;
       tower.variant = "A";
       tower._statsCache = null;
+      const tierIndex = tower.level - 5;
       const baseChain = TOWER_BASE.lightning.chain;
-      const baseDamage = TOWER_BASE.lightning.damage * TOWER_LEVEL_DMG_MULT ** 4;
-      expect(tower.stats.chain).toBe((baseChain ?? 0) + 2 * 0);
-      expect(tower.stats.damage).toBeCloseTo(baseDamage * 1.2, 4);
+      const baseDamage = TOWER_BASE.lightning.damage * TOWER_LEVEL_DMG_MULT ** (tower.level - 1);
+      expect(tower.stats.chain).toBe((baseChain ?? 0) + 2 * tierIndex);
+      expect(tower.stats.damage).toBeCloseTo(baseDamage * 1.2 ** tierIndex, 4);
     });
 
     it("does not apply variant at level < 5", () => {

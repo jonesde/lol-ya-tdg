@@ -217,7 +217,7 @@ export class Tower {
   addons: number[];
   save: PersistState | undefined;
   _statsCache: TowerStats | null;
-  _statsCacheKey: number;
+  _statsCacheKey: string;
   terrainHeight: number;
   chargeShotCount: number;
   iceBurstTimer: number;
@@ -272,7 +272,7 @@ export class Tower {
       : [];
     this.save = save;
     this._statsCache = null;
-    this._statsCacheKey = -1;
+    this._statsCacheKey = "";
     this.chargeShotCount = 0;
     this.iceBurstTimer = 0;
     this.cachedTargetId = null;
@@ -298,7 +298,7 @@ export class Tower {
     return stats;
   }
 
-  _computeCacheKey(): number {
+  _computeCacheKey(): string {
     const heightTier = getGeneralAddonValue(this.save!, "terrainHeightBonus");
     const rangeTier = getGeneralAddonValue(this.save!, "terrainHeightRangeBonus");
     const milestoneTier = getGeneralAddonValue(this.save!, "damageMilestoneBonus");
@@ -306,11 +306,10 @@ export class Tower {
       milestoneTier !== null && milestoneTier !== undefined
         ? Math.floor(this.totalDamageDealt / MILESTONE_THRESHOLD)
         : -1;
-    const h = (typeof heightTier === "number" ? heightTier : -1) & 0xff;
-    const r = (typeof rangeTier === "number" ? rangeTier : -1) & 0xff;
-    const m = (typeof milestoneTier === "number" ? milestoneTier : -1) & 0xff;
-    const ml = milestoneLevels < 0 ? 0 : milestoneLevels % 0x10000;
-    return h | (r << 8) | (m << 16) | (ml << 24);
+    const h = typeof heightTier === "number" ? heightTier : -1;
+    const r = typeof rangeTier === "number" ? rangeTier : -1;
+    const m = typeof milestoneTier === "number" ? milestoneTier : -1;
+    return `${h}|${r}|${m}|${milestoneLevels}`;
   }
 
   clearStatsCache(): void {

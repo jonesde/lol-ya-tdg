@@ -5,8 +5,8 @@ import {
   WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
   WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW,
   WAVE_GRAPH_DOT_SPACING,
-  WAVE_GRAPH_HEIGHT,
   WAVE_GRAPH_INTERVAL_SECONDS,
+  WAVE_GRAPH_WIDTH,
 } from "./Constants.js";
 
 export interface WaveGraphDot {
@@ -58,7 +58,7 @@ export class WaveGraphTracker {
     this.towerManager = towerManager;
     this.enemyManager = enemyManager;
 
-    this._containerWidth = WAVE_GRAPH_HEIGHT;
+    this._containerWidth = WAVE_GRAPH_WIDTH;
     this._maxDots = Math.ceil(this._containerWidth / WAVE_GRAPH_DOT_SPACING);
     this._prevTotalDamage = this._sumTotalDamage();
     this._prevGems = persistState.gems;

@@ -55,13 +55,13 @@ function buildHexagonVertices(radius: number): number[][] {
 function buildCrossVertices(radius: number): number[][] {
   const height = radius * 0.3;
   return [
+    [-height, -radius],
     [-radius, -height],
     [radius, -height],
-    [radius, height],
-    [-radius, height],
-    [-height, -radius],
     [height, -radius],
     [height, radius],
+    [radius, height],
+    [-radius, height],
     [-height, radius],
   ];
 }

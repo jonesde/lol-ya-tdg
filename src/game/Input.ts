@@ -29,16 +29,17 @@ const KEY_REPEAT_INTERVAL = 500;
 let nextInputCommandId = 1;
 
 export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher, uiStore: UiStoreLike): void {
-  let lastActionTime = 0;
+  const lastActionByKey = new Map<string, number>();
 
   const dispatch = (command: Command): void => {
     dispatcher.dispatch(command);
   };
 
-  function canActNow(): boolean {
+  function canActNow(key: string): boolean {
     const now = performance.now();
-    if (now - lastActionTime >= KEY_REPEAT_INTERVAL) {
-      lastActionTime = now;
+    const lastTime = lastActionByKey.get(key) ?? 0;
+    if (now - lastTime >= KEY_REPEAT_INTERVAL) {
+      lastActionByKey.set(key, now);
       return true;
     }
     return false;
@@ -92,51 +93,55 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         break;
       }
       case "ArrowRight":
+        event.preventDefault();
         if (gs.selectedTowerType) {
-          if (canActNow()) moveBuildPosition(gs, 1, 0);
-        } else if (canActNow()) {
+          if (canActNow(event.key)) moveBuildPosition(gs, 1, 0);
+        } else if (canActNow(event.key)) {
           moveTowerSelection(gs, "right");
         }
         break;
       case "ArrowLeft":
+        event.preventDefault();
         if (gs.selectedTowerType) {
-          if (canActNow()) moveBuildPosition(gs, -1, 0);
-        } else if (canActNow()) {
+          if (canActNow(event.key)) moveBuildPosition(gs, -1, 0);
+        } else if (canActNow(event.key)) {
           moveTowerSelection(gs, "left");
         }
         break;
       case "ArrowUp":
+        event.preventDefault();
         if (gs.selectedTowerType) {
-          if (canActNow()) moveBuildPosition(gs, 0, -1);
-        } else if (canActNow()) {
+          if (canActNow(event.key)) moveBuildPosition(gs, 0, -1);
+        } else if (canActNow(event.key)) {
           moveTowerSelection(gs, "up");
         }
         break;
       case "ArrowDown":
+        event.preventDefault();
         if (gs.selectedTowerType) {
-          if (canActNow()) moveBuildPosition(gs, 0, 1);
-        } else if (canActNow()) {
+          if (canActNow(event.key)) moveBuildPosition(gs, 0, 1);
+        } else if (canActNow(event.key)) {
           moveTowerSelection(gs, "down");
         }
         break;
       case "w":
-        if (canActNow() && gs.selectedTower) {
+        if (canActNow(event.key) && gs.selectedTower) {
           dispatch({ commandId: nextInputCommandId++, type: "action:upgradeSelected" });
         }
         break;
       case "u":
-        if (canActNow() && gs.selectedTower) {
+        if (canActNow(event.key) && gs.selectedTower) {
           dispatch({ commandId: nextInputCommandId++, type: "action:upgradeSelected" });
         }
         break;
       case "a":
-        if (canActNow()) {
+        if (canActNow(event.key)) {
           gs.cycleSpeedReverse();
           dispatch({ commandId: nextInputCommandId++, type: "action:cycleSpeed", direction: -1 });
         }
         break;
       case "s":
-        if (canActNow() && gs.selectedTower) {
+        if (canActNow(event.key) && gs.selectedTower) {
           if (gs.selectedTower.level > 1) {
             dispatch({ commandId: nextInputCommandId++, type: "action:downgradeSelected" });
           } else {
@@ -145,13 +150,13 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         }
         break;
       case "d":
-        if (canActNow()) {
+        if (canActNow(event.key)) {
           gs.cycleSpeed();
           dispatch({ commandId: nextInputCommandId++, type: "action:cycleSpeed", direction: 1 });
         }
         break;
       case "f":
-        if (canActNow() && gs.selectedTower) {
+        if (canActNow(event.key) && gs.selectedTower) {
           const currentMode = gs.selectedTower.targeting || "first";
           const currentIndex = targetingModes.indexOf(currentMode as (typeof targetingModes)[number]);
           const nextIndex = (currentIndex + 1) % targetingModes.length;
@@ -187,8 +192,8 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
   };
 
   const handleDown = (event: KeyboardEvent) => handle(event);
-  const handleUp = (_event: KeyboardEvent) => {
-    lastActionTime = 0;
+  const handleUp = (event: KeyboardEvent) => {
+    lastActionByKey.delete(event.key);
   };
   window.addEventListener("keydown", handleDown);
   window.addEventListener("keyup", handleUp);
