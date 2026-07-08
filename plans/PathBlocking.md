@@ -28,6 +28,7 @@
 - Add new exported constants:
   - `GHOST_RESTORE_BASE_SECONDS = 50`, `GHOST_RESTORE_PER_LEVEL = 5` → restore time = `GHOST_RESTORE_BASE_SECONDS - level * GHOST_RESTORE_PER_LEVEL` (level 7 → 15s, per draft).
   - `GHOST_PARTICLE_DURATION = 2` (explosion length, seconds).
+  - `GHOST_PARTICLE_COUNT = 14` (particle burst size for the ghost explosion; **constant — NOT scaled by level**).
   - `GHOST_OPACITY = 0.5` (render opacity for ghost state).
 - New tower bases (see Phase 5) also get `health` here.
 
@@ -50,7 +51,7 @@
 ### `src/towers/Tower.ts`
 - Add fields: `maxHealth: number`, `health: number`, `isGhost: boolean`, `ghostTimer: number` (counts up), `pendingGhostEffect: boolean` (one-shot flag for GameEngine to spawn particles).
   - Constructor: set `maxHealth = this.base.health * TOWER_LEVEL_DMG_MULT ** (this.level - 1)`, `health = maxHealth`, `isGhost = false`, `ghostTimer = 0`, `pendingGhostEffect = false`.
-- Add `takeDamage(amount: number, attacker?: Enemy): void` → `this.health -= amount`; if `health <= 0 && !isGhost` set `isGhost = true`, `pendingGhostEffect = true`. (Optional `attacker` param supports thorn reflection in Phase 5.)
+- Add `takeDamage(amount: number, attacker?: Enemy): void` → `this.health -= amount`; if `health <= 0 && !isGhost` set `isGhost = true`, `pendingGhostEffect = true`. (Optional `attacker` param supports thorn reflection in Phase 5.) **Note:** `Tower.takeDamage` does not currently exist — this is a *new* method, so there are no existing callers to reconcile, and it does not collide with `Enemy.takeDamage(amount, armorPiercing: boolean)` at `Enemy.ts:204` (different class; `armorPiercing` is Enemy-only). The `attacker?: Enemy` second parameter is therefore safe to add.
   - Add `restore(): void` → `isGhost = false`, `health = maxHealth`, `ghostTimer = 0`, and re-register the tile with the grid so it blocks again and paths recompute (`grid.clearTowerGhost(tileX, tileY)` — see Grid section). Call this both from the ghost timer in `update()` (mid-wave auto-restore) **and** from `GameEngine.onWaveStart` (wave-start restore). Both paths must keep the `blocked`/`ghostTowers` sets and `recomputePaths()` consistent.
   - Add `canModify(): boolean { return !this.isGhost; }`. Enumerate every mutation entry point and guard each on `canModify()`, surfacing a "ghosted" reason when blocked: `canUpgrade()` (return `{ ok: false, reason: "Ghosted — cannot upgrade" }` when `isGhost`), `specialize()`, `sellValue()` (block/zero when `isGhost`), and the downgrade (sell-at-level>1) path in `GameEngine`/`TowerPanel`. Ghost towers must be rejected at all of these.
 - Ghost timer tick: advance `ghostTimer += dt` inside `update()`; when `ghostTimer >= restoreTime` call `restore()`. (restoreTime computed from level.)
@@ -68,13 +69,16 @@
 - `GameEngine` still lives at this path but runs **inside the worker** (`src/sim/WorkerEntry.ts`); it receives a `HostBindings` instance, no Pinia stores. `particleManager` is still a field (**line 88**). Update order is preserved: `enemyManager.update(dt, ...)` (**line 294**) then `towerManager.update(dt, this.enemyManager)` (**line 319**); the `enemy.onPathBlocked` bounty branch remains a safety net at **line 310**.
 - **Keep the existing update order: enemies first, then towers.** Do NOT move ghost-resolution before enemy update — if a tower dies during the tower-update phase, enemies that already ran this frame would keep attacking a dead tower for one full frame. After `towerManager.update(dt, ...)`, iterate towers for ghost effects (particles + `setTowerGhost` + `recomputePaths`), then on the next frame enemies see the updated grid.
   - After `towerManager.update(dt, ...)`, iterate `towerManager.towers`:
-    - If `tower.pendingGhostEffect`: call `particleManager.spawn(tower.x, tower.y, tower.color, count, { life: GHOST_PARTICLE_DURATION, ... })` (`ParticleSystem.spawn` signature at `src/game/ParticleSystem.ts:33`); `tower.pendingGhostEffect = false`; call `grid.setTowerGhost(tower.tileX, tower.tileY)` (stops blocking + recomputes path).
+    - If `tower.pendingGhostEffect`: call `particleManager.spawn(tower.x, tower.y, tower.color, GHOST_PARTICLE_COUNT, { life: GHOST_PARTICLE_DURATION, ... })` (`ParticleSystem.spawn` signature at `src/game/ParticleSystem.ts:33`); `tower.pendingGhostEffect = false`; call `grid.setTowerGhost(tower.tileX, tower.tileY)` (stops blocking + recomputes path).
 - In `onWaveStart(wave)` (still a method at **line 386**): restore all ghost towers → `tower.restore()` + `grid.clearTowerGhost(tower.tileX, tower.tileY)`. **Then handle enemies standing on restored tiles:** iterate all enemies; for any enemy whose current tile is now in `grid.blocked` (just restored from ghost), teleport them to the last valid position on their path before that tile. Without this, an enemy physically on the tile will suddenly find its path blocked again.
 - Keep the `enemy.onPathBlocked` bounty branch as a safety net only (Phase 2/3 let enemies route through towers instead).
 - **Ghost-reject for sell/downgrade (HostBindings-era signatures):** `sellSelected()` is at **line 624** and now calls `host.requestConfirm({ towerId, towerType, towerLevel, sellValue, isRefund })` (early-return when `sellActive === "discount"` at lines 628–630); `executeSell` at **line 673**; `downgradeSelected` at **line 693**. Guard each on `!tower.isGhost` before mutating. (The old `useUiStore().showConfirm` and `this.persistStore.save()` calls are gone — sound is `this.host.playSound(...)`, persist is `persistDirty = true` + `host.schedulePersistSave`.)
 
 ### `src/render/svg/TowerManager.ts`
 - `syncFromGameEngine(towers: TowerSnapshot[], dt: number)` is at **line 13**; `TowerRenderProxy.sync(tower: TowerSnapshot, dt)` at **line 142**. In `sync`, read `tower.isGhost` from the snapshot; if true set `el.style.opacity = String(GHOST_OPACITY)`, else reset to `"1"`. (CSS/SVG opacity per draft — no new symbol needed. `isGhost` must be added to `TowerSnapshot`.)
+
+### `src/sim/SnapshotSerializer.ts` (edit site — previously unlisted)
+- `buildSnapshot()` serializes `Tower` → `TowerSnapshot` (tower fields are copied near **line 112+** of `SimulationSnapshot` / serializer). Populate `isGhost` on the `TowerSnapshot` from `tower.isGhost` here, mirroring how existing tower scalar fields are serialized (e.g. near where `health`/level are copied). Without this the render manager never sees the ghost flag.
 
 ### `src/game/ParticleSystem.ts`
 - Reuse existing `spawn(x, y, color, count, {life, size, speed})` (signature at **line 33**, `getRenderData` at **line 76**). No change required; call with `tower.color` and a short life.
@@ -84,9 +88,10 @@
 ## Phase 2 — Path-Tile Placement + Dijkstra Weakest-Path Fallback
 
 ### `src/grid/Pathfinding.ts`
-- Current anchors: `canPlaceWithoutBlocking` (**line 123**), `bfsShortestPath` (**line 17**), and `bfsReverseFromBase` (**line 68**) — the reverse-BFS rejection to remove lives in `bfsReverseFromBase`. `dijkstraWeakestPath` is new.
+- Current anchors: `canPlaceWithoutBlocking` (**line 123**), `bfsShortestPath` (**line 17**), and `bfsReverseFromBase` (**line 68**) — the reverse-BFS reachability check used by `canPlaceWithoutBlocking`. `dijkstraWeakestPath` is new.
+- **Scope isolation (lives are NOT affected):** `bfsReverseFromBase` is used in **exactly one place** — `canPlaceWithoutBlocking` (the loop at `Pathfinding.ts:137`). It is a placement-validation-only helper and is **never** involved in computing enemy lives (lives come from `GameEngine.startingLives` + healer increments). Removing the path-tile rejection below therefore cannot change lives; the change is fully isolated to build validation.
 - `canPlaceWithoutBlocking(grid, spawns, base, towerXY, existingBlocked, cachedPathTiles?)`:
-  - **Path-tile placement is always permitted.** Because routing now goes *through* towers (Dijkstra weakest-path fallback, below), tower tiles are traversable — placing a tower on a path tile can never disconnect spawns from the base. Remove the reverse-BFS rejection in `bfsReverseFromBase` (**line 68**) for path tiles entirely.
+  - **Path-tile placement is always permitted.** Because routing now goes *through* towers (Dijkstra weakest-path fallback, below), tower tiles are traversable — placing a tower on a path tile can never disconnect spawns from the base. The rejection lives **inside `canPlaceWithoutBlocking`**, not in `bfsReverseFromBase`: remove the loop at **lines 138–140** that returns `false` when a spawn becomes unreachable under `test`. `bfsReverseFromBase` (**line 68**) itself only computes a reachable set; it is reused by the Dijkstra fallback and must **not** be edited. So for path tiles, `canPlaceWithoutBlocking` returns `true` directly (move/explicitly early-return before the reachability check). Non-path tiles keep the existing reachability rejection unchanged.
   - Keep the fast path: if the tile is not on any cached path, return `true` (unchanged).
   - For path tiles, still reject only if the tile is already occupied by another tower (handled by `Grid.canBuild`/`registerTower`, since `blocked`/`ghostTowers` already contain it). The reachability BFS must **not** treat live tower tiles as walls; if any reachability check is retained, it must treat all path/base/spawn tiles as passable regardless of `blocked` (Dijkstra makes them traversable).
   - Ghost tiles: `Grid.canBuild` rejects if `ghostTowers.has(key)` (a ghost still occupies the tile), so `canPlaceWithoutBlocking` will not be asked to place on one.
@@ -107,6 +112,7 @@
 
 ### `src/enemies/Enemy.ts`
 - **Wiring (prerequisite for Phases 2–4):** `Enemy` currently only holds a limited `GridRef` (`blocked`, `getPathFor`, `tileToWorld`, `getBase` — interface at **line 36**) and no tower reference. Add a tower lookup so enemies can attack towers and detect ghost/harmless state. Extend `Enemy`'s `grid` ref (or pass a `TowerManager` ref into `Enemy.update`) with `towerAt(x, y): Tower | null` (delegate to `TowerManager.towerAt`, which already exists). Wire it in `GameEngine` (set on the grid/enemy manager) and in `EnemyManager.spawn` so every enemy can resolve the tower on a given tile. `EnemyManagerRef` (`getEnemiesInRange` at **line 46**) is the existing pattern to mirror. All tower interactions below use this lookup.
+  - **Pre-flight check (do this before coding):** confirm `EnemyManager` already holds a `TowerManager` reference (or receives one via `GameEngine`). If `EnemyManager.spawn` cannot reach `towerAt`, this is an *additional* plumbing step — `GameEngine` must pass the `TowerManager` into `EnemyManager` (constructor or an injected field) so it can forward `towerAt` to each spawned `Enemy`. Do not assume the reference exists; verify the current `EnemyManager` constructor/field list first.
 - In `update()`, replace the current "if next tile blocked → recompute BFS and if null set `onPathBlocked`" logic:
   - **Attack target resolution (reconciles Phase 2 path-driven and Phase 4 collision-driven triggers):**
      - **Primary target** = the tower on the *forward path tile* (the next tile in `this.path`). If that next tile holds a **live** (non-ghost) tower (resolved via the `towerAt` lookup from the Wiring step above), do **not** advance `pathIdx`, set `this.blockedByTower = tower`, and trigger attack (Phase 3). The enemy stops moving when its center reaches the **edge** of the blocking tower's tile — i.e. when the distance to the next waypoint center is `<= tileSize/2 + this.radius` (not the tile center) — so it attacks from the boundary instead of visually overlapping the tower sprite. Movement pauses; when that tower dies (becomes ghost) the tile opens, the path recomputes, and the enemy advances.
@@ -144,6 +150,9 @@
   - `else` → fall back to walking frames
 - Check both `hitAnimTime` and `attackAnimTime` as distinct fields on the same object. The existing `hitReaction` branch is the template to follow. `attackAnimTime` must be added to `EnemySnapshot`.
 
+### `src/sim/SnapshotSerializer.ts` (edit site — previously unlisted)
+- `buildSnapshot()` serializes `Enemy` → `EnemySnapshot` (enemy fields copied near **lines 89–90** of the serializer, alongside `hitAnimTime`). Populate `attackAnimTime` on the `EnemySnapshot` from `enemy.attackAnimTime` here, mirroring how `hitAnimTime` is already serialized. Without this the render manager never sees the attack animation timing.
+
 ### `src/render/themes/normalize.ts` & `index.ts`
 - `index.ts`: `MapThemeAnimation` (**line 22**), `EnemyVisualMeta` (**line 35**, currently `walking` + `hitReaction: MapThemeAnimation | null`). Extend `EnemyVisualMeta` to include `attack?: MapThemeAnimation`.
 - `normalize.ts`: `normalizeAnimation` (**line 47**), `normalizeEnemyVisual` (**line 68**, currently returns `{ name, color, shape, walking, hitReaction }`). Extend `normalizeEnemyVisual` to accept `attack?: { duration: number; frames: { image: string }[] }` and produce `attack` via `normalizeAnimation(raw.attack)` when present (exactly the pattern already used for `hitReaction`); also extend the raw `enemies` record type to allow the optional `attack` field. `Enemy`/`EnemyManager` must tolerate `attack === null` (the-aftermath has none — see strict-scope decision).
@@ -157,7 +166,12 @@
 - Reuse the existing spatial hash in `src/enemies/EnemyManager.ts` via `getEnemiesInRange(x, y, radius)` to find colliding enemies each frame.
 - **Movement model (centerline + laneOffset):** Refactor `Enemy` so it maintains a *path centerline position* (`centerX/centerY` advanced toward each waypoint as today) plus a signed scalar `laneOffset` (perpendicular to the current facing/`moveAngle`). Each frame:
   - Advance `centerX/centerY` along the path toward the next waypoint by `step` (unchanged forward logic).
-  - Resolve collisions against neighbors within `this.radius + other.radius` (spatial hash). If overlapping, separate laterally: the **slower** enemy is pushed to the **right** side of the path, the **faster** enemy to the **left** side. Define the perpendicular consistently relative to `moveAngle` (e.g. right-perpendicular = `(sin a, -cos a)` for `a = moveAngle`); slower gets `+offset`, faster gets `-offset`. Accumulate into `laneOffset`. **Note:** with `moveAngle = atan2(deltaY, deltaX)` and screen coords where Y increases downward, `(0, -1)` = up, `(-1, 0)` = left — easy to sign-flip, so add a comment documenting this convention.
+  - Resolve collisions against neighbors within `this.radius + other.radius` (spatial hash). If overlapping, separate laterally: the **slower** enemy is pushed to the **right** side of the path, the **faster** enemy to the **left** side. **Definitive perpendicular convention (commit to this — no "e.g."):** with `moveAngle = atan2(deltaY, deltaX)` in screen coordinates where **Y increases downward**, the forward unit vector is `(cos a, sin a)`. The right-perpendicular (starboard; visually clockwise = the right-hand side in a top-down Y-down view) is obtained by rotating the forward vector +90°:
+    ```
+    perpX = -Math.sin(moveAngle)
+    perpY =  Math.cos(moveAngle)
+    ```
+    Slower enemy gets `laneOffset += separation` (right, `+offset`); faster enemy gets `laneOffset -= separation` (left, `-offset`). Accumulate into `laneOffset`. Document this exact formula and the Y-down rationale in a code comment at the derivation site so it cannot be sign-flipped later.
   - **Clamp** `|laneOffset| <= tileSize/2 - this.radius` so the enemy always stays within the current path tile bounds ("stack up against the tower" rather than leaving the path when blocked).
   - Derive the true engine position: `x = centerX + perpX * laneOffset`, `y = centerY + perpY * laneOffset` (perpendicular unit vector from `moveAngle`), then `worldPos = { x, y }`. Collisions and the renderer both read this real `x/y`, so the simulation and the SVG `<use>` always match.
   - If an enemy is blocked from forward motion AND is adjacent to a tower (touching its tile), apply the attack-target resolution from Phase 2 (set `blockedByTower` to the lowest-health adjacent live tower). **"Blocked from forward motion" is defined precisely as:** the enemy cannot advance its centerline toward the next waypoint because (a) the forward path tile itself holds a live tower (the primary target case), **or** (b) another enemy occupies the space between this enemy and the tower/waypoint it is trying to reach, preventing the step from completing. Resolve collisions against neighbors the same as the general rule: within `this.radius + other.radius` (spatial hash). In case (b) the enemy is considered blocked-by-collision; once the obstructing enemy moves away (or is killed) and the path is clear, `blockedByTower` is cleared and movement resumes.
@@ -167,42 +181,43 @@
 
 ## Phase 5 — Two New High-Health Towers
 
-### `src/game/ConstantsTower.ts`
-- Current anchors: `TowerIds` (**line 2**), `TOWER_META` (**line 20**), `TowerVariantStats` (a `type` alias at **line 144**, not an `interface`), `knockback: boolean` inside it (**line 158**), `TOWER_VARIANTS` (**line 166**), railgun A `apply: (s, _t) => ({ ...s, knockback: true })` (**line 191**), `RAILGUN_KNOCKBASE` (**line 85**), `RAILGUN_KNOCK_SCALE` (**line 87**).
-- Add to `TowerIds`: `STURDY_WALL: "sturdyWall"`, `SHOTGUN_TANK: "shotgunTank"`.
-- `TOWER_META`: sturdyWall cost (proposed 40), shotgunTank cost = `basic.cost * 1.5` = 30 (50% more than basic, per draft).
-- `TOWER_BASE`:
-  - sturdyWall: `range: 0` (no targeting/fire), `damage: 0`, `fireRate: 0`, `health: 200` (high; no damage).
-   - shotgunTank: `range: 1`, `damage: 8` (like basic), `fireRate: 1.2`, `projSpeed: 14`, `health: 250` (independent static value like the other towers — the "basicHealth * 10" phrasing in the draft was only a planning reference, not a code dependency).
-- New knockback constant: `SHOTGUN_KNOCKBASE = RAILGUN_KNOCKBASE * 1.5` (= 0.45). `SHOTGUN_KNOCK_SCALE` analogous to railgun.
-- `TOWER_VARIANTS`:
-  - sturdyWall A ("Thorn Wall"): reflects `attackDamage * [0.3, 0.6, 1.0]` at levels 5/6/7 back to the attacking enemy. Store `thornReflectPct` per tier.
-  - sturdyWall B ("Electric Fence"): on enemy contact deals touch damage + short stun (stop motion + attacks). Add behavior flags `fenceDamage`, `fenceStun`.
-  - shotgunTank A ("Reinforced"): increases tower `health` (e.g., ×1.5/×2/×3 per tier).
-  - shotgunTank B ("Repulsor"): knockback like railgun A but using `SHOTGUN_KNOCKBASE` (50% stronger than railgun).
+This phase is split into three **ordered** sub-steps. **Do 5a first and get it green (lint + typecheck + existing knockback tests) before starting 5b/5c** — 5a is the largest, riskiest refactor (it changes an *existing* `railgun` variant's wire format) and is fully independent of the new towers, so it should land and be verified on its own.
 
-### `src/towers/SkillTree.ts`
-- Current anchors: `VARIANT_INFO` (**line 57**), `ADDON_INFO` (**line 84**), the `for (const id of Object.values(TowerIds))` auto-build loop (**line 46**, repeated at **line 117**), and `populateSkillTreeTheme(defaultTowerVisuals)` (**line 45**) — which replaces the old module-level `useMapThemeStore()` call (the ArchitecturePlan noted at old lines 122–123; that call is now gone). Note `maxLevelFor(save, towerId, variant)` is now defined in `SkillTree.ts` at **line 259**, not in `persist.ts`.
-- Add `VARIANT_INFO` and `ADDON_INFO` entries for `sturdyWall` and `shotgunTank` (the `for (const id of Object.values(TowerIds))` loop auto-builds `SKILL_TREE` entries). Provide addon descriptions consistent with existing style.
-- Add any addon effect wiring in `TOWER_ADDON_EFFECTS` if needed (proposed: leave addons minimal or reuse patterns; fence/stun/thorn handled via variant flags).
+### 5a — Knockback option refactor (`knockback: boolean` → `knockbackBase`/`knockbackScale`)
 
-### `src/stores/persist.ts` & `src/sim/PersistState.ts` (both required, else new towers crash)
-- `persist.ts` already exists (not new). Add `sturdyWall` and `shotgunTank` entries to `defaultUnlocked()` (at **line 73**; `blankTower()` at **line 50**, `unlocked` field at **line 39**, `migrateToCurrent` at **line 165**) alongside the existing six, each seeded with `blankTower()`. Without this, `maxLevelFor(save, towerId)` (`save.unlocked[towerId]!`) and `Tower` addon loading throw on the new IDs for both fresh and migrated saves.
-- **Also** add the same two entries to the worker-side plain-state `defaultUnlocked()` in `src/sim/PersistState.ts` (**line 40**, invoked by `createDefaultPersistState` at **line 66**). `migrateToCurrent` in `persist.ts` already iterates `Object.keys(defaults.unlocked)`, so seeding both here is sufficient to seed old saves too. (The plan's earlier phrasing "persist.ts (NEW)" was wrong — the file exists; the gap is that the worker plain-state copy must be updated in lockstep.)
+Migrates the existing knockback mechanism only; introduces no new towers.
 
-### `src/towers/Tower.ts`
-- Wire variant behaviors:
+- `src/game/ConstantsTower.ts`: `TowerVariantStats` (type alias at **line 144**) currently has `knockback: boolean` (**line 158**) — replace with `knockbackBase: number` and `knockbackScale: number` (default `0`). railgun A `apply: (s, _t) => ({ ...s, knockback: true })` (**line 191**) becomes `apply: (s, _t) => ({ ...s, knockbackBase: RAILGUN_KNOCKBASE, knockbackScale: RAILGUN_KNOCK_SCALE })`, reusing `RAILGUN_KNOCKBASE` (**line 85**) / `RAILGUN_KNOCK_SCALE` (**line 87**).
+- `src/towers/Tower.ts`: drop the boolean entirely. **Anchors:** constructor **226**, `update` **653**, `fire` **760**, `ProjectileManagerRef.spawn` opts `knockback?: boolean` **101**, `TowerStats.knockback: boolean` **148**, `_computeStats` **319**, `let knockback = false` **336**, variant apply/destructure sites **356/374/396/414**, return object includes `knockback` **507**, `fire` passes `knockback: stats.knockback` **817**. Replace every `knockback` boolean usage with the `knockbackBase`/`knockbackScale` pair.
+- `src/game/ProjectileManager.ts`: **Anchors:** `spawn` opts `knockback?: boolean` (**206**), `applyProjectileEffects` param `knockback: boolean` (**288**), railgun knockback gating (**308–310**). `ProjectileManagerRef.spawn` opts become `knockbackBase?: number; knockbackScale?: number`. Knockback is "enabled" when `knockbackBase > 0`; `applyProjectileEffects` reads the pair instead of the boolean; railgun gating uses `projectile.knockback` derived from `knockbackBase`.
+- **Verify before proceeding:** existing `projectile-manager.test.ts` knockback cases must still pass; run `npm run lint && npm run typecheck` and the knockback tests. No new-tower code is touched in this sub-step.
+
+### 5b — New tower stats, variants, SkillTree, persist, theme registration
+
+- `src/game/ConstantsTower.ts`:
+  - Add to `TowerIds` (**line 2**): `STURDY_WALL: "sturdyWall"`, `SHOTGUN_TANK: "shotgunTank"`.
+  - `TOWER_META` (**line 20**): sturdyWall cost (proposed 40), shotgunTank cost = `basic.cost * 1.5` = 30 (50% more than basic, per draft).
+  - `TOWER_BASE` (**line 47**):
+    - sturdyWall: `range: 0` (no targeting/fire), `damage: 0`, `fireRate: 0`, `health: 200` (high; no damage).
+    - shotgunTank: `range: 1`, `damage: 8` (like basic), `fireRate: 1.2`, `projSpeed: 14`, `health: 250` (independent static value like the other towers — the "basicHealth * 10" phrasing in the draft was only a planning reference, not a code dependency).
+  - New knockback constant for shotgunTank B (consumed in 5c): `SHOTGUN_KNOCKBASE = RAILGUN_KNOCKBASE * 1.5` (= 0.45). `SHOTGUN_KNOCK_SCALE` analogous to railgun.
+  - `TOWER_VARIANTS` (**line 166**):
+    - sturdyWall A ("Thorn Wall"): reflects `attackDamage * [0.3, 0.6, 1.0]` at levels 5/6/7 back to the attacking enemy. Store `thornReflectPct` per tier.
+    - sturdyWall B ("Electric Fence"): on enemy contact deals touch damage + short stun (stop motion + attacks). Add behavior flags `fenceDamage`, `fenceStun`.
+    - shotgunTank A ("Reinforced"): increases tower `health` (e.g., ×1.5/×2/×3 per tier).
+    - shotgunTank B ("Repulsor"): knockback via `SHOTGUN_KNOCKBASE`/`SHOTGUN_KNOCK_SCALE` (uses the 5a base/scale pair).
+- `src/towers/SkillTree.ts`: Current anchors: `VARIANT_INFO` (**line 57**), `ADDON_INFO` (**line 84**), the `for (const id of Object.values(TowerIds))` auto-build loop (**line 46**, repeated at **line 117**), `populateSkillTreeTheme(defaultTowerVisuals)` (**line 45**) — which replaces the old module-level `useMapThemeStore()` call. Note `maxLevelFor(save, towerId, variant)` is now defined in `SkillTree.ts` at **line 259**, not in `persist.ts`. Add `VARIANT_INFO`/`ADDON_INFO` entries for `sturdyWall`/`shotgunTank` (the auto-build loop creates `SKILL_TREE` entries). Provide addon descriptions consistent with existing style. Add any addon effect wiring in `TOWER_ADDON_EFFECTS` only if needed (proposed: leave addons minimal; fence/stun/thorn handled via variant flags).
+- `src/stores/persist.ts` & `src/sim/PersistState.ts` (both required, else new towers crash): `persist.ts` already exists. Add `sturdyWall`/`shotgunTank` to `defaultUnlocked()` (persist at **line 73**; `blankTower()` at **line 50**, `unlocked` field at **line 39**, `migrateToCurrent` at **line 165**) alongside the existing six, each seeded with `blankTower()`. **Also** add the same two entries to the worker-side plain-state `defaultUnlocked()` in `src/sim/PersistState.ts` (**line 40**, invoked by `createDefaultPersistState` at **line 66**) — `migrateToCurrent` in `persist.ts` already iterates `Object.keys(defaults.unlocked)`, so seeding both is sufficient. (The plan's earlier phrasing "persist.ts (NEW)" was wrong — the file exists; the gap is that the worker plain-state copy must be updated in lockstep.)
+- `src/render/themes/data/default-map-theme.json` (only — `the-aftermath.json` is out of scope): Add `sturdyWall` and `shotgunTank` tower entries with `name`, `color`, `icon`, `animation`, `walking` (frames) and generate `tower-sturdyWall-f0`, `tower-shotgunTank-f0` symbols via `useSvgStaticContent.ts`. `the-aftermath.json` is **out of scope** for the new tower sprites.
+- `src/components/GameShop.vue` / `src/game/Input.ts`: shop already iterates `TowerIds` (`const towerList = Object.values(TowerIds)` at **GameShop.vue:19**, `v-for="id in towerList"` at **208**; `Input.ts` `towerIdList = Object.values(TowerIds)` at **line 11**, digits 1–9 map via `(digit - 1) % towerIdList.length` at **lines 182–184**). Dynamic, no hard-coded 6-tower assumption (README: "up to 9"). Adding `STURDY_WALL`/`SHOTGUN_TANK` to `TowerIds` (5b top) makes them appear automatically.
+
+### 5c — Variant behavior wiring
+
+- `src/towers/Tower.ts`:
   - Thorn (sturdyWall A): when an enemy calls `tower.takeDamage(d, enemy)`, also `enemy.takeDamage(d * thornReflectPct)`. Use the optional `attacker` param added in Phase 1.
   - Electric fence (sturdyWall B): in `update()`, if not ghost, query `enemyManager.getEnemiesInRange(x, y, fenceRangePx)` and apply `enemy.takeDamage(fenceDamage)` + `enemy.applyStun(fenceStun)` (mirror frostAura/staticField pattern).
-  - Shotgun Tank B knockback: instead of the current `knockback: boolean` flag, **extend the projectile options** with an explicit base/scale pair: `knockbackBase: number` and `knockbackScale: number`. In `fire()`, pass `SHOTGUN_KNOCKBASE`/`SHOTGUN_KNOCK_SCALE` as `knockbackBase`/`knockbackScale`. `ProjectileManager` applies knockback whenever `knockbackBase` is provided (treat as "knockback enabled" when `knockbackBase > 0`), dropping the old boolean. The same extended options are used by railgun variant A (`RAILGUN_KNOCKBASE`/`RAILGUN_KNOCK_SCALE`) so the boolean is removed entirely. **Current `Tower.ts` anchors** (constructor **226**, `update` **653**, `fire` **760**, `ProjectileManagerRef.spawn` opts `knockback?: boolean` **101**, `TowerStats` `knockback: boolean` **148**, `_computeStats` **319**, `let knockback = false` **336**, variant apply/destructure sites **356/374/396/414**, return object includes `knockback` **507**, `fire` passes `knockback: stats.knockback` **817**). **Current `ProjectileManager.ts` anchors** (`spawn` opts `knockback?: boolean` **206**, `applyProjectileEffects` param `knockback: boolean` **288**, railgun knockback gating **308–310**). All `knockback: boolean` references at these sites move to the `knockbackBase`/`knockbackScale` pair.
   - Shotgun Tank A +health: apply in `constructor`/variant application by scaling `maxHealth`/`health`.
-
-### `src/render/themes/data/default-map-theme.json` (only — `the-aftermath.json` is out of scope)
-- Add `sturdyWall` and `shotgunTank` tower entries with `name`, `color`, `icon`, `animation`, `walking` (frames) and generate `tower-sturdyWall-f0`, `tower-shotgunTank-f0` symbols via `useSvgStaticContent.ts`.
-- `the-aftermath.json` is **out of scope** for the new tower sprites (leave existing behavior); only `default-map-theme.json` receives them.
-
-### `src/components/GameShop.vue` / shop data
-- Confirm shop iterates `TowerIds` (or an ordered tower list) so the two new towers appear for building. `GameShop.vue` already does this: `const towerList = Object.values(TowerIds)` (**line 19**) and `v-for="id in towerList"` (**line 208**) — dynamic, no hard-coded 6-tower assumption (README says "up to 9" and `1`–`9` keys). Add `STURDY_WALL`/`SHOTGUN_TANK` to `TowerIds` (Phase 5 top) and they appear automatically. Keyboard input is likewise dynamic: `src/game/Input.ts` `towerIdList = Object.values(TowerIds)` (**line 11**), digits 1–9 map via `(digit - 1) % towerIdList.length` (**lines 182–184**).
+  - Shotgun Tank B knockback: in `fire()`, pass `SHOTGUN_KNOCKBASE`/`SHOTGUN_KNOCK_SCALE` as `knockbackBase`/`knockbackScale` (the 5a pair).
 
 ---
 
@@ -231,7 +246,7 @@
 
 This plan was written before the worker/snapshot migration (`plans/ArchitecturePlan.md` §3) was implemented. It remains valid as a feature plan, but its relationship to the architecture is now explicit:
 
-- **Independent of the worker/snapshot migration.** Ghost state, tower health, enemy attack, and path-blocking operate on plain `Tower`/`Enemy`/grid state and are added as fields mirrored into `SimulationSnapshot` (`TowerSnapshot.isGhost`, `EnemySnapshot.attackAnimTime`/`blockedByTower`, etc.). They do not touch the sim↔main boundary and can be built now on the logic layer. The render managers already consume snapshots (`EnemyManager.syncFromGameEngine`, `TowerManager.syncFromGameEngine`), so the new visual fields are read off the snapshot, not off live objects.
+- **Independent of the worker/snapshot migration.** Ghost state, tower health, enemy attack, and path-blocking operate on plain `Tower`/`Enemy`/grid state and are added as fields mirrored into `SimulationSnapshot` (`TowerSnapshot.isGhost`, `EnemySnapshot.attackAnimTime`). They do not touch the sim↔main boundary and can be built now on the logic layer. The render managers already consume snapshots (`EnemyManager.syncFromGameEngine`, `TowerManager.syncFromGameEngine`), so the new visual fields are read off the snapshot, not off live objects. **Note:** `blockedByTower` is a *live* `Tower` reference used only by sim-side attack logic and is **not** serialized into `EnemySnapshot` — the renderer determines which attack frame to show solely from `attackAnimTime` + `gameSeconds`, so no tower reference is needed in the snapshot.
 
 - **Collision & routing plug into the `SpatialIndex` seam (§3.5), not into Phases 0–9.** `SpatialIndex` and SoA typed-array storage are **not implemented**; they are enumerated as near-future simulation features in §1.4 (enemy–enemy collision, enemy–map collision, per-enemy non-linear routing, pile-up). Phase 2's Dijkstra weakest-path and Phase 4's enemy–enemy collision/lane-passing are exactly those features. They are implemented here against the existing `EnemyManager` spatial hash (Phase 4) and plain grid-graph Dijkstra (Phase 2) as **interim** implementations, structured so the only swap point later is the query call → `SpatialIndex.queryRange` and the position source → SoA `Float32Array`s. This keeps collision/routing from smearing across `Enemy`/`EnemyManager`/`WaveManager`/`Pathfinding` (the exact risk §3.5 warns about). The `SpatialIndex` interface is the single most important seam to establish early, and this plan's collision/routing work is the feature that will consume it.
 
