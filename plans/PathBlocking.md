@@ -12,7 +12,8 @@
 
 1. **Phase 0 — Constants & data model** (health, ghost timing, attack stats, new towers).
 2. **Phase 1 — Tower health + ghost state** (Tower, Grid, Tower render, GameEngine, particles).
-3. **Phase 2 — Path-tile placement + Dijkstra fallback** (Pathfinding, Grid, canPlaceWithoutBlocking, Enemy path-follow).
+3. **Phase 1.5 — TowerManager reachability for enemies** (EnemyManager plumbing; prerequisite for Phases 2–4).
+4. **Phase 2 — Path-tile placement + Dijkstra fallback** (Pathfinding, Grid, canPlaceWithoutBlocking, Enemy path-follow).
 4. **Phase 3 — Enemy attack ability + attack animation** (Enemy, theme JSON, Enemy render).
 5. **Phase 4 — Enemy-enemy collision & lane passing** (Enemy update, spatial-hash queries).
 6. **Phase 5 — Two new towers** (Constants, SkillTree, theme SVG, electric-fence/thorn/knockback logic).
@@ -55,7 +56,12 @@
   - Add `restore(): void` → `isGhost = false`, `health = maxHealth`, `ghostTimer = 0`, and re-register the tile with the grid so it blocks again and paths recompute (`grid.clearTowerGhost(tileX, tileY)` — see Grid section). Call this both from the ghost timer in `update()` (mid-wave auto-restore) **and** from `GameEngine.onWaveStart` (wave-start restore). Both paths must keep the `blocked`/`ghostTowers` sets and `recomputePaths()` consistent.
   - Add `canModify(): boolean { return !this.isGhost; }`. Enumerate every mutation entry point and guard each on `canModify()`, surfacing a "ghosted" reason when blocked: `canUpgrade()` (return `{ ok: false, reason: "Ghosted — cannot upgrade" }` when `isGhost`), `specialize()`, `sellValue()` (block/zero when `isGhost`), and the downgrade (sell-at-level>1) path in `GameEngine`/`TowerPanel`. Ghost towers must be rejected at all of these.
 - Ghost timer tick: advance `ghostTimer += dt` inside `update()`; when `ghostTimer >= restoreTime` call `restore()`. (restoreTime computed from level.)
-- **Important:** ghost towers must NOT fire or target. Early-return in `update()` (after ticking ghost timer) when `isGhost` is true, matching the "no longer blocks / cannot act" rule.
+- **Important:** ghost towers must NOT fire or target. In `update()`, advance `ghostTimer += dt` and run the `restore()` check **first**, then **early-return before any behavior** when `isGhost` is true (matching the "no longer blocks / cannot act" rule). Explicitly gated (skipped) while `isGhost`:
+  - `stats.frostAura` area-slow loop (`Tower.ts:660`)
+  - `stats.staticField` area-slow loop (`Tower.ts:668`)
+  - `stats.iceBurst` area-stun loop (`Tower.ts:676`)
+  - targeting (`selectTarget` / `fixedAim` branches, `Tower.ts:691`/`:735`) and `fire()` (`:760`)
+  Only the ghost-timer tick + `restore()` run. (Ghost-explosion particles are already spawned by `GameEngine`, not here — no change to that site.)
 
 ### `src/grid/Grid.ts`
 - Add `ghostTowers: Set<string>` alongside `blocked`/`terrainTowers`.
@@ -85,6 +91,27 @@
 
 ---
 
+## Phase 1.5 — TowerManager Reachability for Enemies (prerequisite for Phases 2–4)
+
+**Why this is its own phase:** `EnemyManager` is constructed in `GameEngine` (`GameEngine.ts:190`) **before** `TowerManager` (`:198`) and currently holds only `grid` — no tower reference. Enemies in Phases 2–4 must resolve the tower on a tile (`towerAt`), so this plumbing must land first.
+
+### `src/enemies/EnemyManager.ts`
+- Add a `towerManager: TowerManagerRef | null = null` field, a `setTowerManager(tm: TowerManagerRef | null): void` setter, and a delegating lookup:
+  ```ts
+  towerAt(tileX: number, tileY: number): Tower | null {
+    return this.towerManager?.towerAt(tileX, tileY) ?? null;
+  }
+  ```
+- Add `towerAt(x: number, y: number): Tower | null` to the existing `EnemyManagerRef` interface (mirror `getEnemiesInRange`). The `Tower` return type is the live `Tower` class (already imported transitively); enemies only read `health`/`isGhost`/`x`/`y` off it.
+
+### `src/game/GameEngine.ts`
+- Immediately after `this.towerManager = new TowerManager(...)` (`:198`), call `this.enemyManager.setTowerManager(this.towerManager)`. This is the only wiring site; no other caller needs the ref.
+
+### `src/enemies/Enemy.ts`
+- `Enemy` already receives `enemyManager: EnemyManagerRef` in `update()`; it now calls `enemyManager.towerAt(x, y)` for attack-target resolution. **No separate `TowerManager` parameter is needed** — drop the "pass a `TowerManager` ref into `Enemy.update`" wording from the Phase 2 Wiring step; the `EnemyManagerRef` carries `towerAt` already.
+
+---
+
 ## Phase 2 — Path-Tile Placement + Dijkstra Weakest-Path Fallback
 
 ### `src/grid/Pathfinding.ts`
@@ -96,9 +123,15 @@
   - For path tiles, still reject only if the tile is already occupied by another tower (handled by `Grid.canBuild`/`registerTower`, since `blocked`/`ghostTowers` already contain it). The reachability BFS must **not** treat live tower tiles as walls; if any reachability check is retained, it must treat all path/base/spawn tiles as passable regardless of `blocked` (Dijkstra makes them traversable).
   - Ghost tiles: `Grid.canBuild` rejects if `ghostTowers.has(key)` (a ghost still occupies the tile), so `canPlaceWithoutBlocking` will not be asked to place on one.
 - `bfsShortestPath`: unchanged for the "open" case.
-- New `dijkstraWeakestPath(grid, start, goal, towerHealthAt)`:
-  - **Standard Dijkstra on the grid graph.** For each popped node, relax all 4 neighbors. Edge weight = `tower.health` if neighbor has a live tower, else a small constant (e.g. 0.1). Ghost tiles weight 0 (free passage). Track `dist[tile]` properly for all incoming edges — a tower tile might be reachable from 4 directions, and the path cost to enter it is the same regardless of direction.
-  - Returns the minimum-total-health path from spawn to base — the "go through the weakest towers" path.
+- New `dijkstraWeakestPath(grid, start, goal, towerHealthAt, isGhostAt): Point[] | null`:
+  - **Priority queue:** grid graphs are small (~600 tiles), so a binary **min-heap** keyed on `dist` is sufficient (a linear-scan array PQ is also acceptable). Each heap entry is `{ key: string, dist: number }`.
+  - **State:** `dist: Map<string, number>` initialized to `Infinity`, `dist[start] = 0`; `prev: Map<string, Point | null>` for path reconstruction (same parent map pattern as `bfsShortestPath` at `Pathfinding.ts:37-43`).
+  - **Relaxation:** pop the min-dist node; if its key equals `goal`, break. For each of the 4 neighbors (in-bounds, `isPath`/`isBase`/`isSpawn`, and **not** in `blocked`):
+    - `edgeWeight = isGhostAt(nx, ny) ? 0 : (towerHealthAt(nx, ny) ?? 0.1)`
+    - `nd = dist[cur] + edgeWeight`; if `nd < dist[neighborKey]`: set `dist[neighborKey] = nd`, `prev[neighborKey] = { x: curX, y: curY }`, push `{ neighborKey, nd }`.
+    - A tower tile is reachable from 4 directions but the entry cost is direction-independent (weight depends only on the neighbor tile), so no special handling is needed.
+  - **Tie-breaking:** when two candidates have equal `nd`, prefer the neighbor with the **lower `edgeWeight`** (then deterministic N→E→S→W order) so equally-costly routes resolve to the truly weakest tile first.
+  - **Return:** reconstruct the path by following `prev` (mirror `Pathfinding.ts:37-43`); returns `Point[]` or `null` if `goal` was never reached. `towerHealthAt(x, y)` returns the live tower's `health` (via `towerAt`); `undefined` → `0.1`. `isGhostAt` returns true when a tower exists but `isGhost`.
   - `Grid.recomputePaths()`:
    - For each spawn: compute BFS path first. If non-null, store it (open path).
    - If BFS is null (live towers fully block every open route), compute `dijkstraWeakestPath` and store it. **No per-spawn flag** — the `Enemy` determines attack-vs-walk behavior from `blockedByTower` (see Enemy section below).
@@ -112,11 +145,13 @@
 
 ### `src/enemies/Enemy.ts`
 - **Wiring (prerequisite for Phases 2–4):** `Enemy` currently only holds a limited `GridRef` (`blocked`, `getPathFor`, `tileToWorld`, `getBase` — interface at **line 36**) and no tower reference. Add a tower lookup so enemies can attack towers and detect ghost/harmless state. Extend `Enemy`'s `grid` ref (or pass a `TowerManager` ref into `Enemy.update`) with `towerAt(x, y): Tower | null` (delegate to `TowerManager.towerAt`, which already exists). Wire it in `GameEngine` (set on the grid/enemy manager) and in `EnemyManager.spawn` so every enemy can resolve the tower on a given tile. `EnemyManagerRef` (`getEnemiesInRange` at **line 46**) is the existing pattern to mirror. All tower interactions below use this lookup.
-  - **Pre-flight check (do this before coding):** confirm `EnemyManager` already holds a `TowerManager` reference (or receives one via `GameEngine`). If `EnemyManager.spawn` cannot reach `towerAt`, this is an *additional* plumbing step — `GameEngine` must pass the `TowerManager` into `EnemyManager` (constructor or an injected field) so it can forward `towerAt` to each spawned `Enemy`. Do not assume the reference exists; verify the current `EnemyManager` constructor/field list first.
+   - **Tower lookup (resolved in Phase 1.5):** `EnemyManager` now holds a `towerManager` ref and exposes `towerAt(x, y)` (Phase 1.5). `Enemy.update` already receives `enemyManager`, so it calls `enemyManager.towerAt(x, y)` directly — **no separate `TowerManager` parameter and no pre-flight check are needed**; Phase 1.5 guarantees the reference exists and is wired in `GameEngine`. If Phase 1.5 is not yet landed, do NOT start Phase 2.
 - In `update()`, replace the current "if next tile blocked → recompute BFS and if null set `onPathBlocked`" logic:
   - **Attack target resolution (reconciles Phase 2 path-driven and Phase 4 collision-driven triggers):**
-     - **Primary target** = the tower on the *forward path tile* (the next tile in `this.path`). If that next tile holds a **live** (non-ghost) tower (resolved via the `towerAt` lookup from the Wiring step above), do **not** advance `pathIdx`, set `this.blockedByTower = tower`, and trigger attack (Phase 3). The enemy stops moving when its center reaches the **edge** of the blocking tower's tile — i.e. when the distance to the next waypoint center is `<= tileSize/2 + this.radius` (not the tile center) — so it attacks from the boundary instead of visually overlapping the tower sprite. Movement pauses; when that tower dies (becomes ghost) the tile opens, the path recomputes, and the enemy advances.
-    - **Fallback (junctions / stacking):** if the forward path tile has no live tower but the enemy is physically blocked from motion (collision, Phase 4) and is in contact with an adjacent tower, set `blockedByTower` to the **lowest-`health`** adjacent live tower (check the 4 neighbor tiles, not just the path successor). When the contact ends (tower ghosted / enemy moves), clear `blockedByTower` and resume.
+     - **Primary target** = the tower on the *forward path tile* (the next tile in `this.path`). If that next tile holds a **live** (non-ghost) tower (resolved via `enemyManager.towerAt` from Phase 1.5):
+       - **Approach to the edge:** the enemy continues advancing its centerline toward that tower tile's center as normal **until** `dist(enemyCenter, towerTileCenter) <= tileSize/2 + this.radius`. (It attacks from the boundary, not overlapping the tower sprite.)
+       - **While attacking:** once at the edge, movement pauses — `step` is not applied and `pathIdx` is **NOT** advanced (the enemy stays on the current segment with the tower tile as `path[pathIdx+1]`). `attackTimer` drives `takeDamage` (Phase 3). When that tower dies and becomes a ghost, `Grid.clearTowerGhost` re-blocks the tile and `recomputePaths()` runs; the enemy re-resolves `path = grid.getPathFor(spawnIndex)` (existing re-anchor logic at `Enemy.ts:285`) and clears `blockedByTower`, then advances onto the now-open tile.
+     - **Fallback (junctions / stacking):** only evaluated when the forward path tile has **no** live tower. If the enemy is physically blocked from forward motion (Phase 4 collision — another enemy occupies the space toward its waypoint) **and** is in contact (within `tileSize/2 + this.radius`) with an adjacent live tower, set `blockedByTower` to the **lowest-`health`** adjacent live tower (check the 4 neighbor tiles, not just the path successor). When the contact ends (tower ghosted, or the obstructing enemy moves/dies and the path clears), clear `blockedByTower` and resume. The primary target always wins over the fallback when both could apply.
   - Ghost tower tiles are passable (not in `blocked`), so the enemy advances normally when encountering a ghost — no special flag check needed.
 
 ### `src/towers/TowerManager.ts`
@@ -166,7 +201,7 @@
 - Reuse the existing spatial hash in `src/enemies/EnemyManager.ts` via `getEnemiesInRange(x, y, radius)` to find colliding enemies each frame.
 - **Movement model (centerline + laneOffset):** Refactor `Enemy` so it maintains a *path centerline position* (`centerX/centerY` advanced toward each waypoint as today) plus a signed scalar `laneOffset` (perpendicular to the current facing/`moveAngle`). Each frame:
   - Advance `centerX/centerY` along the path toward the next waypoint by `step` (unchanged forward logic).
-  - Resolve collisions against neighbors within `this.radius + other.radius` (spatial hash). If overlapping, separate laterally: the **slower** enemy is pushed to the **right** side of the path, the **faster** enemy to the **left** side. **Definitive perpendicular convention (commit to this — no "e.g."):** with `moveAngle = atan2(deltaY, deltaX)` in screen coordinates where **Y increases downward**, the forward unit vector is `(cos a, sin a)`. The right-perpendicular (starboard; visually clockwise = the right-hand side in a top-down Y-down view) is obtained by rotating the forward vector +90°:
+  - Resolve collisions against neighbors within `this.radius + other.radius` (spatial hash). For each overlapping neighbor pair (`a`,`b`), compute the real positions using each one's own `moveAngle` perpendicular: `ra = { a.centerX + perpA.x * a.laneOffset, a.centerY + perpA.y * a.laneOffset }` (and `rb` analogously). **Overlap amount** = `overlap = (a.radius + b.radius) - dist(ra, rb)` (positive ⇒ overlapping). If `overlap > 0`, separate laterally by `overlap / 2` each: the **slower** enemy gets `laneOffset += overlap/2` (right, `+offset`), the **faster** enemy gets `laneOffset -= overlap/2` (left, `-offset`). **Per-frame:** a single pairwise pass over all overlapping neighbors (no iteration loop) — sufficient at target map sizes; offsets are clamped and recomputed each frame. **3+ enemies overlapping:** handled by the same pairwise accumulation (each enemy separates from every overlapping neighbor once) with no special-casing; if playtest shows residual jitter, raise to 2 passes (tuning knob, not a code change). Do **not** clamp `laneOffset` mid-loop. **Definitive perpendicular convention (commit to this — no "e.g."):** with `moveAngle = atan2(deltaY, deltaX)` in screen coordinates where **Y increases downward**, the forward unit vector is `(cos a, sin a)`. The right-perpendicular (starboard; visually clockwise = the right-hand side in a top-down Y-down view) is obtained by rotating the forward vector +90°:
     ```
     perpX = -Math.sin(moveAngle)
     perpY =  Math.cos(moveAngle)
@@ -187,10 +222,11 @@ This phase is split into three **ordered** sub-steps. **Do 5a first and get it g
 
 Migrates the existing knockback mechanism only; introduces no new towers.
 
-- `src/game/ConstantsTower.ts`: `TowerVariantStats` (type alias at **line 144**) currently has `knockback: boolean` (**line 158**) — replace with `knockbackBase: number` and `knockbackScale: number` (default `0`). railgun A `apply: (s, _t) => ({ ...s, knockback: true })` (**line 191**) becomes `apply: (s, _t) => ({ ...s, knockbackBase: RAILGUN_KNOCKBASE, knockbackScale: RAILGUN_KNOCK_SCALE })`, reusing `RAILGUN_KNOCKBASE` (**line 85**) / `RAILGUN_KNOCK_SCALE` (**line 87**).
+- `src/game/ConstantsTower.ts`: `TowerVariantStats` (type alias at **line 144**) currently has `knockback: boolean` (**line 158**) — replace with `knockbackBase: number` and `knockbackScale: number` (default `0`; `knockbackBase === 0` ⟺ disabled, identical to the old `false`). railgun A `apply: (s, _t) => ({ ...s, knockback: true })` (**line 191**) becomes `apply: (s, _t) => ({ ...s, knockbackBase: RAILGUN_KNOCKBASE * RAILGUN_KNOCKBACK_MULT, knockbackScale: RAILGUN_KNOCK_SCALE })`, reusing `RAILGUN_KNOCKBASE` (**line 85**) / `RAILGUN_KNOCK_SCALE` (**line 87**) — the old `× RAILGUN_KNOCKBACK_MULT` amplification is folded into the variant's `knockbackBase`.
+  - **Behavioral nuance (do not drop):** today `applyProjectileEffects` (`ProjectileManager.ts:306-313`) sets `projectile.knockback = RAILGUN_KNOCKBASE + RAILGUN_KNOCK_SCALE * tier` for **every** railgun, and the old `knockback` boolean only multiplied it. So a plain (non-A) railgun already knock-backs. Give railgun a **nonzero default `knockbackBase`** in `TOWER_BASE`/`_computeStats` (not only the A variant) so the existing test `game-projectile-manager.test.ts:509-527` — which spawns a railgun *without* the flag and asserts `proj.knockback > 0` — still passes. Knockback is "enabled" ⟺ `knockbackBase > 0`.
 - `src/towers/Tower.ts`: drop the boolean entirely. **Anchors:** constructor **226**, `update` **653**, `fire` **760**, `ProjectileManagerRef.spawn` opts `knockback?: boolean` **101**, `TowerStats.knockback: boolean` **148**, `_computeStats` **319**, `let knockback = false` **336**, variant apply/destructure sites **356/374/396/414**, return object includes `knockback` **507**, `fire` passes `knockback: stats.knockback` **817**. Replace every `knockback` boolean usage with the `knockbackBase`/`knockbackScale` pair.
-- `src/game/ProjectileManager.ts`: **Anchors:** `spawn` opts `knockback?: boolean` (**206**), `applyProjectileEffects` param `knockback: boolean` (**288**), railgun knockback gating (**308–310**). `ProjectileManagerRef.spawn` opts become `knockbackBase?: number; knockbackScale?: number`. Knockback is "enabled" when `knockbackBase > 0`; `applyProjectileEffects` reads the pair instead of the boolean; railgun gating uses `projectile.knockback` derived from `knockbackBase`.
-- **Verify before proceeding:** existing `projectile-manager.test.ts` knockback cases must still pass; run `npm run lint && npm run typecheck` and the knockback tests. No new-tower code is touched in this sub-step.
+- `src/game/ProjectileManager.ts`: **Anchors:** `spawn` opts `knockback?: boolean` (**206**), `applyProjectileEffects` param `knockback: boolean` (**288**), railgun knockback gating (**308–310**). `ProjectileManagerRef.spawn` opts become `knockbackBase?: number; knockbackScale?: number`. Knockback is "enabled" when `knockbackBase > 0`; `applyProjectileEffects` reads the pair instead of the boolean; the railgun gate `if (knockback)` (**309**) becomes `if (knockbackBase > 0)`, and `projectile.knockback` is derived from `knockbackBase` (× `RAILGUN_KNOCKBACK_MULT` only when the A-variant flag is set, now folded into the variant's base). No other behavioral change.
+- **Verify before proceeding:** the refactor is mechanical (boolean → base/scale pair) **except** the railgun-default nuance above — confirm `TOWER_BASE` railgun gets a nonzero default `knockbackBase`. Then run existing `game-projectile-manager.test.ts` knockback cases (`describe("railgun knockback and stun", …)` asserts `proj.knockback > 0` for a plain railgun spawn) plus `npm run lint && npm run typecheck`. No new-tower code is touched in this sub-step.
 
 ### 5b — New tower stats, variants, SkillTree, persist, theme registration
 
