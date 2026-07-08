@@ -86,9 +86,10 @@
 - New `dijkstraWeakestPath(grid, start, goal, towerHealthAt)`:
   - Allows stepping onto **path/base/spawn** tiles *and* onto tower-blocked tiles (live towers), with edge weight = `towerHealthAt(neighborX, neighborY)` (remaining health of the tower on that tile, or a small constant for open tiles). Ghost tiles weight 0.
   - Returns the minimum-total-health path from spawn to base — the "go through the weakest towers" path.
-- `Grid.recomputePaths()`:
-  - For each spawn: compute BFS path first. If non-null, store it (open path).
-  - If BFS is null (live towers fully block every open route), compute `dijkstraWeakestPath` and store it. Store a per-spawn flag `pathThroughTowers[i]` so `Enemy` knows it must attack towers en route.
+  - `Grid.recomputePaths()`:
+   - For each spawn: compute BFS path first. If non-null, store it (open path).
+   - If BFS is null (live towers fully block every open route), compute `dijkstraWeakestPath` and store it. Store a per-spawn flag `pathThroughTowers[i]` so `Enemy` knows it must attack towers en route.
+  - **Weakest-path staleness caveat (accepted):** `dijkstraWeakestPath` weights edges by each live tower's *remaining* health, but `recomputePaths()` is only (re)run on tower add / remove / ghost / restore — not as a tower's health drops each frame. Enemies therefore follow a weakest path that was optimal at placement time and may become suboptimal as towers are whittled down. This is an accepted, documented trade-off: continuously re-running Dijkstra (every frame, or per tower-damage event) would be a costly calculation for no meaningful gameplay benefit, since the path still always reaches the base and enemies re-resolve onto a fresh weakest path at the next recompute. No periodic/threshold recompute is added.
 
 ### `src/grid/Grid.ts`
 - Track `paths` plus parallel `pathUsesTowers: boolean[]` (or a marker on the path object). `getPathFor` returns the path; `enemy` checks the flag to decide attack-vs-walk behavior.
@@ -98,7 +99,7 @@
 - **Wiring (prerequisite for Phases 2–4):** `Enemy` currently only holds a limited `GridRef` (`blocked`, `getPathFor`, `tileToWorld`, `getBase`) and no tower reference. Add a tower lookup so enemies can attack towers and detect ghost/harmless state. Extend `Enemy`'s `grid` ref (or pass a `TowerManager` ref into `Enemy.update`) with `towerAt(x, y): Tower | null` (delegate to `TowerManager.towerAt`, which already exists). Wire it in `GameEngine` (set on the grid/enemy manager) and in `EnemyManager.spawn` so every enemy can resolve the tower on a given tile. All tower interactions below use this lookup.
 - In `update()`, replace the current "if next tile blocked → recompute BFS and if null set `onPathBlocked`" logic:
   - **Attack target resolution (reconciles Phase 2 path-driven and Phase 4 collision-driven triggers):**
-    - **Primary target** = the tower on the *forward path tile* (the next tile in `this.path`). If that next tile holds a **live** (non-ghost) tower (resolved via the `towerAt` lookup from the Wiring step above), do **not** advance `pathIdx`, set `this.blockedByTower = tower`, and trigger attack (Phase 3). Movement pauses; when that tower dies (becomes ghost) the tile opens, the path recomputes, and the enemy advances.
+     - **Primary target** = the tower on the *forward path tile* (the next tile in `this.path`). If that next tile holds a **live** (non-ghost) tower (resolved via the `towerAt` lookup from the Wiring step above), do **not** advance `pathIdx`, set `this.blockedByTower = tower`, and trigger attack (Phase 3). The enemy stops moving when its center reaches the **edge** of the blocking tower's tile — i.e. when the distance to the next waypoint center is `<= tileSize/2 + this.radius` (not the tile center) — so it attacks from the boundary instead of visually overlapping the tower sprite. Movement pauses; when that tower dies (becomes ghost) the tile opens, the path recomputes, and the enemy advances.
     - **Fallback (junctions / stacking):** if the forward path tile has no live tower but the enemy is physically blocked from motion (collision, Phase 4) and is in contact with an adjacent tower, set `blockedByTower` to the **lowest-`health`** adjacent live tower (check the 4 neighbor tiles, not just the path successor). When the contact ends (tower ghosted / enemy moves), clear `blockedByTower` and resume.
   - If path-uses-towers flag is set and next tile is a ghost tower tile, treat as passable and advance normally.
 
@@ -142,7 +143,7 @@
   - Resolve collisions against neighbors within `this.radius + other.radius` (spatial hash). If overlapping, separate laterally: the **slower** enemy is pushed to the **right** side of the path, the **faster** enemy to the **left** side. Define the perpendicular consistently relative to `moveAngle` (e.g. right-perpendicular = `(sin a, -cos a)` for `a = moveAngle`); slower gets `+offset`, faster gets `-offset`. Accumulate into `laneOffset`.
   - **Clamp** `|laneOffset| <= tileSize/2 - this.radius` so the enemy always stays within the current path tile bounds ("stack up against the tower" rather than leaving the path when blocked).
   - Derive the true engine position: `x = centerX + perpX * laneOffset`, `y = centerY + perpY * laneOffset` (perpendicular unit vector from `moveAngle`), then `worldPos = { x, y }`. Collisions and the renderer both read this real `x/y`, so the simulation and the SVG `<use>` always match.
-  - If an enemy is blocked from forward motion by collision AND is adjacent to a tower (touching its tile), apply the attack-target resolution from Phase 2 (set `blockedByTower` to the lowest-health adjacent live tower).
+  - If an enemy is blocked from forward motion AND is adjacent to a tower (touching its tile), apply the attack-target resolution from Phase 2 (set `blockedByTower` to the lowest-health adjacent live tower). **"Blocked from forward motion" is defined precisely as:** the enemy cannot advance its centerline toward the next waypoint because (a) the forward path tile itself holds a live tower (the primary target case), **or** (b) another enemy occupies the space between this enemy and the tower/waypoint it is trying to reach, preventing the step from completing. In case (b) the enemy is considered blocked-by-collision; once the obstructing enemy moves away (or is killed) and the path is clear, `blockedByTower` is cleared and movement resumes.
 - Never let `laneOffset` change `pathIdx`/waypoint choice — it is purely visual+collision lateral displacement around the centerline.
 
 ---
@@ -154,7 +155,7 @@
 - `TOWER_META`: sturdyWall cost (proposed 40), shotgunTank cost = `basic.cost * 1.5` = 30 (50% more than basic, per draft).
 - `TOWER_BASE`:
   - sturdyWall: `range: 0` (no targeting/fire), `damage: 0`, `fireRate: 0`, `health: 200` (high; no damage).
-  - shotgunTank: `range: 1`, `damage: 8` (like basic), `fireRate: 1.2`, `projSpeed: 14`, `health: basicHealth * 10` (≈ 250).
+   - shotgunTank: `range: 1`, `damage: 8` (like basic), `fireRate: 1.2`, `projSpeed: 14`, `health: 250` (independent static value like the other towers — the "basicHealth * 10" phrasing in the draft was only a planning reference, not a code dependency).
 - New knockback constant: `SHOTGUN_KNOCKBASE = RAILGUN_KNOCKBASE * 1.5` (= 0.45). `SHOTGUN_KNOCK_SCALE` analogous to railgun.
 - `TOWER_VARIANTS`:
   - sturdyWall A ("Thorn Wall"): reflects `attackDamage * [0.3, 0.6, 1.0]` at levels 5/6/7 back to the attacking enemy. Store `thornReflectPct` per tier.
@@ -173,7 +174,7 @@
 - Wire variant behaviors:
   - Thorn (sturdyWall A): when an enemy calls `tower.takeDamage(d, enemy)`, also `enemy.takeDamage(d * thornReflectPct)`. Use the optional `attacker` param added in Phase 1.
   - Electric fence (sturdyWall B): in `update()`, if not ghost, query `enemyManager.getEnemiesInRange(x, y, fenceRangePx)` and apply `enemy.takeDamage(fenceDamage)` + `enemy.applyStun(fenceStun)` (mirror frostAura/staticField pattern).
-  - Shotgun Tank B knockback: in `fire()`, set projectile `knockback: true` and pass `SHOTGUN_KNOCKBASE`/`SHOTGUN_KNOCK_SCALE` (extend projectile opts or read tower type in `ProjectileManager`).
+  - Shotgun Tank B knockback: instead of the current `knockback: boolean` flag, **extend the projectile options** with an explicit base/scale pair: `knockbackBase: number` and `knockbackScale: number`. In `fire()`, pass `SHOTGUN_KNOCKBASE`/`SHOTGUN_KNOCK_SCALE` as `knockbackBase`/`knockbackScale`. `ProjectileManager` applies knockback whenever `knockbackBase` is provided (treat as "knockback enabled" when `knockbackBase > 0`), dropping the old boolean. The same extended options are used by railgun variant A (`RAILGUN_KNOCKBASE`/`RAILGUN_KNOCK_SCALE`) so the boolean is removed entirely from `Tower`'s `ProjectileManagerRef.spawn` opts, `Tower.fire` call, and `ProjectileManager`.
   - Shotgun Tank A +health: apply in `constructor`/variant application by scaling `maxHealth`/`health`.
 
 ### `src/render/themes/data/default-map-theme.json` (only — `the-aftermath.json` is out of scope)
