@@ -1,5 +1,5 @@
-import type { GameStore } from "@/stores/game.js";
-import type { PersistStore } from "@/stores/persist.js";
+import type { GameRunState } from "@/sim/GameRunState.js";
+import type { PersistState } from "@/sim/PersistState.js";
 import {
   WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN,
   WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
@@ -28,8 +28,8 @@ interface EnemyManagerRef {
 }
 
 export class WaveGraphTracker {
-  private gameStore: GameStore;
-  private persistStore: PersistStore;
+  private runState: GameRunState;
+  private persistState: PersistState;
   private towerManager: TowerManagerRef;
   private enemyManager: EnemyManagerRef;
 
@@ -48,21 +48,21 @@ export class WaveGraphTracker {
   private _lastKnownWave: number = 0;
 
   constructor(
-    gameStore: GameStore,
-    persistStore: PersistStore,
+    runState: GameRunState,
+    persistState: PersistState,
     towerManager: TowerManagerRef,
     enemyManager: EnemyManagerRef,
   ) {
-    this.gameStore = gameStore;
-    this.persistStore = persistStore;
+    this.runState = runState;
+    this.persistState = persistState;
     this.towerManager = towerManager;
     this.enemyManager = enemyManager;
 
     this._containerWidth = WAVE_GRAPH_HEIGHT;
     this._maxDots = Math.ceil(this._containerWidth / WAVE_GRAPH_DOT_SPACING);
     this._prevTotalDamage = this._sumTotalDamage();
-    this._prevGems = persistStore.gems;
-    this._intervalMinLives = gameStore.lives;
+    this._prevGems = persistState.gems;
+    this._intervalMinLives = runState.lives;
   }
 
   update(dt: number): void {
@@ -78,15 +78,15 @@ export class WaveGraphTracker {
       this._intervalPeakEnemyHp = currentHpSum;
     }
 
-    const currentGems = this.persistStore.gems;
+    const currentGems = this.persistState.gems;
     const gemDelta = currentGems - this._prevGems;
     if (gemDelta > 0) {
       this._intervalGems += gemDelta;
     }
     this._prevGems = currentGems;
 
-    if (this.gameStore.lives < this._intervalMinLives) {
-      this._intervalMinLives = this.gameStore.lives;
+    if (this.runState.lives < this._intervalMinLives) {
+      this._intervalMinLives = this.runState.lives;
     }
 
     if (this._gameTimeAccum >= WAVE_GRAPH_INTERVAL_SECONDS) {
@@ -144,7 +144,7 @@ export class WaveGraphTracker {
     this._intervalPeakEnemyHp = 0;
     this._intervalGold = 0;
     this._intervalGems = 0;
-    this._intervalMinLives = this.gameStore.lives;
+    this._intervalMinLives = this.runState.lives;
     this._waveStartThisInterval = false;
   }
 

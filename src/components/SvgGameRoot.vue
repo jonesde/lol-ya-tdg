@@ -18,9 +18,9 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import type { Enemy } from "@/enemies/Enemy.js";
 import { GameState, SELL_DISCOUNT_PCT } from "@/game/Constants.js";
-import { TOWER_META } from "@/game/ConstantsTower.js";
+import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
+import { TOWER_META, TowerIds } from "@/game/ConstantsTower.js";
 import { GameEngine } from "@/game/GameEngine.js";
 import { useInput } from "@/game/Input.js";
 import { fitToGrid } from "@/render/svg/cameraUtils.js";
@@ -33,11 +33,15 @@ import { TowerManager } from "@/render/svg/TowerManager.js";
 import type { Particle, Projectile } from "@/render/svg/types.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
+import type { EnemyVisualMeta, TowerVisualMeta } from "@/render/themes/index.js";
+import type { ThemeBundle } from "@/sim/HostBindings.js";
+import type { PersistState } from "@/sim/PersistState.js";
+import { createDefaultPersistState } from "@/sim/PersistState.js";
 import { MainThreadHostBindings } from "@/sim-adapters/MainThreadHostBindings.js";
 import { SoundManager } from "@/sound/SoundManager.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
-import { usePersistStore } from "@/stores/persist.js";
+import { STORAGE_KEY, usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 import type { Tower } from "@/towers/Tower.js";
 
@@ -234,10 +238,36 @@ async function buildDefsImperative(staticContent: string, mapContent: string): P
   defsLayer.value.innerHTML = staticContent + mapContent;
 }
 
+function loadPersistState(): PersistState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as PersistState;
+  } catch {
+    /* corrupt save — use defaults */
+  }
+  return createDefaultPersistState();
+}
+
+function buildThemeBundle(): ThemeBundle {
+  const defaultTowerVisuals: Record<string, TowerVisualMeta> = {};
+  for (const id of Object.values(TowerIds)) {
+    const visual = themeStore.getDefaultTowerVisual(id);
+    if (visual) defaultTowerVisuals[id] = visual;
+  }
+  const defaultEnemyVisuals: Record<string, EnemyVisualMeta> = {};
+  for (const type of Object.keys(ENEMY_TYPES)) {
+    const visual = themeStore.getDefaultEnemyVisual(type);
+    if (visual) defaultEnemyVisuals[type] = visual;
+  }
+  return { active: themeStore.activeTheme, defaultTowerVisuals, defaultEnemyVisuals };
+}
+
 onMounted(async () => {
   const sound = new SoundManager();
   soundManager.value = sound;
-  engine.value = new GameEngine(gameStore, persistStore, themeStore.activeTheme, new MainThreadHostBindings(sound));
+  const persistState = loadPersistState();
+  const themeBundle = buildThemeBundle();
+  engine.value = new GameEngine(themeBundle, new MainThreadHostBindings(sound));
   gameStore.setEngine(engine.value);
 
   useInput(gameStore, engine.value, uiStore);
@@ -268,15 +298,6 @@ onMounted(async () => {
   projectileManager.init(pl);
   particleManager.init(ef);
   effectManager.init(ef);
-
-  const initialMap = gameStore.map;
-
-  if (initialMap) {
-    const initialCam = fitToGrid(initialMap.width, initialMap.height, viewSize.value.w, viewSize.value.h - 104);
-    cameraTransformString = `translate(${initialCam.x}, ${initialCam.y}) scale(${initialCam.zoom})`;
-    worldLayer.value?.setAttribute("transform", cameraTransformString);
-    gameStore.setCamera(initialCam.x, initialCam.y, initialCam.zoom);
-  }
 
   if (svgRoot.value) {
     resizeObserver.value = new ResizeObserver((entries) => {
@@ -310,33 +331,40 @@ onMounted(async () => {
     worldLayer.value?.setAttribute("transform", cameraTransformString);
 
     if (engine.value) {
-      const dt = engine.value.lastScaledDt;
-      const enemies = gameStore.enemyManager?.enemies || [];
-      const towers = gameStore.towerManager?.towers || [];
-      const projectiles = engine.value.projectileManager?.getRenderData() || [];
-      const particles = engine.value.particleManager?.getRenderData() || [];
+      const eng = engine.value;
+      const dt = eng.lastScaledDt;
+      const enemies = eng.enemyManager?.enemies || [];
+      const towers = eng.towerManager?.towers || [];
+      const projectiles = eng.projectileManager?.getRenderData() || [];
+      const particles = eng.particleManager?.getRenderData() || [];
       enemyManager.syncFromGameEngine(enemies);
       towerManager.syncFromGameEngine(towers, dt);
       projectileManager.syncFromGameEngine(projectiles, dt);
       particleManager.syncFromGameEngine(particles);
+
+      // Resolve selected tower from engine state
+      const selectedTower = eng.runState.selectedTowerId
+        ? (eng.towerManager?.getTowerById(eng.runState.selectedTowerId) ?? null)
+        : null;
+
       effectManager.syncFromGameEngine(
         buildPreviewTilePos.value,
         gameStore.selectedTowerType || null,
         buildPreviewColor.value,
-        gameStore.selectedTower,
+        selectedTower,
         buildPreviewValid.value,
         dt,
       );
-      uiOverlayManager.syncFromGameEngine(enemies, gameStore.selectedTower);
-      if (gameStore.grid && gameStore.enemyManager) {
-        uiOverlayManager.syncPendingQueueOverlays(gameStore.grid, gameStore.enemyManager);
+      uiOverlayManager.syncFromGameEngine(enemies, selectedTower);
+      if (eng.runState.grid && eng.enemyManager) {
+        uiOverlayManager.syncPendingQueueOverlays(eng.runState.grid, eng.enemyManager);
       }
-      if (engine.value?.waveManager?.spawnStates) {
-        spawnManager.sync(engine.value.waveManager.spawnStates);
+      if (eng.waveManager?.spawnStates) {
+        spawnManager.sync(eng.waveManager.spawnStates);
       }
 
       // Imperative path highlights — appended to grid-layer, not Vue-managed
-      const grid = gameStore.grid;
+      const grid = eng.runState.grid;
       const gridLayer = svgRoot.value?.querySelector(".grid-layer") as SVGGElement | null;
       if (gridLayer && grid?.paths) {
         if (!pathHighlightsGroup?.parentNode) {
@@ -366,13 +394,29 @@ onMounted(async () => {
       regionId: number;
       seed: number;
     };
-    engine.value.loadRandomMap(p.width, p.height, p.level, p.style, p.regionId, p.seed);
+    engine.value.loadRandomMap(p.width, p.height, p.level, p.style, p.regionId, p.seed, persistState);
   } else {
-    engine.value.loadMap(gameStore.mapIndex);
+    engine.value.loadMap(gameStore.mapIndex, persistState);
+  }
+
+  // Phase 1: engine no longer writes to gameStore; sync map reference for camera + Vue reactivity
+  if (engine.value.runState.map) {
+    gameStore.map = engine.value.runState.map;
+    gameStore.mapIndex = engine.value.runState.mapIndex;
+    gameStore.grid = engine.value.runState.grid;
+    const initialCam = fitToGrid(
+      engine.value.runState.map!.width,
+      engine.value.runState.map!.height,
+      viewSize.value.w,
+      viewSize.value.h - 104,
+    );
+    cameraTransformString = `translate(${initialCam.x}, ${initialCam.y}) scale(${initialCam.zoom})`;
+    worldLayer.value?.setAttribute("transform", cameraTransformString);
+    gameStore.setCamera(initialCam.x, initialCam.y, initialCam.zoom);
   }
 
   await nextTick();
-  const postLoadMap = gameStore.map;
+  const postLoadMap = engine.value.runState.map;
   if (svgRoot.value && postLoadMap) {
     spawnManager.init(svgRoot.value, postLoadMap.spawns.length);
   }

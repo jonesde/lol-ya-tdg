@@ -1,5 +1,6 @@
-import type { MapThemeData } from "@/render/themes/index.js";
+import type { MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
 import type { SoundPlayer } from "@/sim/HostBindings.js";
+import type { GeneralAddons, TowerUnlocks } from "@/stores/persist.js";
 import { Tower } from "./Tower.js";
 
 interface EnemyManagerRef {
@@ -78,8 +79,8 @@ interface ProjectileManagerRef {
 
 interface SaveData {
   gems: number;
-  unlocked: Record<string, { addons: boolean[]; variantA: boolean[]; variantB: boolean[]; levels: boolean[] }>;
-  generalAddons?: Record<string, unknown>;
+  unlocked: Record<string, TowerUnlocks>;
+  generalAddons?: GeneralAddons;
 }
 
 interface GridRef {
@@ -99,6 +100,7 @@ export class TowerManager {
   private towerMap: Map<string, Tower> = new Map();
   private tileMap: Map<string, Tower> = new Map();
   theme: MapThemeData | null;
+  defaultTowerVisuals: Record<string, TowerVisualMeta>;
 
   constructor(
     grid: GridRef,
@@ -106,12 +108,14 @@ export class TowerManager {
     projectiles: ProjectileManagerRef,
     sound: SoundPlayer,
     theme: MapThemeData | null = null,
+    defaultTowerVisuals: Record<string, TowerVisualMeta> = {},
   ) {
     this.grid = grid;
     this.particles = particles;
     this.projectiles = projectiles;
     this.sound = sound;
     this.theme = theme;
+    this.defaultTowerVisuals = defaultTowerVisuals;
     this.towers = [];
   }
 
@@ -123,7 +127,7 @@ export class TowerManager {
 
   build(type: string, tileX: number, tileY: number, save: SaveData | undefined, grid: GridRef): Tower | null {
     if (!this.grid.canBuild(tileX, tileY)) return null;
-    const tower = new Tower(type, tileX, tileY, save, grid, this.theme);
+    const tower = new Tower(type, tileX, tileY, save, grid, this.theme, this.defaultTowerVisuals[type] ?? null);
     tower.id = `tower-${++this.nextTowerId}`;
     if (!this.grid.registerTower(tileX, tileY)) return null;
     this.towers.push(tower);

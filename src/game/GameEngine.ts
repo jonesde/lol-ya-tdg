@@ -8,11 +8,36 @@ import { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
 import { generateRandomMap, getMap } from "@/grid/Map.js";
 import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
-import type { HostBindings } from "@/sim/HostBindings.js";
-import type { GameStore } from "@/stores/game.js";
-import { useMapThemeStore } from "@/stores/mapTheme.js";
-import type { PersistStore } from "@/stores/persist.js";
-import { useUiStore } from "@/stores/ui.js";
+import type { GameRunState } from "@/sim/GameRunState.js";
+import {
+  addGold,
+  createFreshGemBreakdown,
+  cycleTimeScale,
+  hasClaimedMilestoneRun,
+  loseLives,
+  setGameState,
+  setGold,
+  setHoverTile,
+  setHoverUpgradeBtn,
+  setWave,
+  togglePauseState,
+  triggerEnd,
+} from "@/sim/GameRunState.js";
+import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
+import type { PersistState } from "@/sim/PersistState.js";
+import {
+  difficultyMultiplier as getDifficultyMultiplier,
+  getDifficultyTick,
+  addRunToHistory as persistAddRunToHistory,
+  clearActiveWave as persistClearActiveWave,
+  hasClaimedMilestone as persistHasClaimedMilestone,
+  hasCleared as persistHasCleared,
+  markFirstClear as persistMarkFirstClear,
+  markFirstTimeMilestone as persistMarkFirstTimeMilestone,
+  maybeUnlockNextMap as persistMaybeUnlockNextMap,
+  updateBestWave as persistUpdateBestWave,
+} from "@/sim/PersistState.js";
+import { STORAGE_KEY } from "@/stores/persist.js";
 import type { Tower } from "@/towers/Tower.js";
 import { TowerManager } from "@/towers/TowerManager.js";
 import { WaveManager } from "@/waves/WaveManager.js";
@@ -32,6 +57,7 @@ import {
   SLOW_HEALING_PER_ROUND,
   STARTING_GOLD_BONUS,
   STARTING_HEALTH_BONUS,
+  StartingGold,
   UPGRADE_COST_REDUCTION_PCT,
   VICTORY_WAVE,
 } from "./Constants.js";
@@ -56,8 +82,8 @@ interface WaveManagerRef {
 }
 
 export class GameEngine {
-  gameStore: GameStore;
-  persistStore: PersistStore;
+  runState!: GameRunState;
+  persistState!: PersistState;
   host: HostBindings;
   grid: Grid | null;
   enemyManager: EnemyManager | null;
@@ -78,12 +104,12 @@ export class GameEngine {
   shouldEndGame: boolean = false;
 
   theme: MapThemeData | null = null;
+  themeBundle: ThemeBundle;
 
-  constructor(gameStore: GameStore, persistStore: PersistStore, theme: MapThemeData | null, host: HostBindings) {
-    this.gameStore = gameStore;
-    this.persistStore = persistStore;
-    this.theme = theme ?? null;
+  constructor(themeBundle: ThemeBundle, host: HostBindings) {
     this.host = host;
+    this.themeBundle = themeBundle;
+    this.theme = themeBundle.active ?? null;
 
     if (this.theme) {
       this.setTheme(this.theme);
@@ -106,33 +132,80 @@ export class GameEngine {
     this.waveTopTowers = null;
   }
 
+  private _savePersistState(): void {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.persistState));
+    } catch {
+      this.host.notifyUi({ type: "showNotification", message: "Save failed." });
+    }
+  }
+
   setTheme(theme: MapThemeData | null): void {
     this.theme = theme;
   }
 
-  loadMap(mapIndex: number): void {
+  loadMap(mapIndex: number, persistState: PersistState): void {
     const mapData = getMap(mapIndex);
-    this._initMap(mapIndex, mapData);
+    this._initMap(mapIndex, mapData, persistState);
   }
 
-  loadRandomMap(width: number, height: number, level: number, style: string, regionId: number, seed: number): void {
+  loadRandomMap(
+    width: number,
+    height: number,
+    level: number,
+    style: string,
+    regionId: number,
+    seed: number,
+    persistState: PersistState,
+  ): void {
     const mapData = generateRandomMap(width, height, style, regionId, level, seed);
-    this._initMap(-1, mapData);
+    this._initMap(-1, mapData, persistState);
   }
 
-  _initMap(mapIndex: number, mapData: GeneratedMap): void {
-    useUiStore().initForRun(null);
+  _initMap(mapIndex: number, mapData: GeneratedMap, persistState: PersistState): void {
+    this.persistState = persistState;
 
-    this.gameStore.initMap(mapIndex, mapData, null);
+    this.runState = {
+      state: GameState.PLAYING,
+      mapIndex,
+      map: mapData,
+      grid: null,
+      lives: 20,
+      gold: 0,
+      currentWave: 0,
+      waveCountdown: null,
+      timeScale: 1,
+      selectedTowerId: null,
+      selectedTowerType: null,
+      hoverTile: null,
+      hoverUpgradeBtn: false,
+      upgradeBtnClickAnim: 0,
+      runGemsEarned: 0,
+      bossesKilledThisRun: 0,
+      bossesReachedBaseThisRun: 0,
+      milestoneRewardsClaimed: {},
+      gemBreakdown: createFreshGemBreakdown(),
+      endScreenData: null,
+      randomMapParams: null,
+    };
+
+    this.host.notifyUi({ type: "initForRun", mapIndex });
+
     resetEnemyId();
 
     this.grid = new Grid(mapData);
     this.grid.regionId = mapData.regionId;
-    this.gameStore.grid = this.grid;
+    this.runState.grid = this.grid;
 
-    const diffTick = this.persistStore.getDifficultyTick();
+    const diffTick = getDifficultyTick(this.persistState);
     this.particleManager = new ParticleSystem();
-    this.enemyManager = new EnemyManager(this.grid, this.particleManager, diffTick, this.theme);
+    this.enemyManager = new EnemyManager(
+      this.grid,
+      this.particleManager,
+      diffTick,
+      this.theme,
+      this.themeBundle.defaultEnemyVisuals,
+    );
     this.projectileManager = new ProjectileManager(this.enemyManager, this.particleManager, null, null, this.grid);
     this.towerManager = new TowerManager(
       this.grid,
@@ -140,6 +213,7 @@ export class GameEngine {
       this.projectileManager,
       this.host,
       this.theme,
+      this.themeBundle.defaultTowerVisuals,
     );
     this.projectileManager.setTowerLookup((towerId) => this.towerManager?.getTowerById(towerId) ?? null);
     this.projectileManager.setOnGoldReward((amount) => {
@@ -147,76 +221,76 @@ export class GameEngine {
     });
     this.waveManager = new WaveManager(mapData, this.enemyManager);
 
-    this.gameStore.setManagers(this.towerManager, this.enemyManager, this.projectileManager, this.particleManager);
-
     this.waveGraphTracker = new WaveGraphTracker(
-      this.gameStore,
-      this.persistStore,
+      this.runState,
+      this.persistState,
       this.towerManager!,
       this.enemyManager!,
     );
 
     this._applyStartingBonuses();
 
-    this.gameStore.setWave(this.waveManager.currentWave);
+    setWave(this.runState, this.waveManager.currentWave);
     this.totalGoldEarned = 0;
     this.totalHealingReceived = 0;
   }
 
   _applyStartingBonuses(): void {
-    const generalAddons = this.persistStore.generalAddons;
+    const generalAddons = this.persistState.generalAddons;
+
+    const regionId = this.runState.map?.regionId ?? 0;
+    this.runState.gold = StartingGold[regionId] ?? StartingGold[0];
 
     const ehTier = generalAddons.extraHealth;
     if (ehTier !== null && ehTier !== undefined) {
-      this.gameStore.lives += STARTING_HEALTH_BONUS[ehTier] || 0;
+      this.runState.lives += STARTING_HEALTH_BONUS[ehTier] || 0;
     }
 
-    this.startingLives = this.gameStore.lives;
+    this.startingLives = this.runState.lives;
 
     const sgTier = generalAddons.startingGold;
     if (sgTier !== null && sgTier !== undefined) {
-      this.gameStore.gold += STARTING_GOLD_BONUS[sgTier] || 0;
+      this.runState.gold += STARTING_GOLD_BONUS[sgTier] || 0;
     }
   }
 
   onBossKilled(): void {
-    this.gameStore.bossesKilledThisRun++;
+    this.runState.bossesKilledThisRun++;
 
     const base = 1;
-    const diffMult = this.persistStore.difficultyMultiplier;
+    const diffMult = getDifficultyMultiplier(this.persistState);
     const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-    const mapMult = this.gameStore.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[this.gameStore.mapIndex] || 1 : 1;
+    const mapMult = this.runState.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[this.runState.mapIndex] || 1 : 1;
 
     const afterDiff = Math.ceil(base * gemMult);
     const afterRegion = Math.ceil(afterDiff * mapMult);
 
-    const breakdown = this.gameStore.gemBreakdown.bossKills;
+    const breakdown = this.runState.gemBreakdown.bossKills;
     breakdown.base += base;
     breakdown.afterDiff += afterDiff;
     breakdown.afterRegion += afterRegion;
     breakdown.afterFirstTime += afterRegion;
 
-    this.persistStore.gems += afterRegion;
-    this.gameStore.runGemsEarned += afterRegion;
-    this.persistStore.save();
+    this.persistState.gems += afterRegion;
+    this.runState.runGemsEarned += afterRegion;
+    this._savePersistState();
 
     this.host.playSound("boss_die");
   }
 
   start(): void {
-    if (this.gameStore.state === GameState.PLAYING) return;
+    if (this.runState.state === GameState.PLAYING) return;
     this._rafId = requestAnimationFrame((timestamp) => this.loop(timestamp));
   }
 
   loop(now: number): void {
-    const gameStore = this.gameStore;
-    if (gameStore.state !== GameState.PLAYING && gameStore.state !== GameState.PAUSED) return;
+    if (this.runState.state !== GameState.PLAYING && this.runState.state !== GameState.PAUSED) return;
 
     if (this.lastTime === 0) this.lastTime = now;
     const rawDt = Math.min(MAX_ACCUM, (now - this.lastTime) / 1000);
     this.lastTime = now;
 
-    const scaledDt = rawDt * (gameStore.state === GameState.PAUSED ? 0 : gameStore.timeScale);
+    const scaledDt = rawDt * (this.runState.state === GameState.PAUSED ? 0 : this.runState.timeScale);
     this.lastScaledDt = scaledDt;
     this._accumulator += scaledDt;
 
@@ -242,12 +316,12 @@ export class GameEngine {
     const wm = this.waveManager;
     if (wm.countdownActive) {
       const currentRemaining = Math.ceil(wm.countdownTimer);
-      const stored: { remaining: number; nextWave: number } | null = this.gameStore.waveCountdown;
+      const stored: { remaining: number; nextWave: number } | null = this.runState.waveCountdown;
       if (!stored || stored.remaining !== currentRemaining) {
-        this.gameStore.waveCountdown = { remaining: currentRemaining, nextWave: wm.currentWave + 1 };
+        this.runState.waveCountdown = { remaining: currentRemaining, nextWave: wm.currentWave + 1 };
       }
-    } else if (this.gameStore.waveCountdown !== null) {
-      this.gameStore.waveCountdown = null;
+    } else if (this.runState.waveCountdown !== null) {
+      this.runState.waveCountdown = null;
     }
 
     this.particleManager?.update(dt);
@@ -256,15 +330,15 @@ export class GameEngine {
 
     this.enemyManager.update(dt, (enemy) => {
       if (enemy.reachedBase) {
-        this.gameStore.loseLives(enemy.type === "boss" ? BOSS_LIFE_LOSS : 1);
+        loseLives(this.runState, enemy.type === "boss" ? BOSS_LIFE_LOSS : 1);
         enemy.removed = true;
         this.waveManager!.baseReached = true;
         if (enemy.type === "boss") {
-          this.gameStore.bossesReachedBaseThisRun++;
+          this.runState.bossesReachedBaseThisRun++;
           this.waveManager!.reportBossReachedBase();
         }
         this.host.playSound("base_hit");
-        if (this.gameStore.lives <= 0) {
+        if (this.runState.lives <= 0) {
           this.shouldEndGame = true;
           return;
         }
@@ -300,18 +374,18 @@ export class GameEngine {
   }
 
   onWaveCleared(wave: number): void {
-    this.gameStore.setWave(wave);
+    setWave(this.runState, wave);
 
     for (const m of MILESTONE_WAVES) {
-      if (wave >= m && !this.gameStore.hasClaimedMilestone(m)) {
-        this.gameStore.claimMilestone(m);
+      if (wave >= m && !hasClaimedMilestoneRun(this.runState, m)) {
+        this.runState.milestoneRewardsClaimed[m] = true;
 
         const hasClaimed =
-          this.gameStore.mapIndex >= 0 && this.persistStore.hasClaimedMilestone(this.gameStore.mapIndex, m);
+          this.runState.mapIndex >= 0 && persistHasClaimedMilestone(this.persistState, this.runState.mapIndex, m);
         const base = MILESTONE_GEMS[m];
-        const diffMult = this.persistStore.difficultyMultiplier;
+        const diffMult = getDifficultyMultiplier(this.persistState);
         const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-        const mapMult = this.gameStore.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[this.gameStore.mapIndex] || 1 : 1;
+        const mapMult = this.runState.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[this.runState.mapIndex] || 1 : 1;
 
         const afterDiff = Math.ceil(base * gemMult);
         const afterRegion = Math.ceil(afterDiff * mapMult);
@@ -321,31 +395,32 @@ export class GameEngine {
           afterFirstTime = afterRegion * 2;
         }
 
-        const breakdown = this.gameStore.gemBreakdown.milestones;
+        const breakdown = this.runState.gemBreakdown.milestones;
         breakdown.base += base;
         breakdown.afterDiff += afterDiff;
         breakdown.afterRegion += afterRegion;
         breakdown.afterFirstTime += afterFirstTime;
 
-        this.persistStore.gems += afterFirstTime;
-        this.gameStore.runGemsEarned += afterFirstTime;
+        this.persistState.gems += afterFirstTime;
+        this.runState.runGemsEarned += afterFirstTime;
 
-        if (!hasClaimed && this.gameStore.mapIndex >= 0) {
-          this.persistStore.markFirstTimeMilestone(this.gameStore.mapIndex, m);
+        if (!hasClaimed && this.runState.mapIndex >= 0) {
+          persistMarkFirstTimeMilestone(this.persistState, this.runState.mapIndex, m);
         }
       }
     }
 
-    if (this.gameStore.mapIndex >= 0) {
-      this.persistStore.updateBestWave(this.gameStore.mapIndex, wave);
+    if (this.runState.mapIndex >= 0) {
+      persistUpdateBestWave(this.persistState, this.runState.mapIndex, wave);
       if (wave >= 15) {
-        this.persistStore.maybeUnlockNextMap(this.gameStore.mapIndex);
+        persistMaybeUnlockNextMap(this.persistState, this.runState.mapIndex);
       }
     }
+    this._savePersistState();
   }
 
   onWaveStart(wave: number): void {
-    this.gameStore.setWave(wave);
+    setWave(this.runState, wave);
     this.waveGraphTracker?.onWaveStart(wave);
 
     const towers = this.towerManager!.towers;
@@ -369,14 +444,14 @@ export class GameEngine {
       tower.waveDamage = 0;
     });
 
-    const generalAddons = this.persistStore.generalAddons;
+    const generalAddons = this.persistState.generalAddons;
     const healTier = generalAddons.slowHealing;
     if (healTier !== null && healTier !== undefined) {
       const healAmount = SLOW_HEALING_PER_ROUND[healTier] || 0;
-      if (this.gameStore.lives < this.startingLives) {
-        const before = this.gameStore.lives;
-        this.gameStore.lives = Math.min(this.gameStore.lives + healAmount, this.startingLives);
-        this.totalHealingReceived += this.gameStore.lives - before;
+      if (this.runState.lives < this.startingLives) {
+        const before = this.runState.lives;
+        this.runState.lives = Math.min(this.runState.lives + healAmount, this.startingLives);
+        this.totalHealingReceived += this.runState.lives - before;
       }
     }
   }
@@ -389,18 +464,16 @@ export class GameEngine {
 
   earnGold(amount: number): void {
     this.totalGoldEarned += amount;
-    this.gameStore.addGold(amount);
+    addGold(this.runState, amount);
   }
 
   endGame(victory: boolean): void {
-    const gameStore = this.gameStore;
-
-    gameStore.selectedTower = null;
-    gameStore.selectedTowerType = null;
-    gameStore.hoverTile = null;
+    this.runState.selectedTowerId = null;
+    this.runState.selectedTowerType = null;
+    this.runState.hoverTile = null;
     this.enemyManager!.clear();
 
-    this.persistStore.clearActiveWave(gameStore.mapIndex);
+    persistClearActiveWave(this.persistState, this.runState.mapIndex);
 
     const finalWave = this.waveManager!.currentWave;
     const lastLevel = Math.floor(finalWave / 10);
@@ -408,70 +481,76 @@ export class GameEngine {
     const totalBonus = Math.floor((finalWave * perWaveRate) / 10);
 
     if (totalBonus > 0) {
-      const diffMult = this.persistStore.difficultyMultiplier;
+      const diffMult = getDifficultyMultiplier(this.persistState);
       const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-      const mapMult = gameStore.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[gameStore.mapIndex] || 1 : 1;
+      const mapMult = this.runState.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[this.runState.mapIndex] || 1 : 1;
       const afterDiff = Math.ceil(totalBonus * gemMult);
       const afterRegion = Math.ceil(afterDiff * mapMult);
 
-      const breakdown = gameStore.gemBreakdown.waveCompletion;
+      const breakdown = this.runState.gemBreakdown.waveCompletion;
       breakdown.base += totalBonus;
       breakdown.afterDiff += afterDiff;
       breakdown.afterRegion += afterRegion;
       breakdown.afterFirstTime += afterRegion;
 
-      this.persistStore.gems += afterRegion;
-      gameStore.runGemsEarned += afterRegion;
+      this.persistState.gems += afterRegion;
+      this.runState.runGemsEarned += afterRegion;
     }
 
-    if (victory && this.waveManager!.currentWave >= VICTORY_WAVE && gameStore.mapIndex >= 0) {
-      if (!this.persistStore.hasCleared(gameStore.mapIndex)) {
-        const breakdown = this.gameStore.gemBreakdown;
+    if (victory && this.waveManager!.currentWave >= VICTORY_WAVE && this.runState.mapIndex >= 0) {
+      if (!persistHasCleared(this.persistState, this.runState.mapIndex)) {
+        const breakdown = this.runState.gemBreakdown;
         const subtotal =
           breakdown.bossKills.afterFirstTime +
           breakdown.milestones.afterFirstTime +
           breakdown.waveCompletion.afterFirstTime;
         const bonus = subtotal * 2;
-        gameStore.gemBreakdown.firstClearBonus = bonus;
-        this.persistStore.gems += bonus;
-        gameStore.runGemsEarned += bonus;
-        this.persistStore.markFirstClear(gameStore.mapIndex);
+        this.runState.gemBreakdown.firstClearBonus = bonus;
+        this.persistState.gems += bonus;
+        this.runState.runGemsEarned += bonus;
+        persistMarkFirstClear(this.persistState, this.runState.mapIndex);
       }
     }
 
-    this.persistStore.save();
+    this._savePersistState();
 
     const historyEntry: Record<string, unknown> = {
-      mapIndex: this.gameStore.mapIndex,
+      mapIndex: this.runState.mapIndex,
       victory,
       wave: this.waveManager!.currentWave,
-      gems: gameStore.runGemsEarned,
-      bossesKilled: gameStore.bossesKilledThisRun,
-      bossesReachedBase: gameStore.bossesReachedBaseThisRun,
-      gemBreakdown: gameStore.gemBreakdown,
+      gems: this.runState.runGemsEarned,
+      bossesKilled: this.runState.bossesKilledThisRun,
+      bossesReachedBase: this.runState.bossesReachedBaseThisRun,
+      gemBreakdown: this.runState.gemBreakdown,
       date: Date.now(),
     };
 
-    if (this.gameStore.mapIndex === -1 && gameStore.randomMapParams) {
-      historyEntry.randomMapParams = gameStore.randomMapParams;
+    if (this.runState.mapIndex === -1 && this.runState.randomMapParams) {
+      historyEntry.randomMapParams = this.runState.randomMapParams;
     }
 
-    this.persistStore.addRunToHistory(historyEntry);
+    persistAddRunToHistory(this.persistState, historyEntry);
+    this._savePersistState();
 
-    gameStore.triggerEnd(victory, {
+    triggerEnd(this.runState, victory, {
       wave: this.waveManager!.currentWave,
-      gems: gameStore.runGemsEarned,
-      gemBreakdown: gameStore.gemBreakdown,
+      gems: this.runState.runGemsEarned,
+      gemBreakdown: this.runState.gemBreakdown,
     });
   }
 
   private isUpgradeBtnAt(worldX: number, worldY: number): boolean {
-    if (!this.gameStore.selectedTower || this.gameStore.selectedTowerType) return false;
-    const selectedTower = this.gameStore.selectedTower;
+    const selectedTower = this.getSelectedTower();
+    if (!selectedTower || this.runState.selectedTowerType) return false;
     const tileSize = this.grid?.tileSize || 36;
     const buildX = (selectedTower.tileX + 1) * tileSize - 12;
     const buildY = selectedTower.tileY * tileSize + 2;
     return worldX >= buildX && worldX <= buildX + 10 && worldY >= buildY && worldY <= buildY + 10;
+  }
+
+  private getSelectedTower(): Tower | null {
+    if (!this.runState.selectedTowerId || !this.towerManager) return null;
+    return this.towerManager.getTowerById(this.runState.selectedTowerId) ?? null;
   }
 
   private lastHoverTileX: number | null = null;
@@ -489,18 +568,17 @@ export class GameEngine {
     if (tileX !== this.lastHoverTileX || tileY !== this.lastHoverTileY) {
       this.lastHoverTileX = tileX;
       this.lastHoverTileY = tileY;
-      this.gameStore.setHoverTile(grid.inBounds(tileX, tileY) ? { tileX, tileY } : null);
+      setHoverTile(this.runState, grid.inBounds(tileX, tileY) ? { tileX, tileY } : null);
     }
 
     const hoverUpgradeBtn = this.isUpgradeBtnAt(worldX, worldY);
     if (hoverUpgradeBtn !== this.lastHoverUpgradeBtn) {
       this.lastHoverUpgradeBtn = hoverUpgradeBtn;
-      this.gameStore.setHoverUpgradeBtn(hoverUpgradeBtn);
+      setHoverUpgradeBtn(this.runState, hoverUpgradeBtn);
     }
   }
 
   handleClick(worldX: number, worldY: number): void {
-    const gameStore = this.gameStore;
     if (!this.grid) return;
 
     const tileSize = this.grid?.tileSize || 36;
@@ -508,50 +586,45 @@ export class GameEngine {
       ty = Math.floor(worldY / tileSize);
 
     if (this.isUpgradeBtnAt(worldX, worldY)) {
-      gameStore.upgradeBtnClickAnim = 0.4;
+      this.runState.upgradeBtnClickAnim = 0.4;
       this.upgradeSelected();
       return;
     }
 
     if (!this.grid.inBounds(tx, ty)) {
-      if (gameStore.selectedTowerType) gameStore.selectBuildType(null);
+      if (this.runState.selectedTowerType) this.runState.selectedTowerType = null;
       return;
     }
 
-    if (gameStore.selectedTowerType) {
+    if (this.runState.selectedTowerType) {
       const existing = this.towerManager?.towerAt(tx, ty);
       if (existing) {
-        gameStore.selectBuildType(null);
-        gameStore.selectTower(existing);
+        this.runState.selectedTowerType = null;
+        this.runState.selectedTowerId = String(existing.id);
       } else {
-        const meta = TOWER_META[gameStore.selectedTowerType]!;
-        const discount = this.persistStore.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
+        const towerType = this.runState.selectedTowerType;
+        const meta = TOWER_META[towerType]!;
+        const discount = this.persistState.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
         const cost = Math.floor(meta.cost * discount);
-        if (gameStore.gold >= cost && this.grid.canBuild(tx, ty)) {
-          const tower = this.towerManager?.build(
-            gameStore.selectedTowerType,
-            tx,
-            ty,
-            this.persistStore.$state,
-            this.grid,
-          );
+        if (this.runState.gold >= cost && this.grid.canBuild(tx, ty)) {
+          const tower = this.towerManager?.build(towerType, tx, ty, this.persistState, this.grid);
           if (tower) {
-            gameStore.setGold(gameStore.gold - cost);
-            gameStore.selectTower(tower);
+            setGold(this.runState, this.runState.gold - cost);
+            this.runState.selectedTowerId = String(tower.id);
           }
         }
       }
     } else {
       const tower = this.towerManager?.towerAt(tx, ty);
-      gameStore.selectTower(tower ?? null);
+      this.runState.selectedTowerId = tower ? String(tower.id) : null;
     }
   }
 
   getUpgradeCost(tower: Tower): number {
-    const check = tower.canUpgrade(this.persistStore.$state);
+    const check = tower.canUpgrade(this.persistState);
     if (!check.ok) return 0;
     const cost = check.cost ?? 0;
-    const ucrTier = this.persistStore.generalAddons.upgradeCostReduction;
+    const ucrTier = this.persistState.generalAddons.upgradeCostReduction;
     if (ucrTier !== null && ucrTier !== undefined) {
       const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
       return Math.floor(cost * (1 - reduction));
@@ -561,138 +634,136 @@ export class GameEngine {
 
   canAffordUpgrade(tower: Tower): boolean {
     if (!tower) return false;
-    return this.gameStore.gold >= this.getUpgradeCost(tower);
+    return this.runState.gold >= this.getUpgradeCost(tower);
   }
 
   upgradeSelected(): void {
-    const gameStore = this.gameStore;
-    if (!gameStore.selectedTower) return;
+    const tower = this.getSelectedTower();
+    if (!tower) return;
 
-    const tower = gameStore.selectedTower;
-    const check = tower.canUpgrade(this.persistStore.$state);
+    const check = tower.canUpgrade(this.persistState);
     if (check.needVariant) return;
     if (!check.ok) return;
 
     const cost = this.getUpgradeCost(tower);
-    if (gameStore.gold < cost) return;
-    gameStore.setGold(gameStore.gold - cost);
-    tower.doUpgrade(this.persistStore.$state, cost);
+    if (this.runState.gold < cost) return;
+    setGold(this.runState, this.runState.gold - cost);
+    tower.doUpgrade(this.persistState, cost);
   }
 
   specializeSelected(variant: string): void {
-    const gameStore = this.gameStore;
-    if (!gameStore.selectedTower) return;
+    const tower = this.getSelectedTower();
+    if (!tower) return;
 
-    const tower = gameStore.selectedTower;
     const lv5Cost = tower.upgradeCost(5);
-    const ucrTier = this.persistStore.generalAddons.upgradeCostReduction;
+    const ucrTier = this.persistState.generalAddons.upgradeCostReduction;
     let cost = lv5Cost;
     if (ucrTier !== null && ucrTier !== undefined) {
       const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
       cost = Math.floor(cost * (1 - reduction));
     }
-    if (gameStore.gold < cost) return;
+    if (this.runState.gold < cost) return;
 
-    gameStore.setGold(gameStore.gold - cost);
-    tower.specialize(variant as "A" | "B", this.persistStore.$state, cost);
+    setGold(this.runState, this.runState.gold - cost);
+    tower.specialize(variant as "A" | "B", this.persistState, cost);
   }
 
   sellSelected(): void {
-    const gameStore = this.gameStore;
-    if (!gameStore.selectedTower) return;
+    const tower = this.getSelectedTower();
+    if (!tower) return;
 
-    if (this.persistStore.generalAddons.sellActive === "discount") {
+    if (this.persistState.generalAddons.sellActive === "discount") {
       return;
     }
 
-    const tower = gameStore.selectedTower;
-    const themeStore = useMapThemeStore();
-    const towerVisual = themeStore.getDefaultTowerVisual(tower.type);
-    const towerName = towerVisual?.name || tower.type;
-    const isRefund = this.persistStore.generalAddons.sellActive === "refund";
+    const towerId = tower.id;
+    const isRefund = this.persistState.generalAddons.sellActive === "refund";
     const val = isRefund ? tower.totalInvested : tower.sellValue();
 
-    const uiStore = useUiStore();
-    uiStore.showConfirm({
-      title: isRefund ? "Full Refund" : "Sell Tower",
-      message: `${isRefund ? "Refund" : "Sell"} ${towerName} (Lv ${tower.level}) for ${val}g?`,
-      confirmLabel: isRefund ? "Refund" : "Sell",
-      cancelLabel: "Keep",
-      onConfirm: () => this.executeSell(),
-    });
+    void this.host
+      .requestConfirm({ towerId, towerType: tower.type, towerLevel: tower.level, sellValue: val, isRefund })
+      .then((confirmed) => {
+        if (confirmed) this.executeSellById(towerId);
+      });
+  }
+
+  executeSellById(towerId: string): void {
+    const tower = this.towerManager?.getTowerById(towerId);
+    if (!tower) return;
+
+    if (this.persistState.generalAddons?.sellActive === "discount") return;
+
+    const isRefund = this.persistState.generalAddons?.sellActive === "refund";
+    const val = isRefund ? tower.totalInvested : this.towerManager!.sell(tower, this.persistState);
+    setGold(this.runState, this.runState.gold + val);
+    this.totalGoldEarned += val;
+    this.runState.selectedTowerId = null;
   }
 
   executeSell(): void {
-    const gameStore = this.gameStore;
-    const tower = gameStore.selectedTower;
-    if (tower === null) return;
-
-    const isRefund = this.persistStore.$state.generalAddons?.sellActive === "refund";
-    const val = isRefund ? tower.totalInvested : this.towerManager!.sell(tower, this.persistStore.$state);
-    gameStore.setGold(gameStore.gold + val);
-    this.totalGoldEarned += val;
-    gameStore.selectTower(null);
+    if (!this.runState.selectedTowerId) return;
+    this.executeSellById(this.runState.selectedTowerId);
   }
 
   cancelSelected(): void {
-    const gameStore = this.gameStore;
-    if (!gameStore.selectedTower) return;
+    const tower = this.getSelectedTower();
+    if (!tower) return;
 
-    const tower = gameStore.selectedTower;
     if (!tower.canCancel()) return;
 
     const refund = tower.totalInvested;
     this.towerManager!.cancelBuild(tower);
-    gameStore.setGold(gameStore.gold + refund);
+    setGold(this.runState, this.runState.gold + refund);
     this.totalGoldEarned += refund;
-    gameStore.selectTower(null);
+    this.runState.selectedTowerId = null;
   }
 
   downgradeSelected(): void {
-    const gameStore = this.gameStore;
-    if (!gameStore.selectedTower) return;
-    if (gameStore.selectedTower.level <= 1) return;
+    const tower = this.getSelectedTower();
+    if (!tower) return;
+    if (tower.level <= 1) return;
     this.executeDowngrade();
   }
 
   executeDowngrade(): void {
-    const gameStore = this.gameStore;
-    const tower = gameStore.selectedTower;
+    const tower = this.getSelectedTower();
     if (tower === null) return;
 
     const delta = this.towerManager!.downgradeTower(tower);
-    const isRefund = this.persistStore.$state.generalAddons?.sellActive === "refund";
+    const isRefund = this.persistState.generalAddons?.sellActive === "refund";
     const refund = isRefund ? delta : Math.round(delta * SELL_VALUE_RATIO);
 
-    gameStore.setGold(gameStore.gold + refund);
+    setGold(this.runState, this.runState.gold + refund);
   }
 
   setTargeting(mode: string): void {
-    if (this.gameStore.selectedTower) {
-      this.gameStore.selectedTower.targeting = mode;
+    const tower = this.getSelectedTower();
+    if (tower) {
+      tower.targeting = mode;
     }
   }
 
   setFixedAimDir(dir: "N" | "E" | "S" | "W" | null): void {
-    if (this.gameStore.selectedTower) {
-      this.gameStore.selectedTower.fixedAimDir = dir;
+    const tower = this.getSelectedTower();
+    if (tower) {
+      tower.fixedAimDir = dir;
     }
   }
 
   togglePause(): void {
-    this.gameStore.togglePause();
+    togglePauseState(this.runState);
   }
 
   cycleSpeed(): number {
-    return this.gameStore.cycleSpeed();
+    return cycleTimeScale(this.runState, 1);
   }
 
   cycleSpeedReverse(): number {
-    return this.gameStore.cycleSpeedReverse();
+    return cycleTimeScale(this.runState, -1);
   }
 
   stop(): void {
-    this.gameStore.setState(GameState.MENU);
+    setGameState(this.runState, GameState.MENU);
     if (this._rafId) {
       cancelAnimationFrame(this._rafId);
       this._rafId = null;
@@ -705,9 +776,9 @@ export class GameEngine {
   }
 
   cancelBuildMode(): void {
-    if (this.gameStore.selectedTowerType) {
-      this.gameStore.selectBuildType(null);
-      this.gameStore.setHoverTile(null);
+    if (this.runState.selectedTowerType) {
+      this.runState.selectedTowerType = null;
+      setHoverTile(this.runState, null);
     }
   }
 }

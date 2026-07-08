@@ -1,5 +1,5 @@
 import { ENEMY_POOL_SIZE } from "@/render/svg/types.js";
-import type { MapThemeData } from "@/render/themes/index.js";
+import type { EnemyVisualMeta, MapThemeData } from "@/render/themes/index.js";
 import type { Grid } from "../grid/Grid.js";
 import { Enemy, resetEnemyId } from "./Enemy.js";
 
@@ -21,6 +21,7 @@ export class EnemyManager {
   enemies: Enemy[];
   difficultyTick: number;
   theme: MapThemeData | null;
+  defaultEnemyVisuals: Record<string, EnemyVisualMeta>;
   private spatialHash: Map<string, Enemy[]>;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
@@ -30,12 +31,14 @@ export class EnemyManager {
     particles: ParticleManagerRef,
     difficultyTick: number = 0,
     theme: MapThemeData | null = null,
+    defaultEnemyVisuals: Record<string, EnemyVisualMeta> = {},
   ) {
     this.grid = grid;
     this.particles = particles;
     this.enemies = [];
     this.difficultyTick = difficultyTick;
     this.theme = theme;
+    this.defaultEnemyVisuals = defaultEnemyVisuals;
     this.spatialHash = new Map();
     this.idToEnemy = new Map();
     this.pendingQueues = new Map();
@@ -50,7 +53,16 @@ export class EnemyManager {
   }
 
   spawn(type: string, level: number, spawnIndex: number, wave: number): Enemy {
-    const enemy = new Enemy(type, level, spawnIndex, this.grid, wave, this.difficultyTick, this.theme);
+    const enemy = new Enemy(
+      type,
+      level,
+      spawnIndex,
+      this.grid,
+      wave,
+      this.difficultyTick,
+      this.theme,
+      this.defaultEnemyVisuals[type] ?? null,
+    );
     this.enemies.push(enemy);
     this.idToEnemy.set(enemy.id, enemy);
     this.addToSpatialHash(enemy);

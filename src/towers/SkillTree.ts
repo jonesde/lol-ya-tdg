@@ -1,22 +1,15 @@
 import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "../game/Constants.js";
 import { TowerIds } from "../game/ConstantsTower.js";
 import type { TowerVisualMeta } from "../render/themes/index.js";
-import { useMapThemeStore } from "../stores/mapTheme.js";
+import type { GeneralAddons, TowerUnlocks } from "../stores/persist.js";
 
 const LEVEL_COSTS = [0, 0, 16, 32, 64, 128, 256];
 const ADDON_COSTS = [100, 300, 900];
 
-interface UnlockState {
-  levels: boolean[];
-  variantA: boolean[];
-  variantB: boolean[];
-  addons: boolean[];
-}
-
 interface SaveData {
   gems: number;
-  unlocked: Record<string, UnlockState>;
-  generalAddons?: Record<string, unknown>;
+  unlocked: Record<string, TowerUnlocks>;
+  generalAddons?: GeneralAddons;
 }
 
 interface SkillNode {
@@ -52,6 +45,20 @@ interface GeneralAddonCategory {
 }
 
 export const SKILL_TREE: Record<string, TowerSkillTree> = {};
+
+const NEUTRAL_DISPLAY = { name: "", color: "#8fbc8f", icon: "\u2500" };
+
+export function populateSkillTreeTheme(defaultTowerVisuals: Record<string, TowerVisualMeta>): void {
+  for (const id of Object.values(TowerIds)) {
+    const visual = defaultTowerVisuals[id];
+    if (!visual) continue;
+    const entry = SKILL_TREE[id];
+    if (!entry) continue;
+    entry.name = visual.name;
+    entry.color = visual.color;
+    entry.icon = visual.icon;
+  }
+}
 
 export const VARIANT_INFO: Record<string, { A: { name: string; desc: string }; B: { name: string; desc: string } }> = {
   basic: {
@@ -117,20 +124,10 @@ for (const id of Object.values(TowerIds)) {
   const variantA = VARIANT_INFO[id]!.A;
   const variantB = VARIANT_INFO[id]!.B;
   const addonDefs = ADDON_INFO[id]!;
-  let defaultTower: TowerVisualMeta | undefined;
-  try {
-    const themeStore = useMapThemeStore();
-    defaultTower = themeStore.getDefaultTowerVisual(id);
-  } catch {
-    // Theme store not available (e.g., in tests)
-  }
-  const display = defaultTower
-    ? { name: defaultTower.name, color: defaultTower.color, icon: defaultTower.icon }
-    : { name: id, color: "#8fbc8f", icon: "\u2500" };
   SKILL_TREE[id] = {
-    name: display.name,
-    color: display.color,
-    icon: display.icon,
+    name: NEUTRAL_DISPLAY.name,
+    color: NEUTRAL_DISPLAY.color,
+    icon: NEUTRAL_DISPLAY.icon,
     levels: [
       { tier: "level", index: 2, label: "Level 3", cost: LEVEL_COSTS[2]!, desc: "Unlock upgrade to level 3." },
       { tier: "level", index: 3, label: "Level 4", cost: LEVEL_COSTS[3]!, desc: "Unlock upgrade to level 4." },
@@ -379,7 +376,7 @@ export const GENERAL_ADDON_DEFS: Record<string, GeneralAddonDef> = {
 };
 
 export function isGeneralUnlocked(save: SaveData, key: string, index: number): boolean {
-  const generalAddons = save.generalAddons || {};
+  const generalAddons = save.generalAddons ?? ({} as GeneralAddons);
   if (key === "sellOption") {
     if (index === 0) return generalAddons.sellRefundUnlocked as boolean;
     if (index === 1) return generalAddons.sellDiscountUnlocked as boolean;
@@ -410,7 +407,7 @@ export function tryUnlockGeneral(save: SaveData, key: string, index: number) {
   if (save.gems < cost) return { ok: false, reason: "Not enough gems" };
 
   if (key === "sellOption") {
-    const generalAddons = save.generalAddons || {};
+    const generalAddons = save.generalAddons ?? ({} as GeneralAddons);
     if (index === 0) {
       if (generalAddons.sellDiscountUnlocked as boolean) {
         generalAddons.sellActive = "refund";
@@ -439,13 +436,13 @@ export function tryUnlockGeneral(save: SaveData, key: string, index: number) {
     return { ok: false, reason: "Already unlocked at higher tier" };
 
   save.gems -= cost;
-  if (!save.generalAddons) save.generalAddons = {};
+  if (!save.generalAddons) save.generalAddons = {} as GeneralAddons;
   save.generalAddons[key] = index;
   return { ok: true };
 }
 
 export function getGeneralAddonValue(save: SaveData, key: string): number | string | null {
-  const generalAddons = save.generalAddons || {};
+  const generalAddons = save.generalAddons ?? ({} as GeneralAddons);
   if (key === "sellOption") {
     return generalAddons.sellActive as string | null;
   }
@@ -472,10 +469,10 @@ export function tryRefundGeneral(save: SaveData, key: string, index: number) {
   const refundAmount = canRefundGeneral(save, key, index);
   if (refundAmount === 0) return { ok: false, reason: "Cannot refund this tier" };
   if (index > 0) {
-    if (!save.generalAddons) save.generalAddons = {};
+    if (!save.generalAddons) save.generalAddons = {} as GeneralAddons;
     save.generalAddons[key] = index - 1;
   } else {
-    if (!save.generalAddons) save.generalAddons = {};
+    if (!save.generalAddons) save.generalAddons = {} as GeneralAddons;
     save.generalAddons[key] = null;
   }
   save.gems += refundAmount;

@@ -31,13 +31,13 @@ import {
 } from "../game/ConstantsTower.js";
 import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "../render/themes/index.js";
 import type { SoundPlayer } from "../sim/HostBindings.js";
-import { useMapThemeStore } from "../stores/mapTheme.js";
+import type { GeneralAddons, TowerUnlocks } from "../stores/persist.js";
 import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
 
 interface SaveData {
   gems: number;
-  unlocked: Record<string, { addons: boolean[]; variantA: boolean[]; variantB: boolean[]; levels: boolean[] }>;
-  generalAddons?: Record<string, unknown>;
+  unlocked: Record<string, TowerUnlocks>;
+  generalAddons?: GeneralAddons;
 }
 
 interface GridRef {
@@ -234,6 +234,7 @@ export class Tower {
     save: SaveData | undefined,
     grid: GridRef,
     theme: MapThemeData | null = null,
+    defaultVisual: TowerVisualMeta | null = null,
     placedAt: number = Date.now(),
   ) {
     this.type = type;
@@ -249,11 +250,9 @@ export class Tower {
     this.base = TOWER_BASE[towerId]!;
     this.theme = theme;
     const towerVisual = (theme?.towers[type] ?? null) as TowerVisualMeta | null;
-    const themeStore = useMapThemeStore();
-    const defaultTower = themeStore.getDefaultTowerVisual(towerId);
-    this.color = towerVisual?.color || defaultTower?.color || "#8fbc8f";
-    this.icon = towerVisual?.icon || defaultTower?.icon || "\u2500";
-    this.name = towerVisual?.name || defaultTower?.name || type;
+    this.color = towerVisual?.color || defaultVisual?.color || "#8fbc8f";
+    this.icon = towerVisual?.icon || defaultVisual?.icon || "\u2500";
+    this.name = towerVisual?.name || defaultVisual?.name || type;
     this.animation = towerVisual?.animation || null;
     this.visualMeta = towerVisual;
 

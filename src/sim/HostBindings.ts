@@ -1,4 +1,6 @@
 import type { TowerId } from "@/game/ConstantsTower.js";
+import type { EnemyVisualMeta, MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
+import type { EndScreenPayload } from "./GameRunState.js";
 
 // Canonical sound-name type — replaces the module-private declaration in SoundManager.ts.
 // Uses a template-literal for tower shoot sounds to give compile-time safety against typos.
@@ -11,15 +13,6 @@ export type UiEvent =
   | { type: "initForRun"; mapIndex: number }
   | { type: "showNotification"; message: string }
   | { type: "endGame"; payload: EndScreenPayload };
-
-// Minimal inline definition matching src/stores/game.ts EndScreenPayload.
-// Phase 1 re-declares it in GameRunState.ts as the canonical plain interface.
-interface EndScreenPayload {
-  victory: boolean;
-  wave: number;
-  gems: number;
-  gemBreakdown: unknown;
-}
 
 // What the sim emits when it needs the user to confirm something.
 // The host enriches with display data (themed tower name) and shows the dialog.
@@ -53,4 +46,13 @@ export interface HostBindings extends SoundPlayer {
   notifyUi(event: UiEvent): void;
   schedulePersistSave(state: PersistStateSlice): void;
   requestConfirm(payload: ConfirmPayload): Promise<boolean>;
+}
+
+// Bundle of theme data passed from the host (SvgGameRoot.vue) into the engine.
+// Avoids the engine importing the theme Pinia store. Phase 2 populates the
+// defaultVisuals records; Phase 1 passes them as empty records.
+export interface ThemeBundle {
+  active: MapThemeData | null;
+  defaultTowerVisuals: Record<string, TowerVisualMeta>;
+  defaultEnemyVisuals: Record<string, EnemyVisualMeta>;
 }

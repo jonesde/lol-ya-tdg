@@ -7,7 +7,6 @@ import {
   ENEMY_WAVE_DAMAGE_MULT,
   MIN_SLOW_FACTOR,
 } from "../game/ConstantsEnemy.js";
-import { useMapThemeStore } from "../stores/mapTheme.js";
 
 let nextId = 1;
 
@@ -105,6 +104,7 @@ export class Enemy {
     wave: number,
     difficultyTick: number = 0,
     theme: MapThemeData | null = null,
+    defaultVisual: EnemyVisualMeta | null = null,
   ) {
     const meta = ENEMY_TYPES[type] as unknown as EnemyMetaRef;
     this.id = nextId++;
@@ -113,11 +113,9 @@ export class Enemy {
     this.meta = meta;
     this.theme = theme;
     const enemyVisual = (theme?.enemies[type] ?? null) as EnemyVisualMeta | null;
-    const themeStore = useMapThemeStore();
-    const defaultEnemy = themeStore.getDefaultEnemyVisual(type);
-    this.color = enemyVisual?.color || defaultEnemy?.color || "#e85a6a";
+    this.color = enemyVisual?.color || defaultVisual?.color || "#e85a6a";
     this.radius = meta.radius * grid.tileSize * 0.5;
-    this.shape = enemyVisual?.shape || defaultEnemy?.shape || "circle";
+    this.shape = enemyVisual?.shape || defaultVisual?.shape || "circle";
     this.walking = enemyVisual?.walking || null;
     this.hitReaction = enemyVisual?.hitReaction || null;
     this.visualMeta = enemyVisual;

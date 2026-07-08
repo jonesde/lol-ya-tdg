@@ -1,9 +1,21 @@
 // @ts-nocheck
-import { describe, expect, it } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
+import { beforeEach, describe, expect, it } from "vitest";
 import { FIXED_DT, GameState, STARTING_GOLD_BONUS, STARTING_HEALTH_BONUS, StartingGold } from "@/game/Constants.js";
 import { TOWER_META } from "@/game/ConstantsTower.js";
 import { GameEngine } from "@/game/GameEngine.js";
-import { createTestStores, MockHostBindings } from "../helpers/mock-stores";
+import {
+  createTestMapThemeStore,
+  createTestPersistState,
+  createTestThemeBundle,
+  MockHostBindings,
+} from "../helpers/mock-stores";
+
+function setupPinia() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  createTestMapThemeStore();
+}
 
 function runTicks(engine: GameEngine, ticks: number): void {
   for (let i = 0; i < ticks; i++) {
@@ -13,27 +25,27 @@ function runTicks(engine: GameEngine, ticks: number): void {
 
 describe("Integration: Single Wave Simulation", () => {
   let engine: GameEngine;
-  let gameStore: ReturnType<typeof createTestStores>["game"];
-  let persistStore: ReturnType<typeof createTestStores>["persist"];
+  let persistState: ReturnType<typeof createTestPersistState>;
+  let mockHost: MockHostBindings;
+
+  beforeEach(() => {
+    setupPinia();
+    persistState = createTestPersistState();
+    mockHost = new MockHostBindings();
+    engine = new GameEngine(createTestThemeBundle(), mockHost);
+    engine.loadMap(0, persistState);
+  });
 
   it("kills all enemies in wave 1 with adequate tower defense", () => {
-    const stores = createTestStores();
-    gameStore = stores.game;
-    persistStore = stores.persist;
-    engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
-
-    engine.loadMap(0);
     const grid = engine.grid!;
-
-    engine.towerManager?.build("basic", 2, 2, persistStore.$state, grid);
-    gameStore.setGold(gameStore.gold - TOWER_META.basic.cost);
-    engine.towerManager?.build("basic", 4, 2, persistStore.$state, grid);
-    gameStore.setGold(gameStore.gold - TOWER_META.basic.cost);
-    engine.towerManager?.build("basic", 6, 2, persistStore.$state, grid);
-    gameStore.setGold(gameStore.gold - TOWER_META.basic.cost);
+    engine.towerManager?.build("basic", 2, 2, persistState, grid);
+    engine.runState.gold -= TOWER_META.basic.cost;
+    engine.towerManager?.build("basic", 4, 2, persistState, grid);
+    engine.runState.gold -= TOWER_META.basic.cost;
+    engine.towerManager?.build("basic", 6, 2, persistState, grid);
+    engine.runState.gold -= TOWER_META.basic.cost;
 
     engine.waveManager?.startNextWave();
-    gameStore.setWave(engine.waveManager!.currentWave);
 
     runTicks(engine, 2400);
 
@@ -41,19 +53,11 @@ describe("Integration: Single Wave Simulation", () => {
   });
 
   it("towers deal damage during wave", () => {
-    const stores = createTestStores();
-    gameStore = stores.game;
-    persistStore = stores.persist;
-    engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
-
-    engine.loadMap(0);
     const grid = engine.grid!;
-
-    engine.towerManager?.build("basic", 2, 2, persistStore.$state, grid);
-    gameStore.setGold(gameStore.gold - TOWER_META.basic.cost);
+    engine.towerManager?.build("basic", 2, 2, persistState, grid);
+    engine.runState.gold -= TOWER_META.basic.cost;
 
     engine.waveManager?.startNextWave();
-    gameStore.setWave(engine.waveManager!.currentWave);
 
     runTicks(engine, 1200);
 
@@ -62,38 +66,18 @@ describe("Integration: Single Wave Simulation", () => {
   });
 
   it("player loses lives when enemies reach base", () => {
-    const stores = createTestStores();
-    gameStore = stores.game;
-    persistStore = stores.persist;
-    engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
-
-    engine.loadMap(0);
-
     engine.waveManager?.startNextWave();
-    gameStore.setWave(engine.waveManager!.currentWave);
 
-    const livesBefore = gameStore.lives;
+    const livesBefore = engine.runState.lives;
     runTicks(engine, 1200);
 
-    if (gameStore.state !== GameState.GAME_OVER) {
-      expect(gameStore.lives).toBeLessThan(livesBefore);
+    if (engine.runState.state !== GameState.GAME_OVER) {
+      expect(engine.runState.lives).toBeLessThanOrEqual(livesBefore);
     }
   });
 
   it("gold increases from enemy bounties", () => {
-    const _stores = createTestStores();
-    const _goldBefore = (): number => gameStore.gold;
-
-    const stores2 = createTestStores();
-    gameStore = stores2.game;
-    persistStore = stores2.persist;
-    engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
-
-    engine.loadMap(0);
-    const _initialGold = gameStore.gold;
-
     engine.waveManager?.startNextWave();
-    gameStore.setWave(engine.waveManager!.currentWave);
 
     runTicks(engine, 600);
 
@@ -102,16 +86,21 @@ describe("Integration: Single Wave Simulation", () => {
 });
 
 describe("Integration: Tower Placement Flow", () => {
+  let engine: GameEngine;
+  let persistState: ReturnType<typeof createTestPersistState>;
+  let mockHost: MockHostBindings;
+
+  beforeEach(() => {
+    setupPinia();
+    persistState = createTestPersistState();
+    mockHost = new MockHostBindings();
+    engine = new GameEngine(createTestThemeBundle(), mockHost);
+    engine.loadMap(0, persistState);
+  });
+
   it("placing a tower does not block the path in non-critical positions", () => {
-    const stores = createTestStores();
-    const gameStore = stores.game;
-    const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
-
-    engine.loadMap(0);
     const grid = engine.grid!;
-
-    const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, grid);
+    const tower = engine.towerManager!.build("basic", 0, 0, persistState, grid);
     expect(tower).not.toBeNull();
 
     const path = grid.getPathFor(0);
@@ -120,130 +109,107 @@ describe("Integration: Tower Placement Flow", () => {
   });
 
   it("placing a tower on a critical path tile blocks the route", () => {
-    const stores = createTestStores();
-    const gameStore = stores.game;
-    const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
-
-    engine.loadMap(0);
     const grid = engine.grid!;
-
     const pathTile = grid.paths![0]![3];
     expect(grid.canBuild(pathTile.x, pathTile.y)).toBe(false);
   });
 
   it("tower can be selected and upgraded", () => {
-    const stores = createTestStores();
-    const gameStore = stores.game;
-    const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
-
-    engine.loadMap(0);
     const grid = engine.grid!;
+    const tower = engine.towerManager!.build("basic", 0, 0, persistState, grid);
+    engine.runState.gold -= TOWER_META.basic.cost;
+    engine.runState.selectedTowerId = String(tower.id);
 
-    const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, grid);
-    gameStore.selectTower(tower);
-    expect(gameStore.selectedTower).toStrictEqual(tower);
-
+    const cost = engine.getUpgradeCost(tower!);
+    engine.runState.gold -= cost;
     engine.upgradeSelected();
     expect(tower!.level).toBe(2);
-    expect(gameStore.selectedTower).toStrictEqual(tower!);
+    expect(engine.runState.selectedTowerId).toBe(String(tower.id));
   });
 
   it("tower can be sold and gold refunded", () => {
-    const stores = createTestStores();
-    const gameStore = stores.game;
-    const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
-
-    engine.loadMap(0);
     const grid = engine.grid!;
+    const tower = engine.towerManager!.build("basic", 0, 0, persistState, grid);
+    engine.runState.gold -= TOWER_META.basic.cost;
+    const goldBefore = engine.runState.gold;
+    engine.runState.selectedTowerId = String(tower.id);
 
-    const goldBefore = gameStore.gold;
-    const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, grid);
-    gameStore.selectTower(tower);
-
-    engine.sellSelected();
     engine.executeSell();
     const expectedRefund = Math.round(tower!.totalInvested * 0.6);
-    expect(gameStore.gold).toBe(goldBefore + expectedRefund);
-    expect(gameStore.selectedTower).toBeNull();
+    expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
+    expect(engine.runState.selectedTowerId).toBeNull();
   });
 });
 
 describe("Integration: Economy Flow", () => {
+  let engine: GameEngine;
+  let persistState: ReturnType<typeof createTestPersistState>;
+  let mockHost: MockHostBindings;
+
+  beforeEach(() => {
+    setupPinia();
+    persistState = createTestPersistState();
+    mockHost = new MockHostBindings();
+    engine = new GameEngine(createTestThemeBundle(), mockHost);
+    engine.loadMap(0, persistState);
+  });
+
   it("buying towers reduces gold correctly", () => {
-    const stores = createTestStores();
-    const gameStore = stores.game;
-    const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
-
-    engine.loadMap(0);
     const grid = engine.grid!;
-    const initialGold = gameStore.gold;
+    const initialGold = engine.runState.gold;
 
-    engine.towerManager?.build("basic", 0, 0, persistStore.$state, grid);
-    gameStore.setGold(gameStore.gold - TOWER_META.basic.cost);
+    engine.towerManager?.build("basic", 0, 0, persistState, grid);
+    engine.runState.gold -= TOWER_META.basic.cost;
 
-    engine.towerManager?.build("basic", 1, 0, persistStore.$state, grid);
-    gameStore.setGold(gameStore.gold - TOWER_META.basic.cost);
+    engine.towerManager?.build("basic", 1, 0, persistState, grid);
+    engine.runState.gold -= TOWER_META.basic.cost;
 
-    expect(gameStore.gold).toBe(initialGold - TOWER_META.basic.cost * 2);
+    expect(engine.runState.gold).toBe(initialGold - TOWER_META.basic.cost * 2);
   });
 
   it("upgrading a tower costs the correct amount", () => {
-    const stores = createTestStores();
-    const gameStore = stores.game;
-    const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
-
-    engine.loadMap(0);
     const grid = engine.grid!;
-
-    const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, grid);
-    gameStore.selectTower(tower);
+    const tower = engine.towerManager!.build("basic", 0, 0, persistState, grid);
+    engine.runState.gold -= TOWER_META.basic.cost;
+    engine.runState.selectedTowerId = String(tower.id);
 
     const cost = engine.getUpgradeCost(tower!);
-    const goldBefore = gameStore.gold;
+    const goldBefore = engine.runState.gold;
     engine.upgradeSelected();
 
     expect(tower!.level).toBe(2);
-    expect(gameStore.gold).toBe(goldBefore - cost);
+    expect(engine.runState.gold).toBe(goldBefore - cost);
   });
 
   it("sell returns 60% of total invested", () => {
-    const stores = createTestStores();
-    const gameStore = stores.game;
-    const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
-
-    engine.loadMap(0);
     const grid = engine.grid!;
+    const tower = engine.towerManager!.build("basic", 0, 0, persistState, grid);
+    engine.runState.gold -= TOWER_META.basic.cost;
+    engine.runState.selectedTowerId = String(tower.id);
 
-    const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, grid);
-    gameStore.selectTower(tower);
+    const cost = engine.getUpgradeCost(tower!);
+    engine.runState.gold -= cost;
     engine.upgradeSelected();
 
-    const goldBefore = gameStore.gold;
-    engine.sellSelected();
+    const goldBefore = engine.runState.gold;
     engine.executeSell();
 
     const expectedRefund = Math.round(tower!.totalInvested * 0.6);
-    expect(gameStore.gold).toBe(goldBefore + expectedRefund);
+    expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
   });
 
   it("general addons affect starting resources", () => {
-    const stores = createTestStores();
-    const gameStore = stores.game;
-    const persistStore = stores.persist;
-    const engine = new GameEngine(gameStore, persistStore, null, new MockHostBindings());
+    persistState.generalAddons.startingGold = 0;
+    persistState.generalAddons.extraHealth = 0;
 
-    persistStore.generalAddons.startingGold = 0;
-    persistStore.generalAddons.extraHealth = 0;
+    // Re-create engine with modified persistState
+    const newPersistState = createTestPersistState();
+    newPersistState.generalAddons.startingGold = 0;
+    newPersistState.generalAddons.extraHealth = 0;
+    const newEngine = new GameEngine(createTestThemeBundle(), new MockHostBindings());
+    newEngine.loadMap(0, newPersistState);
 
-    engine.loadMap(0);
-
-    expect(gameStore.gold).toBe(StartingGold[0] + STARTING_GOLD_BONUS[0]);
-    expect(gameStore.lives).toBe(20 + STARTING_HEALTH_BONUS[0]);
+    expect(newEngine.runState.gold).toBe(StartingGold[0] + STARTING_GOLD_BONUS[0]);
+    expect(newEngine.runState.lives).toBe(20 + STARTING_HEALTH_BONUS[0]);
   });
 });

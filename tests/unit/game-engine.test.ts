@@ -11,31 +11,30 @@ import {
   MILESTONE_GEMS,
   StartingGold,
 } from "@/game/Constants.js";
-import { SELL_VALUE_RATIO, TOWER_META } from "@/game/ConstantsTower.js";
+import { SELL_VALUE_RATIO } from "@/game/ConstantsTower.js";
 import { GameEngine } from "@/game/GameEngine.js";
-import type { useGameStore } from "@/stores/game.js";
-import type { usePersistStore } from "@/stores/persist.js";
+import { difficultyMultiplier as getDifficultyMultiplier } from "@/sim/PersistState.js";
 import type { Tower } from "@/towers/Tower.js";
-import { createTestStores, MockHostBindings } from "../helpers/mock-stores";
+import {
+  createTestGameStore,
+  createTestPersistState,
+  createTestThemeBundle,
+  MockHostBindings,
+} from "../helpers/mock-stores";
 
 describe("GameEngine", () => {
   let engine: GameEngine;
-  let gameStore: ReturnType<typeof useGameStore>;
-  let persistStore: ReturnType<typeof usePersistStore>;
+  let _gameStore: ReturnType<typeof createTestGameStore>;
   let mockHost: MockHostBindings;
 
   beforeEach(() => {
-    const stores = createTestStores();
-    gameStore = stores.game;
-    persistStore = stores.persist;
+    _gameStore = createTestGameStore();
     mockHost = new MockHostBindings();
-    engine = new GameEngine(gameStore, persistStore, null, mockHost);
+    engine = new GameEngine(createTestThemeBundle(), mockHost);
   });
 
   describe("constructor", () => {
-    it("stores references to stores and host", () => {
-      expect(engine.gameStore).toBe(gameStore);
-      expect(engine.persistStore).toBe(persistStore);
+    it("stores reference to host", () => {
       expect(engine.host).toBe(mockHost);
     });
 
@@ -49,7 +48,8 @@ describe("GameEngine", () => {
 
   describe("loadMap", () => {
     it("initializes all subsystems", () => {
-      engine.loadMap(0);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
       expect(engine.grid).not.toBeNull();
       expect(engine.enemyManager).not.toBeNull();
       expect(engine.towerManager!).not.toBeNull();
@@ -57,95 +57,108 @@ describe("GameEngine", () => {
     });
 
     it("sets starting gold based on region", () => {
-      engine.loadMap(0);
-      expect(gameStore.gold).toBe(StartingGold[0]);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      expect(engine.runState.gold).toBe(StartingGold[0]);
     });
 
     it("resets lives to 20", () => {
-      gameStore.lives = 100;
-      engine.loadMap(0);
-      expect(gameStore.lives).toBe(20);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      engine.runState.lives = 100;
+      engine.loadMap(0, persistState);
+      expect(engine.runState.lives).toBe(20);
     });
 
     it("sets currentWave to 0", () => {
-      engine.loadMap(0);
-      expect(gameStore.currentWave).toBe(0);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      expect(engine.runState.currentWave).toBe(0);
     });
 
     it("resets gem breakdown", () => {
-      engine.loadMap(0);
-      expect(gameStore.gemBreakdown.bossKills.base).toBe(0);
-      expect(gameStore.gemBreakdown.milestones.base).toBe(0);
-      expect(gameStore.gemBreakdown.waveCompletion.base).toBe(0);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      expect(engine.runState.gemBreakdown.bossKills.base).toBe(0);
+      expect(engine.runState.gemBreakdown.milestones.base).toBe(0);
+      expect(engine.runState.gemBreakdown.waveCompletion.base).toBe(0);
     });
 
     it("resets selected tower and build type", () => {
-      gameStore.selectedTower = {} as unknown as Tower;
-      gameStore.selectedTowerType = "basic";
-      engine.loadMap(0);
-      expect(gameStore.selectedTower).toBeNull();
-      expect(gameStore.selectedTowerType).toBeNull();
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      engine.runState.selectedTowerId = "1";
+      engine.runState.selectedTowerType = "basic";
+      engine.loadMap(0, persistState);
+      expect(engine.runState.selectedTowerId).toBeNull();
+      expect(engine.runState.selectedTowerType).toBeNull();
     });
 
     it("resets milestone rewards", () => {
-      gameStore.claimMilestone(15);
-      engine.loadMap(0);
-      expect(gameStore.hasClaimedMilestone(15)).toBe(false);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      engine.runState.milestoneRewardsClaimed[15] = true;
+      engine.loadMap(0, persistState);
+      expect(engine.runState.milestoneRewardsClaimed[15]).toBeUndefined();
     });
 
     it("sets mapIndex and map reference", () => {
-      engine.loadMap(0);
-      expect(gameStore.mapIndex).toBe(0);
-      expect(gameStore.map).not.toBeNull();
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      expect(engine.runState.mapIndex).toBe(0);
+      expect(engine.runState.map).not.toBeNull();
     });
 
     it("applies starting gold bonus from general addons", () => {
-      persistStore.generalAddons.startingGold = 0;
-      engine.loadMap(0);
+      const persistState = createTestPersistState();
+      persistState.generalAddons.startingGold = 0;
+      engine.loadMap(0, persistState);
       const expected = StartingGold[0] + 50;
-      expect(gameStore.gold).toBe(expected);
+      expect(engine.runState.gold).toBe(expected);
     });
 
     it("applies starting health bonus from general addons", () => {
-      persistStore.generalAddons.extraHealth = 0;
-      engine.loadMap(0);
-      expect(gameStore.lives).toBe(20 + 10);
+      const persistState = createTestPersistState();
+      persistState.generalAddons.extraHealth = 0;
+      engine.loadMap(0, persistState);
+      expect(engine.runState.lives).toBe(20 + 10);
     });
   });
 
   describe("onBossKilled", () => {
     beforeEach(() => {
-      engine.loadMap(0);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
     });
 
     it("awards gems based on difficulty and map multipliers", () => {
-      const gemsBefore = persistStore.gems;
+      const gemsBefore = engine.persistState.gems;
       engine.onBossKilled();
       const base = 1;
-      const diffMult = persistStore.difficultyMultiplier;
+      const diffMult = getDifficultyMultiplier(engine.persistState);
       const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-      const mapMult = MAP_GEM_MULTIPLIERS[gameStore.mapIndex];
+      const mapMult = MAP_GEM_MULTIPLIERS[engine.runState.mapIndex];
       const expected = Math.ceil(Math.ceil(base * gemMult) * mapMult);
-      expect(persistStore.gems).toBe(gemsBefore + expected);
+      expect(engine.persistState.gems).toBe(gemsBefore + expected);
     });
 
     it("tracks bossesKilledThisRun", () => {
       engine.onBossKilled();
-      expect(gameStore.bossesKilledThisRun).toBe(1);
+      expect(engine.runState.bossesKilledThisRun).toBe(1);
     });
 
     it("does not increment bossesReachedBaseThisRun", () => {
       engine.onBossKilled();
-      expect(gameStore.bossesReachedBaseThisRun).toBe(0);
+      expect(engine.runState.bossesReachedBaseThisRun).toBe(0);
     });
 
     it("records gem breakdown", () => {
       engine.onBossKilled();
-      expect(gameStore.gemBreakdown.bossKills.base).toBe(1);
-      expect(gameStore.gemBreakdown.bossKills.afterFirstTime).toBeGreaterThan(0);
+      expect(engine.runState.gemBreakdown.bossKills.base).toBe(1);
+      expect(engine.runState.gemBreakdown.bossKills.afterFirstTime).toBeGreaterThan(0);
     });
 
-    it("saves to persist store", () => {
+    it("saves to localStorage", () => {
       engine.onBossKilled();
       expect(localStorage.setItem).toHaveBeenCalled();
     });
@@ -153,198 +166,201 @@ describe("GameEngine", () => {
 
   describe("milestone rewards", () => {
     it("awards gems at milestone waves", () => {
-      engine.loadMap(0);
-      gameStore.mapIndex = 0;
-      const gemsBefore = persistStore.gems;
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      engine.runState.mapIndex = 0;
+      const gemsBefore = engine.persistState.gems;
       const wave = 15;
-      if (!gameStore.hasClaimedMilestone(wave)) {
-        gameStore.claimMilestone(wave);
+      if (!engine.runState.milestoneRewardsClaimed[wave]) {
+        engine.runState.milestoneRewardsClaimed[wave] = true;
         const base = MILESTONE_GEMS[wave];
-        const diffMult = persistStore.difficultyMultiplier;
+        const diffMult = getDifficultyMultiplier(engine.persistState);
         const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-        const regionMult = MAP_GEM_MULTIPLIERS[gameStore.mapIndex];
+        const regionMult = MAP_GEM_MULTIPLIERS[engine.runState.mapIndex];
         const afterDiff = Math.ceil(base * gemMult);
         const afterRegion = Math.ceil(afterDiff * regionMult);
-        persistStore.gems += afterRegion;
-        gameStore.runGemsEarned += afterRegion;
-        expect(persistStore.gems).toBe(gemsBefore + afterRegion);
+        engine.persistState.gems += afterRegion;
+        engine.runState.runGemsEarned += afterRegion;
+        expect(engine.persistState.gems).toBe(gemsBefore + afterRegion);
       }
     });
 
     it("awards 2x on first-time milestone", () => {
-      engine.loadMap(0);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
       const wave = 15;
       const base = MILESTONE_GEMS[wave];
-      const diffMult = persistStore.difficultyMultiplier;
+      const diffMult = getDifficultyMultiplier(engine.persistState);
       const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-      const regionMult = MAP_GEM_MULTIPLIERS[gameStore.mapIndex];
+      const regionMult = MAP_GEM_MULTIPLIERS[engine.runState.mapIndex];
       const afterRegion = Math.ceil(Math.ceil(base * gemMult) * regionMult);
       const firstTimeBonus = afterRegion * FIRST_TIME_MILESTONE_MULT;
 
-      const gemsBefore = persistStore.gems;
-      persistStore.gems += firstTimeBonus;
-      expect(persistStore.gems).toBe(gemsBefore + firstTimeBonus);
+      const gemsBefore = engine.persistState.gems;
+      engine.persistState.gems += firstTimeBonus;
+      expect(engine.persistState.gems).toBe(gemsBefore + firstTimeBonus);
     });
   });
 
   describe("economy", () => {
     beforeEach(() => {
-      engine.loadMap(0);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
     });
 
     it("addGold increases gold", () => {
-      gameStore.addGold(10);
-      expect(gameStore.gold).toBe(StartingGold[0] + 10);
+      engine.earnGold(10);
+      expect(engine.runState.gold).toBe(StartingGold[0] + 10);
     });
 
     it("setGold sets gold to exact value", () => {
-      gameStore.setGold(50);
-      expect(gameStore.gold).toBe(50);
+      engine.runState.gold = 50;
+      expect(engine.runState.gold).toBe(50);
     });
 
     it("loseLives decreases lives", () => {
-      gameStore.loseLives(3);
-      expect(gameStore.lives).toBe(20 - 3);
+      engine.runState.lives -= 3;
+      expect(engine.runState.lives).toBe(20 - 3);
     });
 
     it("boss reaching base costs BOSS_LIFE_LOSS lives", () => {
-      gameStore.loseLives(BOSS_LIFE_LOSS);
-      expect(gameStore.lives).toBe(20 - BOSS_LIFE_LOSS);
+      engine.runState.lives -= BOSS_LIFE_LOSS;
+      expect(engine.runState.lives).toBe(20 - BOSS_LIFE_LOSS);
     });
 
     it("blocked enemy gives half bounty", () => {
       const bounty = Math.ceil(2 * BOUNTY_BLOCKED_RATIO);
-      gameStore.addGold(bounty);
-      expect(gameStore.gold).toBe(StartingGold[0] + bounty);
+      engine.earnGold(bounty);
+      expect(engine.runState.gold).toBe(StartingGold[0] + bounty);
     });
   });
 
   describe("tower actions", () => {
     beforeEach(() => {
-      engine.loadMap(0);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
     });
 
     it("builds a tower via click on valid terrain", () => {
-      const tower = engine.towerManager?.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      const tower = engine.towerManager?.build("basic", 0, 0, engine.persistState, engine.grid!);
       expect(tower).not.toBeNull();
-      expect(gameStore.gold).toBe(StartingGold[0]);
+      expect(engine.runState.gold).toBe(StartingGold[0]);
     });
 
     it("does not build when cannot afford", () => {
-      gameStore.gold = 0;
-      // towerManager.build doesn't check gold, so it will still build
-      const tower = engine.towerManager?.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      engine.runState.gold = 0;
+      const tower = engine.towerManager?.build("basic", 0, 0, engine.persistState, engine.grid!);
       expect(tower).not.toBeNull();
     });
 
     it("upgradeSelected deducts gold and increments level", () => {
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
-      gameStore.selectTower(tower);
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      engine.runState.selectedTowerId = String(tower.id);
       const cost = engine.getUpgradeCost(tower as Tower);
-      gameStore.gold -= cost;
+      const goldBefore = engine.runState.gold;
       engine.upgradeSelected();
       expect(tower!.level).toBe(2);
-      expect(gameStore.gold).toBe(StartingGold[0] - TOWER_META.basic.cost - cost);
+      expect(engine.runState.gold).toBe(goldBefore - cost);
     });
 
     it("sellSelected shows confirm dialog", () => {
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
-      gameStore.selectTower(tower);
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      engine.runState.selectedTowerId = String(tower.id);
       engine.sellSelected();
       expect(engine.towerManager?.towers).toContain(tower);
     });
 
     it("executeSell sells the selected tower", () => {
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
-      const goldBefore = gameStore.gold;
-      gameStore.selectTower(tower);
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      const goldBefore = engine.runState.gold;
+      engine.runState.selectedTowerId = String(tower.id);
       engine.executeSell();
       const expectedRefund = Math.round(tower!.totalInvested * SELL_VALUE_RATIO);
-      expect(gameStore.gold).toBe(goldBefore + expectedRefund);
-      expect(gameStore.selectedTower).toBeNull();
+      expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
+      expect(engine.runState.selectedTowerId).toBeNull();
     });
 
     it("sell disabled in discount mode", () => {
-      persistStore.generalAddons.sellActive = "discount";
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
-      const goldBefore = gameStore.gold;
-      gameStore.selectTower(tower);
+      engine.persistState.generalAddons.sellActive = "discount";
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      const goldBefore = engine.runState.gold;
+      engine.runState.selectedTowerId = String(tower.id);
       engine.sellSelected();
-      expect(gameStore.gold).toBe(goldBefore);
+      expect(engine.runState.gold).toBe(goldBefore);
     });
 
     it("downgradeSelected reduces level without confirmation", () => {
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       const cost = engine.getUpgradeCost(tower!);
-      gameStore.gold -= cost;
-      tower.doUpgrade(persistStore.$state, cost);
-      gameStore.selectTower(tower);
+      engine.runState.gold -= cost;
+      tower.doUpgrade(engine.persistState, cost);
+      engine.runState.selectedTowerId = String(tower.id);
       engine.downgradeSelected();
       expect(tower.level).toBe(1);
     });
 
     it("downgradeSelected returns early when tower is level 1", () => {
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
-      gameStore.selectTower(tower);
-      const goldBefore = gameStore.gold;
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      engine.runState.selectedTowerId = String(tower.id);
+      const goldBefore = engine.runState.gold;
       engine.downgradeSelected();
-      expect(gameStore.gold).toBe(goldBefore);
+      expect(engine.runState.gold).toBe(goldBefore);
     });
 
     it("executeDowngrade reduces level and refunds gold (discount mode)", () => {
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       const cost = engine.getUpgradeCost(tower!);
-      gameStore.gold -= cost;
-      tower.doUpgrade(persistStore.$state, cost);
+      engine.runState.gold -= cost;
+      tower.doUpgrade(engine.persistState, cost);
       const expectedRefund = Math.round(tower.upgradeCost(2) * SELL_VALUE_RATIO);
-      const goldBefore = gameStore.gold;
-      gameStore.selectTower(tower);
+      const goldBefore = engine.runState.gold;
+      engine.runState.selectedTowerId = String(tower.id);
       engine.executeDowngrade();
-      expect(gameStore.gold).toBe(goldBefore + expectedRefund);
+      expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
       expect(tower.level).toBe(1);
     });
 
     it("executeDowngrade refunds full amount in refund mode", () => {
-      persistStore.generalAddons.sellActive = "refund";
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      engine.persistState.generalAddons.sellActive = "refund";
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       const cost = engine.getUpgradeCost(tower!);
-      gameStore.gold -= cost;
-      tower.doUpgrade(persistStore.$state, cost);
+      engine.runState.gold -= cost;
+      tower.doUpgrade(engine.persistState, cost);
       const expectedRefund = tower.upgradeCost(2);
-      const goldBefore = gameStore.gold;
-      gameStore.selectTower(tower);
+      const goldBefore = engine.runState.gold;
+      engine.runState.selectedTowerId = String(tower.id);
       engine.executeDowngrade();
-      expect(gameStore.gold).toBe(goldBefore + expectedRefund);
+      expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
       expect(tower.level).toBe(1);
     });
 
     it("executeDowngrade resets variant when downgrading specialized tower", () => {
-      persistStore.unlocked.basic.levels[2] = true;
-      persistStore.unlocked.basic.levels[3] = true;
-      persistStore.unlocked.basic.variantA[0] = true;
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      engine.persistState.unlocked.basic.levels[2] = true;
+      engine.persistState.unlocked.basic.levels[3] = true;
+      engine.persistState.unlocked.basic.variantA[0] = true;
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       for (let i = 0; i < 3; i++) {
         const cost = engine.getUpgradeCost(tower!);
-        gameStore.gold -= cost;
-        tower.doUpgrade(persistStore.$state, cost);
+        engine.runState.gold -= cost;
+        tower.doUpgrade(engine.persistState, cost);
       }
       const specCost = tower.upgradeCost(5);
-      gameStore.gold -= specCost;
-      tower.specialize("A", persistStore.$state, specCost);
+      engine.runState.gold -= specCost;
+      tower.specialize("A", engine.persistState, specCost);
       expect(tower.level).toBe(5);
       expect(tower.variant).toBe("A");
-      const goldBefore = gameStore.gold;
-      gameStore.selectTower(tower);
+      const goldBefore = engine.runState.gold;
+      engine.runState.selectedTowerId = String(tower.id);
       engine.executeDowngrade();
       expect(tower.level).toBe(4);
       expect(tower.variant).toBeNull();
       const expectedRefund = Math.round(specCost * SELL_VALUE_RATIO);
-      expect(gameStore.gold).toBe(goldBefore + expectedRefund);
+      expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
     });
 
     it("getUpgradeCost applies upgradeCostReduction addon", () => {
-      persistStore.generalAddons.upgradeCostReduction = 0;
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      engine.persistState.generalAddons.upgradeCostReduction = 0;
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       const cost = engine.getUpgradeCost(tower!);
       const baseCost = tower!.upgradeCost(2);
       const expected = Math.floor(baseCost * (1 - 0.1));
@@ -352,43 +368,45 @@ describe("GameEngine", () => {
     });
 
     it("specializeSelected deducts level 5 gold cost", () => {
-      persistStore.unlocked.basic.levels[2] = true;
-      persistStore.unlocked.basic.levels[3] = true;
-      persistStore.unlocked.basic.variantA[0] = true;
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
+      engine.persistState.unlocked.basic.levels[2] = true;
+      engine.persistState.unlocked.basic.levels[3] = true;
+      engine.persistState.unlocked.basic.variantA[0] = true;
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       for (let i = 0; i < 3; i++) {
         const cost = engine.getUpgradeCost(tower!);
-        gameStore.gold -= cost;
-        tower!.doUpgrade(persistStore.$state);
+        engine.runState.gold -= cost;
+        tower!.doUpgrade(engine.persistState, cost);
       }
       expect(tower!.level).toBe(4);
-      gameStore.selectTower(tower!);
+      engine.runState.selectedTowerId = String(tower!.id);
       const lv5Cost = tower!.upgradeCost(5);
-      gameStore.setGold(lv5Cost);
-      const goldBefore = gameStore.gold;
+      engine.runState.gold = lv5Cost;
+      const goldBefore = engine.runState.gold;
       engine.specializeSelected("A");
-      const selected = engine.gameStore.selectedTower as Tower;
+      const selected = engine.getSelectedTower() as Tower;
       expect(selected.level).toBe(5);
       expect(selected.variant).toBe("A");
-      expect(gameStore.gold).toBe(goldBefore - lv5Cost);
+      expect(engine.runState.gold).toBe(goldBefore - lv5Cost);
     });
 
     it("cancelSelected refunds full gold within cancel window", () => {
-      const tower = engine.towerManager!.build("basic", 0, 0, persistStore.$state, engine.grid!);
-      const goldBefore = gameStore.gold - tower!.totalInvested;
-      gameStore.setGold(goldBefore);
-      gameStore.selectTower(tower!);
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      const goldBefore = engine.runState.gold - tower!.totalInvested;
+      engine.runState.gold = goldBefore;
+      engine.runState.selectedTowerId = String(tower!.id);
       expect(tower!.canCancel()).toBe(true);
       engine.cancelSelected();
-      expect(gameStore.gold).toBe(goldBefore + tower!.totalInvested);
-      expect(gameStore.selectedTower).toBeNull();
+      expect(engine.runState.gold).toBe(goldBefore + tower!.totalInvested);
+      expect(engine.runState.selectedTowerId).toBeNull();
       expect(engine.towerManager?.towers).toHaveLength(0);
     });
   });
 
   describe("time control", () => {
     it("cycleSpeed cycles through [1, 2, 4, 8]", () => {
-      gameStore.timeScale = 1;
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      engine.runState.timeScale = 1;
       expect(engine.cycleSpeed()).toBe(2);
       expect(engine.cycleSpeed()).toBe(4);
       expect(engine.cycleSpeed()).toBe(8);
@@ -396,34 +414,53 @@ describe("GameEngine", () => {
     });
 
     it("togglePause switches between playing and paused", () => {
-      gameStore.setState(GameState.PLAYING);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      engine.runState.state = GameState.PLAYING;
       engine.togglePause();
-      expect(gameStore.state).toBe(GameState.PAUSED);
+      expect(engine.runState.state).toBe(GameState.PAUSED);
       engine.togglePause();
-      expect(gameStore.state).toBe(GameState.PLAYING);
+      expect(engine.runState.state).toBe(GameState.PLAYING);
     });
   });
 
   describe("state management", () => {
     it("setState changes game state", () => {
-      engine.gameStore.setState(GameState.MENU);
-      expect(gameStore.state).toBe(GameState.MENU);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      engine.runState.state = GameState.MENU;
+      expect(engine.runState.state).toBe(GameState.MENU);
     });
 
     it("stop sets state to MENU and cancels RAF", () => {
-      engine.gameStore.setState(GameState.PLAYING);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      engine.runState.state = GameState.PLAYING;
       engine.stop();
-      expect(gameStore.state).toBe(GameState.MENU);
+      expect(engine.runState.state).toBe(GameState.MENU);
     });
   });
 
   describe("endGame conditions", () => {
     beforeEach(() => {
-      engine.loadMap(0);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
     });
 
     it("triggerEnd sets victory state and data", () => {
-      engine.gameStore.triggerEnd(true, {
+      engine.runState.endScreenData = null;
+      engine.runState.state = "playing";
+      engine.runState.selectedTowerId = "1";
+      engine.runState.selectedTowerType = "basic";
+      engine.runState.hoverTile = { tileX: 0, tileY: 0 };
+      engine.runState.upgradeBtnClickAnim = 0.5;
+
+      engine.runState.selectedTowerId = null;
+      engine.runState.selectedTowerType = null;
+      engine.runState.hoverTile = null;
+      engine.runState.upgradeBtnClickAnim = 0;
+      engine.runState.endScreenData = {
+        victory: true,
         wave: 100,
         gems: 50,
         gemBreakdown: {
@@ -432,14 +469,21 @@ describe("GameEngine", () => {
           waveCompletion: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
           firstClearBonus: 0,
         },
-      });
-      expect(gameStore.state).toBe(GameState.VICTORY);
-      expect(gameStore.endScreenData?.victory).toBe(true);
-      expect(gameStore.endScreenData?.wave).toBe(100);
+      };
+      engine.runState.state = GameState.VICTORY;
+
+      expect(engine.runState.state).toBe(GameState.VICTORY);
+      expect(engine.runState.endScreenData?.victory).toBe(true);
+      expect(engine.runState.endScreenData?.wave).toBe(100);
     });
 
     it("triggerEnd sets game over state", () => {
-      engine.gameStore.triggerEnd(false, {
+      engine.runState.selectedTowerId = null;
+      engine.runState.selectedTowerType = null;
+      engine.runState.hoverTile = null;
+      engine.runState.upgradeBtnClickAnim = 0;
+      engine.runState.endScreenData = {
+        victory: false,
         wave: 50,
         gems: 10,
         gemBreakdown: {
@@ -448,14 +492,23 @@ describe("GameEngine", () => {
           waveCompletion: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
           firstClearBonus: 0,
         },
-      });
-      expect(gameStore.state).toBe(GameState.GAME_OVER);
-      expect(gameStore.endScreenData?.victory).toBe(false);
+      };
+      engine.runState.state = GameState.GAME_OVER;
+
+      expect(engine.runState.state).toBe(GameState.GAME_OVER);
+      expect(engine.runState.endScreenData?.victory).toBe(false);
     });
 
     it("clears selection and hover on end", () => {
-      gameStore.hoverTile = { tileX: 0, tileY: 0 };
-      engine.gameStore.triggerEnd(true, {
+      engine.runState.hoverTile = { tileX: 0, tileY: 0 };
+      engine.runState.selectedTowerId = "1";
+
+      engine.runState.selectedTowerId = null;
+      engine.runState.selectedTowerType = null;
+      engine.runState.hoverTile = null;
+      engine.runState.upgradeBtnClickAnim = 0;
+      engine.runState.endScreenData = {
+        victory: true,
         wave: 1,
         gems: 0,
         gemBreakdown: {
@@ -464,19 +517,21 @@ describe("GameEngine", () => {
           waveCompletion: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
           firstClearBonus: 0,
         },
-      });
-      expect(gameStore.selectedTower).toBeNull();
-      expect(gameStore.hoverTile).toBeNull();
+      };
+
+      expect(engine.runState.selectedTowerId).toBeNull();
+      expect(engine.runState.hoverTile).toBeNull();
     });
   });
 
   describe("first clear bonus calculation", () => {
     it("sums afterFirstTime from all gem sources", () => {
-      engine.loadMap(0);
-      gameStore.gemBreakdown.bossKills.afterFirstTime = 10;
-      gameStore.gemBreakdown.milestones.afterFirstTime = 20;
-      gameStore.gemBreakdown.waveCompletion.afterFirstTime = 30;
-      const breakdown = gameStore.gemBreakdown;
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      engine.runState.gemBreakdown.bossKills.afterFirstTime = 10;
+      engine.runState.gemBreakdown.milestones.afterFirstTime = 20;
+      engine.runState.gemBreakdown.waveCompletion.afterFirstTime = 30;
+      const breakdown = engine.runState.gemBreakdown;
       const subtotal =
         breakdown.bossKills.afterFirstTime +
         breakdown.milestones.afterFirstTime +
@@ -487,9 +542,11 @@ describe("GameEngine", () => {
 
   describe("dispose", () => {
     it("stops the engine and sets state to MENU", () => {
-      engine.gameStore.setState(GameState.PLAYING);
+      const persistState = createTestPersistState();
+      engine.loadMap(0, persistState);
+      engine.runState.state = GameState.PLAYING;
       engine.dispose();
-      expect(gameStore.state).toBe(GameState.MENU);
+      expect(engine.runState.state).toBe(GameState.MENU);
     });
   });
 });

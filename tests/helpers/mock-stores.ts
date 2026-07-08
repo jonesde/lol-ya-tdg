@@ -5,7 +5,16 @@ import type { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
 import type { MapThemeData } from "@/render/themes/index.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
-import type { ConfirmPayload, HostBindings, PersistStateSlice, SoundName, UiEvent } from "@/sim/HostBindings.js";
+import type {
+  ConfirmPayload,
+  HostBindings,
+  PersistStateSlice,
+  SoundName,
+  ThemeBundle,
+  UiEvent,
+} from "@/sim/HostBindings.js";
+import type { PersistState } from "@/sim/PersistState.js";
+import { createDefaultPersistState } from "@/sim/PersistState.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -174,4 +183,12 @@ export function createTestStores(): { game: GameStore; persist: PersistStore; ui
     game.state = newState;
   });
   return { game: game as GameStore, persist: usePersistStore(), ui: useUiStore() };
+}
+
+export function createTestThemeBundle(theme: MapThemeData | null = null): ThemeBundle {
+  return { active: theme, defaultTowerVisuals: {}, defaultEnemyVisuals: {} };
+}
+
+export function createTestPersistState(): PersistState {
+  return createDefaultPersistState();
 }

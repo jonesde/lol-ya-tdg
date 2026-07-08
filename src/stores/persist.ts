@@ -2,10 +2,10 @@ import { defineStore } from "pinia";
 import { useUiStore } from "@/stores/ui.js";
 
 const OLD_STORAGE_KEY = "gempath_save_v1";
-const STORAGE_KEY = "lol_ya_tdg_save_1";
+export const STORAGE_KEY = "lol_ya_tdg_save_1";
 const CURRENT_SAVE_VERSION = 2;
 
-interface TowerUnlocks {
+export interface TowerUnlocks {
   levels: boolean[];
   variantA: boolean[];
   variantB: boolean[];
@@ -23,6 +23,7 @@ export interface GeneralAddons {
   terrainHeightRangeBonus: number | null;
   damageMilestoneBonus: number | null;
   slowHealing: number | null;
+  [key: string]: number | null | boolean | string;
 }
 
 interface PersistStateShape {
