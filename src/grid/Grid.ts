@@ -30,6 +30,7 @@ export class Grid {
   base: Point;
   blocked: Set<string>;
   terrainTowers: Set<string>;
+  ghostTowers: Set<string>;
   paths: (Point[] | null)[] = [];
   regionId: number = 0;
   private _blockCount: number = 0;
@@ -44,6 +45,7 @@ export class Grid {
     this.base = map.base as Point;
     this.blocked = new Set();
     this.terrainTowers = new Set();
+    this.ghostTowers = new Set();
     this.regionId = map.regionId ?? 0;
     this.recomputePaths();
   }
@@ -84,6 +86,7 @@ export class Grid {
     if (tileType.type === "terrain") return !this.terrainTowers.has(`${x},${y}`);
     if (tileType.type === "path") {
       if (this.blocked.has(`${x},${y}`)) return false;
+      if (this.ghostTowers.has(`${x},${y}`)) return false;
       const cachedPathTiles = this.paths.length > 0 ? this.buildCachedPathTiles() : undefined;
       return canPlaceWithoutBlocking(this, this.spawns, this.base, { x, y }, this.blocked, cachedPathTiles);
     }
@@ -137,6 +140,36 @@ export class Grid {
       this.terrainTowers.delete(towerKey);
       return true;
     }
+  }
+
+  // A path-tile tower that has been destroyed becomes a ghost: it no longer
+  // blocks routing, so the key moves from `blocked` to `ghostTowers` and paths
+  // are recomputed so enemies may route through the (now passable) tile.
+  setTowerGhost(x: number, y: number): void {
+    const towerKey = `${x},${y}`;
+    this.blocked.delete(towerKey);
+    this.ghostTowers.add(towerKey);
+    this.recomputePaths();
+  }
+
+  // A ghosted tower is restored to a live (blocking) state: the key moves back
+  // into `blocked` and paths are recomputed.
+  clearTowerGhost(x: number, y: number): void {
+    const towerKey = `${x},${y}`;
+    this.ghostTowers.delete(towerKey);
+    this.blocked.add(towerKey);
+    this.recomputePaths();
+  }
+
+  // Bulk restore of every ghosted tower, recomputing paths exactly once. Used by
+  // the wave-start bulk restore so N ghost towers do not trigger N recomputes.
+  batchClearGhosts(): void {
+    if (this.ghostTowers.size === 0) return;
+    for (const key of this.ghostTowers) {
+      this.blocked.add(key);
+    }
+    this.ghostTowers.clear();
+    this.recomputePaths();
   }
 
   recomputePathsForTile(x: number, y: number) {

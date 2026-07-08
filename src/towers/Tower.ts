@@ -1,3 +1,4 @@
+import type { Enemy } from "@/enemies/Enemy.js";
 import {
   MILESTONE_BONUS_PCT,
   MILESTONE_THRESHOLD,
@@ -8,6 +9,8 @@ import {
   CANCEL_BUILD_WINDOW_MS,
   CHARGE_SHOT_COUNT,
   CHARGE_SHOT_MULT,
+  GHOST_RESTORE_BASE_SECONDS,
+  GHOST_RESTORE_PER_LEVEL,
   ICE_AURA_DURATION,
   ICE_AURA_RANGE,
   ICE_AURA_SLOW_MULT,
@@ -37,6 +40,7 @@ import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
 interface GridRef {
   tileSize: number;
   tiles?: { type: string; height: number }[][];
+  clearTowerGhost(x: number, y: number): void;
 }
 
 interface EnemyManagerRef {
@@ -79,6 +83,7 @@ interface EnemyManagerRef {
     pathIdx: number;
     path: { x: number; y: number }[] | null;
   } | null;
+  towerAt(x: number, y: number): Tower | null;
 }
 
 interface ProjectileManagerRef {
@@ -194,6 +199,7 @@ export class Tower {
     slowDur?: number;
     projSpeed?: number;
     fixedAim?: boolean;
+    health: number;
   };
   color: string;
   icon: string;
@@ -222,6 +228,11 @@ export class Tower {
   chargeShotCount: number;
   iceBurstTimer: number;
   cachedTargetId: number | null;
+  maxHealth: number;
+  health: number;
+  isGhost: boolean;
+  ghostTimer: number;
+  pendingGhostEffect: boolean;
 
   constructor(
     type: string,
@@ -276,6 +287,11 @@ export class Tower {
     this.chargeShotCount = 0;
     this.iceBurstTimer = 0;
     this.cachedTargetId = null;
+    this.maxHealth = this.base.health * TOWER_LEVEL_DMG_MULT ** (this.level - 1);
+    this.health = this.maxHealth;
+    this.isGhost = false;
+    this.ghostTimer = 0;
+    this.pendingGhostEffect = false;
     if (grid?.tiles?.[tileY]?.[tileX]) {
       this.terrainHeight = grid.tiles[tileY][tileX].height || 1;
     } else {
@@ -536,6 +552,7 @@ export class Tower {
   }
 
   canUpgrade(save: PersistState | undefined): CanUpgradeResult {
+    if (this.isGhost) return { ok: false, reason: "Ghosted — cannot upgrade" };
     const cost = this.upgradeCost(this.level + 1);
     if (this.level === 4 && this.variant === null) {
       return { ok: false, reason: "Choose specialization", needVariant: true };
@@ -547,6 +564,7 @@ export class Tower {
   }
 
   specialize(variant: "A" | "B", save: PersistState, actualCost?: number): boolean {
+    if (this.isGhost) return false;
     if (this.level !== 4) return false;
     const unlocked = save.unlocked[this.type];
     if (!unlocked) return false;
@@ -576,7 +594,27 @@ export class Tower {
   }
 
   sellValue(): number {
+    if (this.isGhost) return 0;
     return Math.round(this.totalInvested * SELL_VALUE_RATIO);
+  }
+
+  canModify(): boolean {
+    return !this.isGhost;
+  }
+
+  takeDamage(amount: number, _attacker?: Enemy): void {
+    this.health -= amount;
+    if (this.health <= 0 && !this.isGhost) {
+      this.isGhost = true;
+      this.pendingGhostEffect = true;
+    }
+  }
+
+  restore(): void {
+    this.isGhost = false;
+    this.health = this.maxHealth;
+    this.ghostTimer = 0;
+    this.grid.clearTowerGhost(this.tileX, this.tileY);
   }
 
   canCancel(): boolean {
@@ -653,6 +691,19 @@ export class Tower {
   update(dt: number, enemyManager: EnemyManagerRef, projectileManager: ProjectileManagerRef, sound: SoundPlayer) {
     this._gameSeconds += dt;
     if (this.cooldown > 0) this.cooldown -= dt;
+
+    // Ghost state: advance the restore timer first, then auto-restore when it elapses.
+    if (this.isGhost) {
+      this.ghostTimer += dt;
+      const restoreTime = GHOST_RESTORE_BASE_SECONDS - this.level * GHOST_RESTORE_PER_LEVEL;
+      if (this.ghostTimer >= restoreTime) {
+        this.restore();
+      }
+    }
+    // A ghosted tower cannot fire or apply any per-frame behavior until restored.
+    if (this.isGhost) {
+      return;
+    }
 
     const stats = this.stats;
 

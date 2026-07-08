@@ -1,3 +1,4 @@
+import { GHOST_OPACITY } from "@/game/ConstantsTower.js";
 import type { TowerSnapshot } from "../../sim/SimulationSnapshot.js";
 import { SVG_NS, TOWER_SCALED_SIZE } from "./types.js";
 
@@ -141,6 +142,7 @@ class TowerRenderProxy {
 
   sync(tower: TowerSnapshot, dt: number): void {
     this.el.style.visibility = "visible";
+    this.el.style.opacity = tower.isGhost ? String(GHOST_OPACITY) : "1";
     if (tower.color !== this.lastColor) {
       this.el.style.color = tower.color;
       this.lastColor = tower.color;

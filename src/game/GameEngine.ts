@@ -58,7 +58,7 @@ import {
   VICTORY_WAVE,
 } from "./Constants.js";
 import { ENEMY_TYPES } from "./ConstantsEnemy.js";
-import { TOWER_META } from "./ConstantsTower.js";
+import { GHOST_PARTICLE_COUNT, GHOST_PARTICLE_DURATION, TOWER_META } from "./ConstantsTower.js";
 
 interface WaveManagerRef {
   currentWave: number;
@@ -204,6 +204,7 @@ export class GameEngine {
       this.themeBundle.defaultTowerVisuals,
     );
     this.projectileManager.setTowerLookup((towerId) => this.towerManager?.getTowerById(towerId) ?? null);
+    this.enemyManager.setTowerManager(this.towerManager);
     this.projectileManager.setOnGoldReward((amount) => {
       this.earnGold(amount);
     });
@@ -318,6 +319,21 @@ export class GameEngine {
 
     this.towerManager.update(dt, this.enemyManager);
 
+    // Resolve any towers that died this frame: spawn the ghost explosion, drop
+    // the block so enemies may route through the tile, and recompute paths.
+    if (this.grid) {
+      for (const tower of this.towerManager.towers) {
+        if (tower.pendingGhostEffect) {
+          this.particleManager?.spawn(tower.x, tower.y, tower.color, GHOST_PARTICLE_COUNT, {
+            life: GHOST_PARTICLE_DURATION,
+            speed: 80,
+          });
+          tower.pendingGhostEffect = false;
+          this.grid.setTowerGhost(tower.tileX, tower.tileY);
+        }
+      }
+    }
+
     this.waveGraphTracker?.update(dt);
 
     if (this.shouldEndGame) {
@@ -407,6 +423,28 @@ export class GameEngine {
     this.towerManager!.towers.forEach((tower) => {
       tower.waveDamage = 0;
     });
+
+    // Bulk-restore ghosted towers at wave start without N sequential recomputes:
+    // reset each tower's ghost state, then re-block their tiles in a single
+    // recompute, then reposition any enemy caught standing on a re-blocked tile.
+    for (const tower of this.towerManager!.towers) {
+      if (tower.isGhost) {
+        tower.isGhost = false;
+        tower.health = tower.maxHealth;
+        tower.ghostTimer = 0;
+      }
+    }
+    this.grid?.batchClearGhosts();
+    if (this.grid) {
+      for (const enemy of this.enemyManager!.enemies) {
+        if (enemy.removed || enemy.reachedBase) continue;
+        const tileX = Math.floor(enemy.x / this.grid.tileSize);
+        const tileY = Math.floor(enemy.y / this.grid.tileSize);
+        if (this.grid.blocked.has(`${tileX},${tileY}`)) {
+          enemy.repositionBeforeBlockedTile();
+        }
+      }
+    }
 
     const generalAddons = this.persistState.generalAddons;
     const healTier = generalAddons.slowHealing;
@@ -644,6 +682,7 @@ export class GameEngine {
   executeSellById(towerId: string, precomputedCreditAmount?: number): void {
     const tower = this.towerManager?.getTowerById(towerId);
     if (!tower) return;
+    if (tower.isGhost) return;
 
     if (this.persistState.generalAddons?.sellActive === "discount") return;
 
@@ -700,6 +739,7 @@ export class GameEngine {
   executeDowngrade(): void {
     const tower = this.getSelectedTower();
     if (tower === null) return;
+    if (tower.isGhost) return;
 
     const delta = this.towerManager!.downgradeTower(tower);
     const isRefund = this.persistState.generalAddons?.sellActive === "refund";

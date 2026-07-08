@@ -126,6 +126,7 @@ export interface TowerSnapshot {
   totalDamageDealt: number;
   fireAnimTime: number;
   fixedAimDir: "N" | "E" | "S" | "W" | null;
+  isGhost: boolean;
   sellValue: number;
   color: string;
   animation: MapThemeAnimation | null;

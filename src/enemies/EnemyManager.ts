@@ -1,5 +1,7 @@
 import { ENEMY_POOL_SIZE } from "@/render/svg/types.js";
 import type { EnemyVisualMeta, MapThemeData } from "@/render/themes/index.js";
+import type { Tower } from "@/towers/Tower.js";
+import type { TowerManager } from "@/towers/TowerManager.js";
 import type { Grid } from "../grid/Grid.js";
 import { Enemy, resetEnemyId } from "./Enemy.js";
 
@@ -22,6 +24,7 @@ export class EnemyManager {
   difficultyTick: number;
   theme: MapThemeData | null;
   defaultEnemyVisuals: Record<string, EnemyVisualMeta>;
+  towerManager: TowerManager | null = null;
   private spatialHash: Map<string, Enemy[]>;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
@@ -42,6 +45,16 @@ export class EnemyManager {
     this.spatialHash = new Map();
     this.idToEnemy = new Map();
     this.pendingQueues = new Map();
+  }
+
+  // Phase 1.5 plumbing: lets enemies resolve the tower (if any) on a tile. The
+  // Engine wires the live TowerManager here after both managers are constructed.
+  setTowerManager(towerManager: TowerManager | null): void {
+    this.towerManager = towerManager;
+  }
+
+  towerAt(tileX: number, tileY: number): Tower | null {
+    return this.towerManager?.towerAt(tileX, tileY) ?? null;
   }
 
   clear(): void {

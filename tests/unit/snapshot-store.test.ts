@@ -33,6 +33,7 @@ function makeTowerSnapshot(id: string, level: number, cost: number, nextLevel: n
     totalDamageDealt: 0,
     fireAnimTime: 0,
     fixedAimDir: null,
+    isGhost: false,
     sellValue: 10,
     color: "#fff",
     animation: null,

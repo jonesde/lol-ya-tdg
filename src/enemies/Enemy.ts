@@ -1,4 +1,5 @@
 import type { EnemyVisualMeta, MapThemeAnimation, MapThemeData } from "@/render/themes/index.js";
+import type { Tower } from "@/towers/Tower.js";
 import { DIFFICULTY_MULT_TICK } from "../game/Constants.js";
 import {
   BOSS_STUN_REDUCTION,
@@ -44,6 +45,7 @@ interface GridRef {
 interface EnemyManagerRef {
   enemies: Enemy[];
   getEnemiesInRange(x: number, y: number, range: number): Enemy[];
+  towerAt(x: number, y: number): Tower | null;
 }
 
 export class Enemy {
@@ -216,6 +218,33 @@ export class Enemy {
     this.hitAnimTime = this._gameSeconds;
     if (this.hp <= 0) this.removed = true;
     return dmg;
+  }
+
+  // Called when a previously-ghosted tower is restored (re-blocking its tile) at
+  // wave start, in case this enemy is physically standing on that tile. Walk the
+  // path backward from the current index to the largest tile that is not blocked,
+  // snap the enemy there, and recompute its heading toward the next waypoint.
+  repositionBeforeBlockedTile(): void {
+    if (!this.path || this.path.length === 0) return;
+    let foundIndex = -1;
+    for (let index = this.pathIdx; index >= 0; index--) {
+      const tile = this.path[index]!;
+      if (!this.grid.blocked.has(`${tile.x},${tile.y}`)) {
+        foundIndex = index;
+        break;
+      }
+    }
+    const safeIndex = foundIndex >= 0 ? foundIndex : 0;
+    this.pathIdx = safeIndex;
+    const safeWorld = this.grid.tileToWorld(this.path[safeIndex]!.x, this.path[safeIndex]!.y);
+    this.x = safeWorld.x;
+    this.y = safeWorld.y;
+    this.worldPos = { x: this.x, y: this.y };
+    if (safeIndex + 1 < this.path.length) {
+      const nextTile = this.path[safeIndex + 1]!;
+      const nextWorld = this.grid.tileToWorld(nextTile.x, nextTile.y);
+      this.moveAngle = Math.atan2(nextWorld.y - this.y, nextWorld.x - this.x);
+    }
   }
 
   update(dt: number, enemyManager: EnemyManagerRef | null) {

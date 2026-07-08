@@ -43,6 +43,7 @@ interface EnemyManagerRef {
     pathIdx: number;
     path: { x: number; y: number }[] | null;
   } | null;
+  towerAt(x: number, y: number): Tower | null;
 }
 
 interface ParticleManagerRef {
@@ -84,6 +85,7 @@ interface GridRef {
   canBuild(x: number, y: number): boolean;
   registerTower(x: number, y: number): boolean;
   unregisterTower(x: number, y: number): boolean;
+  clearTowerGhost(x: number, y: number): void;
 }
 
 export class TowerManager {

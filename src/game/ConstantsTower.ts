@@ -42,15 +42,18 @@ export interface TowerBase {
   chain?: number;
   pierceFalloff?: number;
   fixedAim?: boolean;
+  health: number;
+  knockbackBase?: number;
+  knockbackScale?: number;
 }
 
 export const TOWER_BASE: Record<string, TowerBase> = {
-  basic: { range: 3.5, damage: 8, fireRate: 1.2, projSpeed: 14, splash: 0 },
-  ice: { range: 2.8, damage: 4, fireRate: 1.0, projSpeed: 12, slowAmt: 0.45, slowDur: 1.5, splash: 0.25 },
-  sniper: { range: 7, damage: 32, fireRate: 0.45, projSpeed: 30, splash: 0, stun: 0.2 },
-  cannon: { range: 3.2, damage: 16, fireRate: 0.55, projSpeed: 9, splash: 0.5 },
-  lightning: { range: 3.5, damage: 4, fireRate: 0.8, projSpeed: 99, chain: 2, stun: 0.1 },
-  railgun: { range: 8, damage: 14, fireRate: 0.28, projSpeed: 60, pierceFalloff: 0.5, fixedAim: true },
+  basic: { range: 3.5, damage: 8, fireRate: 1.2, projSpeed: 14, splash: 0, health: 25 },
+  ice: { range: 2.8, damage: 4, fireRate: 1.0, projSpeed: 12, slowAmt: 0.45, slowDur: 1.5, splash: 0.25, health: 20 },
+  sniper: { range: 7, damage: 32, fireRate: 0.45, projSpeed: 30, splash: 0, stun: 0.2, health: 20 },
+  cannon: { range: 3.2, damage: 16, fireRate: 0.55, projSpeed: 9, splash: 0.5, health: 30 },
+  lightning: { range: 3.5, damage: 4, fireRate: 0.8, projSpeed: 99, chain: 2, stun: 0.1, health: 22 },
+  railgun: { range: 8, damage: 14, fireRate: 0.28, projSpeed: 60, pierceFalloff: 0.5, fixedAim: true, health: 28 },
 };
 
 // ===== Tower Level Scaling =====
@@ -137,6 +140,17 @@ export const ANTI_HEAL_DURATION = 2;
 export const MARKSMAN_CHANCE = 0.2;
 // marksman knockback multiplier for railgun variant A (ProjectileManager.js)
 export const RAILGUN_KNOCKBACK_MULT = 3;
+// ghost restore time in seconds: GHOST_RESTORE_BASE_SECONDS - level * GHOST_RESTORE_PER_LEVEL (Tower.js)
+export const GHOST_RESTORE_BASE_SECONDS = 50;
+export const GHOST_RESTORE_PER_LEVEL = 5;
+// ghost explosion particle lifetime in seconds (ParticleSystem.js)
+export const GHOST_PARTICLE_DURATION = 2;
+// ghost explosion particle burst size (NOT scaled by level) (ParticleSystem.js)
+export const GHOST_PARTICLE_COUNT = 14;
+// render opacity for the ghost (non-blocking) tower state (svg TowerManager.js)
+export const GHOST_OPACITY = 0.5;
+// electric fence range in tiles; px radius = grid.tileSize * ELECTRIC_FENCE_RANGE_TILES (Phase 5c)
+export const ELECTRIC_FENCE_RANGE_TILES = 0.75;
 
 // ===== Tower Variant Definitions =====
 // Applied when a tower reaches level 4 and is specialized (Tower.js)

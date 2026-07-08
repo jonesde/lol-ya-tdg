@@ -11,18 +11,38 @@ export interface EnemyMeta {
   healRange?: number;
   resist?: number;
   slowResist?: number;
+  attackDamage: number;
+  attackSpeed: number;
 }
 
 export type EnemyType = "minion" | "runner" | "tank" | "shielded" | "healer" | "boss";
 
 // referenced in Enemy.js for meta lookup, Game.js for bounty, ProjectileManager.js for type checks
 export const ENEMY_TYPES: Record<string, EnemyMeta> = {
-  minion: { baseHp: 8, speed: 1.0, bounty: 2, radius: 0.4 },
-  runner: { baseHp: 8, speed: 2.5, bounty: 4, radius: 0.4 },
-  tank: { baseHp: 32, speed: 0.4, bounty: 5, radius: 0.4 },
-  shielded: { baseHp: 16, speed: 0.7, bounty: 6, radius: 0.4, shield: 32 },
-  healer: { baseHp: 16, speed: 0.8, bounty: 7, radius: 0.36, heal: 0.03, healRange: 2.5 },
-  boss: { baseHp: 256, speed: 0.5, bounty: 100, radius: 0.6, resist: 0.3, slowResist: 0.8 },
+  minion: { baseHp: 8, speed: 1.0, bounty: 2, radius: 0.4, attackDamage: 4, attackSpeed: 0.5 },
+  runner: { baseHp: 8, speed: 2.5, bounty: 4, radius: 0.4, attackDamage: 2, attackSpeed: 1.0 },
+  tank: { baseHp: 32, speed: 0.4, bounty: 5, radius: 0.4, attackDamage: 10, attackSpeed: 0.4 },
+  shielded: { baseHp: 16, speed: 0.7, bounty: 6, radius: 0.4, shield: 32, attackDamage: 6, attackSpeed: 0.5 },
+  healer: {
+    baseHp: 16,
+    speed: 0.8,
+    bounty: 7,
+    radius: 0.36,
+    heal: 0.03,
+    healRange: 2.5,
+    attackDamage: 3,
+    attackSpeed: 0.5,
+  },
+  boss: {
+    baseHp: 256,
+    speed: 0.5,
+    bounty: 100,
+    radius: 0.6,
+    resist: 0.3,
+    slowResist: 0.8,
+    attackDamage: 20,
+    attackSpeed: 0.5,
+  },
 };
 
 // HP = baseHp * ENEMY_LEVEL_HP_MULT(level) * (1 + 0.2*(wave-1)) (Enemy.js)

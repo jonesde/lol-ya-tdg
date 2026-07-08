@@ -135,7 +135,9 @@ const canAffordUpgrade = computed(() => {
   return upgradeCheck.value?.ok && gameStore.gold >= getUpgradeCost();
 });
 
-const sellDisabled = computed(() => persistStore.generalAddons && persistStore.generalAddons.sellActive === "discount");
+const sellDisabled = computed(
+  () => (persistStore.generalAddons && persistStore.generalAddons.sellActive === "discount") || !!tower.value?.isGhost,
+);
 
 const downgradeRefund = computed(() => {
   if (!tower.value || tower.value.level <= 1) return 0;
@@ -260,7 +262,7 @@ function handleFixedAim(dir: string | null) {
       Cancel Build — {{ tower.totalInvested }}g ({{ cancelRemaining }}s)
     </button>
 
-    <button class="action-btn downgrade-btn" :disabled="tower.level <= 1" @click="handleDowngrade">
+    <button class="action-btn downgrade-btn" :disabled="tower.level <= 1 || tower.isGhost" @click="handleDowngrade">
       Downgrade (Lv {{ tower.level }} → Lv {{ tower.level - 1 }}) (+{{ downgradeRefund }}g)
     </button>
 
