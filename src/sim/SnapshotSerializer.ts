@@ -32,6 +32,7 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
       ...state,
       pendingCount: engine.enemyManager?.getPendingCountForSpawn(spawnIndex) ?? 0,
     })),
+    paths: engine.grid?.paths ?? [],
     // Persist batching signal: the worker/host flush this to localStorage only
     // on significant events (wave change / game end / milestone claim / dispose).
     persistDirty: engine.persistDirty,

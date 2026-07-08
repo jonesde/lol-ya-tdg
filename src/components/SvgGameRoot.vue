@@ -146,7 +146,11 @@ const snapshotStore = new SnapshotStore(gameStore);
 const updateCachedCtm = (): void => {
   if (!worldLayer.value) return;
   const cam = gameStore.camera;
+  // Skip recompute only when nothing changed AND we already have a valid CTM.
+  // The camera/viewSize watchers null cachedInverseCtm externally, so we must
+  // recompute whenever it is null even if camera/viewSize appear unchanged.
   if (
+    cachedInverseCtm !== null &&
     cam.x === cachedCameraX &&
     cam.y === cachedCameraY &&
     cam.zoom === cachedCameraZoom &&
@@ -353,17 +357,19 @@ function renderLoop(): void {
   }
   spawnManager.sync(snapshot.spawnStates);
 
-  // Imperative path highlights — appended to grid-layer, not Vue-managed
-  const grid = gameStore.grid;
+  // Imperative path highlights — appended to grid-layer, not Vue-managed.
+  // Drawn from the worker-authoritative snapshot paths (rerouted when a tower
+  // blocks a path) rather than the main-thread Grid copy, which is not updated
+  // on placement.
   const gridLayer = svgRoot.value?.querySelector(".grid-layer") as SVGGElement | null;
-  if (gridLayer && grid?.paths) {
+  if (gridLayer && snapshot.paths) {
     if (!pathHighlightsGroup?.parentNode) {
       pathHighlightsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
       pathHighlightsGroup.setAttribute("id", "path-highlights");
       gridLayer.appendChild(pathHighlightsGroup);
     }
     let pathSvg = "";
-    for (const path of grid.paths) {
+    for (const path of snapshot.paths) {
       if (!path) continue;
       const points = path
         .map((tile) => `${tile.x * mapTileSize + mapTileSize / 2},${tile.y * mapTileSize + mapTileSize / 2}`)
