@@ -465,11 +465,18 @@ describe("SkillTree — General Add-ons", () => {
     it("handles sellOption discount switching (free)", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "sellOption", 0);
-      // After purchasing refund, both are "unlocked" so trying to unlock discount again returns false
-      const _result = tryUnlockGeneral(save, "sellOption", 1);
-      // But we can check that sellActive was set correctly by the first call
-      expect(save.generalAddons.sellActive).toBe("refund");
+      // After purchasing refund, switching to discount should work (mutual exclusion)
+      const result = tryUnlockGeneral(save, "sellOption", 1);
+      expect(result.ok).toBe(true);
+      expect(save.generalAddons.sellActive).toBe("discount");
       expect(save.generalAddons.sellDiscountUnlocked).toBe(true);
+      expect(save.generalAddons.sellRefundUnlocked).toBe(false);
+      // Switching back to refund is also free (already unlocked) and works
+      const backResult = tryUnlockGeneral(save, "sellOption", 0);
+      expect(backResult.ok).toBe(true);
+      expect(save.generalAddons.sellActive).toBe("refund");
+      expect(save.generalAddons.sellRefundUnlocked).toBe(true);
+      expect(save.generalAddons.sellDiscountUnlocked).toBe(false);
     });
 
     it("unlocks all general addon categories", () => {

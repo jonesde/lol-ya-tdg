@@ -1,4 +1,5 @@
 import type { Enemy } from "@/enemies/Enemy.js";
+import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
 import type { GameEngine } from "@/game/GameEngine.js";
 import type { Tower } from "@/towers/Tower.js";
 import type { PersistState } from "./PersistState.js";
@@ -33,9 +34,6 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
       pendingCount: engine.enemyManager?.getPendingCountForSpawn(spawnIndex) ?? 0,
     })),
     paths: engine.grid?.paths ?? [],
-    // Persist batching signal: the worker/host flush this to localStorage only
-    // on significant events (wave change / game end / milestone claim / dispose).
-    persistDirty: engine.persistDirty,
   };
 }
 
@@ -129,11 +127,19 @@ function snapshotTower(t: Tower, persistState: PersistState): TowerSnapshot {
     color: t.color,
     animation: t.animation,
     canUpgrade: t.canUpgrade(persistState),
-    upgradeCostAt5: t.upgradeCost(5),
     levelCosts: [...t.levelCosts],
     canCancel: t.canCancel(),
     cancelRemainingMs: t.cancelRemainingMs(),
     milestoneBonus: t.currentMilestoneBonus(),
+    upgradeCostAt5: (() => {
+      const lv5Cost = t.upgradeCost(5);
+      const ucrTier = persistState.generalAddons.upgradeCostReduction;
+      if (ucrTier !== null && ucrTier !== undefined) {
+        const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
+        return Math.floor(lv5Cost * (1 - reduction));
+      }
+      return lv5Cost;
+    })(),
     stats: {
       damage: t.stats.damage,
       range: t.stats.range,

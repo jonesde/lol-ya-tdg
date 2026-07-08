@@ -1,7 +1,12 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NAPALM_BURN_DPS_RATIO, NAPALM_BURN_DURATION } from "@/game/ConstantsTower.js";
+import {
+  CHAIN_DAMAGE_FALLOFF,
+  NAPALM_BURN_DPS_RATIO,
+  NAPALM_BURN_DURATION,
+  SPLASH_DAMAGE_RATIO,
+} from "@/game/ConstantsTower.js";
 import { ProjectileManager } from "@/game/ProjectileManager.js";
 
 interface MockEnemy {
@@ -1107,6 +1112,258 @@ describe("ProjectileManager", () => {
       expect(takeDamage2).toHaveBeenCalled();
       expect(takeDamage2.mock.calls[0][0]).toBe(20);
       expect(takeDamage3).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("splash forwarding (C2)", () => {
+    it("applies splash damage to nearby enemies using the forwarded splash radius", () => {
+      const enemy1 = createMockEnemy({ id: 1, x: 100, y: 200, hp: 100, maxHp: 100 });
+      const takeDamage1 = vi.fn();
+      enemy1.takeDamage = takeDamage1;
+      const enemy2 = createMockEnemy({ id: 2, x: 130, y: 200, hp: 100, maxHp: 100 });
+      const takeDamage2 = vi.fn();
+      enemy2.takeDamage = takeDamage2;
+      enemyManager = createMockEnemyManager([enemy1, enemy2]);
+      manager = new ProjectileManager(enemyManager, particles, null, null, {
+        width: 10,
+        height: 10,
+        tileSize: 36,
+        tiles: [],
+        blocked: new Set(),
+      });
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 1000,
+        range: 5,
+        towerType: "ice",
+        towerLevel: 1,
+        targetId: 1,
+        splash: 1,
+      });
+
+      manager.update(0.5);
+
+      expect(takeDamage1).toHaveBeenCalledWith(10, false);
+      // splash radius = 1 * tileSize(36) = 36px; enemy2 at 30px away is within it.
+      // Splash damage is applied without an armorPiercing argument (single arg).
+      expect(takeDamage2).toHaveBeenCalledWith(10 * SPLASH_DAMAGE_RATIO);
+    });
+  });
+
+  describe("instant-kill armor piercing (H2)", () => {
+    it("passes armorPiercing to takeDamage for trueShot", () => {
+      const enemy = createMockEnemy({ id: 1, x: 100, y: 200, hp: 50, maxHp: 50 });
+      const takeDamage = vi.fn();
+      enemy.takeDamage = takeDamage;
+      enemyManager = createMockEnemyManager([enemy]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 1000,
+        range: 5,
+        towerType: "sniper",
+        towerLevel: 1,
+        targetId: 1,
+        trueShot: 1,
+      });
+      manager.update(0.5);
+      randomSpy.mockRestore();
+
+      expect(takeDamage).toHaveBeenCalledWith(51, true);
+    });
+
+    it("passes armorPiercing to takeDamage for marksman", () => {
+      const enemy = createMockEnemy({ id: 1, x: 100, y: 200, hp: 50, maxHp: 50 });
+      const takeDamage = vi.fn();
+      enemy.takeDamage = takeDamage;
+      enemyManager = createMockEnemyManager([enemy]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 1000,
+        range: 5,
+        towerType: "sniper",
+        towerLevel: 1,
+        targetId: 1,
+        marksman: true,
+      });
+      manager.update(0.5);
+      randomSpy.mockRestore();
+
+      expect(takeDamage).toHaveBeenCalledWith(51, true);
+    });
+  });
+
+  describe("fixed-aim pierce keeps aim (H3)", () => {
+    it("does not re-home onto an off-axis enemy while piercing", () => {
+      const enemy1 = createMockEnemy({ id: 1, x: 100, y: 200, hp: 100, maxHp: 100 });
+      const takeDamage1 = vi.fn();
+      enemy1.takeDamage = takeDamage1;
+      const enemy2 = createMockEnemy({ id: 2, x: 180, y: 200, hp: 100, maxHp: 100 });
+      const takeDamage2 = vi.fn();
+      enemy2.takeDamage = takeDamage2;
+      // Off-axis enemy near enemy2 but not on the straight aim line y=200
+      const enemy3 = createMockEnemy({ id: 3, x: 180, y: 260, hp: 100, maxHp: 100 });
+      const takeDamage3 = vi.fn();
+      enemy3.takeDamage = takeDamage3;
+      enemyManager = createMockEnemyManager([enemy1, enemy2, enemy3]);
+      manager = new ProjectileManager(enemyManager, particles, null);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 20,
+        speed: 160,
+        range: 10,
+        towerType: "railgun",
+        towerLevel: 1,
+        targetId: 0,
+        targetX: 500,
+        targetY: 200,
+        pierce: 1,
+      });
+
+      manager.update(0.5);
+
+      expect(takeDamage1).toHaveBeenCalled();
+      expect(takeDamage2).toHaveBeenCalled();
+      // enemy3 is off the aim line; fixed-aim must not re-home onto it
+      expect(takeDamage3).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("findNearestEnemy nearest-in-ring (H4)", () => {
+    it("targets the closest enemy for the first chain hop when >8 enemies are in range", () => {
+      const target = createMockEnemy({ id: 1, x: 102, y: 200, hp: 1000, maxHp: 1000 });
+      const takeDamageTarget = vi.fn();
+      target.takeDamage = takeDamageTarget;
+      // The nearest enemy lives alone in the innermost ring (<=18px)
+      const near = createMockEnemy({ id: 2, x: 107, y: 200, hp: 1000, maxHp: 1000 });
+      const takeDamageNear = vi.fn();
+      near.takeDamage = takeDamageNear;
+      // A farther enemy outside both inner rings but still in chain range
+      const far = createMockEnemy({ id: 3, x: 162, y: 200, hp: 1000, maxHp: 1000 });
+      const takeDamageFar = vi.fn();
+      far.takeDamage = takeDamageFar;
+
+      const enemies = [target, near, far];
+      // Filler enemies (8) sit in the outer inner ring (~26px) to force the >8 branch
+      for (let i = 4; i <= 11; i++) {
+        enemies.push(createMockEnemy({ id: i, x: 128, y: 200, hp: 1000, maxHp: 1000 }));
+      }
+      const takeDamageFiller = enemies.slice(3).map((e) => {
+        const fn = vi.fn();
+        e.takeDamage = fn;
+        return fn;
+      });
+
+      enemyManager = createMockEnemyManager(enemies);
+      manager = new ProjectileManager(
+        enemyManager,
+        particles,
+        (x1, y1, x2, y2) => {
+          lightningSparks.push({ x1, y1, x2, y2 });
+        },
+        null,
+        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
+      );
+
+      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+      // chain:1 -> a single chain hop that must target the nearest (enemy2)
+      manager.fireLightning({
+        originX: 100,
+        originY: 200,
+        damage: 20,
+        towerLevel: 1,
+        targetId: 1,
+        stunDuration: 0,
+        chain: 1,
+      });
+      randomSpy.mockRestore();
+
+      expect(takeDamageNear).toHaveBeenCalledWith(20 * CHAIN_DAMAGE_FALLOFF);
+      expect(takeDamageFar).not.toHaveBeenCalled();
+      expect(takeDamageFiller.every((fn) => fn.mock.calls.length === 0)).toBe(true);
+    });
+  });
+
+  describe("lightning chain + stormcall forwarding (C3)", () => {
+    it("honors a forwarded chain count instead of the default", () => {
+      const enemies = [createMockEnemy({ id: 1, x: 102, y: 200, hp: 10000, maxHp: 10000 })];
+      for (let i = 2; i <= 7; i++) {
+        enemies.push(createMockEnemy({ id: i, x: 100 + i * 2, y: 200, hp: 10000, maxHp: 10000 }));
+      }
+      enemyManager = createMockEnemyManager(enemies);
+      manager = new ProjectileManager(
+        enemyManager,
+        particles,
+        (x1, y1, x2, y2) => {
+          lightningSparks.push({ x1, y1, x2, y2 });
+        },
+        null,
+        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
+      );
+
+      // chain:5 at tier 0 -> 5 chain hops + 1 tower->target flash = 6 sparks
+      manager.fireLightning({
+        originX: 100,
+        originY: 200,
+        damage: 20,
+        towerLevel: 1,
+        targetId: 1,
+        stunDuration: 0.1,
+        chain: 5,
+      });
+      expect(lightningSparks).toHaveLength(6);
+    });
+
+    it("stormcall strikes a random enemy in a wide area", () => {
+      const target = createMockEnemy({ id: 1, x: 100, y: 200, hp: 1000, maxHp: 1000 });
+      const chainEnemy = createMockEnemy({ id: 2, x: 110, y: 200, hp: 1000, maxHp: 1000 });
+      const wideEnemy = createMockEnemy({ id: 3, x: 250, y: 200, hp: 1000, maxHp: 1000 });
+      const takeDamageWide = vi.fn();
+      wideEnemy.takeDamage = takeDamageWide;
+      const applyStunWide = vi.fn();
+      wideEnemy.applyStun = applyStunWide;
+
+      enemyManager = createMockEnemyManager([target, chainEnemy, wideEnemy]);
+      manager = new ProjectileManager(
+        enemyManager,
+        particles,
+        (x1, y1, x2, y2) => {
+          lightningSparks.push({ x1, y1, x2, y2 });
+        },
+        null,
+        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
+      );
+
+      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+      manager.fireLightning({
+        originX: 100,
+        originY: 200,
+        damage: 20,
+        towerLevel: 1,
+        targetId: 1,
+        stunDuration: 0.1,
+        stormcall: true,
+      });
+      randomSpy.mockRestore();
+
+      // wideEnemy is outside chain range (CHAIN_RANGE*36 = 72px) but within the
+      // stormcall wide range (3*72 = 216px), so it must be struck.
+      expect(takeDamageWide).toHaveBeenCalledWith(20 * CHAIN_DAMAGE_FALLOFF);
+      expect(applyStunWide).toHaveBeenCalledWith(0.1);
     });
   });
 });

@@ -230,11 +230,17 @@ describe("WaveManager", () => {
   });
 
   describe("update", () => {
-    it("waits BETWEEN_WAVES_TIMER seconds between waves", () => {
+    it("waits BETWEEN_WAVES_TIMER seconds before starting wave 1", () => {
       const waveManager = makeWaveManager(makeBastionMap());
-      // betweenTimer starts at 0, so first update will start wave immediately
+      // betweenTimer starts at BETWEEN_WAVES_TIMER, so a short update must not start a wave yet
       let startedWave: number | null = null;
       waveManager.update(0.1, null, (wave) => {
+        startedWave = wave;
+      });
+      expect(startedWave).toBe(null);
+      expect(waveManager.betweenWaves).toBe(true);
+      // After the full build delay, wave 1 starts
+      waveManager.update(BETWEEN_WAVES_TIMER + 0.1, null, (wave) => {
         startedWave = wave;
       });
       expect(startedWave).toBe(1);
@@ -301,25 +307,6 @@ describe("WaveManager", () => {
       expect(waveManager.currentWave).toBe(2);
       expect(waveManager.countdownActive).toBe(false);
       expect(waveManager.betweenWaves).toBe(false);
-    });
-  });
-
-  describe("reportBossReachedBase", () => {
-    it("increments bossesReachedBaseThisWave", () => {
-      const waveManager = makeWaveManager(makeBastionMap());
-      waveManager.startNextWave();
-      waveManager.reportBossReachedBase();
-      waveManager.reportBossReachedBase();
-      expect(waveManager.bossesReachedBaseThisWave).toBe(2);
-    });
-
-    it("resets on startNextWave", () => {
-      const waveManager = makeWaveManager(makeBastionMap());
-      waveManager.startNextWave();
-      waveManager.reportBossReachedBase();
-      expect(waveManager.bossesReachedBaseThisWave).toBe(1);
-      waveManager.startNextWave();
-      expect(waveManager.bossesReachedBaseThisWave).toBe(0);
     });
   });
 

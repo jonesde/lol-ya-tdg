@@ -29,12 +29,9 @@ export class SnapshotStore {
   }
 
   apply(snapshot: SimulationSnapshot): void {
-    const prev = this.current;
     this.current = snapshot;
     latestSnapshot = snapshot;
-    if (!prev || prev.frameId !== snapshot.frameId) {
-      this.mirrorToGameStore(snapshot);
-    }
+    this.mirrorToGameStore(snapshot);
   }
 
   private mirrorToGameStore(snapshot: SimulationSnapshot): void {

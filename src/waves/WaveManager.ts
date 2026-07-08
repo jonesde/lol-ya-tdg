@@ -44,7 +44,6 @@ export class WaveManager {
   betweenTimer: number;
   betweenWaves: boolean;
   bossesThisWave: number;
-  bossesReachedBaseThisWave: number;
   baseReached: boolean;
   waveComposition: Record<string, number>;
   rng: () => number;
@@ -63,15 +62,14 @@ export class WaveManager {
     this.active = false;
     this.queue = [];
     this.spawnTimer = 0;
-    this.betweenTimer = 0;
+    this.betweenTimer = BETWEEN_WAVES_TIMER;
     this.betweenWaves = true;
     this.bossesThisWave = 0;
-    this.bossesReachedBaseThisWave = 0;
     this.baseReached = false;
     this.waveComposition = {};
     this._waveGameTime = 0;
     this.countdownActive = false;
-    this.countdownTimer = 0;
+    this.countdownTimer = BETWEEN_WAVES_TIMER;
     this.spawnStates = map.spawns.map(() => ({ visualState: "closed" as const, closeTransitionTimer: 0 }));
     this.prevWaveSpawnIndices = new Set();
   }
@@ -115,7 +113,6 @@ export class WaveManager {
     this._waveGameTime = 0;
     this.countdownActive = false;
     this.countdownTimer = 0;
-    this.bossesReachedBaseThisWave = 0;
     this.bossesThisWave = this.queue.filter((entry) => entry.type === "boss").length;
     this.active = true;
     this.waveComposition = this._countTypes(this.queue);
@@ -270,9 +267,5 @@ export class WaveManager {
       this.enemyManager.enqueueOrSpawn(next.type, next.level, spawnIdx, this.currentWave);
       this.spawnTimer = next.delay;
     }
-  }
-
-  reportBossReachedBase() {
-    this.bossesReachedBaseThisWave++;
   }
 }

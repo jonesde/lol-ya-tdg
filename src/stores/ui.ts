@@ -156,14 +156,16 @@ export const useUiStore = defineStore("ui", {
     },
 
     toggleHelpDialog() {
+      if (this.showHelpDialog) {
+        this.closeHelpDialog();
+        return;
+      }
       const gameStore = useGameStore();
-      if (!this.showHelpDialog && gameStore.isPlaying) {
+      if (gameStore.isPlaying) {
         this.wasPlayingWhenHelpOpened = true;
         gameStore.worker?.postMessage({ type: "command", command: { commandId: 0, type: "action:togglePause" } });
-      } else {
-        this.wasPlayingWhenHelpOpened = false;
       }
-      this.showHelpDialog = !this.showHelpDialog;
+      this.showHelpDialog = true;
     },
 
     closeHelpDialog() {

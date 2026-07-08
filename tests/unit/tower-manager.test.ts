@@ -258,6 +258,25 @@ describe("TowerManager", () => {
       manager.downgradeTower(tower);
       expect(tower.totalInvested).toBeGreaterThanOrEqual(0);
     });
+
+    it("removes the highest level cost when downgrading a specialized high-level tower (C4)", () => {
+      const tower = manager.build("basic", 0, 0, makeSave(), grid) as Tower;
+      for (let i = 0; i < 3; i++) {
+        tower.doUpgrade(makeSave(), tower.upgradeCost(i + 2));
+      }
+      tower.specialize("A", makeSave(), tower.upgradeCost(5));
+      tower.doUpgrade(makeSave(), tower.upgradeCost(6));
+      tower.doUpgrade(makeSave(), tower.upgradeCost(7));
+      expect(tower.level).toBe(7);
+      const level7Cost = tower.upgradeCost(7);
+      const investedBefore = tower.totalInvested;
+      const delta = manager.downgradeTower(tower);
+      expect(tower.level).toBe(6);
+      expect(delta).toBe(level7Cost);
+      expect(tower.totalInvested).toBe(investedBefore - level7Cost);
+      // The specialization cost must still be present; only the last level cost was popped.
+      expect(tower.levelCosts).toContain(tower.upgradeCost(5));
+    });
   });
 
   describe("towerAt", () => {

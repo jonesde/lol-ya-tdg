@@ -481,7 +481,6 @@ onMounted(async () => {
     spawnManager.init(svgRoot.value!, gameStore.map.spawns.length);
   }
 
-  gameStore.setState(GameState.PAUSED);
   requestAnimationFrame(renderLoop);
 });
 

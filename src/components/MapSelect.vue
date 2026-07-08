@@ -206,7 +206,7 @@ function startRandomMap() {
     <div class="map-select-header">
       <h2>Select Map</h2>
       <div class="header-controls">
-        <select v-model="persistStore.lastSelectedThemeId" class="theme-select">
+        <select v-model="persistStore.lastSelectedThemeId" class="theme-select" @change="persistStore.save()">
           <option v-for="theme in themeStore.availableThemes" :key="theme.id" :value="theme.id">
             {{ theme.label }}
           </option>

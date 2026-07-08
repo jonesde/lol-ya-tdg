@@ -62,6 +62,7 @@ export interface ProjectileGame {
   // Fixed-aim tracking
   hitEnemyIds?: Set<number>;
   fixedAimHits?: number;
+  fixedAim: boolean;
 }
 
 interface LightningTarget {
@@ -206,6 +207,7 @@ export class ProjectileManager {
     antiHeal?: boolean;
     pierce?: number;
     stunDur?: number;
+    splash?: number;
   }): void {
     const projectile: ProjectileGame = {
       id: this.nextProjectileId++,
@@ -246,6 +248,7 @@ export class ProjectileManager {
       markTarget: opts.markTarget ?? 0,
       antiHeal: opts.antiHeal ?? false,
       burnCircuit: false,
+      fixedAim: opts.targetId === 0,
     };
 
     // Roll crit only if tower has crit ability
@@ -262,6 +265,7 @@ export class ProjectileManager {
       opts.knockback ?? false,
       opts.variant,
       opts.pierce,
+      opts.splash,
     );
 
     this.projectiles.push(projectile);
@@ -276,6 +280,7 @@ export class ProjectileManager {
     knockback: boolean,
     variant?: "A" | "B" | null,
     pierce?: number,
+    splash?: number,
   ): void {
     const tier = Math.max(0, towerLevel - 4);
 
@@ -284,9 +289,11 @@ export class ProjectileManager {
       projectile.burnDuration = NAPALM_BURN_DURATION;
     }
 
-    if (towerType === "cannon") {
-      projectile.splashRadius = 2;
-    }
+    // Base splash radius: cannon has an inherent radius; other towers use the
+    // computed stats.splash (variant + Wide Blast addon). Take the max so a
+    // cannon's base radius is never lost.
+    const baseSplash = towerType === "cannon" ? 2 : 0;
+    projectile.splashRadius = Math.max(baseSplash, splash ?? 0);
 
     if (towerType === "railgun") {
       projectile.maxHitCount = 1 + tier + (pierce ?? 0);
@@ -319,7 +326,7 @@ export class ProjectileManager {
 
     const grid = this.grid;
     const stepSize = 1;
-    const steps = Math.ceil(knockAmount / stepSize);
+    const steps = Math.floor(knockAmount / stepSize);
     let clampedX = enemyX;
     let clampedY = enemyY;
 
@@ -484,7 +491,7 @@ export class ProjectileManager {
     // True Shot: 20% chance to instant-kill non-boss enemies
     if (projectile.trueShot > 0 && enemy.type !== "boss" && Math.random() < projectile.trueShot) {
       const instantKillDamage = enemy.hp + 1;
-      enemy.takeDamage(instantKillDamage);
+      enemy.takeDamage(instantKillDamage, true);
       if (projectile.towerId) {
         const tower = this.towerLookup?.(projectile.towerId);
         if (tower) {
@@ -502,7 +509,7 @@ export class ProjectileManager {
 
     if (projectile.marksman && enemy.type !== "boss") {
       const instantKillDamage = enemy.hp + 1;
-      enemy.takeDamage(instantKillDamage);
+      enemy.takeDamage(instantKillDamage, true);
       if (projectile.towerId) {
         const tower = this.towerLookup?.(projectile.towerId);
         if (tower) {
@@ -572,10 +579,15 @@ export class ProjectileManager {
     if (projectile.maxHitCount > 0) {
       projectile.hitCount++;
       if (projectile.hitCount <= projectile.maxHitCount) {
-        const nextTarget = this.findNearestEnemy(projectile.x, projectile.y, projectile.range, enemy.id);
-        if (nextTarget) {
-          projectile.targetId = nextTarget.id;
-          return;
+        // Fixed-aim projectiles travel toward a fixed world point, so they must
+        // not re-home onto an enemy — continue straight and hit whatever lies
+        // along the aim line (handled by the targetId === 0 branch next frame).
+        if (!projectile.fixedAim) {
+          const nextTarget = this.findNearestEnemy(projectile.x, projectile.y, projectile.range, enemy.id);
+          if (nextTarget) {
+            projectile.targetId = nextTarget.id;
+            return;
+          }
         }
       }
     }
@@ -599,8 +611,9 @@ export class ProjectileManager {
       }
     }
 
-    // Bounce Shot: redirect projectile to 1 nearby enemy (max 1 bounce)
-    if (projectile.bounceShot && projectile.bounceCount < 1) {
+    // Bounce Shot: redirect projectile to 1 nearby enemy (max 1 bounce).
+    // Fixed-aim projectiles keep their aim point instead of re-homing.
+    if (projectile.bounceShot && projectile.bounceCount < 1 && !projectile.fixedAim) {
       const bounceTarget = this.findNearestEnemy(projectile.x, projectile.y, projectile.range, enemy.id);
       if (bounceTarget) {
         projectile.targetId = bounceTarget.id;
@@ -631,12 +644,14 @@ export class ProjectileManager {
     critChance?: number;
     goldOnCrit?: number;
     range?: number;
+    chain?: number;
+    stormcall?: boolean;
   }): void {
     let current: LightningTarget | null = this.enemyManager.getEnemyById(opts.targetId);
     if (!current || current.removed) return;
 
     const tier = Math.max(0, opts.towerLevel - 4);
-    let remainingChains = 2 + tier;
+    let remainingChains = opts.chain ?? 2 + tier;
     const critChance = opts.critChance ?? 0;
     const isCrit = critChance > 0 && Math.random() < critChance;
     const finalDamage = isCrit ? opts.damage * 2 : opts.damage;
@@ -680,6 +695,32 @@ export class ProjectileManager {
       chainsUsed++;
       remainingChains--;
       current = nextTarget;
+    }
+
+    // Stormcall (lightning B variant): strike random enemies in a wide area in
+    // addition to the normal chain. Each random strike deals reduced damage, is
+    // added to chainTargets so it also gets stunned, and fires a lightning flash.
+    if (opts.stormcall) {
+      const wideRangePx = CHAIN_RANGE * 3 * (this.grid?.tileSize ?? 1);
+      const stormcallCount = 1 + tier;
+      const chainedIds = new Set(chainTargets.map((target) => target.id));
+      const wideEnemies = this.enemyManager
+        .getEnemiesInRange(opts.originX, opts.originY, wideRangePx)
+        .filter((enemy) => !chainedIds.has(enemy.id));
+      for (let strike = 0; strike < stormcallCount && wideEnemies.length > 0; strike++) {
+        const pickIndex = Math.floor(Math.random() * wideEnemies.length);
+        const stormTarget = wideEnemies.splice(pickIndex, 1)[0]!;
+        const stormDamage = finalDamage * CHAIN_DAMAGE_FALLOFF;
+        stormTarget.takeDamage(stormDamage);
+        this.recordDamage(opts.towerId, stormDamage);
+        chainTargets.push(stormTarget);
+        if (this.particles) {
+          this.particles.spawn(stormTarget.x, stormTarget.y, "#ffcf4d", 3, { speed: 30, life: 0.2 });
+        }
+        if (this.onLightningFlash) {
+          this.onLightningFlash(opts.originX, opts.originY, stormTarget.x, stormTarget.y);
+        }
+      }
     }
 
     if (opts.stunDuration > 0) {
@@ -756,15 +797,34 @@ export class ProjectileManager {
     const subRanges = [halfTileRange, quarterRange, halfRange];
     for (const subRange of subRanges) {
       const subEnemies = this.enemyManager.getEnemiesInRange(x, y, subRange);
+      let closest: LightningTarget | null = null;
+      let closestDist = Infinity;
       for (const enemy of subEnemies) {
-        if (enemy.id !== excludeId) return enemy;
+        if (enemy.id === excludeId) continue;
+        const dx = enemy.x - x;
+        const dy = enemy.y - y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closest = enemy;
+        }
       }
+      if (closest) return closest;
     }
 
+    let fallback: LightningTarget | null = null;
+    let fallbackDist = Infinity;
     for (const enemy of fullRangeEnemies) {
-      if (enemy.id !== excludeId) return enemy;
+      if (enemy.id === excludeId) continue;
+      const dx = enemy.x - x;
+      const dy = enemy.y - y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < fallbackDist) {
+        fallbackDist = dist;
+        fallback = enemy;
+      }
     }
-    return null;
+    return fallback;
   }
 
   private removeProjectile(projectile: ProjectileGame, _reason: string): void {

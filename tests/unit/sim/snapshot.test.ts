@@ -57,7 +57,6 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(snap.particles).toBeInstanceOf(Array);
     expect(snap.spawnStates.length).toBe(grid.spawns.length);
     expect(typeof snap.spawnStates[0].pendingCount).toBe("number");
-    expect(typeof snap.persistDirty).toBe("boolean");
   });
 
   it("carries expected entity fields", () => {

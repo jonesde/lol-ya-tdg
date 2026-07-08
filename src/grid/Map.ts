@@ -138,7 +138,7 @@ function carveSerpentine(
     : (config.crossTargetX ?? Math.floor(W / 2) + 2);
   const carved: number[][] = [];
   const mainBound = isLandscape ? nextWaypoint.x : nextWaypoint.y;
-  const perpBound = isLandscape ? W : H;
+  const perpBound = isLandscape ? H : W;
 
   while (isLandscape ? curX < mainBound : curY < mainBound) {
     let targetMain: number;

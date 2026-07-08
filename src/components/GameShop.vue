@@ -57,6 +57,7 @@ let prevWidth = typeof window !== "undefined" ? window.innerWidth : 0;
 let prevHeight = typeof window !== "undefined" ? window.innerHeight : 0;
 
 function setInitialPosition() {
+  if (typeof window === "undefined") return;
   // NOTE: 160 is width per button as per CSS; 84 = 20 (header/hud) + 64 (footer)
   gameStore.gameShopPos = { x: (window.innerWidth - towerList.length * 160) / 2, y: window.innerHeight - 84 };
 }

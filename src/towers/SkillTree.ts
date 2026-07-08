@@ -386,7 +386,9 @@ export function isGeneralAvailable(save: PersistState, key: string, index: numbe
   if (!def) return false;
   const cost = def.costs[index]!;
   if (save.gems < cost) return false;
-  if (index >= 1) {
+  // sellOption tiers are mutually exclusive modes, not a progression, so the
+  // higher tier does not require the lower tier to be unlocked first.
+  if (index >= 1 && key !== "sellOption") {
     const prevUnlocked = isGeneralUnlocked(save, key, index - 1);
     if (!prevUnlocked) return false;
   }
@@ -402,25 +404,22 @@ export function tryUnlockGeneral(save: PersistState, key: string, index: number)
 
   if (key === "sellOption") {
     const generalAddons = save.generalAddons;
-    if (index === 0) {
-      if (generalAddons.sellDiscountUnlocked as boolean) {
-        generalAddons.sellActive = "refund";
-        return { ok: true };
-      }
-      generalAddons.sellRefundUnlocked = true;
-      generalAddons.sellDiscountUnlocked = true;
-      generalAddons.sellActive = "refund";
-      save.gems -= cost;
-    } else if (index === 1) {
-      if (generalAddons.sellRefundUnlocked as boolean) {
-        generalAddons.sellActive = "discount";
-        return { ok: true };
-      }
-      generalAddons.sellDiscountUnlocked = true;
-      generalAddons.sellRefundUnlocked = true;
-      generalAddons.sellActive = "discount";
-      save.gems -= cost;
+    const target = index === 0 ? "refund" : "discount";
+    if (generalAddons.sellActive === target) {
+      return { ok: false, reason: "Already active" };
     }
+    const alreadyUnlocked = index === 0 ? generalAddons.sellRefundUnlocked : generalAddons.sellDiscountUnlocked;
+    // Mutual exclusion: only the chosen mode is unlocked; the other is cleared
+    // so the toggle can be switched freely between Full Refund and Discounted.
+    generalAddons.sellActive = target;
+    if (index === 0) {
+      generalAddons.sellRefundUnlocked = true;
+      generalAddons.sellDiscountUnlocked = false;
+    } else {
+      generalAddons.sellDiscountUnlocked = true;
+      generalAddons.sellRefundUnlocked = false;
+    }
+    if (!alreadyUnlocked) save.gems -= cost;
     return { ok: true };
   }
 

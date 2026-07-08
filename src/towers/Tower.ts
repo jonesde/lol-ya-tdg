@@ -110,6 +110,7 @@ interface ProjectileManagerRef {
     antiHeal?: boolean;
     pierce?: number;
     stunDur?: number;
+    splash?: number;
   }): void;
   fireLightning(opts: {
     originX: number;
@@ -125,6 +126,8 @@ interface ProjectileManagerRef {
     critChance?: number;
     goldOnCrit?: number;
     range?: number;
+    chain?: number;
+    stormcall?: boolean;
   }): void;
   setOnLightningFlash(callback: (startX: number, startY: number, endX: number, endY: number) => void): void;
 }
@@ -788,6 +791,8 @@ export class Tower {
         critChance: stats.critChance,
         goldOnCrit: stats.goldOnCrit,
         range: stats.range,
+        chain: stats.chain,
+        stormcall: stats.stormcall,
       });
       this.fireAnimTime = this._gameSeconds;
       if (sound) sound.playSound(`shoot_${this.type as TowerId}`);
@@ -821,6 +826,7 @@ export class Tower {
       antiHeal: stats.antiHeal,
       pierce: stats.pierce,
       stunDur: stats.stun,
+      splash: stats.splash,
     });
     this.fireAnimTime = this._gameSeconds;
     if (sound) sound.playSound(`shoot_${this.type as TowerId}`);

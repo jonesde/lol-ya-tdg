@@ -119,7 +119,7 @@ export function createFreshGemBreakdown(): GemBreakdown {
 }
 
 export function initRunState(state: GameRunState, mapIndex: number, mapData: GeneratedMap, grid: Grid | null): void {
-  state.state = "playing";
+  state.state = "paused";
   state.mapIndex = mapIndex;
   state.map = mapData;
   state.grid = grid;

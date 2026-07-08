@@ -17,10 +17,6 @@ export interface SimulationSnapshot {
   // blocks a path. The main thread renders path highlights from this rather than
   // its own Grid copy, so the highlight stays in sync with the simulation.
   paths: Array<Array<{ x: number; y: number }> | null>;
-  // Set by the worker when a persist-mutating event occurred since the last
-  // snapshot. The host uses this (together with flush triggers) to throttle
-  // schedulePersistSave calls instead of saving on every mutation.
-  persistDirty: boolean;
 }
 
 export interface SnapshotMeta {

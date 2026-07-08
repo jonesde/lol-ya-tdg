@@ -73,7 +73,6 @@ interface WaveManagerRef {
     onWaveCleared: ((wave: number) => void) | null,
     onWaveStart: ((wave: number) => void) | null,
   ): void;
-  reportBossReachedBase(): void;
   startNextWave(): void;
 }
 
@@ -88,7 +87,6 @@ export class GameEngine {
   projectileManager: ProjectileManager | null;
   particleManager: ParticleSystem | null;
   waveGraphTracker: WaveGraphTracker | null = null;
-  lastTime: number;
   _accumulator: number;
   totalGoldEarned: number;
   totalHealingReceived: number;
@@ -96,6 +94,7 @@ export class GameEngine {
   waveTopTowers: { tower: Tower; rank: number; dmg: number; startTime: number }[] | null;
   lastScaledDt: number = 0;
   shouldEndGame: boolean = false;
+  gameEnded: boolean = false;
   persistDirty: boolean = false;
 
   theme: MapThemeData | null = null;
@@ -128,13 +127,13 @@ export class GameEngine {
     this.projectileManager = null;
     this.particleManager = null;
 
-    this.lastTime = 0;
     this._accumulator = 0;
 
     this.totalGoldEarned = 0;
     this.totalHealingReceived = 0;
     this.startingLives = 20;
     this.waveTopTowers = null;
+    this.gameEnded = false;
   }
 
   setTheme(theme: MapThemeData | null): void {
@@ -155,7 +154,7 @@ export class GameEngine {
     this.persistState = persistState;
 
     this.runState = {
-      state: GameState.PLAYING,
+      state: GameState.PAUSED,
       mapIndex,
       map: mapData,
       grid: null,
@@ -269,6 +268,7 @@ export class GameEngine {
 
   update(dt: number): void {
     if (!this.waveManager || !this.enemyManager || !this.towerManager) return;
+    if (this.runState.state === GameState.VICTORY || this.runState.state === GameState.GAME_OVER) return;
 
     this.waveManager.update(
       dt,
@@ -298,7 +298,6 @@ export class GameEngine {
         this.waveManager!.baseReached = true;
         if (enemy.type === "boss") {
           this.runState.bossesReachedBaseThisRun++;
-          this.waveManager!.reportBossReachedBase();
         }
         this.host.playSound("base_hit");
         if (this.runState.lives <= 0) {
@@ -431,6 +430,8 @@ export class GameEngine {
   }
 
   endGame(victory: boolean): void {
+    if (this.gameEnded) return;
+    this.gameEnded = true;
     this.runState.selectedTowerId = null;
     this.runState.selectedTowerType = null;
     this.runState.hoverTile = null;

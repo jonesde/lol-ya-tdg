@@ -507,6 +507,28 @@ describe("GameEngine", () => {
       expect(engine.runState.endScreenData?.victory).toBe(false);
     });
 
+    it("does not re-add history or gems on repeated endGame calls (C1)", () => {
+      const persistState = createTestPersistState();
+      initEngine(0, persistState);
+      const before = persistState.runHistory.length;
+      engine.endGame(true);
+      const afterFirst = persistState.runHistory.length;
+      engine.endGame(true);
+      const afterSecond = persistState.runHistory.length;
+      expect(afterFirst).toBe(before + 1);
+      expect(afterSecond).toBe(afterFirst);
+    });
+
+    it("update() is a no-op once the game has ended (C1)", () => {
+      const persistState = createTestPersistState();
+      initEngine(0, persistState);
+      engine.endGame(true);
+      engine.runState.state = GameState.VICTORY;
+      const historyLen = persistState.runHistory.length;
+      engine.update(0.016);
+      expect(persistState.runHistory.length).toBe(historyLen);
+    });
+
     it("clears selection and hover on end", () => {
       engine.runState.hoverTile = { tileX: 0, tileY: 0 };
       engine.runState.selectedTowerId = "1";

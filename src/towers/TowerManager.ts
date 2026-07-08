@@ -64,6 +64,7 @@ interface ProjectileManagerRef {
     towerId?: string;
     napalm?: boolean;
     variant?: "A" | "B" | null;
+    splash?: number;
   }): void;
   fireLightning(opts: {
     originX: number;
@@ -73,6 +74,8 @@ interface ProjectileManagerRef {
     targetId: number;
     stunDuration: number;
     towerId?: string;
+    chain?: number;
+    stormcall?: boolean;
   }): void;
   setOnLightningFlash(callback: (startX: number, startY: number, endX: number, endY: number) => void): void;
 }
@@ -157,11 +160,14 @@ export class TowerManager {
     if (tower.level <= 1) return 0;
     let removedCost = 0;
     if (tower.variant) {
-      removedCost = tower.levelCosts[4] ?? 0;
-      tower.levelCosts.pop();
+      removedCost = tower.levelCosts.pop() ?? 0;
       tower.totalInvested -= removedCost;
-      tower.variant = null;
-      tower.level = 4;
+      tower.level--;
+      // Clear the specialization only once the tower is back down to level 4.
+      if (tower.level <= 4) {
+        tower.variant = null;
+        tower.level = 4;
+      }
     } else {
       const levelIndex = tower.level - 1;
       removedCost = tower.levelCosts[levelIndex] ?? 0;
