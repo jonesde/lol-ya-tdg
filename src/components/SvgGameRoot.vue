@@ -4,9 +4,8 @@
          :viewBox="mapViewBox" @mousemove="onMouseMove" @click="onClick" @mousedown="onMouseDown" @contextmenu.prevent>
       <defs ref="defsLayer"></defs>
 
-      <g class="grid-layer" v-html="gridContent"></g>
-
       <g ref="worldLayer" class="camera-wrapper">
+        <g class="grid-layer" v-html="gridContent"></g>
         <g ref="entityLayer" class="entity-layer"></g>
         <g ref="uiOverlayLayer" class="ui-overlay-layer"></g>
         <g ref="projectileLayer" class="projectile-layer"></g>
@@ -22,7 +21,6 @@ import { GameState, SELL_DISCOUNT_PCT } from "@/game/Constants.js";
 import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
 import { TOWER_META, TowerIds } from "@/game/ConstantsTower.js";
 import { useInput } from "@/game/Input.js";
-import { fitToGrid } from "@/render/svg/cameraUtils.js";
 import { EffectManager } from "@/render/svg/EffectManager.js";
 import { EnemyManager } from "@/render/svg/EnemyManager.js";
 import { ParticleManager } from "@/render/svg/ParticleManager.js";
@@ -455,10 +453,14 @@ onMounted(async () => {
     const { Grid } = await import("@/grid/Grid.js");
     const grid = new Grid(gameStore.map);
     gameStore.grid = grid;
-    const initialCam = fitToGrid(gameStore.map.width, gameStore.map.height, viewSize.value.w, viewSize.value.h - 104);
-    cameraTransformString = `translate(${initialCam.x}, ${initialCam.y}) scale(${initialCam.zoom})`;
+    // The static grid is rendered in viewBox (world-pixel) space and the dynamic
+    // overlays live inside worldLayer, which the render loop transforms by
+    // gameStore.camera. The viewBox already scales the whole map to fit the
+    // screen, so the camera must be identity here; applying fitToGrid on top
+    // would scale/offset the overlays away from the grid.
+    cameraTransformString = "translate(0,0) scale(1)";
     worldLayer.value?.setAttribute("transform", cameraTransformString);
-    gameStore.setCamera(initialCam.x, initialCam.y, initialCam.zoom);
+    gameStore.setCamera(0, 0, 1);
   }
 
   worker.postMessage({
