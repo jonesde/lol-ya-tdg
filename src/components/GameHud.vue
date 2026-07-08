@@ -110,7 +110,7 @@ watch(
         <button class="hud-btn" :class="{ playing: !gameStore.isPaused }" id="pauseBtn" @click="dispatchCommand({ commandId: 0, type: 'action:togglePause' })">
           {{ gameStore.isPaused ? '>' : '⏸' }}
         </button>
-        <button class="hud-btn" id="speedBtn" @click="gameStore.cycleSpeed()">
+        <button class="hud-btn" id="speedBtn" @click="gameStore.cycleSpeed(); dispatchCommand({ commandId: 0, type: 'action:cycleSpeed', direction: 1 })">
           {{ gameStore.timeScale }}×
         </button>
         <button class="hud-btn stats-btn" @click="uiStore.toggleStatsPanel()">∑</button>

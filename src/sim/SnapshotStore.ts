@@ -69,15 +69,11 @@ export class SnapshotStore {
     // clobber the main-thread values. camera is main-thread-only — NOT mirrored.
     //
     // selectedTower IS mirrored: it is the projection of the worker-authorized
-    // meta.selectedTowerId. We only reassign when the selected *id* changes so
-    // the object reference stays stable while the same tower stays selected
-    // (avoids reactivity churn and TowerPanel's per-second tick tearing down).
-    const projectedSelectedTower = this.resolveSelectedTower();
-    const previousSelectedId = gs.selectedTower ? (gs.selectedTower as unknown as { id: string }).id : null;
-    const nextSelectedId = projectedSelectedTower ? projectedSelectedTower.id : null;
-    if (previousSelectedId !== nextSelectedId) {
-      gs.selectedTower = projectedSelectedTower;
-    }
+    // meta.selectedTowerId. Reassign every frame so the panel reflects the
+    // tower's mutable fields (level, stats, totalDamageDealt, etc.) as they
+    // change. TowerPanel keys its interval setup on the selected *id*, so this
+    // per-frame reassignment does not tear that interval down each frame.
+    gs.selectedTower = this.resolveSelectedTower();
     // hoverUpgradeBtn is intentionally NOT mirrored here — the engine no longer
     // writes it (GameEngine.setHover was removed in Phase 7), so mirroring would
     // clobber the main-thread value with the engine's always-false default.

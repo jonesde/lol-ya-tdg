@@ -30,9 +30,9 @@ function getTowerName(type: string): string {
 const tick = ref(0);
 
 watch(
-  tower,
-  (newTower, _oldValue, onCleanup) => {
-    if (!newTower) return;
+  () => tower.value?.id,
+  (newId, _oldValue, onCleanup) => {
+    if (!newId) return;
     const intervalId = setInterval(() => {
       tick.value++;
     }, 1000);
