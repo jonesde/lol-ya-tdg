@@ -278,6 +278,18 @@ describe("GameEngine", () => {
       expect(engine.towerManager?.towers).toContain(tower);
     });
 
+    it("computes the sell value once across the confirm flow (no cross-function double call)", async () => {
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      const sellValueSpy = vi.spyOn(tower, "sellValue");
+      engine.runState.selectedTowerId = String(tower.id);
+      // sellSelected() computes the value for the dialog and threads it into
+      // executeSellById; TowerManager.sell() must not recompute it.
+      engine.sellSelected();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(sellValueSpy).toHaveBeenCalledTimes(1);
+    });
+
     it("executeSell sells the selected tower", () => {
       const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       const goldBefore = engine.runState.gold;

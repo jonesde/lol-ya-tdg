@@ -363,12 +363,14 @@ export class GameEngine {
         breakdown.afterRegion += afterRegion;
         breakdown.afterFirstTime += afterFirstTime;
 
-        this.persistState.gems += afterFirstTime;
-        this.runState.runGemsEarned += afterFirstTime;
-
+        // Record the first-time 2x marker BEFORE crediting the gems, so the reward
+        // can never be granted without the claim flag being persisted.
         if (!hasClaimed && this.runState.mapIndex >= 0) {
           persistMarkFirstTimeMilestone(this.persistState, this.runState.mapIndex, m);
         }
+
+        this.persistState.gems += afterFirstTime;
+        this.runState.runGemsEarned += afterFirstTime;
       }
     }
 
@@ -629,27 +631,30 @@ export class GameEngine {
 
     const towerId = tower.id;
     const isRefund = this.persistState.generalAddons.sellActive === "refund";
-    const val = isRefund ? tower.totalInvested : tower.sellValue();
+    // Compute the sell value exactly once here. It is threaded through to
+    // executeSellById so TowerManager.sell() never recomputes it (single source of truth).
+    const creditAmount = isRefund ? tower.totalInvested : tower.sellValue();
     void this.host
-      .requestConfirm({ towerId, towerType: tower.type, towerLevel: tower.level, sellValue: val, isRefund })
+      .requestConfirm({ towerId, towerType: tower.type, towerLevel: tower.level, sellValue: creditAmount, isRefund })
       .then((confirmed) => {
-        if (confirmed) this.executeSellById(towerId);
+        if (confirmed) this.executeSellById(towerId, creditAmount);
       });
   }
 
-  executeSellById(towerId: string): void {
+  executeSellById(towerId: string, precomputedCreditAmount?: number): void {
     const tower = this.towerManager?.getTowerById(towerId);
     if (!tower) return;
 
     if (this.persistState.generalAddons?.sellActive === "discount") return;
 
     const isRefund = this.persistState.generalAddons?.sellActive === "refund";
-    // Always unregister the tower from the grid/managers via sell().
-    const sellValue = this.towerManager!.sell(tower, this.persistState);
+    // Prefer the value computed in sellSelected (already shown in the confirm dialog),
+    // otherwise compute it here (e.g. the non-confirm executeSell path).
+    const creditedAmount = precomputedCreditAmount ?? (isRefund ? tower.totalInvested : tower.sellValue());
+    this.towerManager!.sell(tower, this.persistState);
     this.host.syncGridTower(tower.tileX, tower.tileY, false);
-    const val = isRefund ? tower.totalInvested : sellValue;
-    this.runState.gold += val;
-    this.totalGoldEarned += val;
+    this.runState.gold += creditedAmount;
+    this.totalGoldEarned += creditedAmount;
     this.runState.selectedTowerId = null;
     this.persistDirty = true;
   }

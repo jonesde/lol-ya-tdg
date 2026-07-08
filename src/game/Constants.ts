@@ -95,6 +95,8 @@ export {
 export const FIXED_DT = 1 / 60;
 // hit detection radius tolerance for circle projectiles (ProjectileManager.js)
 export const PROJECTILE_HIT_THRESHOLD = 8;
+// max lifetime (seconds) of a projectile before it is force-expired to avoid stale accumulation
+export const MAX_PROJECTILE_AGE = 12;
 // max accumulated time before skipping updates to prevent spiral-of-death: Math.min(MAX_ACCUM, acc) (Game.js)
 export const MAX_ACCUM = 0.1;
 // Max fixed steps processed in a single worker frame. Caps the post-timescale

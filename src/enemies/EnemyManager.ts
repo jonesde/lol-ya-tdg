@@ -122,17 +122,27 @@ export class EnemyManager {
   }
 
   update(dt: number, onEnemyKill: ((enemy: Enemy) => void) | null): void {
+    // Guards against the kill callback firing more than once for a single enemy
+    // (e.g. if an enemy is already terminal at loop entry and the loop is later
+    // refactored to not `continue`). The callback must run at most once per enemy.
+    const handledEnemyIds = new Set<number>();
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       if (!enemy) continue;
       if (enemy.removed || enemy.reachedBase) {
-        if (onEnemyKill) onEnemyKill(enemy);
+        if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
+          onEnemyKill(enemy);
+          handledEnemyIds.add(enemy.id);
+        }
         this.removeDeadEnemy(i);
         continue;
       }
       enemy.update(dt, this);
       if (enemy.removed || enemy.reachedBase) {
-        if (onEnemyKill) onEnemyKill(enemy);
+        if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
+          onEnemyKill(enemy);
+          handledEnemyIds.add(enemy.id);
+        }
         this.removeDeadEnemy(i);
       }
     }

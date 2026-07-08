@@ -141,6 +141,26 @@ describe("TowerManager", () => {
       expect(sound.plays).toContain("place");
     });
 
+    it("does not consume a tower ID when grid registration fails", () => {
+      let allowRegister = false;
+      const stubGrid = {
+        tileSize: 36,
+        canBuild: () => true,
+        registerTower: () => allowRegister,
+        unregisterTower: () => true,
+      } as unknown as Grid;
+      const stubProjectiles = { spawn: () => {}, fireLightning: () => {}, spawnLightningFlash: () => {} };
+      const stubManager = new TowerManager(stubGrid, particles, stubProjectiles, sound);
+      // Registration fails: build should return null and must NOT burn an ID.
+      allowRegister = false;
+      const failed = stubManager.build("basic", 0, 0, makeSave(), stubGrid);
+      expect(failed).toBeNull();
+      // Now registration succeeds: the first successful build must get id 'tower-1'.
+      allowRegister = true;
+      const tower = stubManager.build("basic", 0, 0, makeSave(), stubGrid) as Tower;
+      expect(tower.id).toBe("tower-1");
+    });
+
     it("can build multiple towers on different tiles", () => {
       manager.build("basic", 0, 0, makeSave(), grid);
       manager.build("basic", 1, 0, makeSave(), grid);
@@ -158,11 +178,12 @@ describe("TowerManager", () => {
       expect(grid.terrainTowers.has("0,0")).toBe(false);
     });
 
-    it("returns the sell value", () => {
+    it("does not compute a sell value itself (credit is decided by the engine)", () => {
       const tower = manager.build("basic", 0, 0, makeSave(), grid) as Tower;
-      const expected = Math.round(tower.totalInvested * SELL_VALUE_RATIO);
       const val = manager.sell(tower, makeSave());
-      expect(val).toBe(expected);
+      expect(val).toBeUndefined();
+      // The authoritative sell value still lives on the tower.
+      expect(tower.sellValue()).toBe(Math.round(tower.totalInvested * SELL_VALUE_RATIO));
     });
 
     it("spawns sell particles", () => {

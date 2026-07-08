@@ -1,6 +1,6 @@
 import { GRID_TILE_SIZE } from "@/render/svg/types.js";
 import type { Tower } from "@/towers/Tower.js";
-import { PROJECTILE_HIT_THRESHOLD } from "./Constants.js";
+import { MAX_PROJECTILE_AGE, PROJECTILE_HIT_THRESHOLD } from "./Constants.js";
 import {
   ANTI_HEAL_DURATION,
   BOUNCE_DAMAGE_FALLOFF,
@@ -382,6 +382,11 @@ export class ProjectileManager {
         continue;
       }
       projectile.age += dt;
+      if (projectile.age > MAX_PROJECTILE_AGE) {
+        this.removeProjectile(projectile, "expired");
+        this.projectiles.splice(i, 1);
+        continue;
+      }
       this.updateCircleProjectile(projectile, dt);
     }
   }
@@ -620,7 +625,11 @@ export class ProjectileManager {
       for (const splashEnemy of splashEnemies) {
         if (splashEnemy.id !== enemy.id && (splashEnemy as { takeDamage?: unknown }).takeDamage) {
           const splashDamage = finalDamage * SPLASH_DAMAGE_RATIO;
-          (splashEnemy as { takeDamage(dmg: number): void }).takeDamage(splashDamage);
+          // Anti-Air: secondary splash targets must bypass shields just like the primary.
+          (splashEnemy as { takeDamage(dmg: number, armorPiercing?: boolean): void }).takeDamage(
+            splashDamage,
+            projectile.antiAir,
+          );
           this.recordDamage(projectile.towerId, splashDamage);
           // Stun Shell: splash damage applies stun
           if (projectile.splashStun > 0) {
@@ -730,10 +739,10 @@ export class ProjectileManager {
     if (opts.stormcall) {
       const wideRangePx = CHAIN_RANGE * 3 * (this.grid?.tileSize ?? 1);
       const stormcallCount = 1 + tier;
-      const chainedIds = new Set(chainTargets.map((target) => target.id));
+      const stormcallChainedIds = new Set(chainTargets.map((target) => target.id));
       const wideEnemies = this.enemyManager
         .getEnemiesInRange(opts.originX, opts.originY, wideRangePx)
-        .filter((enemy) => !chainedIds.has(enemy.id));
+        .filter((enemy) => !stormcallChainedIds.has(enemy.id));
       for (let strike = 0; strike < stormcallCount && wideEnemies.length > 0; strike++) {
         const pickIndex = Math.floor(Math.random() * wideEnemies.length);
         const stormTarget = wideEnemies.splice(pickIndex, 1)[0]!;

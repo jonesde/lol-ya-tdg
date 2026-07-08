@@ -288,11 +288,16 @@ export class Enemy {
             const baseTile = this.grid.getBase();
             const baseWorldPos = this.grid.tileToWorld(baseTile.x, baseTile.y);
             const currentDistSqToBase = (this.x - baseWorldPos.x) ** 2 + (this.y - baseWorldPos.y) ** 2;
+            // The last path index is the base tile. Snapping to it would place the
+            // enemy on the base and (next frame) trigger reachedBase prematurely, so
+            // it must never be eligible as a re-anchoring target.
+            const lastPathIdx = newPath.length - 1;
             let minDist = Infinity;
             let nearestIdx = 0;
             let bestForwardIdx = -1;
             let bestForwardDist = Infinity;
             for (let i = 0; i < newPath.length; i++) {
+              if (i === lastPathIdx) continue;
               const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
               const distSq = (worldPos.x - this.x) ** 2 + (worldPos.y - this.y) ** 2;
               if (distSq < minDist) {
@@ -310,6 +315,7 @@ export class Enemy {
             } else {
               let forwardFallbackIdx = -1;
               for (let i = nearestIdx; i < newPath.length; i++) {
+                if (i === lastPathIdx) break;
                 const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
                 const distSqToBase = (worldPos.x - baseWorldPos.x) ** 2 + (worldPos.y - baseWorldPos.y) ** 2;
                 if (distSqToBase <= currentDistSqToBase) {
@@ -318,6 +324,11 @@ export class Enemy {
                 }
               }
               this.pathIdx = forwardFallbackIdx >= 0 ? forwardFallbackIdx : nearestIdx;
+            }
+            // Final guard: never park on the base tile via a snap — always leave at
+            // least one waypoint ahead so the enemy reaches base via normal movement.
+            if (this.pathIdx >= lastPathIdx) {
+              this.pathIdx = Math.max(0, lastPathIdx - 1);
             }
             const anchorTile = newPath[this.pathIdx]!;
             const anchorWorld = this.grid.tileToWorld(anchorTile.x, anchorTile.y);

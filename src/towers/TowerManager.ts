@@ -141,8 +141,9 @@ export class TowerManager {
       undefined,
       paidCost,
     );
-    tower.id = `tower-${++this.nextTowerId}`;
+    // Register on the grid first so a failed registration does not burn a tower ID.
     if (!this.grid.registerTower(tileX, tileY)) return null;
+    tower.id = `tower-${++this.nextTowerId}`;
     this.towers.push(tower);
     this.towerMap.set(tower.id, tower);
     this.tileMap.set(`${tileX},${tileY}`, tower);
@@ -151,15 +152,13 @@ export class TowerManager {
     return tower;
   }
 
-  sell(tower: Tower, _save: PersistState | undefined): number {
-    const val = tower.sellValue();
+  sell(tower: Tower, _save: PersistState | undefined): void {
     this.grid.unregisterTower(tower.tileX, tower.tileY);
     this.towers = this.towers.filter((t) => t.id !== tower.id);
     this.towerMap.delete(tower.id);
     this.tileMap.delete(`${tower.tileX},${tower.tileY}`);
     this.particles.spawn(tower.x, tower.y, "#ffcf4d", 14, { speed: 70, life: 0.5 });
     this.sound.playSound("sell");
-    return val;
   }
 
   cancelBuild(tower: Tower): number {

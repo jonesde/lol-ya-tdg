@@ -309,7 +309,7 @@ export class Tower {
     const h = typeof heightTier === "number" ? heightTier : -1;
     const r = typeof rangeTier === "number" ? rangeTier : -1;
     const m = typeof milestoneTier === "number" ? milestoneTier : -1;
-    return `${h}|${r}|${m}|${milestoneLevels}`;
+    return `${h}|${r}|${m}|${milestoneLevels}|${this.variant ?? ""}`;
   }
 
   clearStatsCache(): void {

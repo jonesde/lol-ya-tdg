@@ -129,6 +129,16 @@ describe("WaveManager", () => {
       expect(bosses30.length).toBe(expectedBossCount);
     });
 
+    it("does not cap non-boss count by boss count (uses render pool only as overflow queue)", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      // High wave: many bosses plus a large non-boss base count. Previously the
+      // non-boss count was clamped by (ENEMY_POOL_SIZE - bossCount), thinning waves.
+      const wave = waveManager.generateWave(100);
+      const nonBoss = wave.filter((enemy) => enemy.type !== "boss");
+      const expectedBaseCount = WAVE_COUNT_BASE + Math.floor(100 * WAVE_COUNT_SCALE);
+      expect(nonBoss.length).toBe(expectedBaseCount);
+    });
+
     it("produces deterministic waves for the same seed", () => {
       const map = makeBastionMap();
       const waveManagerA = makeWaveManager(map);

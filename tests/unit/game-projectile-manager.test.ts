@@ -1099,8 +1099,42 @@ describe("ProjectileManager", () => {
 
       expect(takeDamage1).toHaveBeenCalledWith(10, false);
       // splash radius = 1 * tileSize(36) = 36px; enemy2 at 30px away is within it.
-      // Splash damage is applied without an armorPiercing argument (single arg).
-      expect(takeDamage2).toHaveBeenCalledWith(10 * SPLASH_DAMAGE_RATIO);
+      // Splash damage must forward the projectile's armorPiercing flag (antiAir),
+      // which is false here — anti-air consistency with the primary target.
+      expect(takeDamage2).toHaveBeenCalledWith(10 * SPLASH_DAMAGE_RATIO, false);
+    });
+
+    it("forwards the antiAir armor-piercing flag to splash secondary targets", () => {
+      const enemy1 = createMockEnemy({ id: 1, x: 100, y: 200, hp: 100, maxHp: 100 });
+      const enemy2 = createMockEnemy({ id: 2, x: 130, y: 200, hp: 100, maxHp: 100 });
+      const takeDamage2 = vi.fn();
+      enemy2.takeDamage = takeDamage2;
+      enemyManager = createMockEnemyManager([enemy1, enemy2]);
+      manager = new ProjectileManager(enemyManager, particles, null, {
+        width: 10,
+        height: 10,
+        tileSize: 36,
+        tiles: [],
+        blocked: new Set(),
+      });
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 1000,
+        range: 5,
+        towerType: "ice",
+        towerLevel: 1,
+        targetId: 1,
+        splash: 1,
+        antiAir: true,
+      });
+
+      manager.update(0.5);
+
+      // Shielded/secondary enemies must have shields bypassed, matching the primary.
+      expect(takeDamage2).toHaveBeenCalledWith(10 * SPLASH_DAMAGE_RATIO, true);
     });
   });
 

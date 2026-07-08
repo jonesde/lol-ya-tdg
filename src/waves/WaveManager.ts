@@ -1,7 +1,6 @@
 import { BETWEEN_WAVES_TIMER, PRE_EMPTIVE_WAVE_TIMER, VICTORY_WAVE } from "../game/Constants.js";
 import { ENEMY_TYPES, WAVE_COUNT_BASE, WAVE_COUNT_SCALE } from "../game/ConstantsEnemy.js";
 import { mulberry32 } from "../grid/Map.js";
-import { ENEMY_POOL_SIZE } from "../render/svg/types.js";
 import type { SpawnState } from "../render/themes/index.js";
 
 interface MapRef {
@@ -162,7 +161,9 @@ export class WaveManager {
       bossCount = 1 + Math.floor(n / 30);
     }
 
-    const nonBossCount = Math.min(baseCount, Math.max(0, ENEMY_POOL_SIZE - bossCount));
+    // Render-pool size is not a gameplay balance lever; non-boss count is purely
+    // driven by wave scaling. Overflow is absorbed by EnemyManager's pending queue.
+    const nonBossCount = baseCount;
     const out: WaveEntry[] = [];
 
     for (let i = 0; i < nonBossCount; i++) {
