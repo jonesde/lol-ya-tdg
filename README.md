@@ -115,6 +115,24 @@ src/
 │   └── EnemyManager.ts          # Enemy spawning, lifecycle, death handling
 ├── waves/
 │   └── WaveManager.ts           # Wave composition, boss cadence, inter-wave timer
+├── sim/
+│   ├── Command.ts               # Command definition types for simulation operations
+│   ├── CommandDispatcher.ts     # Central command dispatch for simulation
+│   ├── GameRunState.ts          # Per-run simulation state
+│   ├── HostBindings.ts          # Host-side bindings interface for simulation
+│   ├── PersistState.ts          # Persist state access for simulation
+│   ├── SimulationSnapshot.ts    # Snapshot type for simulation state
+│   ├── SnapshotSerializer.ts    # Serialize/deserialize simulation snapshots
+│   ├── SnapshotStore.ts         # Snapshot storage and management
+│   ├── WorkerCommandDispatcher.ts # Worker-side command dispatch
+│   ├── WorkerEntry.ts           # Web Worker entry point
+│   ├── WorkerHostBindings.ts    # Worker-side host bindings implementation
+│   ├── WorkerProtocol.ts        # Worker↔main thread protocol
+│   ├── applyCommand.ts          # Applies a command to simulation state
+│   ├── commandBus.ts            # Command bus for the simulation
+├── sim-adapters/
+│   ├── MainThreadCommandDispatcher.ts # Main-thread command dispatcher adapter
+│   └── MainThreadHostBindings.ts      # Main-thread host bindings adapter
 ├── render/
 │   ├── themes/
 │   │   ├── index.ts             # Theme registry: MAP_THEME_MANIFEST, lazy loaders, visual meta types
