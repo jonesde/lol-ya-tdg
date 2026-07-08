@@ -29,6 +29,8 @@ import { ParticleManager } from "@/render/svg/ParticleManager.js";
 import { ProjectileManager } from "@/render/svg/ProjectileManager.js";
 import { SpawnManager } from "@/render/svg/SpawnManager.js";
 import { TowerManager } from "@/render/svg/TowerManager.js";
+import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
+import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
 import type { EnemyVisualMeta, TowerVisualMeta } from "@/render/themes/index.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import type { ThemeBundle } from "@/sim/HostBindings.js";
@@ -390,8 +392,12 @@ onMounted(async () => {
   dispatcher = new WorkerCommandDispatcher(worker);
   setCommandDispatcher(dispatcher);
 
-  const themeBundle = buildThemeBundle();
-  const persistState = structuredClone(persistStore.$state) as unknown as PersistState;
+  // Register input listeners (and their onUnmounted cleanup) before any await
+  // so the lifecycle hook binds to the active component instance.
+  useInput(gameStore, dispatcher, uiStore);
+
+  const themeBundle = JSON.parse(JSON.stringify(buildThemeBundle())) as unknown as ThemeBundle;
+  const persistState = JSON.parse(JSON.stringify(persistStore.$state)) as unknown as PersistState;
 
   const staticContent = staticDefsContent.value;
   const mapContent = mapDefsContent.value;
@@ -442,8 +448,6 @@ onMounted(async () => {
     },
     { deep: true },
   );
-
-  useInput(gameStore, dispatcher, uiStore);
 
   // The main thread builds its own static Grid from the same map data so that
   // click-coordinate conversion and path highlights work without the engine.
