@@ -45,11 +45,11 @@ export class MainThreadHostBindings implements HostBindings {
     persistStore.highestUnlockedMap = state.highestUnlockedMap;
     persistStore.bestWaves = { ...state.bestWaves };
     persistStore.activeWaves = { ...state.activeWaves };
-    persistStore.difficulty = { ...state.difficulty };
     persistStore.firstTimeMilestones = { ...state.firstTimeMilestones };
     persistStore.firstClears = { ...state.firstClears };
-    persistStore.generalAddons = { ...state.generalAddons };
-    persistStore.unlocked = structuredClone(state.unlocked);
+    // unlocked + generalAddons are main-thread-owned (skill tree) and are NOT
+    // overwritten here — the worker never mutates them and would otherwise
+    // clobber mid-run unlocks/addon changes with its stale init-time copy.
     persistStore.runHistory = [...state.runHistory];
     persistStore.save();
   }

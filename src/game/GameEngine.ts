@@ -9,6 +9,7 @@ import { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
 import { generateRandomMap, getMap } from "@/grid/Map.js";
 import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
+import type { DebugKind } from "@/sim/Command.js";
 import type { GameRunState } from "@/sim/GameRunState.js";
 import {
   addGold,
@@ -670,8 +671,54 @@ export class GameEngine {
     }
     if (this.runState.gold < cost) return;
 
-    setGold(this.runState, this.runState.gold - cost);
-    tower.specialize(variant as "A" | "B", this.persistState, cost);
+    // Only deduct the cost if the specialization actually applied. Tower.specialize
+    // can no-op (e.g. the variant is not unlocked in the worker's persistState),
+    // and deducting unconditionally would silently lose gold with no effect.
+    const applied = tower.specialize(variant as "A" | "B", this.persistState, cost);
+    if (applied) setGold(this.runState, this.runState.gold - cost);
+  }
+
+  // Merges the main-thread-owned persist slices (unlocked + generalAddons) into
+  // the worker's persistState. The skill tree mutates these on the main thread
+  // (persistStore); this keeps the worker authoritative-copy in sync so mid-run
+  // unlocks reach Tower.specialize / cost calculations. Returns true so the
+  // worker posts a fresh snapshot reflecting the updated slice.
+  syncPersist(unlocked: PersistState["unlocked"], generalAddons: PersistState["generalAddons"]): boolean {
+    if (unlocked) this.persistState.unlocked = unlocked;
+    if (generalAddons) this.persistState.generalAddons = generalAddons;
+    return true;
+  }
+
+  // Debug-injection entry point for the DebugPanel. The debug buttons previously
+  // wrote directly to the main-thread mirror stores, which the worker snapshot
+  // overwrites every frame — so they did nothing. Routing them here mutates the
+  // authoritative worker state instead. amount is optional (defaults applied per
+  // kind) to keep the command payload small.
+  debug(kind: DebugKind, amount?: number): void {
+    switch (kind) {
+      case "addGold":
+        setGold(this.runState, this.runState.gold + (amount ?? 0));
+        break;
+      case "addLives":
+        this.runState.lives = Math.max(0, Math.min(99, this.runState.lives + (amount ?? 0)));
+        break;
+      case "addGems":
+        this.persistState.gems += amount ?? 0;
+        this.persistDirty = true;
+        break;
+      case "setWave":
+        this.runState.currentWave = amount ?? this.runState.currentWave;
+        break;
+      case "setTimeScale":
+        this.runState.timeScale = amount ?? this.runState.timeScale;
+        break;
+      case "skipWave":
+        this.waveManager?.startNextWave();
+        break;
+      case "killAll":
+        this.enemyManager?.clear();
+        break;
+    }
   }
 
   sellSelected(): void {

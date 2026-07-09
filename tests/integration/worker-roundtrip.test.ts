@@ -242,6 +242,46 @@ describe("worker round-trip", () => {
     sendDispose();
   });
 
+  it("action:syncPersist reaches the engine and forces a snapshot post", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40); // baseline snapshot
+
+    const before = snapshotCount();
+    const syncedState = createTestPersistState();
+    syncedState.unlocked.basic!.variantA[0] = true;
+    sendCommand({
+      commandId: 6,
+      type: "action:syncPersist",
+      unlocked: syncedState.unlocked,
+      generalAddons: syncedState.generalAddons,
+    });
+    await wait(40);
+    // syncPersist returns true → the worker must post a fresh snapshot.
+    expect(snapshotCount()).toBe(before + 1);
+    sendDispose();
+  });
+
+  it("action:debug addGold reaches the worker and reflects in the snapshot", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40); // baseline snapshot
+
+    const before = snapshotCount();
+    const beforeGold = snapshotMessages(posted)[snapshotMessages(posted).length - 1]!.snapshot.meta.gold;
+    sendCommand({ commandId: 7, type: "action:debug", kind: "addGold", amount: 500 });
+    await wait(40);
+    // debug returns true → a fresh snapshot is posted.
+    expect(snapshotCount()).toBe(before + 1);
+    const afterGold = snapshotMessages(posted)[snapshotMessages(posted).length - 1]!.snapshot.meta.gold;
+    expect(afterGold).toBe(beforeGold + 500);
+    sendDispose();
+  });
+
   it("(P2-1a) no ack → only baseline + command-induced frames; running-idle ticks drop", async () => {
     gw.self = mockSelf;
     posted.length = 0;

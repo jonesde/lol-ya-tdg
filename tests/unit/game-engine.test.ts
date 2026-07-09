@@ -13,7 +13,7 @@ import {
 } from "@/game/Constants.js";
 import { SELL_VALUE_RATIO } from "@/game/ConstantsTower.js";
 import { GameEngine } from "@/game/GameEngine.js";
-import { difficultyMultiplier as getDifficultyMultiplier } from "@/sim/PersistState.js";
+import { createDefaultPersistState, difficultyMultiplier as getDifficultyMultiplier } from "@/sim/PersistState.js";
 import type { Tower } from "@/towers/Tower.js";
 import {
   createTestGameStore,
@@ -407,6 +407,89 @@ describe("GameEngine", () => {
       expect(selected.level).toBe(5);
       expect(selected.variant).toBe("A");
       expect(engine.runState.gold).toBe(goldBefore - lv5Cost);
+    });
+
+    it("specializeSelected does not deduct gold when the variant is not unlocked in the worker persistState", () => {
+      // Simulate the mid-run desync: the main thread unlocked the variant (so the
+      // UI shows the button as enabled) but the worker's persistState clone is stale.
+      engine.persistState.unlocked.basic.levels[2] = true;
+      engine.persistState.unlocked.basic.levels[3] = true;
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      for (let i = 0; i < 3; i++) {
+        const cost = engine.getUpgradeCost(tower!);
+        engine.runState.gold -= cost;
+        tower!.doUpgrade(engine.persistState, cost);
+      }
+      expect(tower!.level).toBe(4);
+      engine.runState.selectedTowerId = String(tower!.id);
+      const lv5Cost = tower!.upgradeCost(5);
+      engine.runState.gold = lv5Cost;
+      const goldBefore = engine.runState.gold;
+      engine.specializeSelected("A");
+      const selected = engine.getSelectedTower() as Tower;
+      // No variant applied and no gold lost — the bug was silent gold deduction.
+      expect(selected.level).toBe(4);
+      expect(selected.variant).toBeNull();
+      expect(engine.runState.gold).toBe(goldBefore);
+    });
+
+    it("syncPersist makes a mid-run unlock reach specializeSelected", () => {
+      engine.persistState.unlocked.basic.levels[2] = true;
+      engine.persistState.unlocked.basic.levels[3] = true;
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      for (let i = 0; i < 3; i++) {
+        const cost = engine.getUpgradeCost(tower!);
+        engine.runState.gold -= cost;
+        tower!.doUpgrade(engine.persistState, cost);
+      }
+      engine.runState.selectedTowerId = String(tower!.id);
+      const lv5Cost = tower!.upgradeCost(5);
+      engine.runState.gold = lv5Cost;
+
+      // Variant still locked in the worker → no effect.
+      engine.specializeSelected("A");
+      expect((engine.getSelectedTower() as Tower).level).toBe(4);
+
+      // Main thread pushes the unlock down to the worker.
+      const syncedUnlocked = createDefaultPersistState().unlocked;
+      syncedUnlocked.basic.levels[2] = true;
+      syncedUnlocked.basic.levels[3] = true;
+      syncedUnlocked.basic.variantA[0] = true;
+      engine.syncPersist(syncedUnlocked, engine.persistState.generalAddons);
+
+      const goldBefore = engine.runState.gold;
+      engine.specializeSelected("A");
+      const selected = engine.getSelectedTower() as Tower;
+      expect(selected.level).toBe(5);
+      expect(selected.variant).toBe("A");
+      expect(engine.runState.gold).toBe(goldBefore - lv5Cost);
+    });
+
+    it("debug mutates the authoritative runState/persistState", () => {
+      const goldBefore = engine.runState.gold;
+      const livesBefore = engine.runState.lives;
+      const gemsBefore = engine.persistState.gems;
+
+      engine.debug("addGold", 1000);
+      engine.debug("addLives", 10);
+      engine.debug("addGems", 100);
+      engine.debug("setWave", 50);
+      engine.debug("setTimeScale", 16);
+
+      expect(engine.runState.gold).toBe(goldBefore + 1000);
+      expect(engine.runState.lives).toBe(livesBefore + 10);
+      expect(engine.persistState.gems).toBe(gemsBefore + 100);
+      expect(engine.runState.currentWave).toBe(50);
+      expect(engine.runState.timeScale).toBe(16);
+      expect(engine.persistDirty).toBe(true);
+    });
+
+    it("debug killAll clears spawned enemies", () => {
+      initEngine(0, createTestPersistState());
+      engine.enemyManager!.spawn("minion", 1, 0, 1);
+      expect(engine.enemyManager!.enemies.length).toBe(1);
+      engine.debug("killAll");
+      expect(engine.enemyManager!.enemies.length).toBe(0);
     });
 
     it("cancelSelected refunds full gold within cancel window", () => {

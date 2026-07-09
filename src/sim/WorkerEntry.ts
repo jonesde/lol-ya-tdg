@@ -220,11 +220,12 @@ function buildPersistSlice(engineRef: GameEngine): PersistStateSlice {
     highestUnlockedMap: persistState.highestUnlockedMap,
     bestWaves: { ...persistState.bestWaves },
     activeWaves: { ...persistState.activeWaves },
-    difficulty: { ...persistState.difficulty },
     firstTimeMilestones: { ...persistState.firstTimeMilestones },
     firstClears: { ...persistState.firstClears },
-    generalAddons: { ...persistState.generalAddons },
-    unlocked: structuredClone(persistState.unlocked),
+    // NOTE: unlocked + generalAddons are intentionally omitted — they are
+    // main-thread-owned (skill tree) and would otherwise clobber mid-run
+    // unlocks/addon changes with the worker's stale init-time copy. They reach
+    // the worker via action:syncPersist.
     runHistory: [...persistState.runHistory],
   };
 }

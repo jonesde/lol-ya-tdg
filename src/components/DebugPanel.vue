@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onUnmounted, ref } from "vue";
-import { GameState } from "@/game/Constants.js";
+import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -52,35 +52,27 @@ onUnmounted(() => {
 });
 
 function dbgGold() {
-  gameStore.addGold(1000);
+  dispatchCommand({ commandId: 0, type: "action:debug", kind: "addGold", amount: 1000 });
 }
 
 function dbgGems() {
-  persistStore.gems += 100;
-  persistStore.save();
+  dispatchCommand({ commandId: 0, type: "action:debug", kind: "addGems", amount: 100 });
 }
 
 function dbgLives() {
-  gameStore.lives = Math.min(99, gameStore.lives + 10);
+  dispatchCommand({ commandId: 0, type: "action:debug", kind: "addLives", amount: 10 });
 }
 
 function dbgSkipWave() {
-  // Debug helper — startNextWave is worker-internal (no command in Phase 8).
-  // Kept as a guarded no-op so the button remains wired for a future command.
-  if (gameStore.state === GameState.PAUSED) {
-    // no-op until a debug command is added
-  }
+  dispatchCommand({ commandId: 0, type: "action:debug", kind: "skipWave" });
 }
 
 function dbgKillAll() {
-  // Debug helper — enemy removal is worker-internal (no command in Phase 8).
+  dispatchCommand({ commandId: 0, type: "action:debug", kind: "killAll" });
 }
 
 function dbgWave() {
-  // Debug helper — setting the wave is worker-internal (no command in Phase 8).
-  if (gameStore.state === GameState.PAUSED) {
-    gameStore.setWave(50);
-  }
+  dispatchCommand({ commandId: 0, type: "action:debug", kind: "setWave", amount: 50 });
 }
 
 function dbgUnlockAll() {
@@ -89,7 +81,12 @@ function dbgUnlockAll() {
 }
 
 function dbgSpeed() {
-  gameStore.timeScale = gameStore.timeScale === 16 ? 1 : 16;
+  dispatchCommand({
+    commandId: 0,
+    type: "action:debug",
+    kind: "setTimeScale",
+    amount: gameStore.timeScale === 16 ? 1 : 16,
+  });
 }
 </script>
 

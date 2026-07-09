@@ -1,6 +1,13 @@
 import type { ThemeBundle } from "./HostBindings.js";
 import type { PersistState } from "./PersistState.js";
 
+// Kinds accepted by the unified debug command (action:debug). The DebugPanel
+// previously wrote these straight to the main-thread store, but under the worker
+// architecture that store is a per-frame mirror of the simulation snapshot, so
+// those writes were clobbered. Routing them through the command seam makes them
+// actually reach the engine.
+export type DebugKind = "addGold" | "addLives" | "addGems" | "setWave" | "skipWave" | "killAll" | "setTimeScale";
+
 // Discriminated union. Every intent flowing into the simulation is one of
 // these. The worker drains a queue of these at the start of each tick.
 //
@@ -31,6 +38,22 @@ export type Command =
   | { commandId: number; type: "action:setFixedAimDir"; dir: "N" | "E" | "S" | "W" | null }
   | { commandId: number; type: "action:cancelBuildMode" }
   | { commandId: number; type: "action:selectBuildType"; towerType: string | null }
+  // action:syncPersist carries the main-thread-owned persist slices (unlocked +
+  // generalAddons) into the worker. The skill tree mutates these on the main
+  // thread (persistStore), but the worker runs off a snapshot taken at init and
+  // has no other way to learn mid-run unlocks/addon changes. See the specialize
+  // desync fix: without this, Tower.specialize fails its unlocked guard while the
+  // UI shows the variant as available, silently deducting gold with no effect.
+  | {
+      commandId: number;
+      type: "action:syncPersist";
+      unlocked: PersistState["unlocked"];
+      generalAddons: PersistState["generalAddons"];
+    }
+  // action:debug is the unified debug-injection command used by the DebugPanel
+  // (gold/lives/gems/wave/speed injection + skip-wave/kill-all). It replaces the
+  // old direct main-thread store writes that the worker snapshot mirror clobbered.
+  | { commandId: number; type: "action:debug"; kind: DebugKind; amount?: number }
   // action:selectTower is implemented (Phase 7) via engine.selectTowerById; it is dispatched
   // by Input.ts / SvgGameRoot.vue for keyboard and click tower selection.
   | { commandId: number; type: "action:selectTower"; towerId: string | null }

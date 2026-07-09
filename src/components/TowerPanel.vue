@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
 import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO, TOWER_META } from "@/game/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
@@ -27,11 +27,26 @@ function getTowerName(type: string): string {
 // Reactive damage tracking
 // The selected tower is a reactive projection mirrored by SnapshotStore through
 // the gameStore proxy every frame, so these fields update without a manual tick.
+const previousWaveDamage = ref(0);
+
 const damageStats = computed(() => {
   const selectedTower = tower.value;
   if (!selectedTower) return null;
-  return { total: Math.round(selectedTower.totalDamageDealt), wave: Math.round(selectedTower.waveDamage) };
+  return {
+    total: Math.round(selectedTower.totalDamageDealt),
+    wave: Math.round(selectedTower.waveDamage),
+    previousWave: previousWaveDamage.value,
+  };
 });
+
+watch(
+  () => tower.value?.waveDamage ?? 0,
+  (newVal, oldVal) => {
+    if (oldVal > 0 && newVal === 0) {
+      previousWaveDamage.value = Math.round(oldVal);
+    }
+  },
+);
 
 // Specialization name display (Phase 2)
 const specName = computed(() => {
@@ -207,6 +222,8 @@ function handleFixedAim(dir: string | null) {
       <span v-if="specName" class="spec-badge">{{ specName }}</span>
     </div>
 
+    <div v-if="tower.isGhost" class="stat-row ghost-row"><span class="ghost-label">Ghost</span></div>
+    <div v-else class="stat-row"><span>Health</span><span>{{ Math.ceil(tower.health) }} / {{ Math.round(tower.maxHealth) }}</span></div>
     <div class="stat-row"><span>Damage</span><span>{{ Math.round(tower.stats.damage) }}</span></div>
     <div class="stat-row"><span>Range</span><span>{{ tower.stats.range.toFixed(1) }}</span></div>
     <div class="stat-row"><span>Fire Rate</span><span>{{ tower.stats.fireRate < 1 ? (1 / tower.stats.fireRate).toFixed(2) + ' s/shot' : tower.stats.fireRate.toFixed(2) + '/s' }}</span></div>
@@ -214,8 +231,7 @@ function handleFixedAim(dir: string | null) {
     <div v-if="tower.stats.chain" class="stat-row"><span>Chain</span><span>{{ tower.stats.chain }}</span></div>
     <div class="stat-row"><span>Total Damage</span><span>{{ damageStats?.total?.toLocaleString() ?? 0 }}</span></div>
     <div class="stat-row"><span>Wave Damage</span><span>{{ damageStats?.wave?.toLocaleString() ?? 0 }}</span></div>
-    <div v-if="tower.isGhost" class="stat-row ghost-row"><span class="ghost-label">Ghost</span></div>
-    <div v-else class="stat-row"><span>Health</span><span>{{ Math.ceil(tower.health) }} / {{ Math.round(tower.maxHealth) }}</span></div>
+    <div class="stat-row"><span>Previous Wave</span><span>{{ damageStats?.previousWave?.toLocaleString() ?? 0 }}</span></div>
 
     <div v-if="milestoneBonus && milestoneBonus.tiers > 0" class="milestone-bonus">
       Milestone Bonus: +{{ Math.round(milestoneBonus.damagePct) }}% dmg, +{{ Math.round(milestoneBonus.speedPct) }}% speed ({{ milestoneBonus.tiers }}×1M total)

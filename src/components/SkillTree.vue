@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import type { TowerId } from "@/game/ConstantsTower.js";
 import { TowerIds } from "@/game/ConstantsTower.js";
+import { dispatchCommand } from "@/sim/commandBus.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -25,6 +26,18 @@ import {
   tryUnlockGeneral,
 } from "@/towers/SkillTree.js";
 
+// Pushes the main-thread-owned persist slices (unlocked + generalAddons) into
+// the worker so mid-run skill-tree unlocks reach Tower.specialize / cost logic.
+// No-op when no worker is registered (e.g. the skill tree opened pre-run).
+function syncPersistToWorker(): void {
+  dispatchCommand({
+    commandId: 0,
+    type: "action:syncPersist",
+    unlocked: persistStore.unlocked,
+    generalAddons: persistStore.generalAddons,
+  });
+}
+
 const router = useRouter();
 const persistStore = usePersistStore();
 const themeStore = useMapThemeStore();
@@ -36,6 +49,7 @@ function handleTowerNodeClick(towerId: TowerId, tier: string, index: number, ele
   const result = tryUnlock(persistStore.$state, towerId, tier, index);
   if (result.ok) {
     persistStore.save();
+    syncPersistToWorker();
   } else if (result.reason === "Already unlocked") {
     const refundGems = canRefund(persistStore.$state, towerId, tier, index);
     if (refundGems > 0) {
@@ -66,6 +80,7 @@ function handleGeneralClick(key: string, type: string | number, opt: string | nu
     }
     generalAddons.sellActive = opt;
     persistStore.save();
+    syncPersistToWorker();
     return;
   }
 
@@ -85,6 +100,7 @@ function handleGeneralClick(key: string, type: string | number, opt: string | nu
   const result = tryUnlockGeneral(persistStore.$state, key, idxNum);
   if (result.ok) {
     persistStore.save();
+    syncPersistToWorker();
   } else {
     flashElement(element);
   }
@@ -100,6 +116,7 @@ function showRefundConfirm(towerId: TowerId, tier: string, index: number, gems: 
     onConfirm: () => {
       tryRefund(persistStore.$state, towerId, tier, index);
       persistStore.save();
+      syncPersistToWorker();
     },
   });
 }
@@ -115,6 +132,7 @@ function showGeneralRefundConfirm(key: string, index: number, gems: number) {
     onConfirm: () => {
       tryRefundGeneral(persistStore.$state, key, index);
       persistStore.save();
+      syncPersistToWorker();
     },
   });
 }
@@ -160,6 +178,7 @@ function showRefundAllConfirm() {
     onConfirm: () => {
       refundAllGems(persistStore.$state);
       persistStore.save();
+      syncPersistToWorker();
     },
   });
 }
