@@ -1,5 +1,7 @@
+import { GameState } from "@/game/Constants.js";
 import type { TowerId } from "@/game/ConstantsTower.js";
 import type { GameEngine } from "@/game/GameEngine.js";
+import { setGameState } from "@/sim/GameRunState.js";
 import type { Command } from "./Command.js";
 
 // This is the single switch that maps Command → engine method. It was inline
@@ -64,6 +66,11 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
     case "action:selectTower":
       // Phase 7 implements selectTowerById (was tech debt in Phase 6).
       engine.selectTowerById(command.towerId);
+      return true;
+    case "action:debugEndRun":
+      // Test-only hook: force a terminal state so worker-roundtrip tests can
+      // assert the final-snapshot + stopLoop path deterministically.
+      setGameState(engine.runState, command.victory === false ? GameState.GAME_OVER : GameState.VICTORY);
       return true;
     // NOTE: lifecycle:setTheme is intentionally absent — mid-run theme
     // switching is out of scope per README.md. The WorkerEntry message handler

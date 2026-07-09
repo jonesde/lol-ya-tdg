@@ -34,6 +34,11 @@ export type Command =
   // action:selectTower is implemented (Phase 7) via engine.selectTowerById; it is dispatched
   // by Input.ts / SvgGameRoot.vue for keyboard and click tower selection.
   | { commandId: number; type: "action:selectTower"; towerId: string | null }
+  // action:debugEndRun is a test-only hook used by worker-roundtrip tests to
+  // drive the engine to a terminal state deterministically (there is no
+  // production path to force VICTORY/GAME_OVER). It transitions runState and
+  // returns true so the worker's terminal branch posts exactly one final snapshot.
+  | { commandId: number; type: "action:debugEndRun"; victory?: boolean }
 
   // ---- Lifecycle ----
   | {

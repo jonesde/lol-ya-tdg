@@ -12,6 +12,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Grid } from "@/grid/Grid.js";
 import { getMap } from "@/grid/Map.js";
+import type { Command } from "@/sim/Command.js";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "@/sim/WorkerProtocol.js";
 import { createTestPersistState, createTestThemeBundle } from "../helpers/mock-stores";
 
@@ -42,6 +43,24 @@ describe("worker round-trip", () => {
   afterEach(() => {
     gw.self = originalSelf;
   });
+
+  function sendInit(): void {
+    mockSelf.onmessage!({
+      data: { type: "init", persistState: createTestPersistState(), themeBundle: createTestThemeBundle(), mapIndex: 0 },
+    });
+  }
+  function sendCommand(command: Command): void {
+    mockSelf.onmessage!({ data: { type: "command", command } });
+  }
+  function sendDispose(): void {
+    mockSelf.onmessage!({ data: { type: "dispose" } });
+  }
+  function snapshotCount(): number {
+    return snapshotMessages(posted).length;
+  }
+  function wait(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
 
   it("initializes and produces snapshots with expected meta", async () => {
     gw.self = mockSelf;
@@ -121,5 +140,89 @@ describe("worker round-trip", () => {
     expect(finalSnapshots.length).toBeGreaterThan(0);
     const last = finalSnapshots[finalSnapshots.length - 1]!.snapshot;
     expect(last.towers.length).toBeGreaterThan(0);
+  });
+
+  it("(Finding 3a) posts no snapshot while paused and idle", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40); // baseline snapshot posts while paused
+
+    // Start the game running so the loop actively posts.
+    sendCommand({ commandId: 1, type: "action:togglePause" });
+    await wait(120);
+    const runningCount = snapshotCount();
+    expect(runningCount).toBeGreaterThan(1);
+
+    // Pause: scaledDt becomes 0. The pause command itself posts once (it mutated
+    // state that tick), then the idle skip must hold for every subsequent tick.
+    sendCommand({ commandId: 2, type: "action:togglePause" });
+    await wait(120);
+    expect(snapshotCount()).toBe(runningCount + 1);
+    await wait(120);
+    expect(snapshotCount()).toBe(runningCount + 1);
+    sendDispose();
+  });
+
+  it("(Finding 3b) posts exactly one snapshot on the frame a command applies while paused", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40);
+
+    // Paused + idle: only the baseline snapshot was posted.
+    const before = snapshotCount();
+    expect(before).toBeGreaterThan(0);
+
+    // A state-mutating command (selectBuildType) must force exactly one post.
+    sendCommand({ commandId: 3, type: "action:selectBuildType", towerType: "basic" });
+    await wait(40);
+    expect(snapshotCount()).toBe(before + 1);
+    sendDispose();
+  });
+
+  it("(Finding 3c) posts the terminal snapshot exactly once before the loop stops", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40);
+
+    const before = snapshotCount();
+    sendCommand({ commandId: 4, type: "action:debugEndRun", victory: true });
+    await wait(50);
+    // Exactly one terminal snapshot was posted.
+    expect(snapshotCount()).toBe(before + 1);
+    const terminal = snapshotMessages(posted)[snapshotMessages(posted).length - 1]!;
+    expect(terminal.snapshot.meta.state).toBe("victory");
+    // Loop is stopped: no further snapshots even after a long wait.
+    await wait(100);
+    expect(snapshotCount()).toBe(before + 1);
+    sendDispose();
+  });
+
+  it("(Finding 3d) a subsequent init re-enables the loop cleanly", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40);
+
+    // Drive to terminal, loop stops.
+    sendCommand({ commandId: 5, type: "action:debugEndRun", victory: true });
+    await wait(50);
+    expect(snapshotMessages(posted).some((m) => m.snapshot.meta.state === "victory")).toBe(true);
+
+    // Re-init on the same (stopped) worker → loop resumes, fresh baseline snapshot.
+    const beforeReinit = snapshotCount();
+    sendInit();
+    await wait(60);
+    expect(snapshotCount()).toBeGreaterThan(beforeReinit);
+    const resumed = snapshotMessages(posted)[snapshotMessages(posted).length - 1]!;
+    // Fresh run starts paused again.
+    expect(resumed.snapshot.meta.state).toBe("paused");
+    sendDispose();
   });
 });

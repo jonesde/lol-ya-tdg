@@ -190,4 +190,27 @@ describe("EnemyManager", () => {
       expect(inRange).not.toContain(e1);
     });
   });
+
+  describe("getEnemiesInRange equivalence with forEachEnemyInRange (Finding 5)", () => {
+    it("visits the same survivors in the same order as the array form", () => {
+      const e1 = manager.spawn("minion", 1, 0, 1);
+      const e2 = manager.spawn("minion", 1, 0, 1);
+      const removed = manager.spawn("runner", 1, 0, 1);
+      removed.removed = true;
+      const reached = manager.spawn("minion", 1, 0, 1);
+      reached.reachedBase = true;
+
+      const arr = manager.getEnemiesInRange(18, 18, 10000);
+      const via: typeof arr = [];
+      manager.forEachEnemyInRange(18, 18, 10000, (enemy) => via.push(enemy));
+
+      expect(via.map((e) => e.id)).toEqual(arr.map((e) => e.id));
+      expect(arr).not.toContain(removed);
+      expect(arr).not.toContain(reached);
+      expect(via).not.toContain(removed);
+      expect(via).not.toContain(reached);
+      expect(arr).toContain(e1);
+      expect(arr).toContain(e2);
+    });
+  });
 });

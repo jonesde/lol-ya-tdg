@@ -1,6 +1,10 @@
 // @ts-nocheck
 /** @vitest-environment node */
+
+import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resetEnemyId } from "@/enemies/Enemy.js";
+import { EnemyManager } from "@/enemies/EnemyManager.js";
 import {
   CHAIN_DAMAGE_FALLOFF,
   NAPALM_BURN_DPS_RATIO,
@@ -8,6 +12,11 @@ import {
   SPLASH_DAMAGE_RATIO,
 } from "@/game/ConstantsTower.js";
 import { ProjectileManager } from "@/game/ProjectileManager.js";
+import { Grid } from "@/grid/Grid.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
+import { makeBastionMap } from "../helpers/mock-grid.js";
+import { makeParticleSystem } from "../helpers/mock-managers.js";
+import { mockDefaultTheme } from "../helpers/mock-stores.js";
 
 interface MockEnemy {
   id: number;
@@ -1366,6 +1375,118 @@ describe("ProjectileManager", () => {
       expect(effects.stuns).toHaveLength(3);
       expect(effects.stuns.map((s) => s.x).includes(wideEnemy.x)).toBe(true);
       expect(effects.stuns.map((s) => s.y).includes(wideEnemy.y)).toBe(true);
+    });
+  });
+
+  describe("findNearestEnemy visitor equivalence (Finding 5)", () => {
+    // Uses a REAL EnemyManager so the spatial-hash iteration order is exercised,
+    // and compares findNearestEnemy (visitor-based) against an independent
+    // getEnemiesInRange + reduce reference — the old array-returning path.
+    let manager: ProjectileManager;
+    let enemyManager: EnemyManager;
+    let grid: Grid;
+
+    beforeEach(() => {
+      const pinia = createPinia();
+      setActivePinia(pinia);
+      const themeStore = useMapThemeStore();
+      themeStore.defaultTheme = mockDefaultTheme;
+      themeStore.activeTheme = mockDefaultTheme;
+
+      // Deterministic enemy ids (1,2,3,...) so getEnemyById resolves after spawn.
+      resetEnemyId();
+      const map = makeBastionMap();
+      grid = new Grid(map);
+      const particles = makeParticleSystem();
+      enemyManager = new EnemyManager(grid, particles, 0);
+      manager = new ProjectileManager(enemyManager, particles);
+    });
+
+    // Spawn an enemy and re-hash it at an explicit position (spawn hashes by the
+    // original spawn point). Enemy ids are assigned naturally (1,2,3,...) because
+    // beforeEach resets the module id counter, so getEnemyById resolves correctly.
+    function makeEnemy(x: number, y: number) {
+      const enemy = enemyManager.spawn("minion", 1, 0, 1)!;
+      enemy.x = x;
+      enemy.y = y;
+      enemy.takeDamage = vi.fn();
+      // biome-ignore lint/suspicious/noExplicitAny: tests reach the private rehash
+      (enemyManager as any).updateSpatialHash();
+      return enemy;
+    }
+
+    function expectedNearest(originX: number, originY: number, range: number, excludeId: number) {
+      const inRange = enemyManager.getEnemiesInRange(originX, originY, range);
+      let best: { id: number; x: number; y: number } | null = null;
+      let bestDistSquared = Infinity;
+      for (const e of inRange) {
+        if (e.id === excludeId) continue;
+        const dx = e.x - originX;
+        const dy = e.y - originY;
+        const d = dx * dx + dy * dy;
+        if (d < bestDistSquared) {
+          bestDistSquared = d;
+          best = e;
+        }
+      }
+      return best;
+    }
+
+    function chainRangePx(): number {
+      // CHAIN_RANGE (from ProjectileManager) * GRID_TILE_SIZE (36).
+      return 2 * 36;
+    }
+
+    it("selects the same nearest enemy as the getEnemiesInRange reference", () => {
+      const origin = { x: 100, y: 200 };
+      const target = makeEnemy(102, 200);
+      const near = makeEnemy(107, 200);
+      const far = makeEnemy(162, 200);
+
+      const expected = expectedNearest(target.x, target.y, chainRangePx(), target.id);
+      expect(expected?.id).toBe(near.id);
+
+      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+      manager.fireLightning({
+        originX: origin.x,
+        originY: origin.y,
+        damage: 20,
+        towerLevel: 1,
+        targetId: target.id,
+        stunDuration: 0,
+        chain: 1,
+      });
+      randomSpy.mockRestore();
+
+      expect(near.takeDamage).toHaveBeenCalledWith(16);
+      expect(far.takeDamage).not.toHaveBeenCalled();
+    });
+
+    it("honors the equal-distance tie-break (first-found wins via strict <)", () => {
+      const origin = { x: 100, y: 200 };
+      const target = makeEnemy(102, 200);
+      // Two enemies at exactly equal distance (5px) from the target.
+      const left = makeEnemy(97, 200);
+      const right = makeEnemy(107, 200);
+
+      const expected = expectedNearest(target.x, target.y, chainRangePx(), target.id);
+      // First-found in spatial-hash order wins; the reference reduce must agree.
+      expect(expected?.id).toBe(left.id);
+
+      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+      manager.fireLightning({
+        originX: origin.x,
+        originY: origin.y,
+        damage: 20,
+        towerLevel: 1,
+        targetId: target.id,
+        stunDuration: 0,
+        chain: 1,
+      });
+      randomSpy.mockRestore();
+
+      expect(left.takeDamage).toHaveBeenCalledWith(16);
+      expect(right.takeDamage).not.toHaveBeenCalled();
     });
   });
 });
