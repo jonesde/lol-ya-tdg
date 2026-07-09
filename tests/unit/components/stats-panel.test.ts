@@ -37,8 +37,6 @@ function makeTower(id: string, totalDamageDealt: number): TowerSnapshot {
     canUpgrade: { ok: true, cost: 1, nextLevel: 2 },
     upgradeCostAt5: 0,
     levelCosts: [0, 1],
-    canCancel: false,
-    cancelRemainingMs: 0,
     milestoneBonus: { damagePct: 0, speedPct: 0, tiers: 0 },
     stats: { damage: 1, range: 1, fireRate: 1, splash: 0, chain: 0 },
     base: { fixedAim: false },
