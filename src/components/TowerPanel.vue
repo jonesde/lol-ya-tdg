@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, onUnmounted } from "vue";
 import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
 import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO, TOWER_META } from "@/game/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
@@ -27,26 +27,20 @@ function getTowerName(type: string): string {
 // Reactive damage tracking
 // The selected tower is a reactive projection mirrored by SnapshotStore through
 // the gameStore proxy every frame, so these fields update without a manual tick.
-const previousWaveDamage = ref(0);
-
+// `previousWaveDamage` is derived per-tower by the main-thread projection
+// (SnapshotStore) from the deserialized snapshots and stamped onto the tower
+// model — keyed by tower id, so it is never shared across towers and updates on
+// every wave (the engine's wave-start `waveDamage` reset is what the projection
+// detects). The UI only reads the plain field.
 const damageStats = computed(() => {
   const selectedTower = tower.value;
   if (!selectedTower) return null;
   return {
     total: Math.round(selectedTower.totalDamageDealt),
     wave: Math.round(selectedTower.waveDamage),
-    previousWave: previousWaveDamage.value,
+    previousWave: Math.round(selectedTower.previousWaveDamage ?? 0),
   };
 });
-
-watch(
-  () => tower.value?.waveDamage ?? 0,
-  (newVal, oldVal) => {
-    if (oldVal > 0 && newVal === 0) {
-      previousWaveDamage.value = Math.round(oldVal);
-    }
-  },
-);
 
 // Specialization name display (Phase 2)
 const specName = computed(() => {

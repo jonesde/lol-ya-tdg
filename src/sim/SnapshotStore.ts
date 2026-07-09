@@ -78,6 +78,12 @@ export class SnapshotStore {
   private gameStore: GameStore;
   private lastSelectedTowerId: string | null = null;
   private cachedSelectedTower: Tower | null = null;
+  // Per-tower last-frame waveDamage, used to derive `previousWaveDamage` for the
+  // deserialized tower model (see capturePreviousWaveDamage). Keyed by tower id.
+  private lastWaveDamageByTower = new Map<string, number>();
+  // Captured "Previous Wave" total per tower, persisted across frames so the UI
+  // reads it on every frame (not only the single wave-start reset frame).
+  private previousWaveDamageByTower = new Map<string, number>();
 
   constructor(gameStore: GameStore) {
     this.gameStore = gameStore;
@@ -89,6 +95,7 @@ export class SnapshotStore {
 
   apply(snapshot: SimulationSnapshot): void {
     this.current = snapshot;
+    this.capturePreviousWaveDamage(snapshot);
     // The worker ships the wave-graph dots window only when its generation
     // changes (a dot was flushed/front-trimmed). Merge each window into the
     // accumulated cache; write the full cache back so every stored snapshot —
@@ -110,6 +117,34 @@ export class SnapshotStore {
     snapshot.waveGraphDots = latestWaveGraphDots;
     latestSnapshot = snapshot;
     this.mirrorToGameStore(snapshot);
+  }
+
+  // Derive per-tower "Previous Wave" damage on the main-thread projection (not
+  // the sim engine). Each frame we compare a tower's per-wave accumulator
+  // (`waveDamage`) to its value last frame; when it drops from >0 to 0 — the
+  // wave-start reset the engine performs — we stamp the just-finished wave's
+  // total onto the deserialized tower so the UI can read it. Keyed by tower id,
+  // so the value is never shared across towers. The stamped field lives on the
+  // deserialized snapshot object, so every reader (gameStore.selectedTower,
+  // getLatestSnapshot()) sees it.
+  private capturePreviousWaveDamage(snapshot: SimulationSnapshot): void {
+    for (const towerData of snapshot.towers) {
+      const priorWaveDamage = this.lastWaveDamageByTower.get(towerData.id);
+      if (priorWaveDamage !== undefined && priorWaveDamage > 0 && towerData.waveDamage === 0) {
+        // The engine just reset this tower's per-wave accumulator at wave start:
+        // the prior value is the damage dealt in the wave that finished.
+        this.previousWaveDamageByTower.set(towerData.id, priorWaveDamage);
+      }
+      this.lastWaveDamageByTower.set(towerData.id, towerData.waveDamage);
+      // Persist the captured value onto the deserialized model every frame (the
+      // snapshot object is fresh each frame, so without this the UI would read
+      // undefined/0 except on the single wave-start reset frame). Towers with no
+      // completed wave yet are left absent → UI shows 0 (correct: no prior wave).
+      const capturedPreviousWaveDamage = this.previousWaveDamageByTower.get(towerData.id);
+      if (capturedPreviousWaveDamage !== undefined) {
+        towerData.previousWaveDamage = capturedPreviousWaveDamage;
+      }
+    }
   }
 
   private mirrorToGameStore(snapshot: SimulationSnapshot): void {

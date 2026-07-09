@@ -166,6 +166,13 @@ export interface TowerSnapshot {
   targeting: string;
   totalInvested: number;
   waveDamage: number;
+  // Per-tower "Previous Wave" damage. Derived on the main-thread projection
+  // (SnapshotStore) from the deserialized snapshots, NOT the sim engine. The
+  // engine resets `waveDamage` to 0 at wave start; the projection captures the
+  // just-finished wave's total here, keyed per tower, so the UI reads it without
+  // reaching into the simulation. Optional because the serializer (which reads
+  // the sim Tower) does not produce it — the projection stamps it instead.
+  previousWaveDamage?: number;
   totalDamageDealt: number;
   fireAnimTime: number;
   fixedAimDir: "N" | "E" | "S" | "W" | null;

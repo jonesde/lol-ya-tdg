@@ -15,7 +15,7 @@ import type { SimulationSnapshot, TowerSnapshot } from "@/sim/SimulationSnapshot
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
 import { createTestGameStore } from "../helpers/mock-stores";
 
-function makeTowerSnapshot(id: string, level: number, cost: number, nextLevel: number): TowerSnapshot {
+function makeTowerSnapshot(id: string, level: number, cost: number, nextLevel: number, waveDamage = 0): TowerSnapshot {
   return {
     id,
     type: "basic",
@@ -29,7 +29,7 @@ function makeTowerSnapshot(id: string, level: number, cost: number, nextLevel: n
     cooldown: 0,
     targeting: "first",
     totalInvested: 0,
-    waveDamage: 0,
+    waveDamage,
     totalDamageDealt: 0,
     fireAnimTime: 0,
     fixedAimDir: null,
@@ -145,5 +145,25 @@ describe("SnapshotStore selectedTower mirroring", () => {
 
     expect(sawLevel).toBe(3);
     stop();
+  });
+
+  it("persists previousWaveDamage across frames, not just the reset frame", () => {
+    const gameStore = createTestGameStore();
+    const store = new SnapshotStore(gameStore as never);
+    const towerId = "tower-3";
+    const selected = () => gameStore.selectedTower as unknown as TowerSnapshot | null;
+
+    // Frame A: tower deals 50 damage this wave. No reset yet → no previous wave.
+    store.apply(makeSnapshot(towerId, makeTowerSnapshot(towerId, 1, 50, 2, 50)));
+    expect(selected()?.previousWaveDamage).toBeUndefined();
+
+    // Frame B: wave starts, engine resets waveDamage to 0. Transition captured.
+    store.apply(makeSnapshot(towerId, makeTowerSnapshot(towerId, 1, 50, 2, 0)));
+    expect(selected()?.previousWaveDamage).toBe(50);
+
+    // Frame C: mid next wave (waveDamage climbing again). The value must persist
+    // (previously it flashed 50 only on frame B, then reverted to 0).
+    store.apply(makeSnapshot(towerId, makeTowerSnapshot(towerId, 1, 50, 2, 10)));
+    expect(selected()?.previousWaveDamage).toBe(50);
   });
 });
