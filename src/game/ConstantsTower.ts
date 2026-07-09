@@ -26,8 +26,8 @@ export const TOWER_META: Record<string, TowerMeta> = {
   cannon: { cost: 60 },
   lightning: { cost: 70 },
   railgun: { cost: 90 },
-  sturdyWall: { cost: 40 },
-  shotgunTank: { cost: 30 },
+  sturdyWall: { cost: 20 },
+  shotgunTank: { cost: 35 },
 };
 
 // ===== Base Tower Stats (level 1) =====
@@ -51,6 +51,7 @@ export interface TowerBase {
   knockbackScale?: number;
 }
 
+// Tower Base Settings
 export const TOWER_BASE: Record<string, TowerBase> = {
   basic: { range: 3.5, damage: 8, fireRate: 1.2, projSpeed: 14, splash: 0, health: 25 },
   ice: { range: 2.8, damage: 4, fireRate: 1.0, projSpeed: 12, slowAmt: 0.45, slowDur: 1.5, splash: 0.25, health: 20 },

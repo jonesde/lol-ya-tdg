@@ -81,11 +81,17 @@ export class Enemy {
   y!: number;
   worldPos!: { x: number; y: number };
   // Path centerline position (Phase 4). x/y are derived from centerline + the
-  // perpendicular laneOffset each frame; centerX/centerY are the only state the
+  // lateral lane offset each frame; centerX/centerY are the only state the
   // forward-step logic advances, so collisions never move the centerline.
+  // The lane offset is stored as a WORLD-SPACE vector (laneOffsetX/Y), not as a
+  // scalar relative to moveAngle: because moveAngle flips 90 deg at every
+  // right-angle turn, a scalar offset would rotate with it and make the enemy
+  // jump sideways at each corner. A world vector is turn-invariant, so the
+  // rendered position stays continuous through turns.
   centerX: number = 0;
   centerY: number = 0;
-  laneOffset: number = 0;
+  laneOffsetX: number = 0;
+  laneOffsetY: number = 0;
   slowFactor!: number;
   slowStack!: SlowEntry[];
   stunTimer!: number;
@@ -186,7 +192,8 @@ export class Enemy {
     this.worldPos = { x: this.x, y: this.y };
     this.centerX = this.x;
     this.centerY = this.y;
-    this.laneOffset = 0;
+    this.laneOffsetX = 0;
+    this.laneOffsetY = 0;
     this.lastCellX = -1;
     this.lastCellY = -1;
 
@@ -269,7 +276,8 @@ export class Enemy {
     this.y = safeWorld.y;
     this.centerX = safeWorld.x;
     this.centerY = safeWorld.y;
-    this.laneOffset = 0;
+    this.laneOffsetX = 0;
+    this.laneOffsetY = 0;
     this.worldPos = { x: this.x, y: this.y };
     if (safeIndex + 1 < this.path.length) {
       const nextTile = this.path[safeIndex + 1]!;
@@ -335,7 +343,8 @@ export class Enemy {
     this.y = anchorWorld.y;
     this.centerX = anchorWorld.x;
     this.centerY = anchorWorld.y;
-    this.laneOffset = 0;
+    this.laneOffsetX = 0;
+    this.laneOffsetY = 0;
   }
 
   update(dt: number, enemyManager: EnemyManagerRef | null) {
@@ -479,8 +488,9 @@ export class Enemy {
       }
     }
 
-    // Enemy-enemy collision: push overlapping neighbors apart via a signed laneOffset
-    // (slower enemy to the right, faster to the left). See resolveCollisions.
+    // Enemy-enemy collision: push overlapping neighbors apart via the world-space
+    // lane offset vector (slower enemy to the right, faster to the left). See
+    // resolveCollisions.
     this.resolveCollisions(enemyManager);
 
     // Attack tick. Stun already returned above, so this only runs while unstunned;
@@ -494,15 +504,23 @@ export class Enemy {
       }
     }
 
-    // Derive the real engine position from the centerline plus the perpendicular
-    // lane offset, clamped so the enemy stays within the current path tile bounds.
+    // Derive the real engine position from the centerline plus the world-space
+    // lane offset. The offset vector is turn-invariant (it is not derived from
+    // moveAngle), so no lateral jump occurs when rounding a right-angle corner.
+    // Clamp only the component perpendicular to the current heading so the enemy
+    // stays within the path tile bounds; the along-corridor component is left
+    // untouched so the position stays continuous through turns.
     const perpX = -Math.sin(this.moveAngle);
     const perpY = Math.cos(this.moveAngle);
     const maxLaneOffset = this.grid.tileSize / 2 - this.radius;
-    if (this.laneOffset > maxLaneOffset) this.laneOffset = maxLaneOffset;
-    else if (this.laneOffset < -maxLaneOffset) this.laneOffset = -maxLaneOffset;
-    this.x = this.centerX + perpX * this.laneOffset;
-    this.y = this.centerY + perpY * this.laneOffset;
+    const laneProjection = this.laneOffsetX * perpX + this.laneOffsetY * perpY;
+    const clampedProjection = Math.max(-maxLaneOffset, Math.min(maxLaneOffset, laneProjection));
+    const tangentialX = this.laneOffsetX - laneProjection * perpX;
+    const tangentialY = this.laneOffsetY - laneProjection * perpY;
+    this.laneOffsetX = tangentialX + clampedProjection * perpX;
+    this.laneOffsetY = tangentialY + clampedProjection * perpY;
+    this.x = this.centerX + this.laneOffsetX;
+    this.y = this.centerY + this.laneOffsetY;
     this.worldPos = { x: this.x, y: this.y };
   }
 
@@ -510,7 +528,10 @@ export class Enemy {
   // Each overlapping pair is pushed apart along each enemy's own perpendicular; the
   // slower enemy moves right (+offset), the faster left (-offset). With a screen
   // Y-down coordinate system and moveAngle = atan2(dy, dx), the forward unit vector
-  // is (cos, sin) and the right-perpendicular (clockwise) is (-sin, cos).
+  // is (cos, sin) and the right-perpendicular (clockwise) is (-sin, cos). The
+  // separation is accumulated into each enemy's WORLD-SPACE lane offset vector so
+  // the offset stays continuous through right-angle turns (it does not rotate with
+  // moveAngle).
   private resolveCollisions(enemyManager: EnemyManagerRef | null): void {
     if (!enemyManager) return;
     const neighbors = enemyManager.getEnemiesInRange(this.centerX, this.centerY, this.grid.tileSize);
@@ -518,10 +539,10 @@ export class Enemy {
       if (other === this) continue;
       const perpA = { x: -Math.sin(this.moveAngle), y: Math.cos(this.moveAngle) };
       const perpB = { x: -Math.sin(other.moveAngle), y: Math.cos(other.moveAngle) };
-      const ax = this.centerX + perpA.x * this.laneOffset;
-      const ay = this.centerY + perpA.y * this.laneOffset;
-      const bx = other.centerX + perpB.x * other.laneOffset;
-      const by = other.centerY + perpB.y * other.laneOffset;
+      const ax = this.centerX + this.laneOffsetX;
+      const ay = this.centerY + this.laneOffsetY;
+      const bx = other.centerX + other.laneOffsetX;
+      const by = other.centerY + other.laneOffsetY;
       const deltaX = bx - ax;
       const deltaY = by - ay;
       const dist = Math.hypot(deltaX, deltaY);
@@ -543,8 +564,10 @@ export class Enemy {
         thisSign = -1;
         otherSign = 1;
       }
-      this.laneOffset += separation * thisSign;
-      other.laneOffset += separation * otherSign;
+      this.laneOffsetX += separation * thisSign * perpA.x;
+      this.laneOffsetY += separation * thisSign * perpA.y;
+      other.laneOffsetX += separation * otherSign * perpB.x;
+      other.laneOffsetY += separation * otherSign * perpB.y;
     }
   }
 

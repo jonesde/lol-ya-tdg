@@ -841,7 +841,7 @@ describe("Tower", () => {
       expect(tower.stats.damage).toBe(0);
       expect(tower.stats.range).toBe(0);
       expect(tower.stats.fireRate).toBe(0);
-      expect(TOWER_META.sturdyWall.cost).toBe(40);
+      expect(TOWER_META.sturdyWall.cost).toBe(20);
     });
 
     it("shotgunTank has expected base stats and cost", () => {
@@ -849,7 +849,7 @@ describe("Tower", () => {
       expect(tower.maxHealth).toBe(TOWER_BASE.shotgunTank.health);
       expect(tower.stats.damage).toBe(TOWER_BASE.shotgunTank.damage);
       expect(tower.stats.range).toBe(TOWER_BASE.shotgunTank.range);
-      expect(TOWER_META.shotgunTank.cost).toBe(30);
+      expect(TOWER_META.shotgunTank.cost).toBe(35);
     });
 
     it("sturdyWall A (Thorn Wall) sets thornReflectPct per tier", () => {
