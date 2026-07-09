@@ -4,9 +4,10 @@ import type { GameEngine } from "@/game/GameEngine.js";
 import { setGameState } from "@/sim/GameRunState.js";
 import type { Command } from "./Command.js";
 
-// This is the single switch that maps Command → engine method. It was inline
-// in MainThreadCommandDispatcher in Phase 6; Phase 7 moves it here so the
-// worker can import it without importing the dispatcher class.
+// This is the single switch that maps Command → engine method. It is shared by
+// the worker (WorkerEntry) and both command dispatchers (WorkerCommandDispatcher
+// on the main thread, the legacy MainThreadCommandDispatcher) so the command→
+// engine logic lives in exactly one place.
 // Applies a command to the engine. Returns true if the command mutated visible
 // runState/persistState (so the worker knows it must post a snapshot even while
 // paused), false for pure no-ops. Every command that touches runState/persistState
