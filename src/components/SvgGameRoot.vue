@@ -145,10 +145,12 @@ let cachedViewH: number = 0;
 
 // Mousedown/click deduplication — mousedown fires on button press (less likely to be dropped),
 // click fires on button release (can be dropped when the main thread is blocked at high speed).
-const CLICK_DEDUP_MS = 50;
-let lastMouseDownTime: number = 0;
-let lastMouseDownX: number = 0;
-let lastMouseDownY: number = 0;
+// A physical press emits BOTH events; dispatch exactly one click command per gesture by
+// remembering that mousedown already handled this press. A human click usually holds the
+// button longer than a fixed time window, so a time-based dedup wrongly let the paired click
+// through and double-processed the same tile (placing a tower, then selecting it — which
+// exits build mode). The gesture flag is timing-independent.
+let mouseDownHandledGesture: boolean = false;
 
 // Worker-owned simulation: the worker owns the engine; the main thread owns a
 // SnapshotStore projection and a WorkerCommandDispatcher that posts commands.
@@ -256,17 +258,17 @@ const dispatchClick = (clientX: number, clientY: number): void => {
 const onMouseDown = (e: MouseEvent): void => {
   if (e.button !== 0) return;
   dispatchClick(e.clientX, e.clientY);
-  lastMouseDownTime = performance.now();
-  lastMouseDownX = e.clientX;
-  lastMouseDownY = e.clientY;
+  mouseDownHandledGesture = true;
 };
 
 const onClick = (e: MouseEvent): void => {
-  // If a mousedown already handled this click, skip to avoid double-processing.
-  const elapsed = performance.now() - lastMouseDownTime;
-  const dx = e.clientX - lastMouseDownX;
-  const dy = e.clientY - lastMouseDownY;
-  if (elapsed < CLICK_DEDUP_MS && dx * dx + dy * dy < 16) return;
+  // mousedown already dispatched for this press — skip the paired click so we
+  // don't process the same tile twice. If mousedown was somehow missed, fall
+  // through and dispatch here so the click is never dropped.
+  if (mouseDownHandledGesture) {
+    mouseDownHandledGesture = false;
+    return;
+  }
   dispatchClick(e.clientX, e.clientY);
 };
 
