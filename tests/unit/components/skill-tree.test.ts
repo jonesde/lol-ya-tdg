@@ -42,12 +42,12 @@ describe("SkillTree", () => {
     setActivePinia(createPinia());
   });
 
-  it("renders all 6 tower types", () => {
+  it("renders all 8 tower types", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountSkillTree();
     const wrapper = mount(SkillTree, { global: { plugins: [router, pinia] } });
     const cols = wrapper.findAll(".skill-col");
-    expect(cols.length).toBe(6);
+    expect(cols.length).toBe(8);
   });
 
   it("shows tower level unlocks", () => {

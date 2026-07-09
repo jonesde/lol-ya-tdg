@@ -79,6 +79,14 @@ export const VARIANT_INFO: Record<string, { A: { name: string; desc: string }; B
     A: { name: "Knockback", desc: "Physically pushes enemies back along the path." },
     B: { name: "Rail Lance", desc: "Removes pierce falloff for consistent damage." },
   },
+  sturdyWall: {
+    A: { name: "Thorn Wall", desc: "Reflects 30/60/100% of damage taken back at the attacker." },
+    B: { name: "Electric Fence", desc: "Zaps touching enemies for damage and briefly stuns them." },
+  },
+  shotgunTank: {
+    A: { name: "Reinforced", desc: "Greatly increases tower health (1.5x/2x/3x per tier)." },
+    B: { name: "Repulsor", desc: "Shots knock enemies back like the railgun." },
+  },
 };
 
 const ADDON_INFO: Record<string, { name: string; desc: string }[]> = {
@@ -111,6 +119,16 @@ const ADDON_INFO: Record<string, { name: string; desc: string }[]> = {
     { name: "Charge Shot", desc: "Every 5th shot deals ×3 damage." },
     { name: "Anti-Heal", desc: "Shots disable enemy healer auras for 2 seconds." },
     { name: "Multi-Pierce", desc: "Beams pierce 2 additional enemies." },
+  ],
+  sturdyWall: [
+    { name: "Plating", desc: "Reinforced exterior plating." },
+    { name: "Bastion", desc: "Holds the line against the swarm." },
+    { name: "Rubble", desc: "Scrap metal patchwork for extra grit." },
+  ],
+  shotgunTank: [
+    { name: "Hull", desc: "Extra armor plating on the tank chassis." },
+    { name: "Loader", desc: "Faster shell loading mechanism." },
+    { name: "Spread", desc: "Wider shotgun spread pattern." },
   ],
 };
 

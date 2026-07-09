@@ -29,12 +29,12 @@ describe("GameShop", () => {
     setActivePinia(createPinia());
   });
 
-  it("renders all 6 tower types", () => {
+  it("renders all 8 tower types", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountGameShop();
     const wrapper = mount(GameShop, { global: { plugins: [pinia] } });
     const towers = wrapper.findAll(".shop-tower");
-    expect(towers.length).toBe(6);
+    expect(towers.length).toBe(8);
   });
 
   it("displays tower cost for each type", () => {
@@ -42,7 +42,7 @@ describe("GameShop", () => {
     const { pinia, gameStore, persistStore, uiStore } = mountGameShop();
     const wrapper = mount(GameShop, { global: { plugins: [pinia] } });
     const costs = wrapper.findAll(".tower-cost");
-    expect(costs.length).toBe(6);
+    expect(costs.length).toBe(8);
     costs.forEach((cost) => {
       expect(cost.text()).toMatch(/🪙\s*\d+/);
     });
@@ -84,7 +84,7 @@ describe("GameShop", () => {
     gameStore.gold = 0;
     const wrapper = mount(GameShop, { global: { plugins: [pinia] } });
     const disabledTowers = wrapper.findAll(".shop-tower.disabled");
-    expect(disabledTowers.length).toBe(6);
+    expect(disabledTowers.length).toBe(8);
   });
 
   it("does not select unaffordable tower on click", async () => {

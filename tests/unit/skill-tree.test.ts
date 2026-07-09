@@ -75,6 +75,18 @@ function freshSave(): SaveFixture {
         variantB: [false, false, false],
         addons: [false, false, false],
       },
+      sturdyWall: {
+        levels: [true, true, false, false, false, false, false],
+        variantA: [false, false, false],
+        variantB: [false, false, false],
+        addons: [false, false, false],
+      },
+      shotgunTank: {
+        levels: [true, true, false, false, false, false, false],
+        variantA: [false, false, false],
+        variantB: [false, false, false],
+        addons: [false, false, false],
+      },
     },
     generalAddons: {
       extraHealth: null,
@@ -219,9 +231,9 @@ describe("SkillTree — Tower Unlocks", () => {
       expect(isUnlocked(save, "basic", "addons", 0)).toBe(true);
     });
 
-    it("unlocks all 6 tower types", () => {
+    it("unlocks all 8 tower types", () => {
       const save = freshSave();
-      for (const towerId of ["basic", "ice", "sniper", "cannon", "lightning", "railgun"]) {
+      for (const towerId of ["basic", "ice", "sniper", "cannon", "lightning", "railgun", "sturdyWall", "shotgunTank"]) {
         tryUnlock(save, towerId, "level", 2);
         expect(isUnlocked(save, towerId, "level", 2)).toBe(true);
       }

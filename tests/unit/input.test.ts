@@ -639,18 +639,18 @@ describe("useInput", () => {
       expect(gameStore.selectedTowerType).toBe(TowerIds.RAILGUN);
     });
 
-    it("key 7 wraps to first tower", () => {
+    it("key 7 selects sturdyWall (index 6)", () => {
       gameStore.setState(GameState.PLAYING);
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("7");
-      expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
+      expect(gameStore.selectedTowerType).toBe(TowerIds.STURDY_WALL);
     });
 
-    it("key 9 wraps to third tower", () => {
+    it("key 9 wraps to first tower", () => {
       gameStore.setState(GameState.PLAYING);
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("9");
-      expect(gameStore.selectedTowerType).toBe(TowerIds.SNIPER);
+      expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
     });
 
     it("non-digit keys are ignored", () => {
@@ -672,7 +672,7 @@ describe("useInput", () => {
 
     it("cycles from last tower back to first in build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      gameStore.selectedTowerType = TowerIds.RAILGUN;
+      gameStore.selectedTowerType = TowerIds.SHOTGUN_TANK;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("Tab");
       expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);

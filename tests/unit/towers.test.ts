@@ -833,4 +833,112 @@ describe("Tower", () => {
       expect(bonus.tiers).toBe(3);
     });
   });
+
+  describe("new towers (Phase 5)", () => {
+    it("sturdyWall has high health and no damage/range/fireRate", () => {
+      const tower = new Tower("sturdyWall", 0, 0, makeSave(), makeMockGrid());
+      expect(tower.maxHealth).toBe(TOWER_BASE.sturdyWall.health);
+      expect(tower.stats.damage).toBe(0);
+      expect(tower.stats.range).toBe(0);
+      expect(tower.stats.fireRate).toBe(0);
+      expect(TOWER_META.sturdyWall.cost).toBe(40);
+    });
+
+    it("shotgunTank has expected base stats and cost", () => {
+      const tower = new Tower("shotgunTank", 0, 0, makeSave(), makeMockGrid());
+      expect(tower.maxHealth).toBe(TOWER_BASE.shotgunTank.health);
+      expect(tower.stats.damage).toBe(TOWER_BASE.shotgunTank.damage);
+      expect(tower.stats.range).toBe(TOWER_BASE.shotgunTank.range);
+      expect(TOWER_META.shotgunTank.cost).toBe(30);
+    });
+
+    it("sturdyWall A (Thorn Wall) sets thornReflectPct per tier", () => {
+      const tower = new Tower("sturdyWall", 0, 0, makeSave(), makeMockGrid());
+      tower.level = 5;
+      tower.variant = "A";
+      expect(tower.stats.thornReflectPct).toBeCloseTo(0.3, 4);
+      const tier2 = new Tower("sturdyWall", 0, 0, makeSave(), makeMockGrid());
+      tier2.level = 6;
+      tier2.variant = "A";
+      expect(tier2.stats.thornReflectPct).toBeCloseTo(0.6, 4);
+      const tier3 = new Tower("sturdyWall", 0, 0, makeSave(), makeMockGrid());
+      tier3.level = 7;
+      tier3.variant = "A";
+      expect(tier3.stats.thornReflectPct).toBeCloseTo(1.0, 4);
+    });
+
+    it("sturdyWall A reflects damage taken back at the attacker", () => {
+      const tower = new Tower("sturdyWall", 0, 0, makeSave(), makeMockGrid());
+      tower.level = 5;
+      tower.variant = "A";
+      const enemy = {
+        hp: 100,
+        takeDamage(d: number) {
+          enemy.hp -= d;
+        },
+      };
+      tower.takeDamage(10, enemy);
+      // attacker takes 10 * 0.3 = 3 reflected damage
+      expect(enemy.hp).toBe(97);
+    });
+
+    it("sturdyWall B (Electric Fence) sets fence damage and stun", () => {
+      const tower = new Tower("sturdyWall", 0, 0, makeSave(), makeMockGrid());
+      tower.level = 5;
+      tower.variant = "B";
+      expect(tower.stats.fenceDamage).toBeGreaterThan(0);
+      expect(tower.stats.fenceStun).toBeGreaterThan(0);
+    });
+
+    it("shotgunTank A (Reinforced) increases max health", () => {
+      const base = new Tower("shotgunTank", 0, 0, makeSave(), makeMockGrid());
+      expect(base.maxHealth).toBe(TOWER_BASE.shotgunTank.health);
+      const reinforced = new Tower("shotgunTank", 0, 0, makeSave(), makeMockGrid());
+      reinforced.level = 4;
+      const specialized = reinforced.specialize("A", makeSave());
+      expect(specialized).toBe(true);
+      expect(reinforced.maxHealth).toBeGreaterThan(base.maxHealth);
+      expect(reinforced.stats.healthMult).toBeCloseTo(1.5, 4);
+    });
+
+    it("shotgunTank B (Repulsor) sets knockback stats", () => {
+      const tower = new Tower("shotgunTank", 0, 0, makeSave(), makeMockGrid());
+      tower.level = 5;
+      tower.variant = "B";
+      expect(tower.stats.knockbackBase).toBeGreaterThan(0);
+      expect(tower.stats.knockbackScale).toBeGreaterThan(0);
+    });
+  });
+
+  describe("ghost state (Phases 1 & 5)", () => {
+    it("cannot upgrade or sell while ghosted", () => {
+      const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
+      tower.isGhost = true;
+      const upgradeResult = tower.canUpgrade(makeSave());
+      expect(upgradeResult.ok).toBe(false);
+      expect(upgradeResult.reason).toContain("Ghosted");
+      expect(tower.sellValue()).toBe(0);
+    });
+
+    it("restore resets health and clears ghost flag", () => {
+      const map = makeBastionMap();
+      const grid = { tileSize: 36, tiles: map.tiles, clearTowerGhost() {} };
+      const tower = new Tower("basic", 0, 0, makeSave(), grid);
+      tower.health = 1;
+      tower.isGhost = true;
+      tower.ghostTimer = 100;
+      tower.restore();
+      expect(tower.isGhost).toBe(false);
+      expect(tower.health).toBe(tower.maxHealth);
+      expect(tower.ghostTimer).toBe(0);
+    });
+
+    it("takeDamage below zero triggers ghost state and pending effect", () => {
+      const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
+      tower.health = 5;
+      tower.takeDamage(10);
+      expect(tower.isGhost).toBe(true);
+      expect(tower.pendingGhostEffect).toBe(true);
+    });
+  });
 });

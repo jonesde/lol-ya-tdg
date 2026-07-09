@@ -203,7 +203,8 @@ export class ProjectileManager {
     towerId?: string;
     napalm?: boolean;
     marksman?: boolean;
-    knockback?: boolean;
+    knockbackBase?: number;
+    knockbackScale?: number;
     variant?: "A" | "B" | null;
     critChance?: number;
     goldOnCrit?: number;
@@ -270,7 +271,8 @@ export class ProjectileManager {
       opts.towerLevel,
       opts.napalm ?? false,
       opts.marksman ?? false,
-      opts.knockback ?? false,
+      opts.knockbackBase ?? 0,
+      opts.knockbackScale ?? 0,
       opts.variant,
       opts.pierce,
       opts.splash,
@@ -285,7 +287,8 @@ export class ProjectileManager {
     towerLevel: number,
     napalm: boolean,
     marksman: boolean,
-    knockback: boolean,
+    knockbackBase: number,
+    knockbackScale: number,
     variant?: "A" | "B" | null,
     pierce?: number,
     splash?: number,
@@ -310,6 +313,13 @@ export class ProjectileManager {
         projectile.knockback *= RAILGUN_KNOCKBACK_MULT;
       }
       projectile.stunDuration = 0.3;
+    }
+
+    // Knockback applies to any tower whose stats carry a knockback base. The
+    // railgun falls back to its TOWER_BASE defaults when the caller (e.g. a
+    // direct spawn without stats) omits the pair.
+    if (knockbackBase > 0) {
+      projectile.knockback = knockbackBase + knockbackScale * tier;
     }
 
     if (marksman) {

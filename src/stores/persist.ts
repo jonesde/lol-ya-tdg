@@ -78,6 +78,8 @@ function defaultUnlocked(): Record<string, TowerUnlocks> {
     cannon: blankTower(),
     lightning: blankTower(),
     railgun: blankTower(),
+    sturdyWall: blankTower(),
+    shotgunTank: blankTower(),
   };
 }
 

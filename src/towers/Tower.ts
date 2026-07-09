@@ -9,6 +9,7 @@ import {
   CANCEL_BUILD_WINDOW_MS,
   CHARGE_SHOT_COUNT,
   CHARGE_SHOT_MULT,
+  ELECTRIC_FENCE_RANGE_TILES,
   GHOST_RESTORE_BASE_SECONDS,
   GHOST_RESTORE_PER_LEVEL,
   ICE_AURA_DURATION,
@@ -55,6 +56,7 @@ interface EnemyManagerRef {
     id: number;
     applySlow(amount: number, duration: number): void;
     applyStun?(duration: number): void;
+    takeDamage(amount: number, armorPiercing?: boolean): void;
   }[];
   getEnemiesInRange(
     x: number,
@@ -71,6 +73,7 @@ interface EnemyManagerRef {
     id: number;
     applySlow(amount: number, duration: number): void;
     applyStun?(duration: number): void;
+    takeDamage(amount: number, armorPiercing?: boolean): void;
   }[];
   getEnemyById(
     id: number,
@@ -103,7 +106,8 @@ interface ProjectileManagerRef {
     towerId?: string;
     napalm?: boolean;
     marksman?: boolean;
-    knockback?: boolean;
+    knockbackBase?: number;
+    knockbackScale?: number;
     variant?: "A" | "B" | null;
     critChance?: number;
     goldOnCrit?: number;
@@ -150,7 +154,12 @@ interface TowerStats {
   marksman: boolean;
   napalm: boolean;
   stormcall: boolean;
-  knockback: boolean;
+  knockbackBase: number;
+  knockbackScale: number;
+  thornReflectPct: number;
+  fenceDamage: number;
+  fenceStun: number;
+  healthMult: number;
   // Addon-driven stat modifiers
   critChance: number;
   goldOnCrit: number;
@@ -287,8 +296,6 @@ export class Tower {
     this.chargeShotCount = 0;
     this.iceBurstTimer = 0;
     this.cachedTargetId = null;
-    this.maxHealth = this.base.health * TOWER_LEVEL_DMG_MULT ** (this.level - 1);
-    this.health = this.maxHealth;
     this.isGhost = false;
     this.ghostTimer = 0;
     this.pendingGhostEffect = false;
@@ -297,6 +304,8 @@ export class Tower {
     } else {
       this.terrainHeight = 1;
     }
+    this.maxHealth = this.computeMaxHealth();
+    this.health = this.maxHealth;
   }
 
   get stats(): TowerStats {
@@ -325,7 +334,7 @@ export class Tower {
     const h = typeof heightTier === "number" ? heightTier : -1;
     const r = typeof rangeTier === "number" ? rangeTier : -1;
     const m = typeof milestoneTier === "number" ? milestoneTier : -1;
-    return `${h}|${r}|${m}|${milestoneLevels}|${this.variant ?? ""}`;
+    return `${h}|${r}|${m}|${milestoneLevels}|${this.level}|${this.variant ?? ""}`;
   }
 
   clearStatsCache(): void {
@@ -349,7 +358,12 @@ export class Tower {
     let marksman = false;
     let napalm = false;
     let stormcall = false;
-    let knockback = false;
+    let knockbackBase = 0;
+    let knockbackScale = 0;
+    let thornReflectPct = 0;
+    let fenceDamage = 0;
+    let fenceStun = 0;
+    let healthMult = 1;
 
     if (this.level >= 5 && this.variant === "A") {
       const variantA = TOWER_VARIANTS[this.type as TowerId]?.A;
@@ -369,7 +383,12 @@ export class Tower {
             marksman,
             napalm,
             stormcall,
-            knockback,
+            knockbackBase,
+            knockbackScale,
+            thornReflectPct,
+            fenceDamage,
+            fenceStun,
+            healthMult,
           },
           level - 5,
         );
@@ -387,7 +406,12 @@ export class Tower {
           marksman,
           napalm,
           stormcall,
-          knockback,
+          knockbackBase,
+          knockbackScale,
+          thornReflectPct,
+          fenceDamage,
+          fenceStun,
+          healthMult,
         } = variantAResult);
       }
     }
@@ -409,7 +433,12 @@ export class Tower {
             marksman,
             napalm,
             stormcall,
-            knockback,
+            knockbackBase,
+            knockbackScale,
+            thornReflectPct,
+            fenceDamage,
+            fenceStun,
+            healthMult,
           },
           level - 5,
         );
@@ -427,7 +456,12 @@ export class Tower {
           marksman,
           napalm,
           stormcall,
-          knockback,
+          knockbackBase,
+          knockbackScale,
+          thornReflectPct,
+          fenceDamage,
+          fenceStun,
+          healthMult,
         } = variantBResult);
       }
     }
@@ -520,7 +554,12 @@ export class Tower {
       marksman,
       napalm,
       stormcall,
-      knockback,
+      knockbackBase,
+      knockbackScale,
+      thornReflectPct,
+      fenceDamage,
+      fenceStun,
+      healthMult,
       critChance,
       goldOnCrit,
       bounceShot,
@@ -579,6 +618,7 @@ export class Tower {
     this.totalInvested += cost;
     this.levelCosts.push(cost);
     this.clearStatsCache();
+    this.recomputeMaxHealth();
     return true;
   }
 
@@ -590,6 +630,7 @@ export class Tower {
     this.totalInvested += cost;
     this.levelCosts.push(cost);
     this.clearStatsCache();
+    this.recomputeMaxHealth();
     return { ok: true };
   }
 
@@ -602,11 +643,16 @@ export class Tower {
     return !this.isGhost;
   }
 
-  takeDamage(amount: number, _attacker?: Enemy): void {
+  takeDamage(amount: number, attacker?: Enemy): void {
     this.health -= amount;
     if (this.health <= 0 && !this.isGhost) {
       this.isGhost = true;
       this.pendingGhostEffect = true;
+    }
+    // Thorn Wall variant: reflect a percentage of damage taken back at the attacker.
+    const stats = this.stats;
+    if (stats.thornReflectPct > 0 && attacker && !this.isGhost) {
+      attacker.takeDamage(amount * stats.thornReflectPct);
     }
   }
 
@@ -615,6 +661,22 @@ export class Tower {
     this.health = this.maxHealth;
     this.ghostTimer = 0;
     this.grid.clearTowerGhost(this.tileX, this.tileY);
+  }
+
+  // Recomputes max health from base + level + variant health multiplier. Used so
+  // that upgraded towers (and the Shotgun Tank "Reinforced" variant) become
+  // tankier. Current health is scaled by the previous ratio to avoid fully
+  // healing on every level/rank change.
+  computeMaxHealth(): number {
+    const healthMult = this.stats?.healthMult ?? 1;
+    return this.base.health * TOWER_LEVEL_DMG_MULT ** (this.level - 1) * healthMult;
+  }
+
+  recomputeMaxHealth(): void {
+    const newMax = this.computeMaxHealth();
+    const ratio = this.maxHealth > 0 ? this.health / this.maxHealth : 1;
+    this.maxHealth = newMax;
+    this.health = Math.max(0, Math.round(newMax * ratio));
   }
 
   canCancel(): boolean {
@@ -732,6 +794,17 @@ export class Tower {
         const iceBurstRangePx = ICE_BURST_RANGE * tileSize;
         for (const enemy of enemyManager.getEnemiesInRange(this.x, this.y, iceBurstRangePx))
           if (enemy.applyStun) enemy.applyStun(ICE_BURST_STUN_DURATION);
+      }
+    }
+
+    // Electric Fence variant (sturdyWall B): zap enemies that touch the wall,
+    // dealing contact damage and briefly stunning them (stopping motion + attacks).
+    if (stats.fenceDamage > 0) {
+      const tileSize = this.grid?.tileSize || 36;
+      const fenceRangePx = tileSize * ELECTRIC_FENCE_RANGE_TILES;
+      for (const enemy of enemyManager.getEnemiesInRange(this.x, this.y, fenceRangePx)) {
+        enemy.takeDamage(stats.fenceDamage);
+        if (enemy.applyStun) enemy.applyStun(stats.fenceStun);
       }
     }
 
@@ -865,7 +938,8 @@ export class Tower {
       slowDur: stats.slowDur,
       napalm: stats.napalm,
       marksman: stats.marksman,
-      knockback: stats.knockback,
+      knockbackBase: stats.knockbackBase,
+      knockbackScale: stats.knockbackScale,
       variant: this.variant,
       critChance: stats.critChance,
       goldOnCrit: stats.goldOnCrit,

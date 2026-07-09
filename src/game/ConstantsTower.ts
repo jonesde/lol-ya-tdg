@@ -6,6 +6,8 @@ export const TowerIds = {
   CANNON: "cannon",
   LIGHTNING: "lightning",
   RAILGUN: "railgun",
+  STURDY_WALL: "sturdyWall",
+  SHOTGUN_TANK: "shotgunTank",
 } as const;
 
 export type TowerId = (typeof TowerIds)[keyof typeof TowerIds];
@@ -24,6 +26,8 @@ export const TOWER_META: Record<string, TowerMeta> = {
   cannon: { cost: 60 },
   lightning: { cost: 70 },
   railgun: { cost: 90 },
+  sturdyWall: { cost: 40 },
+  shotgunTank: { cost: 30 },
 };
 
 // ===== Base Tower Stats (level 1) =====
@@ -53,7 +57,27 @@ export const TOWER_BASE: Record<string, TowerBase> = {
   sniper: { range: 7, damage: 32, fireRate: 0.45, projSpeed: 30, splash: 0, stun: 0.2, health: 20 },
   cannon: { range: 3.2, damage: 16, fireRate: 0.55, projSpeed: 9, splash: 0.5, health: 30 },
   lightning: { range: 3.5, damage: 4, fireRate: 0.8, projSpeed: 99, chain: 2, stun: 0.1, health: 22 },
-  railgun: { range: 8, damage: 14, fireRate: 0.28, projSpeed: 60, pierceFalloff: 0.5, fixedAim: true, health: 28 },
+  railgun: {
+    range: 8,
+    damage: 14,
+    fireRate: 0.28,
+    projSpeed: 60,
+    fixedAim: true,
+    pierceFalloff: 0.5,
+    knockbackBase: 0.3,
+    knockbackScale: 0.2,
+    health: 28,
+  },
+  sturdyWall: { range: 0, damage: 0, fireRate: 0, projSpeed: 0, health: 200 },
+  shotgunTank: {
+    range: 1,
+    damage: 8,
+    fireRate: 1.2,
+    projSpeed: 14,
+    knockbackBase: 0.45,
+    knockbackScale: 0.3,
+    health: 250,
+  },
 };
 
 // ===== Tower Level Scaling =====
@@ -84,12 +108,6 @@ export const SPLASH_DAMAGE_RATIO = 0.6;
 export const CHAIN_DAMAGE_FALLOFF = 0.8;
 // lightning chain range: chain hops only target enemies within CHAIN_RANGE tiles (ProjectileManager.js)
 export const CHAIN_RANGE = 2;
-// railgun knockback: base amount (ProjectileManager.js)
-export const RAILGUN_KNOCKBASE = 0.3;
-// railgun knockback: per-level increment (ProjectileManager.js)
-export const RAILGUN_KNOCK_SCALE = 0.2;
-// railgun knockback: health scaling divisor — lower HP enemies get more knockback (ProjectileManager.js)
-export const RAILGUN_KNOCK_HP_DIVISOR = 64;
 // napalm burn DPS: damage * NAPALM_BURN_DPS_RATIO (ProjectileManager.js)
 export const NAPALM_BURN_DPS_RATIO = 0.2;
 // napalm burn lasts NAPALM_BURN_DURATION seconds (ProjectileManager.js)
@@ -138,8 +156,6 @@ export const BOUNCE_DAMAGE_FALLOFF = 0.8;
 export const ANTI_HEAL_DURATION = 2;
 // marksman variant instant-kill chance (ProjectileManager.js)
 export const MARKSMAN_CHANCE = 0.2;
-// marksman knockback multiplier for railgun variant A (ProjectileManager.js)
-export const RAILGUN_KNOCKBACK_MULT = 3;
 // ghost restore time in seconds: GHOST_RESTORE_BASE_SECONDS - level * GHOST_RESTORE_PER_LEVEL (Tower.js)
 export const GHOST_RESTORE_BASE_SECONDS = 50;
 export const GHOST_RESTORE_PER_LEVEL = 5;
@@ -151,6 +167,20 @@ export const GHOST_PARTICLE_COUNT = 14;
 export const GHOST_OPACITY = 0.5;
 // electric fence range in tiles; px radius = grid.tileSize * ELECTRIC_FENCE_RANGE_TILES (Phase 5c)
 export const ELECTRIC_FENCE_RANGE_TILES = 0.75;
+
+// railgun knockback multiplier for railgun variant A (ProjectileManager.js)
+export const RAILGUN_KNOCKBACK_MULT = 3;
+// railgun knockback: health scaling divisor — lower HP enemies get more knockback (ProjectileManager.js)
+export const RAILGUN_KNOCK_HP_DIVISOR = 64;
+
+// railgun knockback: base amount (ProjectileManager.js)
+export const RAILGUN_KNOCKBASE = 0.3;
+// railgun knockback: per-level increment (ProjectileManager.js)
+export const RAILGUN_KNOCK_SCALE = 0.2;
+// shotgun tank B (Repulsor) knockback: base amount (5a/5c, Phase 5)
+export const SHOTGUN_KNOCKBASE = 0.3 * 1.5;
+// shotgun tank B (Repulsor) knockback: per-level increment (Phase 5)
+export const SHOTGUN_KNOCK_SCALE = 0.2 * 1.5;
 
 // ===== Tower Variant Definitions =====
 // Applied when a tower reaches level 4 and is specialized (Tower.js)
@@ -169,7 +199,12 @@ export type TowerVariantStats = {
   marksman: boolean;
   napalm: boolean;
   stormcall: boolean;
-  knockback: boolean;
+  knockbackBase: number;
+  knockbackScale: number;
+  thornReflectPct: number;
+  fenceDamage: number;
+  fenceStun: number;
+  healthMult: number;
 };
 
 export interface TowerVariantConfig {
@@ -202,8 +237,29 @@ export const TOWER_VARIANTS: Record<TowerId, { A: TowerVariantConfig; B: TowerVa
     B: { name: "Stormcall", apply: (s, _t) => ({ ...s, stormcall: true }) },
   },
   railgun: {
-    A: { name: "Knockback", apply: (s, _t) => ({ ...s, knockback: true }) },
+    A: {
+      name: "Knockback",
+      apply: (s, _t) => ({
+        ...s,
+        knockbackBase: RAILGUN_KNOCKBASE * RAILGUN_KNOCKBACK_MULT,
+        knockbackScale: RAILGUN_KNOCK_SCALE,
+      }),
+    },
     B: { name: "Rail Lance", apply: (s, _t) => ({ ...s, pierceFalloff: 0 }) },
+  },
+  sturdyWall: {
+    A: { name: "Thorn Wall", apply: (s, tierIdx) => ({ ...s, thornReflectPct: [0.3, 0.6, 1.0][tierIdx]! }) },
+    B: {
+      name: "Electric Fence",
+      apply: (s, tierIdx) => ({ ...s, fenceDamage: [5, 10, 15][tierIdx]!, fenceStun: 0.5 }),
+    },
+  },
+  shotgunTank: {
+    A: { name: "Reinforced", apply: (s, tierIdx) => ({ ...s, healthMult: [1.5, 2, 3][tierIdx]! }) },
+    B: {
+      name: "Repulsor",
+      apply: (s, _t) => ({ ...s, knockbackBase: SHOTGUN_KNOCKBASE, knockbackScale: SHOTGUN_KNOCK_SCALE }),
+    },
   },
 };
 
@@ -290,5 +346,21 @@ export const TOWER_ADDON_EFFECTS: Record<TowerId, TowerAddonEffect[]> = {
     { antiHeal: true },
     // 2: Multi-Pierce - beams pierce 2 additional enemies
     { pierceAdd: MULTI_PIERCE_COUNT },
+  ],
+  sturdyWall: [
+    // 0: Plating - reinforced exterior (flavor addon, no stat effect)
+    {},
+    // 1: Bastion - holds the line (flavor addon, no stat effect)
+    {},
+    // 2: Rubble - scrap metal patchwork (flavor addon, no stat effect)
+    {},
+  ],
+  shotgunTank: [
+    // 0: Hull - extra armor plating (flavor addon, no stat effect)
+    {},
+    // 1: Loader - faster shell loading (flavor addon, no stat effect)
+    {},
+    // 2: Spread - wider shotgun spread (flavor addon, no stat effect)
+    {},
   ],
 };
