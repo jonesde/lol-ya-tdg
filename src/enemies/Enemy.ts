@@ -85,7 +85,6 @@ export class Enemy {
   pathIdx: number;
   x!: number;
   y!: number;
-  worldPos!: { x: number; y: number };
   // Path centerline position (Phase 4). x/y are derived from centerline + the
   // lateral lane offset each frame; centerX/centerY are the only state the
   // forward-step logic advances, so collisions never move the centerline.
@@ -127,6 +126,12 @@ export class Enemy {
   antiHealTimer!: number;
   lastCellX!: number;
   lastCellY!: number;
+  private healTickDt: number = 0;
+  private applyHealAura = (ally: Enemy): void => {
+    if (ally === this) return;
+    if (ally.antiHealTimer > 0) return;
+    ally.hp = Math.min(ally.maxHp, ally.hp + ally.maxHp * this.heal * this.healTickDt);
+  };
 
   constructor(
     type: string,
@@ -193,7 +198,6 @@ export class Enemy {
     const start = grid.tileToWorld(this.path[0]!.x, this.path[0]!.y);
     this.x = start.x;
     this.y = start.y;
-    this.worldPos = { x: this.x, y: this.y };
     this.centerX = this.x;
     this.centerY = this.y;
     this.laneOffsetX = 0;
@@ -318,7 +322,6 @@ export class Enemy {
     this.centerY = safeWorld.y;
     this.laneOffsetX = 0;
     this.laneOffsetY = 0;
-    this.worldPos = { x: this.x, y: this.y };
     if (safeIndex + 1 < this.path.length) {
       const nextTile = this.path[safeIndex + 1]!;
       const nextWorld = this.grid.tileToWorld(nextTile.x, nextTile.y);
@@ -430,11 +433,8 @@ export class Enemy {
     }
 
     if (this.heal > 0 && this.antiHealTimer <= 0 && enemyManager) {
-      enemyManager.forEachEnemyInRange(this.x, this.y, this.healRange, (ally) => {
-        if (ally === this) return;
-        if (ally.antiHealTimer > 0) return;
-        ally.hp = Math.min(ally.maxHp, ally.hp + ally.maxHp * this.heal * dt);
-      });
+      this.healTickDt = dt;
+      enemyManager.forEachEnemyInRange(this.x, this.y, this.healRange, this.applyHealAura);
     }
 
     if (this.stunTimer > 0) {
@@ -566,7 +566,6 @@ export class Enemy {
     this.laneOffsetY = tangentialY + clampedProjection * perpY;
     this.x = this.centerX + this.laneOffsetX;
     this.y = this.centerY + this.laneOffsetY;
-    this.worldPos = { x: this.x, y: this.y };
   }
 
   // Lateral collision separation against nearby enemies using the spatial hash.
@@ -581,8 +580,10 @@ export class Enemy {
     if (!enemyManager) return;
     enemyManager.forEachEnemyInRange(this.centerX, this.centerY, this.grid.tileSize, (other) => {
       if (other === this) return;
-      const perpA = { x: -Math.sin(this.moveAngle), y: Math.cos(this.moveAngle) };
-      const perpB = { x: -Math.sin(other.moveAngle), y: Math.cos(other.moveAngle) };
+      const perpAx = -Math.sin(this.moveAngle);
+      const perpAy = Math.cos(this.moveAngle);
+      const perpBx = -Math.sin(other.moveAngle);
+      const perpBy = Math.cos(other.moveAngle);
       const ax = this.centerX + this.laneOffsetX;
       const ay = this.centerY + this.laneOffsetY;
       const bx = other.centerX + other.laneOffsetX;
@@ -608,10 +609,10 @@ export class Enemy {
         thisSign = -1;
         otherSign = 1;
       }
-      this.laneOffsetX += separation * thisSign * perpA.x;
-      this.laneOffsetY += separation * thisSign * perpA.y;
-      other.laneOffsetX += separation * otherSign * perpB.x;
-      other.laneOffsetY += separation * otherSign * perpB.y;
+      this.laneOffsetX += separation * thisSign * perpAx;
+      this.laneOffsetY += separation * thisSign * perpAy;
+      other.laneOffsetX += separation * otherSign * perpBx;
+      other.laneOffsetY += separation * otherSign * perpBy;
     });
   }
 

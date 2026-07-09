@@ -14,6 +14,8 @@ import type {
 
 let nextFrameId = 1;
 
+const EMPTY_STATUS_EFFECTS: StatusEffectSnapshot[] = Object.freeze([]) as unknown as StatusEffectSnapshot[];
+
 export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number): SimulationSnapshot {
   const enemies = engine.enemyManager?.enemies ?? [];
   const towers = engine.towerManager?.towers ?? [];
@@ -125,6 +127,9 @@ function buildEnemyStatusEffects(
   maxBurnRemaining: number,
   totalBurnDps: number,
 ): StatusEffectSnapshot[] {
+  const hasEffects =
+    e.slowFactor < 1 || e.stunTimer > 0 || maxBurnRemaining > 0 || e.shield > 0 || e.markTargetMult > 0;
+  if (!hasEffects) return EMPTY_STATUS_EFFECTS;
   const effects: StatusEffectSnapshot[] = [];
   if (e.slowFactor < 1) {
     effects.push({ kind: "slow", remaining: maxSlowRemaining, magnitude: 1 - e.slowFactor });

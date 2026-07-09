@@ -5,6 +5,8 @@ export class ParticleManager {
   private pool: SVGCircleElement[] = [];
   private idToIndex: Map<number, number> = new Map();
   private freeIndexStack: number[] = [];
+  private lastSize: string[] = [];
+  private lastFill: string[] = [];
 
   init(layer: SVGGElement): void {
     for (let i = PARTICLE_POOL_SIZE - 1; i >= 0; i--) {
@@ -16,6 +18,8 @@ export class ParticleManager {
       layer.appendChild(circle);
       this.pool.push(circle);
       this.freeIndexStack.push(i);
+      this.lastSize.push("");
+      this.lastFill.push("");
     }
   }
 
@@ -32,8 +36,15 @@ export class ParticleManager {
       const circle = this.pool[poolIndex]!;
       circle.style.visibility = "visible";
       circle.setAttribute("transform", `translate(${particle.x}, ${particle.y})`);
-      circle.setAttribute("r", String(particle.size));
-      circle.setAttribute("fill", particle.color);
+      const sizeString = String(particle.size);
+      if (sizeString !== this.lastSize[poolIndex]) {
+        circle.setAttribute("r", sizeString);
+        this.lastSize[poolIndex] = sizeString;
+      }
+      if (particle.color !== this.lastFill[poolIndex]) {
+        circle.setAttribute("fill", particle.color);
+        this.lastFill[poolIndex] = particle.color;
+      }
       circle.setAttribute("opacity", String(particle.opacity));
     }
 

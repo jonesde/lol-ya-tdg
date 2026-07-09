@@ -117,6 +117,7 @@ let effectManager!: EffectManager;
 let uiOverlayManager!: UiOverlayManager;
 let spawnManager!: SpawnManager;
 let pathHighlightsGroup: SVGGElement | null = null;
+let gridLayerEl: SVGGElement | null = null;
 // Last timestamp (ms) used to compute the per-frame particle simulation dt.
 let lastParticleFrame: number = 0;
 
@@ -402,8 +403,10 @@ function renderLoop(): void {
   // Drawn from the worker-authoritative snapshot paths (rerouted when a tower
   // blocks a path) rather than the main-thread Grid copy, which is not updated
   // on placement.
-  const gridLayer = svgRoot.value?.querySelector(".grid-layer") as SVGGElement | null;
-  if (gridLayer && snapshot.paths) {
+  if (!gridLayerEl) {
+    gridLayerEl = svgRoot.value?.querySelector(".grid-layer") as SVGGElement | null;
+  }
+  if (gridLayerEl && snapshot.paths) {
     if (!pathHighlightsGroup?.parentNode) {
       pathHighlightsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
       pathHighlightsGroup.setAttribute("id", "path-highlights");

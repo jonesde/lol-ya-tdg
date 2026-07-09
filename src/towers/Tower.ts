@@ -1,4 +1,11 @@
 import type { Enemy } from "@/enemies/Enemy.js";
+
+interface AuraTarget {
+  applySlow(amount: number, duration: number): void;
+  applyStun?(duration: number): void;
+  takeDamage(amount: number, armorPiercing?: boolean): void;
+}
+
 import {
   MILESTONE_BONUS_PCT,
   MILESTONE_THRESHOLD,
@@ -226,7 +233,6 @@ export class Tower {
   grid: GridRef;
   x: number;
   y: number;
-  worldPos: { x: number; y: number };
   meta: TowerMeta;
   base: {
     range: number;
@@ -279,6 +285,20 @@ export class Tower {
   ghostTimer: number;
   pendingGhostEffect: boolean;
 
+  private applyFrostAura?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
+    enemy.applySlow(this.stats.slowAmt * ICE_AURA_SLOW_MULT, ICE_AURA_DURATION);
+  };
+  private applyStaticField?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
+    enemy.applySlow(STATIC_FIELD_SLOW_AMT, STATIC_FIELD_SLOW_DUR);
+  };
+  private applyIceBurst?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
+    if (enemy.applyStun) enemy.applyStun(ICE_BURST_STUN_DURATION);
+  };
+  private applyElectricFence?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
+    enemy.takeDamage(this.stats.fenceDamage);
+    if (enemy.applyStun) enemy.applyStun(this.stats.fenceStun);
+  };
+
   constructor(
     type: string,
     tileX: number,
@@ -297,7 +317,6 @@ export class Tower {
     this.grid = grid;
     this.x = tileX * (grid?.tileSize || 36) + (grid?.tileSize || 36) / 2;
     this.y = tileY * (grid?.tileSize || 36) + (grid?.tileSize || 36) / 2;
-    this.worldPos = { x: this.x, y: this.y };
     const towerId = type as TowerId;
     this.meta = TOWER_META[towerId]!;
     this.base = TOWER_BASE[towerId]!;
@@ -815,18 +834,14 @@ export class Tower {
     if (stats.frostAura) {
       const tileSize = this.grid?.tileSize || 36;
       const frostRangePx = ICE_AURA_RANGE * tileSize;
-      enemyManager.forEachEnemyInRange(this.x, this.y, frostRangePx, (enemy) =>
-        enemy.applySlow(stats.slowAmt * ICE_AURA_SLOW_MULT, ICE_AURA_DURATION),
-      );
+      enemyManager.forEachEnemyInRange(this.x, this.y, frostRangePx, this.applyFrostAura!);
     }
 
     // Data-driven static field (lightning addon 0)
     if (stats.staticField) {
       const tileSize = this.grid?.tileSize || 36;
       const staticFieldRangePx = STATIC_FIELD_RANGE * tileSize;
-      enemyManager.forEachEnemyInRange(this.x, this.y, staticFieldRangePx, (enemy) =>
-        enemy.applySlow(STATIC_FIELD_SLOW_AMT, STATIC_FIELD_SLOW_DUR),
-      );
+      enemyManager.forEachEnemyInRange(this.x, this.y, staticFieldRangePx, this.applyStaticField!);
     }
 
     // Data-driven ice burst (ice addon 2)
@@ -836,9 +851,7 @@ export class Tower {
         this.iceBurstTimer = 0;
         const tileSize = this.grid?.tileSize || 36;
         const iceBurstRangePx = ICE_BURST_RANGE * tileSize;
-        enemyManager.forEachEnemyInRange(this.x, this.y, iceBurstRangePx, (enemy) => {
-          if (enemy.applyStun) enemy.applyStun(ICE_BURST_STUN_DURATION);
-        });
+        enemyManager.forEachEnemyInRange(this.x, this.y, iceBurstRangePx, this.applyIceBurst!);
       }
     }
 
@@ -850,10 +863,7 @@ export class Tower {
         this.fenceTimer = 0;
         const tileSize = this.grid?.tileSize || 36;
         const fenceRangePx = tileSize * ELECTRIC_FENCE_RANGE_TILES;
-        enemyManager.forEachEnemyInRange(this.x, this.y, fenceRangePx, (enemy) => {
-          enemy.takeDamage(stats.fenceDamage);
-          if (enemy.applyStun) enemy.applyStun(stats.fenceStun);
-        });
+        enemyManager.forEachEnemyInRange(this.x, this.y, fenceRangePx, this.applyElectricFence!);
       }
     }
 

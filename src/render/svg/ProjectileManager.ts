@@ -6,6 +6,9 @@ export class ProjectileManager {
   private idToIndex: Map<number, number> = new Map();
   private freeIndexStack: number[] = [];
   private overflowIds: Set<number> = new Set();
+  private activeIdScratch: Set<number> = new Set();
+  private lastRadius: string[] = [];
+  private lastFill: string[] = [];
 
   init(layer: SVGGElement): void {
     for (let i = PROJECTILE_POOL_SIZE - 1; i >= 0; i--) {
@@ -16,6 +19,8 @@ export class ProjectileManager {
       layer.appendChild(circle);
       this.pool.push(circle);
       this.freeIndexStack.push(i);
+      this.lastRadius.push("");
+      this.lastFill.push("");
     }
   }
 
@@ -35,21 +40,30 @@ export class ProjectileManager {
       const circle = this.pool[poolIndex]!;
       circle.style.visibility = "visible";
       circle.setAttribute("transform", `translate(${proj.x}, ${proj.y})`);
-      circle.setAttribute("r", String(proj.radius));
-      circle.setAttribute("fill", proj.color || "#ffffff");
+      const radiusString = String(proj.radius);
+      if (radiusString !== this.lastRadius[poolIndex]) {
+        circle.setAttribute("r", radiusString);
+        this.lastRadius[poolIndex] = radiusString;
+      }
+      const fillColor = proj.color || "#ffffff";
+      if (fillColor !== this.lastFill[poolIndex]) {
+        circle.setAttribute("fill", fillColor);
+        this.lastFill[poolIndex] = fillColor;
+      }
     }
 
-    const activeIds = new Set(projectiles.map((p) => p.id));
+    this.activeIdScratch.clear();
+    for (const p of projectiles) this.activeIdScratch.add(p.id);
     for (const [id, index] of this.idToIndex) {
       const circle = this.pool[index]!;
-      if (!activeIds.has(id)) {
+      if (!this.activeIdScratch.has(id)) {
         circle.style.visibility = "hidden";
         this.freeIndexStack.push(index);
         this.idToIndex.delete(id);
       }
     }
     for (const overflowId of this.overflowIds) {
-      if (!activeIds.has(overflowId)) {
+      if (!this.activeIdScratch.has(overflowId)) {
         this.overflowIds.delete(overflowId);
       }
     }

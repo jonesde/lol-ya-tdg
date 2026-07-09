@@ -68,16 +68,6 @@ export class WaveGraphTracker {
   update(dt: number): void {
     this._gameTimeAccum += dt;
 
-    const currentDamage = this._sumTotalDamage();
-    const damageDelta = Math.max(0, currentDamage - this._prevTotalDamage);
-    this._intervalDamage += damageDelta;
-    this._prevTotalDamage = currentDamage;
-
-    const currentHpSum = this._sumEnemyHp();
-    if (currentHpSum > this._intervalPeakEnemyHp) {
-      this._intervalPeakEnemyHp = currentHpSum;
-    }
-
     const currentGems = this.persistState.gems;
     const gemDelta = currentGems - this._prevGems;
     if (gemDelta > 0) {
@@ -123,6 +113,12 @@ export class WaveGraphTracker {
   }
 
   private _flushInterval(): void {
+    const currentDamage = this._sumTotalDamage();
+    this._intervalDamage = Math.max(0, currentDamage - this._prevTotalDamage);
+    this._prevTotalDamage = currentDamage;
+
+    this._intervalPeakEnemyHp = this._sumEnemyHp();
+
     const baseHealthColor = this._computeBaseHealthColor(this._intervalMinLives);
 
     const dot: WaveGraphDot = {

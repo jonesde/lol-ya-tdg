@@ -169,6 +169,7 @@ export class ProjectileManager {
   private towerLookup: ((towerId: string) => Tower | null) | null = null;
   private pendingLightning: LightningVisualEffect[];
   private pendingStuns: StunVisualEffect[];
+  private renderDataBuffer: Array<{ id: number; x: number; y: number; radius: number; color: string }> = [];
 
   constructor(
     enemyManager: EnemyManager,
@@ -370,7 +371,6 @@ export class ProjectileManager {
         projectile.hitEnemyIds = new Set<number>();
       }
       const hitSet = projectile.hitEnemyIds as Set<number>;
-      let fixedAimHits: number = projectile.fixedAimHits ?? 0;
       if (projectile.fixedAimHits === undefined) {
         projectile.fixedAimHits = 0;
       }
@@ -381,26 +381,7 @@ export class ProjectileManager {
       const moveAmount = projectile.speed * dt;
 
       // Scan for enemies at current position before moving
-      const scanNearby = (): boolean => {
-        const nearbyEnemies = this.enemyManager.getEnemiesInRange(projectile.x, projectile.y, hitThreshold);
-        for (const nearbyEnemy of nearbyEnemies) {
-          if (!hitSet.has(nearbyEnemy.id)) {
-            this.hitCircleProjectile(projectile, nearbyEnemy);
-            hitSet.add(nearbyEnemy.id);
-            fixedAimHits++;
-            projectile.fixedAimHits = fixedAimHits;
-            // If pierce removed projectile, restore it to continue toward aim point
-            if (!projectile.active && fixedAimHits <= projectile.maxHitCount) {
-              projectile.active = true;
-              projectile.targetId = 0;
-            }
-            return true;
-          }
-        }
-        return false;
-      };
-
-      scanNearby();
+      this.scanNearbyFixedAim(projectile, hitSet, hitThreshold);
       if (!projectile.active) return;
 
       // Move toward target position
@@ -411,7 +392,7 @@ export class ProjectileManager {
       }
 
       // Scan for enemies at new position after moving
-      scanNearby();
+      this.scanNearbyFixedAim(projectile, hitSet, hitThreshold);
       if (!projectile.active) return;
 
       // Check if reached aim point (after hit scan so enemies AT aim point are hit)
@@ -450,6 +431,25 @@ export class ProjectileManager {
       projectile.x += (dx / dist) * moveDist;
       projectile.y += (dy / dist) * moveDist;
     }
+  }
+
+  private scanNearbyFixedAim(projectile: ProjectileGame, hitSet: Set<number>, hitThreshold: number): boolean {
+    const nearbyEnemies = this.enemyManager.getEnemiesInRange(projectile.x, projectile.y, hitThreshold);
+    for (const nearbyEnemy of nearbyEnemies) {
+      if (!hitSet.has(nearbyEnemy.id)) {
+        this.hitCircleProjectile(projectile, nearbyEnemy);
+        hitSet.add(nearbyEnemy.id);
+        const fixedAimHits = (projectile.fixedAimHits ?? 0) + 1;
+        projectile.fixedAimHits = fixedAimHits;
+        // If pierce removed projectile, restore it to continue toward aim point
+        if (!projectile.active && fixedAimHits <= projectile.maxHitCount) {
+          projectile.active = true;
+          projectile.targetId = 0;
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
   private hitCircleProjectile(
@@ -811,7 +811,8 @@ export class ProjectileManager {
   }
 
   getRenderData(): Array<{ id: number; x: number; y: number; radius: number; color: string }> {
-    const result: Array<{ id: number; x: number; y: number; radius: number; color: string }> = [];
+    const result = this.renderDataBuffer;
+    result.length = 0;
     for (const p of this.projectiles) {
       if (p.active) {
         result.push({ id: p.id, x: p.x, y: p.y, radius: p.radius, color: p.color });

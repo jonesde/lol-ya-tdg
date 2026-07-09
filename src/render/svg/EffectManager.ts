@@ -60,6 +60,9 @@ export class EffectManager {
   private buildPreviewSpriteLastTransform = "";
   private buildPreviewSpriteLastSize = "";
   private buildPreviewSpriteLastColor = "";
+  private lastBuildPreviewKey: string | null = null;
+  private lastSelectedTowerId: string | null = null;
+  private lastSelectedTowerLevel: number = 0;
 
   init(layer: SVGGElement): void {
     for (let i = 0; i < LIGHTNING_POOL_SIZE; i++) {
@@ -217,13 +220,7 @@ export class EffectManager {
       const alpha = Math.max(0, 1 - elapsed / effect.maxLife);
 
       polyline.setAttribute("points", points);
-      polyline.setAttribute("stroke", LIGHTNING_COLOR_PRIMARY);
-      polyline.setAttribute("stroke-width", String(LIGHTNING_STROKE_WIDTH));
-      polyline.setAttribute("fill", "none");
       polyline.setAttribute("opacity", alpha.toFixed(3));
-      polyline.setAttribute("filter", "url(#glow)");
-      polyline.setAttribute("stroke-linecap", "round");
-      polyline.setAttribute("stroke-linejoin", "round");
       polyline.style.visibility = "visible";
     }
 
@@ -373,6 +370,10 @@ export class EffectManager {
     buildPreviewColor: string | null,
     buildValid: boolean,
   ): void {
+    const posKey = buildTilePos ? `${buildTilePos.tileX},${buildTilePos.tileY}` : "";
+    const signature = `${posKey}|${selectedTowerType ?? ""}|${buildValid ? 1 : 0}`;
+    if (signature === this.lastBuildPreviewKey) return;
+    this.lastBuildPreviewKey = signature;
     if (selectedTowerType && buildTilePos) {
       const tileX = buildTilePos.tileX * TILE_SIZE;
       const tileY = buildTilePos.tileY * TILE_SIZE;
@@ -446,6 +447,12 @@ export class EffectManager {
 
   private syncUpgradeButton(selectedTower: { x: number; y: number; type: string; level: number } | null): void {
     if (selectedTower) {
+      const towerId = (selectedTower as { id?: string }).id ?? null;
+      if (towerId === this.lastSelectedTowerId && selectedTower.level === this.lastSelectedTowerLevel) {
+        return;
+      }
+      this.lastSelectedTowerId = towerId;
+      this.lastSelectedTowerLevel = selectedTower.level;
       if (this.upgradeButtonEl) {
         this.upgradeButtonEl.style.visibility = "visible";
         const buttonX = selectedTower.x + TILE_SIZE / 2 - 12;
@@ -486,6 +493,7 @@ export class EffectManager {
         this.rangeCircleEl.setAttribute("stroke", "rgba(0,255,0,0.6)");
       }
     } else {
+      this.lastSelectedTowerId = null;
       if (this.upgradeButtonEl) {
         this.upgradeButtonEl.style.visibility = "hidden";
       }
