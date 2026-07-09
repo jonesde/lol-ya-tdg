@@ -7,6 +7,12 @@ import type { SimulationSnapshot } from "./SimulationSnapshot.js";
 // everywhere. Kept store-free to preserve the sim/main-thread boundary.
 let latestSnapshot: SimulationSnapshot | null = null;
 
+// Cache of the most recent wave-graph dots. The worker omits the (large) array
+// on most posted frames and ships it only when its generation changes, so we
+// keep the last-seen copy here and write it back into every stored snapshot via
+// apply() — see the `paths`/`pathsVersion` gating pattern.
+let latestWaveGraphDots: SimulationSnapshot["waveGraphDots"] = undefined;
+
 export function getLatestSnapshot(): SimulationSnapshot | null {
   return latestSnapshot;
 }
@@ -32,6 +38,14 @@ export class SnapshotStore {
 
   apply(snapshot: SimulationSnapshot): void {
     this.current = snapshot;
+    // Refresh the wave-graph dots cache when the worker included a fresh array
+    // (generation changed), then write the cached copy back so every stored
+    // snapshot — and thus getLatestSnapshot() readers — always see the dots even
+    // on frames where the worker omitted them.
+    if (snapshot.waveGraphDots) {
+      latestWaveGraphDots = snapshot.waveGraphDots;
+    }
+    snapshot.waveGraphDots = latestWaveGraphDots;
     latestSnapshot = snapshot;
     this.mirrorToGameStore(snapshot);
   }

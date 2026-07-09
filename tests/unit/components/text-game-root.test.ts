@@ -50,6 +50,8 @@ function makeSnapshot() {
     spawnStates: [],
     paths: undefined,
     pathsVersion: 0,
+    waveGraphDots: [],
+    waveGraphDotsGeneration: 0,
     lightningEffects: [],
     stunEffects: [],
   };

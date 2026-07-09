@@ -1,5 +1,6 @@
 import type { GameRunState } from "@/sim/GameRunState.js";
 import type { PersistState } from "@/sim/PersistState.js";
+import type { WaveGraphDot } from "@/sim/SimulationSnapshot.js";
 import {
   WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN,
   WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
@@ -8,16 +9,6 @@ import {
   WAVE_GRAPH_INTERVAL_SECONDS,
   WAVE_GRAPH_WIDTH,
 } from "./Constants.js";
-
-export interface WaveGraphDot {
-  damage: number;
-  peakEnemyHp: number;
-  gold: number;
-  gems: number;
-  baseHealth: number;
-  baseHealthColor: string;
-  waveStart: boolean;
-}
 
 interface TowerManagerRef {
   towers: { totalDamageDealt: number }[];
@@ -46,6 +37,10 @@ export class WaveGraphTracker {
   private _intervalMinLives: number = 0;
   private _waveStartThisInterval: boolean = false;
   private _lastKnownWave: number = 0;
+  // Bumped whenever the dots array changes shape (push or front-trim) so the
+  // serializer can ship the array only on the ticks where it actually changed,
+  // not every posted frame. Mirrors the grid pathVersion gating.
+  private _generation: number = 0;
 
   constructor(
     runState: GameRunState,
@@ -108,8 +103,13 @@ export class WaveGraphTracker {
     return this._dots;
   }
 
+  getGeneration(): number {
+    return this._generation;
+  }
+
   dispose(): void {
     this._dots = [];
+    this._generation++;
   }
 
   private _flushInterval(): void {
@@ -135,6 +135,7 @@ export class WaveGraphTracker {
     if (this._dots.length > this._maxDots) {
       this._dots.splice(0, this._dots.length - this._maxDots);
     }
+    this._generation++;
     this._gameTimeAccum = 0;
     this._intervalDamage = 0;
     this._intervalPeakEnemyHp = 0;

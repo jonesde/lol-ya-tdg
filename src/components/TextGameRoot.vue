@@ -19,8 +19,8 @@ import type { Grid } from "@/grid/Grid.js";
 import { TextEnemyManager } from "@/render/text/TextEnemyManager.js";
 import { TextGridBuilder } from "@/render/text/TextGridBuilder.js";
 import { TextOverlayRenderer } from "@/render/text/TextOverlayRenderer.js";
-import { TextTowerManager } from "@/render/text/TextTowerManager.js";
 import { TextPathRenderer } from "@/render/text/TextPathRenderer.js";
+import { TextTowerManager } from "@/render/text/TextTowerManager.js";
 import type { TextRenderScale } from "@/render/text/types.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
@@ -83,10 +83,7 @@ const preStyle = computed(() => ({
   color: "var(--color-text-dim)",
 }));
 
-const scaleStyle = computed(() => ({
-  transform: `scaleX(${cellScaleX.value})`,
-  transformOrigin: "top left",
-}));
+const scaleStyle = computed(() => ({ transform: `scaleX(${cellScaleX.value})`, transformOrigin: "top left" }));
 
 const canvasStyle = computed(() => ({ fontFamily: FONT_FAMILY, fontSize: `${FONT_SIZE}px` }));
 

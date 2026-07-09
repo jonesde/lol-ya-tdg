@@ -99,6 +99,9 @@ export class GameEngine {
   // (see _initMap). Engine-scoped (not module-scoped) so direct buildSnapshot
   // callers in tests behave deterministically.
   lastPostedPathVersion: number = 0;
+  // Last wave-graph dots generation posted (mirrors lastPostedPathVersion).
+  // Reset on (re)init so the first post after a new run includes the array.
+  lastPostedWaveGraphGeneration: number = 0;
   shouldEndGame: boolean = false;
   gameEnded: boolean = false;
   persistDirty: boolean = false;
@@ -163,6 +166,7 @@ export class GameEngine {
     // includes the authoritative paths (the main thread needs them to draw the
     // initial highlights, and to notice reroutes on the first build/sell).
     this.lastPostedPathVersion = 0;
+    this.lastPostedWaveGraphGeneration = 0;
 
     this.runState = {
       state: GameState.PAUSED,

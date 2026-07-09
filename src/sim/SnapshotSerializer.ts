@@ -10,6 +10,7 @@ import type {
   SnapshotMeta,
   StatusEffectSnapshot,
   TowerSnapshot,
+  WaveGraphDot,
 } from "./SimulationSnapshot.js";
 
 let nextFrameId = 1;
@@ -40,6 +41,22 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
 
   const selectedTowerId = engine.runState.selectedTowerId;
 
+  // Wave-graph dots only change shape every WAVE_GRAPH_INTERVAL_SECONDS (a dot
+  // is flushed) or on a front-trim/dispose, so ship the full array only when
+  // the tracker's generation changed since the last posted snapshot. The main
+  // thread keeps its cached copy on frames where `waveGraphDots` is omitted.
+  // The generation is always included so a change stays detectable.
+  const tracker = engine.waveGraphTracker;
+  let waveGraphDots: WaveGraphDot[] | undefined;
+  let waveGraphDotsGeneration = 0;
+  if (tracker) {
+    waveGraphDotsGeneration = tracker.getGeneration();
+    if (tracker.getGeneration() !== engine.lastPostedWaveGraphGeneration) {
+      waveGraphDots = tracker.getDots().slice();
+      engine.lastPostedWaveGraphGeneration = waveGraphDotsGeneration;
+    }
+  }
+
   return {
     schemaVersion: 1,
     frameId: nextFrameId++,
@@ -60,6 +77,8 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
     pathsVersion,
     lightningEffects: visualEffects.lightning,
     stunEffects: visualEffects.stuns,
+    waveGraphDots,
+    waveGraphDotsGeneration,
   };
 }
 

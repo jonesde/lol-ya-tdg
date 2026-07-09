@@ -37,10 +37,7 @@ const DEFAULT_MINIMAP_Y = 80;
 const RIGHT_MARGIN = 16;
 
 onMounted(() => {
-  if (
-    gameStore.minimapPanelPos.x === DEFAULT_MINIMAP_X &&
-    gameStore.minimapPanelPos.y === DEFAULT_MINIMAP_Y
-  ) {
+  if (gameStore.minimapPanelPos.x === DEFAULT_MINIMAP_X && gameStore.minimapPanelPos.y === DEFAULT_MINIMAP_Y) {
     nextTick(() => {
       const panelWidth = panelEl.value?.offsetWidth ?? 0;
       const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 1280;

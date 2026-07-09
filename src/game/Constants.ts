@@ -328,7 +328,12 @@ export const FOOTER_HEIGHT = 64;
 // Wave Graph — real-time metric chart overlay
 export const WAVE_GRAPH_INTERVAL_SECONDS = 5;
 export const WAVE_GRAPH_HEIGHT = 60;
-export const WAVE_GRAPH_WIDTH = 60;
+// Maximum retained dot count (in ticks of WAVE_GRAPH_INTERVAL_SECONDS). This
+// used to be the on-screen pixel width fed into the tracker via
+// setContainerWidth; in the worker model there is no main-thread caller, so it
+// now serves as a generous cap sized to fill a wide screen at WAVE_GRAPH_DOT_SPACING
+// (2000 / 8 = 250 dots ≈ 21 min of history before old points cycle off).
+export const WAVE_GRAPH_WIDTH = 2000;
 export const WAVE_GRAPH_DOT_SIZE = 2;
 export const WAVE_GRAPH_DOT_SPACING = 8;
 export const WAVE_GRAPH_DOT_OPACITY = 0.2;

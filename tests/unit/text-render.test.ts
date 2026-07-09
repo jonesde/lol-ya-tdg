@@ -143,4 +143,3 @@ describe("TextPathRenderer", () => {
     expect(mockCtx.moveTo).toHaveBeenCalledWith(90, 126);
   });
 });
-

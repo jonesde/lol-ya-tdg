@@ -80,6 +80,8 @@ function makeSnapshot(selectedTowerId: string | null, tower: TowerSnapshot | nul
     spawnStates: [],
     paths: [],
     pathsVersion: 0,
+    waveGraphDots: [],
+    waveGraphDotsGeneration: 0,
     lightningEffects: [],
     stunEffects: [],
   };

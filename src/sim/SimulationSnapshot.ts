@@ -28,12 +28,39 @@ export interface SimulationSnapshot {
   // Path version accompanying `paths`. Present every tick so the main thread can
   // detect a reroute even if a future refactor re-adds per-tick paths.
   pathsVersion: number;
+  // Per-interval wave-graph dots (damage/gold/gems/peak enemy HP). The full
+  // array is shipped ONLY when `waveGraphDotsGeneration` changed since the last
+  // posted snapshot (a dot is flushed roughly every WAVE_GRAPH_INTERVAL_SECONDS,
+  // so most posted frames omit it); the main thread keeps its cached copy on
+  // frames where it is omitted. Typed `| undefined` (not `?`) so it can be
+  // assigned undefined under exactOptionalPropertyTypes — the main thread treats
+  // undefined as "unchanged, use cache".
+  waveGraphDots: WaveGraphDot[] | undefined;
+  // Monotonic counter bumped whenever the dots array's shape changes
+  // (push/front-trim/dispose). Always included so a change is still detectable
+  // even when the array itself is omitted.
+  waveGraphDotsGeneration: number;
   // Ephemeral visual effects generated this tick: lightning bolt segments and
   // stun aura positions. Populated by the simulation during update() and
   // consumed (cleared) when this snapshot is built, so the main thread renders
   // each effect exactly once; effects from a paused/empty tick are blank.
   lightningEffects: Array<{ x1: number; y1: number; x2: number; y2: number }>;
   stunEffects: Array<{ x: number; y: number }>;
+}
+
+// Per-interval wave-graph data point (damage/gold/gems/peak enemy HP for a
+// WAVE_GRAPH_INTERVAL_SECONDS window). Produced by WaveGraphTracker in the
+// worker; serialized into the snapshot so the main-thread WaveGraph.vue can
+// render without reaching into the engine. Kept here (not in game/) so the sim
+// layer stays free of a sim→game dependency.
+export interface WaveGraphDot {
+  damage: number;
+  peakEnemyHp: number;
+  gold: number;
+  gems: number;
+  baseHealth: number;
+  baseHealthColor: string;
+  waveStart: boolean;
 }
 
 export interface SnapshotMeta {
