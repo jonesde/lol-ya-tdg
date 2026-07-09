@@ -38,12 +38,18 @@ coupling between `SvgGameRoot` and the Minimap. The Minimap's loop guards with
 
 - **Towers**: use the theme's existing `icon` field (already a single unicode char) via
   `themeStore.getTowerVisual(type).icon`, drawn in the tower's theme `color`.
-- **Enemies**: no icon exists, so the theme store's `getEnemyGlyph(shape)` maps each theme
-  enemy **`shape`** string → a unicode glyph chosen to resemble that shape. The glyph is
-  resolved via `themeStore.getEnemyVisual(type).shape` (e.g. circle→`●`, triangle→`▲`,
-  square→`■`, hexagon→`⬢`, cross→`✚`, star→`★`, boss→a bold distinct glyph), drawn in the
-  enemy's theme `color`. Keying by `shape` (not `EnemyType`) makes the map auto-track theme
-  shape changes. `getEnemyGlyph` lives on `mapTheme.ts` with a fallback for unknown shapes.
+- **Enemies**: no icon exists, so `themeStore.getEnemyGlyph(shape)` resolves each theme
+  enemy **`shape`** to a unicode glyph. The `shape` field is theme-defined: the default
+  theme ships *semantic names* (`circle`, `triangle`, `square`, `hexagon`, `cross`, `star`)
+  while the Aftermath theme ships *raw glyphs* (`●`, `◆`, `■`, `◇`, `▲`, `★`). To work for
+  both without editing theme JSON, `getEnemyGlyph` **returns `shape` verbatim when it is
+  already a single glyph character**, otherwise maps the known semantic names to glyphs
+  (circle→`●`, triangle→`▲`, square→`■`, hexagon→`⬢`, cross→`✚`, star→`★`), with a fallback
+  for unknown shapes. The glyph is resolved via `themeStore.getEnemyVisual(type).shape` and
+  drawn in the enemy's theme `color`. Keying by `shape` (not `EnemyType`) makes the map
+  auto-track theme shape changes. **Bosses use their theme `shape` glyph** (no special-casing
+  — default `star`→`★`, Aftermath `★`); `TextEnemyManager` does not branch on `isBoss`.
+  `getEnemyGlyph` lives on `mapTheme.ts`.
 
 ### Consequence: colored glyphs live on the canvas, not in `<pre>`
 
@@ -53,8 +59,11 @@ A single `<pre>` `textContent` cannot be per-cell colored. So the rendering spli
   base `#`, spawn `S`) — built once by `TextGridBuilder`, dim/gray.
 - **`<canvas>` overlay** = *all dynamic content*, drawn each frame with a monospace font
   sized to the measured cell box:
-  - Tower glyphs (theme color) via `fillText` at each tower tile's center cell.
-  - Enemy glyphs (theme color) via `fillText` at each enemy's tile center cell.
+  - Tower glyphs (theme color) via `fillText` at each tower tile's center cell
+    (tile `tileX/tileY` → canvas px, since towers are static).
+  - Enemy glyphs (theme color) via `fillText` at each enemy's **scaled continuous position**
+    (`enemy.x/enemy.y` world px → canvas px), *not* the tile center — enemies move smoothly,
+    and this keeps them aligned with their projectiles.
   - Then the thin effects: projectile dots, HP bar lines, lightning lines, stun marks.
 
 This keeps the "3×3 char per tile, empty center unless occupied" look while allowing
@@ -76,10 +85,12 @@ src/render/text/
 
 **Enemy glyph mapping — no new file.** Instead of a standalone `charMap.ts`, add a
 `getEnemyGlyph(shape: string): string` helper to `src/stores/mapTheme.ts` (alongside the
-existing `getEnemyVisual`/`getTowerVisual`). It maps each theme enemy `shape` string → a
-unicode glyph (circle→`●`, triangle→`▲`, square→`■`, hexagon→`⬢`, cross→`✚`, star→`★`,
-boss→a bold distinct glyph) with a fallback for unknown shapes. `TextEnemyManager` calls
-`themeStore.getEnemyGlyph(themeStore.getEnemyVisual(type).shape)`. This keeps all
+existing `getEnemyVisual`/`getTowerVisual`). It returns `shape` verbatim when `shape` is
+already a single glyph character (the Aftermath theme ships raw glyphs like `●`/`◆`/`■`),
+otherwise maps the known semantic names to glyphs (circle→`●`, triangle→`▲`, square→`■`,
+hexagon→`⬢`, cross→`✚`, star→`★`) with a fallback for unknown shapes. `TextEnemyManager`
+calls `themeStore.getEnemyGlyph(themeStore.getEnemyVisual(type).shape)` and does **not**
+special-case `isBoss` (bosses render with their theme `shape` glyph). This keeps all
 theme-derived glyph logic co-located with the rest of the theme accessors.
 
 Plus:
@@ -96,7 +107,8 @@ src/components/MinimapPanel.vue   # Movable hovering panel wrapper (copy of Towe
   path tiles spaces, base `#`/`B`, spawn `S`. Built once on mount; dim gray text.
 - **Canvas overlay** (absolutely positioned over the `<pre>`, sized to match; cell size
   derived from measured monospace char box):
-  - **Tower/enemy glyphs**: `fillText` at tile center cell in theme color.
+  - **Tower/enemy glyphs**: `fillText` in theme color (towers at tile center; enemies at
+    scaled `enemy.x/enemy.y`).
   - **Projectiles**: 1–2px moving dots at `proj.x/proj.y` scaled from world to cell coords.
   - **Health bars**: thin 1px lines above enemies with `hp/maxHp` fraction (minimized
     `UiOverlayManager`).
@@ -106,7 +118,19 @@ src/components/MinimapPanel.vue   # Movable hovering panel wrapper (copy of Towe
   - No sprites, no particles (or optional faint dots), no range circles, no build preview.
 
 Coordinate mapping: world pixels use `tileSize = 36`. Map (tileX,tileY) → grid char cell
-(tileX*3+1, tileY*3+1). Overlay maps world px → canvas px via `cellPx / 36`.
+(tileX*3+1, tileY*3+1) — this is used ONLY by `TextGridBuilder` for the static `<pre>` base
+layer. The **canvas overlay uses a different space**: it converts tile/world coordinates to
+canvas px independently. Because monospace glyphs are taller than wide (aspect ≈ 0.55–0.6),
+use **separate x/y scales** to avoid distortion and to guarantee the overlay sits exactly on
+the `<pre>`:
+- measure the monospace cell box once on mount → `cellWidthPx` (char advance) and
+  `cellHeightPx` (line box).
+- canvas size = `grid.width * 3 * cellWidthPx` × `grid.height * 3 * cellHeightPx`.
+- world→canvas scale: `scaleX = (3 * cellWidthPx) / 36`, `scaleY = (3 * cellHeightPx) / 36`.
+  Tile (tileX,tileY) center → `((tileX + 0.5) * 3 * cellWidthPx, (tileY + 0.5) * 3 * cellHeightPx)`.
+  Enemy/proj world px (wx,wy) → `(wx * scaleX, wy * scaleY)`.
+- Set the `<pre>` `font-size` + `line-height` so its char advance ≈ `cellWidthPx` and line box
+  ≈ `cellHeightPx` (share one CSS variable / computed style) so the two layers align.
 
 `<pre>` × canvas pixel alignment: the `<pre>` base grid and the canvas overlay must share the
 exact same font family, font size, line-height, and top-left origin, or glyphs will not sit
@@ -139,8 +163,11 @@ Measured-cell fallback: the monospace cell box is measured once on mount, but th
 2. **`stores/ui.ts`**: add `showMinimap: boolean` to `UiStateShape`, `defaultUiState()`,
    plus `toggleMinimap()`/`closeMinimap()` actions; include in `closeAllDialogs()`.
 3. **`stores/game.ts`**: add `minimapPanelPos: { x, y }` (default e.g. `{ x: 40, y: 80 }`)
-   alongside `towerPanelPos`, reset in the same places (`initMap` + `resetToMenu`). No
-   `snapshotStore` field is needed — the Minimap reads `getLatestSnapshot()` directly.
+   alongside `towerPanelPos`, reset in **all three** places `towerPanelPos` is reset (the
+   store ctor default, `initMap`, and `resetToMenu`) so it mirrors tower panel behavior. No
+   `snapshotStore` field is needed — the Minimap reads `getLatestSnapshot()` directly. The
+   panel closes on a new run automatically because `uiStore.initForRun` resets `showMinimap`
+   to its `defaultUiState()` value (false).
 4. **`GameScreen.vue`**: render `<MinimapPanel v-if="uiStore.showMinimap" />` as a sibling
    overlay.
 5. **`MinimapPanel.vue`**: copy the drag-by-header pattern from `TowerPanel.vue` (uses
@@ -155,9 +182,12 @@ Measured-cell fallback: the monospace cell box is measured once on mount, but th
 - `tests/unit/text-grid-builder.test.ts`: static buffer has correct dimensions; path/base/
   spawn chars at right cells.
 - `tests/unit/text-render.test.ts`: `TextTowerManager`/`TextEnemyManager` draw the right
-  glyph at the right cell from a fake snapshot; `themeStore.getEnemyGlyph(shape)` returns
-  distinct glyphs for every theme `shape` (circle/triangle/square/hexagon/cross/star/boss)
-  and a fallback for unknown shapes; tower glyph resolves from theme icon.
+  glyph at the right position from a fake snapshot (tower at tile center; enemy at scaled
+  `enemy.x/enemy.y`); `themeStore.getEnemyGlyph(shape)` returns the raw glyph verbatim for
+  Aftermath-style shape strings (`●`/`◆`/`■`/`◇`/`▲`/`★`), maps the default-theme semantic
+  names (circle→`●`, triangle→`▲`, square→`■`, hexagon→`⬢`, cross→`✚`, star→`★`), and falls
+  back for unknown shapes; bosses use their theme `shape` glyph (default `star`→`★`);
+  tower glyph resolves from theme icon.
 - `tests/unit/components/minimap-panel.test.ts`: toggles with `uiStore.showMinimap`; drag
   updates `gameStore.minimapPanelPos`; renders a `<pre>`.
 - `tests/unit/ui-store.test.ts` (existing): add `toggleMinimap`/`closeMinimap`/

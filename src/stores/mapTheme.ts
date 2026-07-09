@@ -81,6 +81,28 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
     return activeTheme.value?.enemies[typeId] ?? defaultTheme.value?.enemies[typeId];
   }
 
+  // Resolves an enemy theme `shape` to a single unicode glyph for the text
+  // minimap. Themes ship `shape` two ways: semantic names (default theme:
+  // "circle" / "triangle" / ...) or raw glyph characters (Aftermath theme:
+  // "●" / "◆" / ...). When the shape is already a single glyph character we
+  // return it verbatim (so Aftermath-style shapes pass through untouched);
+  // otherwise we map the known semantic names to glyphs, falling back to a
+  // default dot for anything unknown.
+  const ENEMY_SHAPE_GLYPHS: Record<string, string> = {
+    circle: "●",
+    triangle: "▲",
+    square: "■",
+    hexagon: "⬢",
+    cross: "✚",
+    star: "★",
+  };
+
+  function getEnemyGlyph(shape: string): string {
+    const codePointCount = Array.from(shape).length;
+    if (codePointCount === 1) return shape;
+    return ENEMY_SHAPE_GLYPHS[shape] ?? "●";
+  }
+
   function getDefaultTowerVisual(typeId: string): TowerVisualMeta | undefined {
     return defaultTheme.value?.towers[typeId];
   }
@@ -114,6 +136,7 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
     activeThemeLabel,
     getTowerVisual,
     getEnemyVisual,
+    getEnemyGlyph,
     getDefaultTowerVisual,
     getDefaultEnemyVisual,
     getRegionVisual,

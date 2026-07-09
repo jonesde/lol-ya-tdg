@@ -8,6 +8,7 @@ import DebugPanel from "./DebugPanel.vue";
 import GameHud from "./GameHud.vue";
 import GameShop from "./GameShop.vue";
 import HelpDialog from "./HelpDialog.vue";
+import MinimapPanel from "./MinimapPanel.vue";
 import PauseMenu from "./PauseMenu.vue";
 import SkillTree from "./SkillTree.vue";
 import StatsPanel from "./StatsPanel.vue";
@@ -98,6 +99,9 @@ onUnmounted(() => {
 
     <!-- StatsPanel overlay -->
     <StatsPanel v-if="uiStore.showStatsPanel" />
+
+    <!-- Minimap overlay -->
+    <MinimapPanel v-if="uiStore.showMinimap" />
 
     <!-- HelpDialog overlay -->
     <HelpDialog v-if="uiStore.showHelpDialog" />

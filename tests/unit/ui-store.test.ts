@@ -255,6 +255,32 @@ describe("UiStore", () => {
       expect(store.confirmDialog).toBeNull();
       expect(onCancel).toHaveBeenCalled();
     });
+
+    it("closes the minimap", () => {
+      store.showMinimap = true;
+      store.closeAllDialogs();
+      expect(store.showMinimap).toBe(false);
+    });
+  });
+
+  describe("toggleMinimap / closeMinimap", () => {
+    it("toggleMinimap flips showMinimap", () => {
+      expect(store.showMinimap).toBe(false);
+      store.toggleMinimap();
+      expect(store.showMinimap).toBe(true);
+      store.toggleMinimap();
+      expect(store.showMinimap).toBe(false);
+    });
+
+    it("closeMinimap sets showMinimap to false", () => {
+      store.showMinimap = true;
+      store.closeMinimap();
+      expect(store.showMinimap).toBe(false);
+    });
+
+    it("starts with showMinimap = false", () => {
+      expect(store.showMinimap).toBe(false);
+    });
   });
 
   describe("initForRun", () => {

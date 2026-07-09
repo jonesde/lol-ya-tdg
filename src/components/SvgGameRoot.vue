@@ -410,7 +410,7 @@ function renderLoop(): void {
     if (!pathHighlightsGroup?.parentNode) {
       pathHighlightsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
       pathHighlightsGroup.setAttribute("id", "path-highlights");
-      gridLayer.appendChild(pathHighlightsGroup);
+      gridLayerEl.appendChild(pathHighlightsGroup);
     }
     let pathSvg = "";
     for (const path of snapshot.paths) {

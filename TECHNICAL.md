@@ -25,6 +25,8 @@ src/
 ├── components/
 │   ├── GameScreen.vue           # Root game layout: SvgGameRoot + HUD + shop + tower panel + wave countdown + debug + wave graph + pause menu
 │   ├── SvgGameRoot.vue          # Single SVG root: creates the simulation Web Worker, owns SnapshotStore (render loop reads snapshots) and WorkerCommandDispatcher, imperative DOM rendering, SpawnManager
+│   ├── TextGameRoot.vue         # Second passive renderer: monospaced <pre> static base grid + canvas overlay; own rAF loop reads getLatestSnapshot() (no worker, no ack, no input)
+│   ├── MinimapPanel.vue         # Movable hovering panel (copy of TowerPanel drag pattern) hosting TextGameRoot; toggled by uiStore.showMinimap
 │   ├── GameHud.vue              # Top HUD bar: lives, gold, gems, wave, speed/pause/menu buttons
 │   ├── GameShop.vue             # Tower shop bar: build selection with cost display and discount support
 │   ├── TowerPanel.vue           # Tower detail panel: stats, targeting, upgrade/sell, specialization
@@ -101,6 +103,12 @@ src/
 │       ├── useSvgStaticContent.ts # Composable: builds <defs> symbols/filters + grid layer from active theme
 │       ├── cameraUtils.ts       # fitToGrid() and screenToWorld()/worldToScreen() helpers (pixel space)
 │       └── types.ts             # Shared types for render proxies and managers
+│   └── text/
+│       ├── TextGridBuilder.ts   # Static char buffer (3×3 per tile) for the <pre> monochrome base layer
+│       ├── TextTowerManager.ts  # Draws tower theme icon at tile center on the canvas overlay
+│       ├── TextEnemyManager.ts  # Draws enemy theme glyph at scaled enemy.x/enemy.y on the canvas overlay
+│       ├── TextOverlayRenderer.ts # Canvas: projectile dots, HP bars, lightning lines, stun marks
+│       └── types.ts             # TextRenderScale + TextThemeAccess shared interfaces
 └── sound/
     └── SoundManager.ts          # Lightweight WebAudio synth for game sounds
 ```
@@ -198,8 +206,48 @@ post only when *all* registered consumers have acked, or (b) monotonic snapshot
 sequence ids so each consumer acks independently and the worker posts when the
 *latest* snapshot has been consumed by the slowest consumer. A safety
 max-latency fallback (post anyway if `awaitingAck` has been true beyond N ms)
-should also be reconsidered then so a stalled consumer cannot starve the others.
+ should also be reconsidered then so a stalled consumer cannot starve the others.
 This is the main open design point before introducing additional stream readers.
+
+### Second Renderer (Text Minimap)
+
+The **Minimap** is a fun second renderer that consumes the same `SimulationSnapshot`
+data the SVG renderer drains, but draws the map as a monospaced text grid (3×3
+characters per tile) with a thin dot/line canvas overlay for projectiles and
+minimized effects. It is the first concrete test of the "multiple consumers"
+open design point above.
+
+**It is a passive second consumer of the snapshot, not a second acking reader.**
+The simulation's snapshot stream is single-ack gated (§"Snapshot Backpressure"),
+and `SvgGameRoot.vue` is the *sole* acker. To avoid that gate entirely, the Minimap
+reads the snapshot via the existing module-level `getLatestSnapshot()` exported
+from `src/sim/SnapshotStore.ts` (the same seam `StatsPanel` uses). `TextGameRoot.vue`
+runs its own `requestAnimationFrame` loop, clears + redraws its `<canvas>` overlay
+each frame from `getLatestSnapshot()`, and **never posts `snapshotAck`** (and never
+touches the worker). This makes it a true "second view" of the already-drained
+snapshot — behavior-preserving, no worker/ack changes. No `gameStore` snapshot field
+is introduced; the panel resets on a new run automatically because
+`uiStore.initForRun` resets `showMinimap` to its default (`false`).
+
+**Layering.** A single `<pre>` cannot be per-cell colored, so rendering splits:
+- the `<pre>` base layer is the static, dim monochrome grid (`TextGridBuilder`),
+  built once on mount — terrain `·`, path spaces, base `#`, spawn `S`;
+- the `<canvas>` overlay draws all dynamic content each frame: tower glyphs
+  (theme `icon`/`color`) at tile centers, enemy glyphs (theme `shape` →
+  `getEnemyGlyph` → glyph, in theme `color`) at the enemy's scaled continuous
+  `enemy.x/enemy.y`, plus projectile dots, HP bars, lightning lines, and stun marks
+  (`TextTowerManager` / `TextEnemyManager` / `TextOverlayRenderer`).
+
+**Coordinate mapping.** Because monospace glyphs are taller than wide, the overlay
+uses *separate* x/y scales so glyphs sit exactly in their `<pre>` cells:
+`cellWidthPx` (char advance) and `cellHeightPx` (line box) are measured on mount
+(with a non-zero `fontSize`-derived fallback when `measureText` returns 0, e.g.
+jsdom). Canvas size = `grid.width*3*cellWidthPx` × `grid.height*3*cellHeightPx`;
+`scaleX = (3*cellWidthPx)/36`, `scaleY = (3*cellHeightPx)/36`. The `<pre>` and the
+`<canvas>` share one computed font/line-height so they align. The canvas managers
+take the `CanvasRenderingContext2D` as a constructor-free `render(ctx, …)` parameter
+(rather than calling `canvas.getContext` internally) so they are testable with the
+global `mockCtx` from `tests/setup.ts`.
 
 ### Router Navigation Guards
 
@@ -317,6 +365,13 @@ This is the main open design point before introducing additional stream readers.
 | `src/render/svg/useSvgStaticContent.ts` | Composable: builds `<defs>` (symbols from active theme's tower/enemy frames, region gradients, filters) and grid layer SVG strings (tile images + base art from theme) |
 | `src/render/svg/cameraUtils.ts` | `fitToGrid()` plus pixel-space `screenToWorld()`/`worldToScreen()` helpers for the SVG camera |
 | `src/render/svg/types.ts` | Shared types for render proxies and managers |
+| `src/render/text/TextGridBuilder.ts` | Static char buffer (3×3 chars per tile) for the `<pre>` monochrome base grid (terrain `·`, path empty, base `#`, spawn `S`) |
+| `src/render/text/TextTowerManager.ts` | Draws each tower theme `icon` in theme `color` at its tile-center on the canvas overlay |
+| `src/render/text/TextEnemyManager.ts` | Draws each enemy theme glyph (via `getEnemyGlyph(shape)`) in theme `color` at the enemy's scaled `enemy.x/enemy.y` on the canvas overlay |
+| `src/render/text/TextOverlayRenderer.ts` | Canvas overlay: projectile dots, thin HP bars, lightning lines, stun marks (mirrors svg Projectile/UiOverlay/Effect managers) |
+| `src/render/text/types.ts` | `TextRenderScale` (separate x/y world→canvas scales) and `TextThemeAccess` interfaces |
+| `src/components/TextGameRoot.vue` | Second passive renderer: renders a `<pre>` static base grid + a `<canvas>` overlay, driven by its own rAF loop reading `getLatestSnapshot()`; no worker, no `snapshotAck`, no input |
+| `src/components/MinimapPanel.vue` | Movable hovering panel (TowerPanel drag-by-header pattern, uses `gameStore.minimapPanelPos`) hosting `TextGameRoot`; toggled by `uiStore.showMinimap` |
 | `src/components/SvgGameRoot.vue` | Single SVG root: creates the simulation Web Worker, owns `SnapshotStore` (render loop reads snapshots) and `WorkerCommandDispatcher` (click/key intents → commands); rAF render loop does imperative DOM writes; CTM-based mouse→world coordinate conversion, centralized click routing; passes theme bundle to worker at `lifecycle:init` and to `useSvgStaticContent`; initializes SpawnManager |
 | `src/composables/cameraUtils.ts` | Vue composable: reactive camera CTM transform (`useCameraCTM`) and world/screen coordinate conversion backed by `gameStore.camera` |
 

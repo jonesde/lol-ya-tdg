@@ -114,6 +114,7 @@ watch(
           {{ gameStore.timeScale }}×
         </button>
         <button class="hud-btn stats-btn" @click="uiStore.toggleStatsPanel()">∑</button>
+        <button class="hud-btn minimap-btn" :class="{ active: uiStore.showMinimap }" id="minimapBtn" @click="uiStore.toggleMinimap()">🗺</button>
         <button class="hud-btn" id="helpBtn" @click="uiStore.toggleHelpDialog()">🛈</button>
         <button class="hud-btn" id="menuBtn" @click="uiStore.openPauseMenu()">☰</button>
       </div>
@@ -266,9 +267,15 @@ watch(
   transition: background 0.15s;
 }
 
-.hud-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
+  .hud-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  .hud-btn.minimap-btn.active {
+    background: rgba(95, 208, 255, 0.3);
+    border-color: rgba(95, 208, 255, 0.6);
+    color: #5fd0ff;
+  }
 
 @keyframes pulse {
   from { opacity: 1; }

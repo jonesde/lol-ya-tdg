@@ -8,11 +8,14 @@ export interface UiStoreLike {
   showSkillTree: boolean;
   showStatsPanel: boolean;
   showHelpDialog: boolean;
+  showMinimap: boolean;
   debugPanelVisible: boolean;
   confirmDialog: ConfirmDialogState | null;
   closeAllDialogs: () => void;
   executeConfirm: () => void;
   openPauseMenu: () => void;
+  toggleMinimap: () => void;
+  closeMinimap: () => void;
 }
 
 interface ConfirmDialogConfig {
@@ -45,6 +48,7 @@ interface UiStateShape {
   showEndScreen: boolean;
   showStatsPanel: boolean;
   showHelpDialog: boolean;
+  showMinimap: boolean;
   confirmDialog: ConfirmDialogState | null;
   notification: NotificationState | null;
   debugPanelVisible: boolean;
@@ -62,6 +66,7 @@ function defaultUiState(): UiStateShape {
     showEndScreen: false,
     showStatsPanel: false,
     showHelpDialog: false,
+    showMinimap: false,
     confirmDialog: null,
     notification: null,
     debugPanelVisible: false,
@@ -167,6 +172,14 @@ export const useUiStore = defineStore("ui", {
       this.showHelpDialog = true;
     },
 
+    toggleMinimap() {
+      this.showMinimap = !this.showMinimap;
+    },
+
+    closeMinimap() {
+      this.showMinimap = false;
+    },
+
     closeHelpDialog() {
       const gameStore = useGameStore();
       if (this.wasPlayingWhenHelpOpened && gameStore.state === GameState.PAUSED) {
@@ -182,6 +195,7 @@ export const useUiStore = defineStore("ui", {
       if (this.showSkillTree) this.closeSkillTree();
       if (this.showStatsPanel) this.closeStatsPanel();
       if (this.showHelpDialog) this.closeHelpDialog();
+      if (this.showMinimap) this.closeMinimap();
       if (this.debugPanelVisible) this.closeDebugPanel();
       if (this.confirmDialog) this.hideConfirm();
     },
