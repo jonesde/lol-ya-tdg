@@ -17,11 +17,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { GameState, SELL_DISCOUNT_PCT } from "@/game/Constants.js";
-import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
-import { TOWER_META, TowerIds } from "@/game/ConstantsTower.js";
-import { useInput } from "@/game/Input.js";
-import { ParticleSystem } from "@/game/ParticleSystem.js";
+import { useInput } from "@/composables/Input.js";
 import { EffectManager } from "@/render/svg/EffectManager.js";
 import { EnemyManager } from "@/render/svg/EnemyManager.js";
 import { ParticleManager } from "@/render/svg/ParticleManager.js";
@@ -31,8 +27,12 @@ import { TowerManager } from "@/render/svg/TowerManager.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
 import type { EnemyVisualMeta, TowerVisualMeta } from "@/render/themes/index.js";
+import { GameState, SELL_DISCOUNT_PCT } from "@/sim/Constants.js";
+import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
+import { TOWER_META, TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import type { ThemeBundle } from "@/sim/HostBindings.js";
+import { ParticleSystem } from "@/sim/ParticleSystem.js";
 import type { PersistState } from "@/sim/PersistState.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
 import { WorkerCommandDispatcher } from "@/sim/WorkerCommandDispatcher.js";
@@ -508,7 +508,7 @@ onMounted(async () => {
   // The main thread builds its own static Grid from the same map data so that
   // click-coordinate conversion and path highlights work without the engine.
   if (gameStore.map) {
-    const { Grid } = await import("@/grid/Grid.js");
+    const { Grid } = await import("@/sim/grid/Grid.js");
     const grid = new Grid(gameStore.map);
     gameStore.grid = grid;
     // The static grid is rendered in viewBox (world-pixel) space and the dynamic

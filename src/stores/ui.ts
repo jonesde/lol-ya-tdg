@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { GameState } from "@/game/Constants.js";
+import { GameState } from "@/sim/Constants.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "./game";
 

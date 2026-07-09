@@ -3,10 +3,10 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
-import { resetEnemyId } from "@/enemies/Enemy.js";
-import { EnemyManager } from "@/enemies/EnemyManager.js";
-import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
-import { Grid } from "@/grid/Grid.js";
+import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
+import { resetEnemyId } from "@/sim/enemies/Enemy.js";
+import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { Grid } from "@/sim/grid/Grid.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
 import { makeParticleSystem } from "../helpers/mock-managers";

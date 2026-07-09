@@ -1,4 +1,4 @@
-import type { Grid } from "@/grid/Grid.js";
+import type { Grid } from "@/sim/grid/Grid.js";
 
 // Static monochrome character buffer for the `<pre>` base layer of the text
 // minimap. One text row/column per character; each map tile occupies a 3×3

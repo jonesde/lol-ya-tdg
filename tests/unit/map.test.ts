@@ -1,10 +1,10 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { MAP_GEM_MULTIPLIERS, MAP_LEVELS, TOTAL_MAPS } from "@/game/Constants.js";
-import { BOSS_CADENCE } from "@/game/ConstantsEnemy.js";
-import { Grid } from "@/grid/Grid.js";
-import { generateRandomMap, getMap } from "@/grid/Map.js";
+import { MAP_GEM_MULTIPLIERS, MAP_LEVELS, TOTAL_MAPS } from "@/sim/Constants.js";
+import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
 
 describe("Map generation", () => {
   describe("getMap", () => {

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { describe, expect, it } from "vitest";
-import type { Grid } from "@/grid/Grid.js";
 import { TextGridBuilder } from "@/render/text/TextGridBuilder.js";
+import type { Grid } from "@/sim/grid/Grid.js";
 
 type TileType = "terrain" | "path" | "base" | "spawn";
 

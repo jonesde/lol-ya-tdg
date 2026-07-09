@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import type { TowerId } from "@/game/ConstantsTower.js";
-import { TowerIds } from "@/game/ConstantsTower.js";
+import type { TowerId } from "@/sim/ConstantsTower.js";
+import { TowerIds } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
-import { useMapThemeStore } from "@/stores/mapTheme.js";
-import { usePersistStore } from "@/stores/persist.js";
-import { useUiStore } from "@/stores/ui.js";
 import {
   canRefund,
   canRefundGeneral,
@@ -24,7 +21,10 @@ import {
   tryRefundGeneral,
   tryUnlock,
   tryUnlockGeneral,
-} from "@/towers/SkillTree.js";
+} from "@/sim/towers/SkillTree.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
+import { usePersistStore } from "@/stores/persist.js";
+import { useUiStore } from "@/stores/ui.js";
 
 // Pushes the main-thread-owned persist slices (unlocked + generalAddons) into
 // the worker so mid-run skill-tree unlocks reach Tower.specialize / cost logic.

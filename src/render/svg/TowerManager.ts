@@ -1,4 +1,4 @@
-import { GHOST_OPACITY } from "@/game/ConstantsTower.js";
+import { GHOST_OPACITY } from "@/sim/ConstantsTower.js";
 import type { TowerSnapshot } from "../../sim/SimulationSnapshot.js";
 import { SVG_NS, TOWER_SCALED_SIZE } from "./types.js";
 

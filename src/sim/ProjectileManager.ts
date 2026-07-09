@@ -1,6 +1,6 @@
-import type { ParticleSpawner } from "@/game/ParticleSystem.js";
 import { GRID_TILE_SIZE } from "@/render/svg/types.js";
-import type { Tower } from "@/towers/Tower.js";
+import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
+import type { Tower } from "@/sim/towers/Tower.js";
 import { MAX_PROJECTILE_AGE, PROJECTILE_HIT_THRESHOLD } from "./Constants.js";
 import {
   ANTI_HEAL_DURATION,

@@ -11,7 +11,7 @@ import {
   WAVE_GRAPH_DOT_SPACING,
   WAVE_GRAPH_HEIGHT,
   WAVE_GRAPH_INTERVAL_SECONDS,
-} from "@/game/Constants.js";
+} from "@/sim/Constants.js";
 import type { WaveGraphDot } from "@/sim/SimulationSnapshot.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";

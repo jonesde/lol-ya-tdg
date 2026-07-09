@@ -21,7 +21,8 @@ src/
 │   ├── ui.ts                    # UI overlay state: confirm dialogs, menu/skill-tree/stats/help context, debug panel
 │   └── mapTheme.ts              # Map theme state: activeTheme, defaultTheme, availableThemes, preload/load actions
 ├── composables/
-│   └── cameraUtils.ts           # Vue composable: reactive camera CTM transform + world/screen coordinate conversion
+│   │   ├── cameraUtils.ts           # Vue composable: reactive camera CTM transform + world/screen coordinate conversion
+│   └── Input.ts                 # Keyboard input composable: dispatches to Pinia stores + engine via the command seam
 ├── components/
 │   ├── GameScreen.vue           # Root game layout: SvgGameRoot + HUD + shop + tower panel + wave countdown + debug + wave graph + pause menu
 │   ├── SvgGameRoot.vue          # Single SVG root: creates the simulation Web Worker, owns SnapshotStore (render loop reads snapshots) and WorkerCommandDispatcher, imperative DOM rendering, SpawnManager
@@ -42,29 +43,6 @@ src/
 │   ├── DebugPanel.vue           # Debug buttons: gold/gems/lives injection, wave skip, map unlock, time scale
 │   ├── StatsPanel.vue           # Wave composition, enemy list, and run statistics
 │   └── HistoryScreen.vue        # Run history entries with gem breakdown formatting
-├── game/
-│   ├── GameEngine.ts            # Core game loop: RAF driver, update/render, state transitions, rewards
-│   ├── Constants.ts             # Shared game constants: wave config, map levels, regions, boss cadence
-│   ├── ConstantsTower.ts        # Tower constants: TowerIds, tower stats, variants, milestone/splash/crit config
-│   ├── ConstantsEnemy.ts        # Enemy constants: EnemyType union, ENEMY_TYPES metadata, status effect tuning
-│   ├── Input.ts                 # Keyboard input composable (dispatches to Pinia stores + engine)
-│   ├── EnemyWalk.ts             # Base shape vertex generation and path-d string conversion
-│   ├── ProjectileManager.ts     # Game-side projectile simulation: travel, hits, splash, chain, burn, knockback
-│   ├── ParticleSystem.ts        # Game-side particle simulation: spawn, motion, life/expiry
-│   └── WaveGraphTracker.ts      # Per-wave graph data tracking: damage, gold, gems, peak enemy HP
-├── grid/
-│   ├── Grid.ts                  # Grid data structure: path, base, spawn queries, build validation
-│   ├── Map.ts                   # Procedural map generation: 36 maps, 3 regions, 6 layout styles
-│   └── Pathfinding.ts           # BFS pathfinding with dynamic obstacle avoidance
-├── towers/
-│   ├── Tower.ts                 # Tower stats, behavior, targeting, upgrades, variants, sell value
-│   ├── TowerManager.ts          # Tower placement, upgrade, sell, sell-value refund/discount
-│   └── SkillTree.ts             # Gem upgrade costs, unlock logic, variant definitions, general add-ons
-├── enemies/
-│   ├── Enemy.ts                 # Enemy types, stats, behavior, pathfinding, status effects
-│   └── EnemyManager.ts          # Enemy spawning, lifecycle, death handling
-├── waves/
-│   └── WaveManager.ts           # Wave composition, boss cadence, inter-wave timer
 ├── sim/
 │   ├── Command.ts               # Command discriminated-union types (input/action/lifecycle/llm) for simulation intent
 │   ├── CommandDispatcher.ts     # CommandDispatcher interface — the dispatch seam every intent flows through
@@ -80,6 +58,27 @@ src/
 │   ├── WorkerProtocol.ts        # Worker↔main thread message protocol types
 │   ├── applyCommand.ts          # Maps a Command → GameEngine method (shared by worker and main-thread dispatcher)
 │   ├── commandBus.ts            # Module-level dispatch seam (setCommandDispatcher / dispatchCommand)
+│   ├── GameEngine.ts            # Core game loop: RAF driver, update/render, state transitions, rewards
+│   ├── Constants.ts             # Shared game constants: wave config, map levels, regions, boss cadence
+│   ├── ConstantsTower.ts        # Tower constants: TowerIds, tower stats, variants, milestone/splash/crit config
+│   ├── ConstantsEnemy.ts        # Enemy constants: EnemyType union, ENEMY_TYPES metadata, status effect tuning
+│   ├── EnemyWalk.ts             # Base shape vertex generation and path-d string conversion
+│   ├── ProjectileManager.ts     # Game-side projectile simulation: travel, hits, splash, chain, burn, knockback
+│   ├── ParticleSystem.ts        # Game-side particle simulation: spawn, motion, life/expiry
+│   ├── WaveGraphTracker.ts      # Per-wave graph data tracking: damage, gold, gems, peak enemy HP
+│   ├── grid/
+│   │   ├── Grid.ts              # Grid data structure: path, base, spawn queries, build validation
+│   │   ├── Map.ts               # Procedural map generation: 36 maps, 3 regions, 6 layout styles
+│   │   └── Pathfinding.ts       # BFS pathfinding with dynamic obstacle avoidance
+│   ├── towers/
+│   │   ├── Tower.ts             # Tower stats, behavior, targeting, upgrades, variants, sell value
+│   │   ├── TowerManager.ts      # Tower placement, upgrade, sell, sell-value refund/discount
+│   │   └── SkillTree.ts         # Gem upgrade costs, unlock logic, variant definitions, general add-ons
+│   ├── enemies/
+│   │   ├── Enemy.ts             # Enemy types, stats, behavior, pathfinding, status effects
+│   │   └── EnemyManager.ts      # Enemy spawning, lifecycle, death handling
+│   └── waves/
+│       └── WaveManager.ts       # Wave composition, boss cadence, inter-wave timer
 ├── sim-adapters/
 │   ├── MainThreadCommandDispatcher.ts # Main-thread CommandDispatcher adapter (engine-direct; legacy/non-worker path)
 │   └── MainThreadHostBindings.ts      # Main-thread HostBindings adapter: SoundManager/uiStore/persistStore
@@ -317,39 +316,39 @@ global `mockCtx` from `tests/setup.ts`.
 
 | File | Description |
 |---|---|
-| `src/game/GameEngine.ts` | Simulation core: no rendering. Takes plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle`; runs inside the Web Worker (`src/sim/WorkerEntry.ts`) on a `setTimeout` fixed-timestep loop; produces a `SimulationSnapshot` each tick and applies `Command`s via `applyCommand`; passes visual meta to Tower/Enemy constructors |
-| `src/game/Constants.ts` | Shared game constants: wave config, map levels, boss cadence, gem rewards; `Regions` slimmed (visual fields moved to theme) |
-| `src/game/ConstantsTower.ts` | Tower constants: TowerIds, tower stats/cost, specialization variants, milestone/splash/crit config; visual fields (name, color, icon, animation, walking) moved to theme |
-| `src/game/ConstantsEnemy.ts` | Enemy constants: EnemyType union, stats-only ENEMY_TYPES (baseHp, speed, bounty, radius, shield, heal, resist, etc.); visual fields moved to theme |
-| `src/game/Input.ts` | Keyboard input composable (1-9 build, Arrow L/R speed, Esc dialogs/cancel, Tab cycle, u/s upgrade/sell) |
-| `src/game/EnemyWalk.ts` | Base shape vertex generation and path-d string conversion |
-| `src/game/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback |
-| `src/game/ParticleSystem.ts` | Game-side particle simulation: spawn, motion, life/expiry |
-| `src/game/WaveGraphTracker.ts` | Per-wave graph data: damage dealt, gold earned, gems earned, peak enemy HP per wave |
+| `src/sim/GameEngine.ts` | Simulation core: no rendering. Takes plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle`; runs inside the Web Worker (`src/sim/WorkerEntry.ts`) on a `setTimeout` fixed-timestep loop; produces a `SimulationSnapshot` each tick and applies `Command`s via `applyCommand`; passes visual meta to Tower/Enemy constructors |
+| `src/sim/Constants.ts` | Shared game constants: wave config, map levels, boss cadence, gem rewards; `Regions` slimmed (visual fields moved to theme) |
+| `src/sim/ConstantsTower.ts` | Tower constants: TowerIds, tower stats/cost, specialization variants, milestone/splash/crit config; visual fields (name, color, icon, animation, walking) moved to theme |
+| `src/sim/ConstantsEnemy.ts` | Enemy constants: EnemyType union, stats-only ENEMY_TYPES (baseHp, speed, bounty, radius, shield, heal, resist, etc.); visual fields moved to theme |
+| `src/composables/Input.ts` | Keyboard input composable (1-9 build, Arrow L/R speed, Esc dialogs/cancel, Tab cycle, u/s upgrade/sell) |
+| `src/sim/EnemyWalk.ts` | Base shape vertex generation and path-d string conversion |
+| `src/sim/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback |
+| `src/sim/ParticleSystem.ts` | Game-side particle simulation: spawn, motion, life/expiry |
+| `src/sim/WaveGraphTracker.ts` | Per-wave graph data: damage dealt, gold earned, gems earned, peak enemy HP per wave |
 
 ### Grid & Maps
 
 | File | Description |
 |---|---|
-| `src/grid/Grid.ts` | Grid data structure: path tiles, base/spawn locations, build validation |
-| `src/grid/Map.ts` | Procedural map generation: 36 maps, 3 regions, 6 layout styles (open, canyon, serpentine, split, bastion, battlefield); `name` computed lazily via `getMapDisplayName(map, theme)` |
-| `src/grid/Pathfinding.ts` | BFS pathfinding with dynamic tower obstacle avoidance |
+| `src/sim/grid/Grid.ts` | Grid data structure: path tiles, base/spawn locations, build validation |
+| `src/sim/grid/Map.ts` | Procedural map generation: 36 maps, 3 regions, 6 layout styles (open, canyon, serpentine, split, bastion, battlefield); `name` computed lazily via `getMapDisplayName(map, theme)` |
+| `src/sim/grid/Pathfinding.ts` | BFS pathfinding with dynamic tower obstacle avoidance |
 
 ### Towers
 
 | File | Description |
 |---|---|
-| `src/towers/Tower.ts` | Tower entity: stats, targeting modes, level scaling, variants, sell value, milestone bonuses; accepts `visualMeta` param (color, icon, name, animation, walking) from active theme |
-| `src/towers/TowerManager.ts` | Tower placement, upgrade, sell with refund/discount modes; receives visual meta from GameEngine |
-| `src/towers/SkillTree.ts` | Gem upgrade costs, unlock/refund logic, variant definitions, general add-on config |
+| `src/sim/towers/Tower.ts` | Tower entity: stats, targeting modes, level scaling, variants, sell value, milestone bonuses; accepts `visualMeta` param (color, icon, name, animation, walking) from active theme |
+| `src/sim/towers/TowerManager.ts` | Tower placement, upgrade, sell with refund/discount modes; receives visual meta from GameEngine |
+| `src/sim/towers/SkillTree.ts` | Gem upgrade costs, unlock/refund logic, variant definitions, general add-on config |
 
 ### Enemies & Waves
 
 | File | Description |
 |---|---|
-| `src/enemies/Enemy.ts` | Enemy entity: types, stats, pathfinding, status effects (slow, stun, shield); accepts `visualMeta` param (color, shape, name, walking, hitReaction) from active theme |
-| `src/enemies/EnemyManager.ts` | Enemy lifecycle: spawning, movement, death, base reach; receives visual meta from GameEngine |
-| `src/waves/WaveManager.ts` | Wave composition, enemy count scaling, boss cadence, inter-wave timer |
+| `src/sim/enemies/Enemy.ts` | Enemy entity: types, stats, pathfinding, status effects (slow, stun, shield); accepts `visualMeta` param (color, shape, name, walking, hitReaction) from active theme |
+| `src/sim/enemies/EnemyManager.ts` | Enemy lifecycle: spawning, movement, death, base reach; receives visual meta from GameEngine |
+| `src/sim/waves/WaveManager.ts` | Wave composition, enemy count scaling, boss cadence, inter-wave timer |
 
 ### Rendering
 

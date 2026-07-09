@@ -3,8 +3,6 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
-import { resetEnemyId } from "@/enemies/Enemy.js";
-import { EnemyManager } from "@/enemies/EnemyManager.js";
 import {
   BETWEEN_WAVES_TIMER,
   BOSS_CADENCE,
@@ -13,10 +11,12 @@ import {
   VICTORY_WAVE,
   WAVE_COUNT_BASE,
   WAVE_COUNT_SCALE,
-} from "@/game/Constants.js";
-import { Grid } from "@/grid/Grid.js";
+} from "@/sim/Constants.js";
+import { resetEnemyId } from "@/sim/enemies/Enemy.js";
+import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import { WaveManager } from "@/sim/waves/WaveManager.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
-import { WaveManager } from "@/waves/WaveManager.js";
 import { makeBastionMap, makeMapData } from "../helpers/mock-grid";
 import { makeParticleSystem } from "../helpers/mock-managers";
 import { mockDefaultTheme } from "../helpers/mock-stores";

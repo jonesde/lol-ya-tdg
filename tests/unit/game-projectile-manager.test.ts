@@ -3,16 +3,16 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { resetEnemyId } from "@/enemies/Enemy.js";
-import { EnemyManager } from "@/enemies/EnemyManager.js";
 import {
   CHAIN_DAMAGE_FALLOFF,
   NAPALM_BURN_DPS_RATIO,
   NAPALM_BURN_DURATION,
   SPLASH_DAMAGE_RATIO,
-} from "@/game/ConstantsTower.js";
-import { ProjectileManager } from "@/game/ProjectileManager.js";
-import { Grid } from "@/grid/Grid.js";
+} from "@/sim/ConstantsTower.js";
+import { resetEnemyId } from "@/sim/enemies/Enemy.js";
+import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import { ProjectileManager } from "@/sim/ProjectileManager.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid.js";
 import { makeParticleSystem } from "../helpers/mock-managers.js";

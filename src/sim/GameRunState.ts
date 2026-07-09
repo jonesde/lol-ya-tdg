@@ -1,8 +1,8 @@
-import type { GameStateValue } from "@/game/Constants.js";
-import { StartingGold } from "@/game/Constants.js";
-import type { TowerId } from "@/game/ConstantsTower.js";
-import type { Grid } from "@/grid/Grid.js";
-import type { GeneratedMap } from "@/grid/Map.js";
+import type { GameStateValue } from "@/sim/Constants.js";
+import { StartingGold } from "@/sim/Constants.js";
+import type { TowerId } from "@/sim/ConstantsTower.js";
+import type { Grid } from "@/sim/grid/Grid.js";
+import type { GeneratedMap } from "@/sim/grid/Map.js";
 
 // Authoritative run state for the simulation. Formerly the Pinia gameStore's
 // GameStateShape. In Phase 1 this replaces the Pinia store on the engine —

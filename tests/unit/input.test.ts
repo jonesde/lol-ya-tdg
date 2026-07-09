@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GameState } from "@/game/Constants.js";
-import { TowerIds } from "@/game/ConstantsTower.js";
-import { useInput } from "@/game/Input.js";
-import type { Grid } from "@/grid/Grid.js";
-import type { GeneratedMap } from "@/grid/Map.js";
+import { useInput } from "@/composables/Input.js";
 import type { Command } from "@/sim/Command.js";
+import { GameState } from "@/sim/Constants.js";
+import { TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
-import type { Tower } from "@/towers/Tower.js";
+import type { Grid } from "@/sim/grid/Grid.js";
+import type { GeneratedMap } from "@/sim/grid/Map.js";
+import type { Tower } from "@/sim/towers/Tower.js";
 import { createTestGameStore, createTestUiStore } from "../helpers/mock-stores";
 
 const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -14,9 +14,9 @@ import {
   TOWER_LEVEL_RATE_MULT,
   TOWER_META,
   UPGRADE_COST_BASE,
-} from "@/game/Constants.js";
+} from "@/sim/Constants.js";
+import { Tower } from "@/sim/towers/Tower.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
-import { Tower } from "@/towers/Tower.js";
 import { makeBastionMap } from "../helpers/mock-grid";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";
 

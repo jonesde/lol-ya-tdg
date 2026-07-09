@@ -1,5 +1,5 @@
-import type { TowerId } from "@/game/ConstantsTower.js";
 import type { EnemyVisualMeta, MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
+import type { TowerId } from "@/sim/ConstantsTower.js";
 import type { EndScreenPayload } from "./GameRunState.js";
 
 // Canonical sound-name type — replaces the module-private declaration in SoundManager.ts.

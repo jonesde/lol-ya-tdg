@@ -5,7 +5,7 @@ import {
   type RouteLocationNormalized,
   type RouteRecordRaw,
 } from "vue-router";
-import { GameState } from "@/game/Constants.js";
+import { GameState } from "@/sim/Constants.js";
 import type { WorkerToMainMessage } from "@/sim/WorkerProtocol.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";

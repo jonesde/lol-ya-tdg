@@ -6,11 +6,11 @@ import TowerPanel from "@/components/TowerPanel.vue";
 import type { Command } from "@/sim/Command.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import type { TowerUpgradeCheck } from "@/sim/SimulationSnapshot.js";
+import type { Tower } from "@/sim/towers/Tower.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
-import type { Tower } from "@/towers/Tower.js";
 
 interface TowerStatsSnapshot {
   damage: number;

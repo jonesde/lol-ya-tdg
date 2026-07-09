@@ -1,8 +1,8 @@
 import { onUnmounted } from "vue";
-import { GameState } from "@/game/Constants.js";
-import { type TowerId, TowerIds } from "@/game/ConstantsTower.js";
 import type { Command } from "@/sim/Command.js";
 import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
+import { GameState } from "@/sim/Constants.js";
+import { type TowerId, TowerIds } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import type { GameStoreLike } from "@/stores/game.js";

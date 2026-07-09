@@ -1,4 +1,4 @@
-import type { Grid } from "../../grid/Grid.js";
+import type { Grid } from "../../sim/grid/Grid.js";
 import type { EnemySnapshot, SpawnStateSnapshot, TowerSnapshot } from "../../sim/SimulationSnapshot.js";
 import { BOSS_TEXT_POOL_SIZE, HP_BAR_POOL_SIZE, SHIELD_BAR_POOL_SIZE, SVG_NS } from "./types.js";
 

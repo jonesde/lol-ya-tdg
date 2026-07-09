@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { generateRandomMap, getMap, getMapDisplayName } from "@/grid/Map.js";
+import { generateRandomMap, getMap, getMapDisplayName } from "@/sim/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 

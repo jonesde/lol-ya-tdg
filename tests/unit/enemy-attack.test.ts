@@ -3,11 +3,11 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
-import { Enemy, resetEnemyId } from "@/enemies/Enemy.js";
-import { EnemyManager } from "@/enemies/EnemyManager.js";
-import { Grid } from "@/grid/Grid.js";
+import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
+import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import { TowerManager } from "@/sim/towers/TowerManager.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
-import { TowerManager } from "@/towers/TowerManager.js";
 import { makeBastionMap, makeMapData } from "../helpers/mock-grid";
 import { makeParticleSystem, makeSoundManager } from "../helpers/mock-managers";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";

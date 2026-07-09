@@ -1,13 +1,13 @@
 import type { EnemyVisualMeta, MapThemeAnimation, MapThemeData } from "@/render/themes/index.js";
-import type { Tower } from "@/towers/Tower.js";
-import { DIFFICULTY_MULT_TICK } from "../game/Constants.js";
+import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
   BOSS_STUN_REDUCTION,
   ENEMY_LEVEL_HP_MULT,
   ENEMY_TYPES,
   ENEMY_WAVE_DAMAGE_MULT,
   MIN_SLOW_FACTOR,
-} from "../game/ConstantsEnemy.js";
+} from "@/sim/ConstantsEnemy.js";
+import type { Tower } from "@/sim/towers/Tower.js";
 
 let nextId = 1;
 

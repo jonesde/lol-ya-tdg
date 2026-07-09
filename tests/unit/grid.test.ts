@@ -1,7 +1,7 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it } from "vitest";
-import { Grid } from "@/grid/Grid.js";
+import { Grid } from "@/sim/grid/Grid.js";
 import { makeBastionMap, makeSplitMap } from "../helpers/mock-grid";
 
 describe("Grid", () => {

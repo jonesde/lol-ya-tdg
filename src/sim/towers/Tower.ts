@@ -1,4 +1,4 @@
-import type { Enemy } from "@/enemies/Enemy.js";
+import type { Enemy } from "@/sim/enemies/Enemy.js";
 
 interface AuraTarget {
   applySlow(amount: number, duration: number): void;
@@ -6,12 +6,13 @@ interface AuraTarget {
   takeDamage(amount: number, armorPiercing?: boolean): void;
 }
 
+import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
 import {
   MILESTONE_BONUS_PCT,
   MILESTONE_THRESHOLD,
   TERRAIN_HEIGHT_BONUS_PCT,
   TERRAIN_HEIGHT_RANGE_BONUS,
-} from "../game/Constants.js";
+} from "@/sim/Constants.js";
 import {
   CANCEL_BUILD_WINDOW_MS,
   CHARGE_SHOT_COUNT,
@@ -40,10 +41,9 @@ import {
   type TowerId,
   type TowerMeta,
   UPGRADE_COST_BASE,
-} from "../game/ConstantsTower.js";
-import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "../render/themes/index.js";
-import type { SoundPlayer } from "../sim/HostBindings.js";
-import type { PersistState } from "../sim/PersistState.js";
+} from "@/sim/ConstantsTower.js";
+import type { SoundPlayer } from "@/sim/HostBindings.js";
+import type { PersistState } from "@/sim/PersistState.js";
 import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
 
 interface GridRef {

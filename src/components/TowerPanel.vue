@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onUnmounted } from "vue";
-import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
-import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO, TOWER_META } from "@/game/ConstantsTower.js";
+import { UPGRADE_COST_REDUCTION_PCT } from "@/sim/Constants.js";
+import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO, TOWER_META } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
+import { VARIANT_INFO } from "@/sim/towers/SkillTree.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
-import { VARIANT_INFO } from "@/towers/SkillTree.js";
 
 const gameStore = useGameStore();
 const persistStore = usePersistStore();

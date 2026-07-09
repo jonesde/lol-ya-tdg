@@ -1,10 +1,10 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it } from "vitest";
-import { GameState, StartingGold } from "@/game/Constants.js";
-import type { Grid } from "@/grid/Grid.js";
-import type { GeneratedMap } from "@/grid/Map.js";
-import type { Tower } from "@/towers/Tower.js";
+import { GameState, StartingGold } from "@/sim/Constants.js";
+import type { Grid } from "@/sim/grid/Grid.js";
+import type { GeneratedMap } from "@/sim/grid/Map.js";
+import type { Tower } from "@/sim/towers/Tower.js";
 import { createTestGameStore } from "../helpers/mock-stores";
 
 interface GemBreakdown {

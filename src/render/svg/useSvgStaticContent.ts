@@ -1,6 +1,6 @@
 import { computed } from "vue";
-import { mulberry32 } from "@/grid/Map.js";
 import type { MapThemeData } from "@/render/themes/index.js";
+import { mulberry32 } from "@/sim/grid/Map.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 
 interface BaseSvgParams {

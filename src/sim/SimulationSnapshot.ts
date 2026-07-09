@@ -1,6 +1,6 @@
-import type { ParticleSpawnRequest } from "@/game/ParticleSystem.js";
-import type { ProjectileManager } from "@/game/ProjectileManager.js";
 import type { MapThemeAnimation, SpawnState } from "@/render/themes/index.js";
+import type { ParticleSpawnRequest } from "@/sim/ParticleSystem.js";
+import type { ProjectileManager } from "@/sim/ProjectileManager.js";
 import type { GameRunState } from "./GameRunState.js";
 
 export interface SimulationSnapshot {

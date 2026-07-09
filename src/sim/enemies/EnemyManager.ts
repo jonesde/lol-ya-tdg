@@ -1,9 +1,9 @@
-import type { ParticleSpawner } from "@/game/ParticleSystem.js";
 import { ENEMY_POOL_SIZE } from "@/render/svg/types.js";
 import type { EnemyVisualMeta, MapThemeData } from "@/render/themes/index.js";
-import type { Tower } from "@/towers/Tower.js";
-import type { TowerManager } from "@/towers/TowerManager.js";
-import type { Grid } from "../grid/Grid.js";
+import type { Grid } from "@/sim/grid/Grid.js";
+import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
+import type { Tower } from "@/sim/towers/Tower.js";
+import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import { Enemy, resetEnemyId } from "./Enemy.js";
 
 interface PendingEnemyEntry {

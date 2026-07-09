@@ -10,11 +10,11 @@ import {
   MAP_GEM_MULTIPLIERS,
   MILESTONE_GEMS,
   StartingGold,
-} from "@/game/Constants.js";
-import { SELL_VALUE_RATIO } from "@/game/ConstantsTower.js";
-import { GameEngine } from "@/game/GameEngine.js";
+} from "@/sim/Constants.js";
+import { SELL_VALUE_RATIO } from "@/sim/ConstantsTower.js";
+import { GameEngine } from "@/sim/GameEngine.js";
 import { createDefaultPersistState, difficultyMultiplier as getDifficultyMultiplier } from "@/sim/PersistState.js";
-import type { Tower } from "@/towers/Tower.js";
+import type { Tower } from "@/sim/towers/Tower.js";
 import {
   createTestGameStore,
   createTestPersistState,

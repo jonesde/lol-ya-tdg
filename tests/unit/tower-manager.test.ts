@@ -3,11 +3,11 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
-import { SELL_VALUE_RATIO } from "@/game/Constants.js";
-import { Grid } from "@/grid/Grid.js";
+import { SELL_VALUE_RATIO } from "@/sim/Constants.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import type { Tower } from "@/sim/towers/Tower.js";
+import { TowerManager } from "@/sim/towers/TowerManager.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
-import type { Tower } from "@/towers/Tower.js";
-import { TowerManager } from "@/towers/TowerManager.js";
 import { makeBastionMap } from "../helpers/mock-grid";
 import { makeParticleSystem, makeSoundManager } from "../helpers/mock-managers";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";

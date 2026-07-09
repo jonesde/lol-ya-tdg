@@ -1,7 +1,7 @@
-import { BETWEEN_WAVES_TIMER, PRE_EMPTIVE_WAVE_TIMER, VICTORY_WAVE } from "../game/Constants.js";
-import { ENEMY_TYPES, WAVE_COUNT_BASE, WAVE_COUNT_SCALE } from "../game/ConstantsEnemy.js";
-import { mulberry32 } from "../grid/Map.js";
-import type { SpawnState } from "../render/themes/index.js";
+import type { SpawnState } from "@/render/themes/index.js";
+import { BETWEEN_WAVES_TIMER, PRE_EMPTIVE_WAVE_TIMER, VICTORY_WAVE } from "@/sim/Constants.js";
+import { ENEMY_TYPES, WAVE_COUNT_BASE, WAVE_COUNT_SCALE } from "@/sim/ConstantsEnemy.js";
+import { mulberry32 } from "@/sim/grid/Map.js";
 
 interface MapRef {
   regionId: number;

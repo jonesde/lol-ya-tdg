@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import type { MapStyle } from "@/game/Constants.js";
-import { MAP_GEM_MULTIPLIERS } from "@/game/Constants.js";
-import { generateRandomMap, getMap } from "@/grid/Map.js";
+import type { MapStyle } from "@/sim/Constants.js";
+import { MAP_GEM_MULTIPLIERS } from "@/sim/Constants.js";
+import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";

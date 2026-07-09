@@ -1,8 +1,8 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { Grid } from "@/grid/Grid.js";
-import { bfsShortestPath, canPlaceWithoutBlocking, dijkstraWeakestPath } from "@/grid/Pathfinding.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import { bfsShortestPath, canPlaceWithoutBlocking, dijkstraWeakestPath } from "@/sim/grid/Pathfinding.js";
 import { makeBastionMap, makeMapData, makeSerpentineMap, makeSplitMap } from "../helpers/mock-grid";
 
 describe("bfsShortestPath", () => {

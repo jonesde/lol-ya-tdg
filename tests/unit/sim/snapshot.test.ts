@@ -1,8 +1,8 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { Enemy } from "@/enemies/Enemy.js";
-import { GameEngine } from "@/game/GameEngine.js";
+import { Enemy } from "@/sim/enemies/Enemy.js";
+import { GameEngine } from "@/sim/GameEngine.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import {
   createTestPersistState,

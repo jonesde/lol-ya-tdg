@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { FOOTER_HEIGHT, HEADER_HEIGHT, SELL_DISCOUNT_PCT } from "@/game/Constants.js";
-import type { TowerId } from "@/game/ConstantsTower.js";
-import { TOWER_META, TowerIds } from "@/game/ConstantsTower.js";
+import { FOOTER_HEIGHT, HEADER_HEIGHT, SELL_DISCOUNT_PCT } from "@/sim/Constants.js";
+import type { TowerId } from "@/sim/ConstantsTower.js";
+import { TOWER_META, TowerIds } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";

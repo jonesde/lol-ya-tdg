@@ -3,7 +3,7 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import TextGameRoot from "@/components/TextGameRoot.vue";
-import type { Grid } from "@/grid/Grid.js";
+import type { Grid } from "@/sim/grid/Grid.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
 import { mockCtx } from "../../setup";

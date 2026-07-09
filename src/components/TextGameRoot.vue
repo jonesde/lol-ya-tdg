@@ -15,13 +15,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import type { Grid } from "@/grid/Grid.js";
 import { TextEnemyManager } from "@/render/text/TextEnemyManager.js";
 import { TextGridBuilder } from "@/render/text/TextGridBuilder.js";
 import { TextOverlayRenderer } from "@/render/text/TextOverlayRenderer.js";
 import { TextPathRenderer } from "@/render/text/TextPathRenderer.js";
 import { TextTowerManager } from "@/render/text/TextTowerManager.js";
 import type { TextRenderScale } from "@/render/text/types.js";
+import type { Grid } from "@/sim/grid/Grid.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";

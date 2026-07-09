@@ -1,12 +1,12 @@
 import { createPinia } from "pinia";
 import { createApp } from "vue";
 import App from "./App.vue";
-import { TowerIds } from "./game/ConstantsTower.js";
 import type { TowerVisualMeta } from "./render/themes/index.js";
 import router from "./router";
+import { TowerIds } from "./sim/ConstantsTower.js";
+import { populateSkillTreeTheme } from "./sim/towers/SkillTree.js";
 import { useMapThemeStore } from "./stores/mapTheme";
 import { usePersistStore } from "./stores/persist";
-import { populateSkillTreeTheme } from "./towers/SkillTree.js";
 
 const app = createApp(App);
 const pinia = createPinia();

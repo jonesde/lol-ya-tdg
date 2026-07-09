@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
+import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";

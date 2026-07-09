@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK } from "@/game/Constants.js";
+import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";

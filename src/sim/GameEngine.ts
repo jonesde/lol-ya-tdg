@@ -1,15 +1,8 @@
-import type { Enemy } from "@/enemies/Enemy.js";
-import { resetEnemyId } from "@/enemies/Enemy.js";
-import { EnemyManager } from "@/enemies/EnemyManager.js";
-import type { ParticleSpawner } from "@/game/ParticleSystem.js";
-import { NoopParticleSpawner } from "@/game/ParticleSystem.js";
-import { ProjectileManager } from "@/game/ProjectileManager.js";
-import { WaveGraphTracker } from "@/game/WaveGraphTracker.js";
-import { Grid } from "@/grid/Grid.js";
-import type { GeneratedMap } from "@/grid/Map.js";
-import { generateRandomMap, getMap } from "@/grid/Map.js";
 import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
 import type { DebugKind } from "@/sim/Command.js";
+import type { Enemy } from "@/sim/enemies/Enemy.js";
+import { resetEnemyId } from "@/sim/enemies/Enemy.js";
+import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import type { GameRunState } from "@/sim/GameRunState.js";
 import {
   addGold,
@@ -24,7 +17,12 @@ import {
   togglePauseState,
   triggerEnd,
 } from "@/sim/GameRunState.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import type { GeneratedMap } from "@/sim/grid/Map.js";
+import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
+import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
+import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { PersistState } from "@/sim/PersistState.js";
 import {
   difficultyMultiplier as getDifficultyMultiplier,
@@ -38,9 +36,11 @@ import {
   maybeUnlockNextMap as persistMaybeUnlockNextMap,
   updateBestWave as persistUpdateBestWave,
 } from "@/sim/PersistState.js";
-import type { Tower } from "@/towers/Tower.js";
-import { TowerManager } from "@/towers/TowerManager.js";
-import { WaveManager } from "@/waves/WaveManager.js";
+import { ProjectileManager } from "@/sim/ProjectileManager.js";
+import type { Tower } from "@/sim/towers/Tower.js";
+import { TowerManager } from "@/sim/towers/TowerManager.js";
+import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";
+import { WaveManager } from "@/sim/waves/WaveManager.js";
 import {
   BONUS_GEM_BASE,
   BOSS_LIFE_LOSS,

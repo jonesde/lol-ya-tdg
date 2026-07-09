@@ -2,8 +2,8 @@
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createRouter, createWebHistory } from "vue-router";
-import { GameState } from "@/game/Constants.js";
-import type { GeneratedMap } from "@/grid/Map.js";
+import { GameState } from "@/sim/Constants.js";
+import type { GeneratedMap } from "@/sim/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 

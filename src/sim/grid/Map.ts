@@ -1,13 +1,14 @@
 // Procedural map definitions for 3 regions × 12 maps each = 36 maps.
+
+import type { MapThemeData } from "@/render/themes/index.js";
 import {
   HEIGHT_NOISE_DIVISOR,
   HEIGHT_NOISE_FREQ,
   MAP_LEVELS,
   SERPENTINE_DOWN_CAP,
   SERPENTINE_STEP,
-} from "../game/Constants.js";
-import { BOSS_CADENCE } from "../game/ConstantsEnemy.js";
-import type { MapThemeData } from "../render/themes/index.js";
+} from "@/sim/Constants.js";
+import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 
 export function getMapDisplayName(map: GeneratedMap | null, theme: MapThemeData | null): string {
   if (!map) return "";

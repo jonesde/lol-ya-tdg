@@ -1,7 +1,7 @@
-import type { Enemy } from "@/enemies/Enemy.js";
-import { UPGRADE_COST_REDUCTION_PCT, WAVE_GRAPH_MAX_SEND } from "@/game/Constants.js";
-import type { GameEngine } from "@/game/GameEngine.js";
-import type { Tower } from "@/towers/Tower.js";
+import { UPGRADE_COST_REDUCTION_PCT, WAVE_GRAPH_MAX_SEND } from "@/sim/Constants.js";
+import type { Enemy } from "@/sim/enemies/Enemy.js";
+import type { GameEngine } from "@/sim/GameEngine.js";
+import type { Tower } from "@/sim/towers/Tower.js";
 import type { PersistState } from "./PersistState.js";
 import type {
   EnemySnapshot,

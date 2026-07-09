@@ -3,7 +3,7 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { describe, expect, it } from "vitest";
 import MinimapPanel from "@/components/MinimapPanel.vue";
-import type { Grid } from "@/grid/Grid.js";
+import type { Grid } from "@/sim/grid/Grid.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
 

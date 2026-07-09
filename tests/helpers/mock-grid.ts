@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { BOSS_CADENCE, MAP_GEM_MULTIPLIERS, Regions } from "@/game/Constants.js";
+import { BOSS_CADENCE, MAP_GEM_MULTIPLIERS, Regions } from "@/sim/Constants.js";
 
 type TileType = "terrain" | "path" | "base" | "spawn";
 

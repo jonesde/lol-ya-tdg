@@ -1,6 +1,6 @@
-import { FIXED_DT, GameState, MAX_ACCUM, MAX_STEPS_PER_FRAME } from "@/game/Constants.js";
-import { GameEngine } from "@/game/GameEngine.js";
-import { WorkerParticleSpawner } from "@/game/ParticleSystem.js";
+import { FIXED_DT, GameState, MAX_ACCUM, MAX_STEPS_PER_FRAME } from "@/sim/Constants.js";
+import { GameEngine } from "@/sim/GameEngine.js";
+import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
 import { applyCommand } from "./applyCommand.js";
 import type { Command } from "./Command.js";
 import type { PersistStateSlice } from "./HostBindings.js";

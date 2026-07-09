@@ -1,10 +1,10 @@
 // @ts-nocheck
 import { createPinia, setActivePinia } from "pinia";
-import { type GameState, StartingGold } from "@/game/Constants.js";
-import type { Grid } from "@/grid/Grid.js";
-import type { GeneratedMap } from "@/grid/Map.js";
 import type { MapThemeData } from "@/render/themes/index.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
+import { type GameState, StartingGold } from "@/sim/Constants.js";
+import type { Grid } from "@/sim/grid/Grid.js";
+import type { GeneratedMap } from "@/sim/grid/Map.js";
 import type {
   ConfirmPayload,
   HostBindings,

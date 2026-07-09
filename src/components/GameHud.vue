@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from "vue";
-import { getMapDisplayName } from "@/grid/Map.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
+import { getMapDisplayName } from "@/sim/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";

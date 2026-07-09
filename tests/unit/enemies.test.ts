@@ -3,16 +3,16 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
-import { Enemy, resetEnemyId } from "@/enemies/Enemy.js";
-import { DIFFICULTY_MULT_TICK } from "@/game/Constants.js";
+import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
   BOSS_STUN_REDUCTION,
   ENEMY_LEVEL_HP_MULT,
   ENEMY_TYPES,
   ENEMY_WAVE_DAMAGE_MULT,
   MIN_SLOW_FACTOR,
-} from "@/game/ConstantsEnemy.js";
-import { Grid } from "@/grid/Grid.js";
+} from "@/sim/ConstantsEnemy.js";
+import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
+import { Grid } from "@/sim/grid/Grid.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";

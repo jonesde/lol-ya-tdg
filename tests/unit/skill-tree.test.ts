@@ -1,7 +1,7 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "@/game/Constants.js";
+import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
 import {
   canRefund,
   getGeneralAddonValue,
@@ -14,7 +14,7 @@ import {
   tryUnlock,
   tryUnlockGeneral,
   unlockCost,
-} from "@/towers/SkillTree.js";
+} from "@/sim/towers/SkillTree.js";
 
 type TowerId = "basic" | "ice" | "sniper" | "cannon" | "lightning" | "railgun";
 

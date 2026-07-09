@@ -1,7 +1,7 @@
-import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "../game/Constants.js";
-import { TowerIds } from "../game/ConstantsTower.js";
-import type { TowerVisualMeta } from "../render/themes/index.js";
-import type { PersistState } from "../sim/PersistState.js";
+import type { TowerVisualMeta } from "@/render/themes/index.js";
+import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
+import { TowerIds } from "@/sim/ConstantsTower.js";
+import type { PersistState } from "@/sim/PersistState.js";
 
 const LEVEL_COSTS = [0, 0, 16, 32, 64, 128, 256];
 const ADDON_COSTS = [100, 300, 900];

@@ -1,4 +1,4 @@
-import { TOTAL_MAPS } from "@/game/Constants.js";
+import { TOTAL_MAPS } from "@/sim/Constants.js";
 import type { GeneralAddons, TowerUnlocks } from "@/stores/persist.js";
 
 // Authoritative persist state — ALL fields enumerated explicitly. The

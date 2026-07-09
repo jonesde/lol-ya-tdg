@@ -1,6 +1,6 @@
-import { WAVE_GRAPH_DOT_SPACING, WAVE_GRAPH_WIDTH } from "@/game/Constants.js";
+import { WAVE_GRAPH_DOT_SPACING, WAVE_GRAPH_WIDTH } from "@/sim/Constants.js";
+import type { Tower } from "@/sim/towers/Tower.js";
 import type { GameStore } from "@/stores/game.js";
-import type { Tower } from "@/towers/Tower.js";
 import type { SimulationSnapshot, WaveGraphDot } from "./SimulationSnapshot.js";
 
 // Module-level mirror of the latest snapshot so non-reactive Vue components

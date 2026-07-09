@@ -1,9 +1,9 @@
 // @ts-nocheck
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
-import { FIXED_DT, GameState, STARTING_GOLD_BONUS, STARTING_HEALTH_BONUS, StartingGold } from "@/game/Constants.js";
-import { TOWER_META } from "@/game/ConstantsTower.js";
-import { GameEngine } from "@/game/GameEngine.js";
+import { FIXED_DT, GameState, STARTING_GOLD_BONUS, STARTING_HEALTH_BONUS, StartingGold } from "@/sim/Constants.js";
+import { TOWER_META } from "@/sim/ConstantsTower.js";
+import { GameEngine } from "@/sim/GameEngine.js";
 import {
   createTestMapThemeStore,
   createTestPersistState,

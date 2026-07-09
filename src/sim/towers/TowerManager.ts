@@ -1,6 +1,6 @@
-import type { ParticleSpawner } from "@/game/ParticleSystem.js";
 import type { MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
 import type { SoundPlayer } from "@/sim/HostBindings.js";
+import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { PersistState } from "@/sim/PersistState.js";
 import { Tower } from "./Tower.js";
 

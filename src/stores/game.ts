@@ -1,14 +1,14 @@
 import { defineStore } from "pinia";
-import type { EnemyManager } from "@/enemies/EnemyManager.js";
-import { GameState, StartingGold } from "@/game/Constants.js";
-import type { ProjectileManager } from "@/game/ProjectileManager.js";
-import type { Grid } from "@/grid/Grid.js";
-import type { GeneratedMap } from "@/grid/Map.js";
-import type { Tower } from "@/towers/Tower.js";
-import type { TowerManager } from "@/towers/TowerManager.js";
+import { GameState, StartingGold } from "@/sim/Constants.js";
+import type { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import type { Grid } from "@/sim/grid/Grid.js";
+import type { GeneratedMap } from "@/sim/grid/Map.js";
+import type { ProjectileManager } from "@/sim/ProjectileManager.js";
+import type { Tower } from "@/sim/towers/Tower.js";
+import type { TowerManager } from "@/sim/towers/TowerManager.js";
 
 type GameStateValue = (typeof GameState)[keyof typeof GameState];
-type TowerId = typeof import("@/game/ConstantsTower").TowerIds[keyof typeof import("@/game/ConstantsTower").TowerIds];
+type TowerId = typeof import("@/sim/ConstantsTower").TowerIds[keyof typeof import("@/sim/ConstantsTower").TowerIds];
 
 interface BreakdownEntry {
   base: number;

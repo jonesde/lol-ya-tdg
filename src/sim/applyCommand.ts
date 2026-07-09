@@ -1,6 +1,6 @@
-import { GameState } from "@/game/Constants.js";
-import type { TowerId } from "@/game/ConstantsTower.js";
-import type { GameEngine } from "@/game/GameEngine.js";
+import { GameState } from "@/sim/Constants.js";
+import type { TowerId } from "@/sim/ConstantsTower.js";
+import type { GameEngine } from "@/sim/GameEngine.js";
 import { setGameState } from "@/sim/GameRunState.js";
 import type { Command } from "./Command.js";
 

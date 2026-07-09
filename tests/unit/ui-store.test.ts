@@ -1,7 +1,7 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GameState } from "@/game/Constants.js";
+import { GameState } from "@/sim/Constants.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import { WorkerCommandDispatcher } from "@/sim/WorkerCommandDispatcher.js";
 import { createTestStores, createTestUiStore } from "../helpers/mock-stores";

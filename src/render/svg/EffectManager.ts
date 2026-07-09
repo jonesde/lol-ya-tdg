@@ -1,4 +1,4 @@
-import { TOWER_BASE, TOWER_LEVEL_RANGE_MULT } from "@/game/ConstantsTower.js";
+import { TOWER_BASE, TOWER_LEVEL_RANGE_MULT } from "@/sim/ConstantsTower.js";
 import { GRID_TILE_SIZE, LIGHTNING_POOL_SIZE, STUN_POOL_SIZE, SVG_NS } from "./types.js";
 
 interface LightningEffect {

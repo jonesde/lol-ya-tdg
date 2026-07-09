@@ -10,9 +10,9 @@
  * meta. This covers the same code path the real worker uses.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { Grid } from "@/grid/Grid.js";
-import { getMap } from "@/grid/Map.js";
 import type { Command } from "@/sim/Command.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import { getMap } from "@/sim/grid/Map.js";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "@/sim/WorkerProtocol.js";
 import { createTestPersistState, createTestThemeBundle } from "../helpers/mock-stores";
 
