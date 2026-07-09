@@ -8,11 +8,11 @@ import {
   BURN_CIRCUIT_DURATION,
   CHAIN_DAMAGE_FALLOFF,
   CHAIN_RANGE,
+  KNOCKBACK_HP_DIVISOR,
   MARK_TARGET_DURATION,
   MARKSMAN_CHANCE,
   NAPALM_BURN_DPS_RATIO,
   NAPALM_BURN_DURATION,
-  RAILGUN_KNOCK_HP_DIVISOR,
   SPLASH_DAMAGE_RATIO,
   TOWER_BASE,
 } from "./ConstantsTower.js";
@@ -592,7 +592,7 @@ export class ProjectileManager {
       const knockAmount =
         projectile.knockback *
         (this.grid?.tileSize ?? GRID_TILE_SIZE) *
-        Math.max(0.1, Math.min(2, RAILGUN_KNOCK_HP_DIVISOR / enemy.maxHp));
+        Math.max(0.1, Math.min(2, KNOCKBACK_HP_DIVISOR / enemy.maxHp));
       const dx = enemy.x - projectile.x;
       const dy = enemy.y - projectile.y;
       const knockDist = Math.sqrt(dx * dx + dy * dy);

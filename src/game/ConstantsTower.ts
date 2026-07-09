@@ -57,27 +57,9 @@ export const TOWER_BASE: Record<string, TowerBase> = {
   sniper: { range: 7, damage: 32, fireRate: 0.45, projSpeed: 30, splash: 0, stun: 0.2, health: 20 },
   cannon: { range: 3.2, damage: 16, fireRate: 0.55, projSpeed: 9, splash: 0.5, health: 30 },
   lightning: { range: 3.5, damage: 4, fireRate: 0.8, projSpeed: 99, chain: 2, stun: 0.1, health: 22 },
-  railgun: {
-    range: 8,
-    damage: 14,
-    fireRate: 0.28,
-    projSpeed: 60,
-    fixedAim: true,
-    pierceFalloff: 0.5,
-    knockbackBase: 0.3,
-    knockbackScale: 0.2,
-    health: 28,
-  },
+  railgun: { range: 8, damage: 14, fireRate: 0.28, projSpeed: 60, fixedAim: true, pierceFalloff: 0.5, health: 28 },
   sturdyWall: { range: 0, damage: 0, fireRate: 0, projSpeed: 0, health: 200 },
-  shotgunTank: {
-    range: 1,
-    damage: 8,
-    fireRate: 1.2,
-    projSpeed: 14,
-    knockbackBase: 0.45,
-    knockbackScale: 0.3,
-    health: 250,
-  },
+  shotgunTank: { range: 1, damage: 8, fireRate: 1.2, projSpeed: 14, health: 250 },
 };
 
 // ===== Tower Level Scaling =====
@@ -168,8 +150,8 @@ export const GHOST_OPACITY = 0.5;
 // electric fence range in tiles; px radius = grid.tileSize * ELECTRIC_FENCE_RANGE_TILES (Phase 5c)
 export const ELECTRIC_FENCE_RANGE_TILES = 0.75;
 
-// railgun knockback: health scaling divisor — lower HP enemies get more knockback (ProjectileManager.js)
-export const RAILGUN_KNOCK_HP_DIVISOR = 64;
+// knockback: health scaling divisor — lower HP enemies get more knockback (ProjectileManager.js)
+export const KNOCKBACK_HP_DIVISOR = 64;
 
 // ===== Tower Variant Definitions =====
 // Applied when a tower reaches level 4 and is specialized (Tower.js)
@@ -232,7 +214,7 @@ export const TOWER_VARIANTS: Record<TowerId, { A: TowerVariantConfig; B: TowerVa
     B: { name: "Stormcall", apply: (s, _t) => ({ ...s, stormcall: true }) },
   },
   railgun: {
-    A: { name: "Knockback", settings: { knockbackBase: 0.9 } },
+    A: { name: "Knockback", settings: { knockbackBase: 0.5, knockbackScale: 0.2 } },
     B: { name: "Rail Lance", apply: (s, _t) => ({ ...s, pierceFalloff: 0 }) },
   },
   sturdyWall: {
@@ -244,7 +226,7 @@ export const TOWER_VARIANTS: Record<TowerId, { A: TowerVariantConfig; B: TowerVa
   },
   shotgunTank: {
     A: { name: "Reinforced", apply: (s, tierIdx) => ({ ...s, healthMult: [1.5, 2, 3][tierIdx]! }) },
-    B: { name: "Repulsor", settings: { knockbackBase: 0.9 } },
+    B: { name: "Repulsor", settings: { knockbackBase: 0.7, knockbackScale: 0.3 } },
   },
 };
 
