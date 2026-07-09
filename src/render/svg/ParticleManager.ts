@@ -7,6 +7,7 @@ export class ParticleManager {
   private freeIndexStack: number[] = [];
   private lastSize: string[] = [];
   private lastFill: string[] = [];
+  private activeParticleIds: Set<number> = new Set();
 
   init(layer: SVGGElement): void {
     for (let i = PARTICLE_POOL_SIZE - 1; i >= 0; i--) {
@@ -24,7 +25,9 @@ export class ParticleManager {
   }
 
   syncFromGameEngine(particles: Particle[]): void {
+    this.activeParticleIds.clear();
     for (const particle of particles) {
+      this.activeParticleIds.add(particle.id);
       if (!this.idToIndex.has(particle.id)) {
         const freeIndex = this.freeIndexStack.pop();
         if (freeIndex !== undefined) {
@@ -50,7 +53,7 @@ export class ParticleManager {
 
     for (const [id, index] of this.idToIndex) {
       const circle = this.pool[index]!;
-      const stillActive = particles.some((p) => p.id === id);
+      const stillActive = this.activeParticleIds.has(id);
       if (!stillActive) {
         circle.style.visibility = "hidden";
         this.freeIndexStack.push(index);

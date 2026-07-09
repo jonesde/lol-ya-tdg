@@ -17,6 +17,7 @@ export class UiOverlayManager {
   private bossLastText: string[] = [];
   private pendingLastTransform: string[] = [];
   private pendingLastText: string[] = [];
+  private pendingLastCounts: number[] = [];
 
   init(layer: SVGGElement): void {
     for (let i = 0; i < HP_BAR_POOL_SIZE; i++) {
@@ -220,10 +221,26 @@ export class UiOverlayManager {
   }
 
   syncPendingQueueOverlays(grid: Grid, spawnStates: SpawnStateSnapshot[]): void {
+    const spawnCount = grid.spawns.length;
+    if (spawnCount === this.pendingLastCounts.length) {
+      let countsUnchanged = true;
+      for (let spawnIndex = 0; spawnIndex < spawnCount; spawnIndex++) {
+        const pendingCount = spawnStates[spawnIndex]?.pendingCount ?? 0;
+        if (pendingCount !== this.pendingLastCounts[spawnIndex]) {
+          countsUnchanged = false;
+          break;
+        }
+      }
+      if (countsUnchanged) return;
+    } else {
+      this.pendingLastCounts = new Array(spawnCount).fill(0);
+    }
+
     let textIndex = 0;
     for (let spawnIndex = 0; spawnIndex < grid.spawns.length; spawnIndex++) {
       const spawnState = spawnStates[spawnIndex];
       const pendingCount = spawnState?.pendingCount ?? 0;
+      this.pendingLastCounts[spawnIndex] = pendingCount;
       if (pendingCount <= 0) continue;
       if (textIndex >= this.pendingTextPool.length) break;
 
