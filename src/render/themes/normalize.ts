@@ -71,10 +71,12 @@ async function normalizeEnemyVisual(raw: {
   shape: string;
   walking: { duration: number; frames: { image: string }[] };
   hitReaction?: { duration: number; frames: { image: string }[] };
+  attack?: { duration: number; frames: { image: string }[] };
 }): Promise<EnemyVisualMeta> {
   const walking = await normalizeAnimation(raw.walking);
   const hitReaction = raw.hitReaction ? await normalizeAnimation(raw.hitReaction) : null;
-  return { name: raw.name, color: raw.color, shape: raw.shape, walking, hitReaction };
+  const attack = raw.attack ? await normalizeAnimation(raw.attack) : null;
+  return { name: raw.name, color: raw.color, shape: raw.shape, walking, hitReaction, attack };
 }
 
 async function normalizeRegionVisual(raw: {
@@ -124,6 +126,7 @@ export async function normalizeThemeImages(raw: {
       shape: string;
       walking: { duration: number; frames: { image: string }[] };
       hitReaction?: { duration: number; frames: { image: string }[] };
+      attack?: { duration: number; frames: { image: string }[] };
     }
   >;
   regions: Array<{

@@ -80,6 +80,12 @@ export class Enemy {
   x!: number;
   y!: number;
   worldPos!: { x: number; y: number };
+  // Path centerline position (Phase 4). x/y are derived from centerline + the
+  // perpendicular laneOffset each frame; centerX/centerY are the only state the
+  // forward-step logic advances, so collisions never move the centerline.
+  centerX: number = 0;
+  centerY: number = 0;
+  laneOffset: number = 0;
   slowFactor!: number;
   slowStack!: SlowEntry[];
   stunTimer!: number;
@@ -101,6 +107,8 @@ export class Enemy {
   attackDamage: number = 0;
   attackSpeed: number = 0;
   attackTimer: number = 0;
+  attackAnimTime: number = 0;
+  attackAnimation: MapThemeAnimation | null = null;
   // Version of the grid path this enemy is following; used to detect re-anchor needs.
   pathVersion: number = 0;
   markTargetMult!: number;
@@ -131,6 +139,7 @@ export class Enemy {
     this.shape = enemyVisual?.shape || defaultVisual?.shape || "circle";
     this.walking = enemyVisual?.walking || null;
     this.hitReaction = enemyVisual?.hitReaction || null;
+    this.attackAnimation = enemyVisual?.attack || null;
     this.visualMeta = enemyVisual;
     this.resist = meta.resist || 0;
     this.slowResist = meta.slowResist || 0;
@@ -175,6 +184,9 @@ export class Enemy {
     this.x = start.x;
     this.y = start.y;
     this.worldPos = { x: this.x, y: this.y };
+    this.centerX = this.x;
+    this.centerY = this.y;
+    this.laneOffset = 0;
     this.lastCellX = -1;
     this.lastCellY = -1;
 
@@ -255,6 +267,9 @@ export class Enemy {
     const safeWorld = this.grid.tileToWorld(this.path[safeIndex]!.x, this.path[safeIndex]!.y);
     this.x = safeWorld.x;
     this.y = safeWorld.y;
+    this.centerX = safeWorld.x;
+    this.centerY = safeWorld.y;
+    this.laneOffset = 0;
     this.worldPos = { x: this.x, y: this.y };
     if (safeIndex + 1 < this.path.length) {
       const nextTile = this.path[safeIndex + 1]!;
@@ -318,6 +333,9 @@ export class Enemy {
     const anchorWorld = this.grid.tileToWorld(anchorTile.x, anchorTile.y);
     this.x = anchorWorld.x;
     this.y = anchorWorld.y;
+    this.centerX = anchorWorld.x;
+    this.centerY = anchorWorld.y;
+    this.laneOffset = 0;
   }
 
   update(dt: number, enemyManager: EnemyManagerRef | null) {
@@ -392,61 +410,167 @@ export class Enemy {
 
     // Attack-target resolution: the forward path tile may hold a live (non-ghost)
     // tower. Because the weakest-path route deliberately crosses tower tiles, the
-    // enemy must decide whether to walk through (ghost/none) or attack (live).
+    // enemy must decide whether to walk through (ghost/none), approach (live, not
+    // yet in contact), or attack (live, in contact). A pile-up against an adjacent
+    // tower also resolves to an attack (Phase 4 fallback).
     const nextTile = this.path[this.pathIdx + 1]!;
     const forwardTower =
       enemyManager && this.grid.blocked.has(`${nextTile.x},${nextTile.y}`)
         ? enemyManager.towerAt(nextTile.x, nextTile.y)
         : null;
-    const liveTower = forwardTower && !forwardTower.isGhost ? forwardTower : null;
+    const liveForwardTower = forwardTower && !forwardTower.isGhost ? forwardTower : null;
 
-    if (liveTower) {
-      this.blockedByTower = liveTower;
+    let attackTarget: Tower | null = null;
+    let moveMode: "walk" | "approach" = "walk";
+
+    if (liveForwardTower) {
       const towerCenter = this.grid.tileToWorld(nextTile.x, nextTile.y);
-      const deltaToTowerX = towerCenter.x - this.x;
-      const deltaToTowerY = towerCenter.y - this.y;
-      const distToTower = Math.hypot(deltaToTowerX, deltaToTowerY);
+      const distToTower = Math.hypot(towerCenter.x - this.centerX, towerCenter.y - this.centerY);
       const contactDistance = this.grid.tileSize / 2 + this.radius;
-      this.moveAngle = Math.atan2(deltaToTowerY, deltaToTowerX);
+      this.blockedByTower = liveForwardTower;
       if (distToTower > contactDistance) {
-        // Approach the tower boundary; pathIdx is NOT advanced while attacking.
-        const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
-        if (step >= distToTower) {
-          this.x = towerCenter.x;
-          this.y = towerCenter.y;
-        } else {
-          this.x += (deltaToTowerX / distToTower) * step;
-          this.y += (deltaToTowerY / distToTower) * step;
-        }
+        moveMode = "approach";
       } else {
-        // At the edge: pause movement and attack the tower.
-        this.attackTimer -= dt;
-        if (this.attackTimer <= 0) {
-          liveTower.takeDamage(this.attackDamage, this);
-          this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
-        }
+        attackTarget = liveForwardTower;
       }
     } else {
-      this.blockedByTower = null;
+      const adjacentTower = this.findAdjacentLiveTowerInContact(enemyManager);
+      if (adjacentTower) {
+        attackTarget = adjacentTower;
+        this.blockedByTower = adjacentTower;
+      } else {
+        this.blockedByTower = null;
+      }
+    }
+
+    // Advance only the path centerline; x/y are derived after collision resolution.
+    if (moveMode === "walk" && !attackTarget) {
       const target = this.grid.tileToWorld(nextTile.x, nextTile.y);
-      const deltaX = target.x - this.x;
-      const deltaY = target.y - this.y;
+      const deltaX = target.x - this.centerX;
+      const deltaY = target.y - this.centerY;
       const dist = Math.hypot(deltaX, deltaY);
       const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
+      this.moveAngle = Math.atan2(deltaY, deltaX);
       if (step >= dist) {
-        this.x = target.x;
-        this.y = target.y;
+        this.centerX = target.x;
+        this.centerY = target.y;
         this.pathIdx++;
         if (this.pathIdx < this.path.length - 1) {
           const nextWaypoint = this.grid.tileToWorld(this.path[this.pathIdx + 1]!.x, this.path[this.pathIdx + 1]!.y);
-          this.moveAngle = Math.atan2(nextWaypoint.y - this.y, nextWaypoint.x - this.x);
+          this.moveAngle = Math.atan2(nextWaypoint.y - this.centerY, nextWaypoint.x - this.centerX);
         }
       } else {
-        this.x += (deltaX / dist) * step;
-        this.y += (deltaY / dist) * step;
-        this.moveAngle = Math.atan2(deltaY, deltaX);
+        this.centerX += (deltaX / dist) * step;
+        this.centerY += (deltaY / dist) * step;
+      }
+    } else if (moveMode === "approach" && this.blockedByTower) {
+      const towerCenter = this.grid.tileToWorld(nextTile.x, nextTile.y);
+      const deltaToTowerX = towerCenter.x - this.centerX;
+      const deltaToTowerY = towerCenter.y - this.centerY;
+      const distToTower = Math.hypot(deltaToTowerX, deltaToTowerY);
+      const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
+      this.moveAngle = Math.atan2(deltaToTowerY, deltaToTowerX);
+      if (step < distToTower) {
+        this.centerX += (deltaToTowerX / distToTower) * step;
+        this.centerY += (deltaToTowerY / distToTower) * step;
+      } else {
+        this.centerX = towerCenter.x;
+        this.centerY = towerCenter.y;
       }
     }
+
+    // Enemy-enemy collision: push overlapping neighbors apart via a signed laneOffset
+    // (slower enemy to the right, faster to the left). See resolveCollisions.
+    this.resolveCollisions(enemyManager);
+
+    // Attack tick. Stun already returned above, so this only runs while unstunned;
+    // the timer is paused (not reset) during stun and slowed while slowed.
+    if (attackTarget) {
+      this.attackTimer -= dt;
+      if (this.attackTimer <= 0) {
+        attackTarget.takeDamage(this.attackDamage, this);
+        this.attackAnimTime = this._gameSeconds;
+        this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
+      }
+    }
+
+    // Derive the real engine position from the centerline plus the perpendicular
+    // lane offset, clamped so the enemy stays within the current path tile bounds.
+    const perpX = -Math.sin(this.moveAngle);
+    const perpY = Math.cos(this.moveAngle);
+    const maxLaneOffset = this.grid.tileSize / 2 - this.radius;
+    if (this.laneOffset > maxLaneOffset) this.laneOffset = maxLaneOffset;
+    else if (this.laneOffset < -maxLaneOffset) this.laneOffset = -maxLaneOffset;
+    this.x = this.centerX + perpX * this.laneOffset;
+    this.y = this.centerY + perpY * this.laneOffset;
     this.worldPos = { x: this.x, y: this.y };
+  }
+
+  // Lateral collision separation against nearby enemies using the spatial hash.
+  // Each overlapping pair is pushed apart along each enemy's own perpendicular; the
+  // slower enemy moves right (+offset), the faster left (-offset). With a screen
+  // Y-down coordinate system and moveAngle = atan2(dy, dx), the forward unit vector
+  // is (cos, sin) and the right-perpendicular (clockwise) is (-sin, cos).
+  private resolveCollisions(enemyManager: EnemyManagerRef | null): void {
+    if (!enemyManager) return;
+    const neighbors = enemyManager.getEnemiesInRange(this.centerX, this.centerY, this.grid.tileSize);
+    for (const other of neighbors) {
+      if (other === this) continue;
+      const perpA = { x: -Math.sin(this.moveAngle), y: Math.cos(this.moveAngle) };
+      const perpB = { x: -Math.sin(other.moveAngle), y: Math.cos(other.moveAngle) };
+      const ax = this.centerX + perpA.x * this.laneOffset;
+      const ay = this.centerY + perpA.y * this.laneOffset;
+      const bx = other.centerX + perpB.x * other.laneOffset;
+      const by = other.centerY + perpB.y * other.laneOffset;
+      const deltaX = bx - ax;
+      const deltaY = by - ay;
+      const dist = Math.hypot(deltaX, deltaY);
+      const overlap = this.radius + other.radius - dist;
+      if (overlap <= 0) continue;
+      const separation = overlap / 2;
+      let thisSign: number;
+      let otherSign: number;
+      if (this.speed < other.speed) {
+        thisSign = 1;
+        otherSign = -1;
+      } else if (this.speed > other.speed) {
+        thisSign = -1;
+        otherSign = 1;
+      } else if (this.id <= other.id) {
+        thisSign = 1;
+        otherSign = -1;
+      } else {
+        thisSign = -1;
+        otherSign = 1;
+      }
+      this.laneOffset += separation * thisSign;
+      other.laneOffset += separation * otherSign;
+    }
+  }
+
+  // Returns the lowest-health adjacent live (non-ghost) tower this enemy is in
+  // contact with, or null. Handles the pile-up / junction case where an enemy is
+  // blocked by other enemies and ends up against a tower tile. Side towers are
+  // ignored because contact only occurs when the enemy is near the tower's center.
+  private findAdjacentLiveTowerInContact(enemyManager: EnemyManagerRef | null): Tower | null {
+    if (!enemyManager || !this.path) return null;
+    const contactDistance = this.grid.tileSize / 2 + this.radius;
+    const currentTile = this.path[this.pathIdx]!;
+    const candidateTiles = [
+      { x: currentTile.x + 1, y: currentTile.y },
+      { x: currentTile.x - 1, y: currentTile.y },
+      { x: currentTile.x, y: currentTile.y + 1 },
+      { x: currentTile.x, y: currentTile.y - 1 },
+    ];
+    let lowestTower: Tower | null = null;
+    for (const tile of candidateTiles) {
+      const tower = enemyManager.towerAt(tile.x, tile.y);
+      if (!tower || tower.isGhost) continue;
+      const towerCenter = this.grid.tileToWorld(tile.x, tile.y);
+      const dist = Math.hypot(towerCenter.x - this.centerX, towerCenter.y - this.centerY);
+      if (dist > contactDistance) continue;
+      if (!lowestTower || tower.health < lowestTower.health) lowestTower = tower;
+    }
+    return lowestTower;
   }
 }

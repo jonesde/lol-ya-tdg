@@ -38,6 +38,7 @@ export interface EnemyVisualMeta {
   shape: string;
   walking: MapThemeAnimation;
   hitReaction: MapThemeAnimation | null;
+  attack?: MapThemeAnimation | null;
 }
 
 export interface RegionVisualMeta {

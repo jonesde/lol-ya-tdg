@@ -88,11 +88,13 @@ function snapshotEnemy(e: Enemy): EnemySnapshot {
     hitFlash: 0,
     gameSeconds: e.gameSeconds,
     hitAnimTime: e.hitAnimTime,
+    attackAnimTime: e.attackAnimTime,
     walkingFrameIndex: 0,
     isBoss: e.type === "boss",
     statusEffects: buildEnemyStatusEffects(e, maxSlowRemaining),
     walking: e.walking,
     hitReaction: e.hitReaction,
+    attackAnimation: e.attackAnimation,
   };
 }
 

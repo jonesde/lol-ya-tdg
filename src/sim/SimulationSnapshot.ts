@@ -74,6 +74,7 @@ export interface EnemySnapshot {
   hitFlash: number; // 0..1 visual hit-reaction intensity
   gameSeconds: number;
   hitAnimTime: number;
+  attackAnimTime: number;
   walkingFrameIndex: number;
   isBoss: boolean;
   statusEffects: StatusEffectSnapshot[];
@@ -81,6 +82,7 @@ export interface EnemySnapshot {
   // Shared by reference on the main thread; acceptable overhead for Phase 5.
   walking: MapThemeAnimation | null;
   hitReaction: MapThemeAnimation | null;
+  attackAnimation: MapThemeAnimation | null;
 }
 
 export interface StatusEffectSnapshot {

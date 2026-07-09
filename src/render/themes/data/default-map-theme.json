@@ -194,6 +194,20 @@
             "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.35\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
           }
         ]
+      },
+      "attack": {
+        "duration": 0.2,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.37\" fill=\"#e85a6a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.3,-0.06 0.5,0 0.3,0.06\" fill=\"#e85a6a\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.37\" fill=\"#e85a6a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.3,-0.06 0.62,0 0.3,0.06\" fill=\"#e85a6a\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"0\" cy=\"0\" r=\"0.37\" fill=\"#e85a6a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.3,-0.06 0.5,0 0.3,0.06\" fill=\"#e85a6a\"/></svg>"
+          }
+        ]
       }
     },
     "runner": {
@@ -240,6 +254,20 @@
           },
           {
             "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.228 0.249,0.171 -0.249,0.171\" fill=\"#ff4444\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "attack": {
+        "duration": 0.2,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.24 0.262,0.18 -0.262,0.18\" fill=\"#ffd84d\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,-0.05 0.5,0 0.2,0.05\" fill=\"#ffd84d\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.24 0.262,0.18 -0.262,0.18\" fill=\"#ffd84d\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,-0.05 0.62,0 0.2,0.05\" fill=\"#ffd84d\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.24 0.262,0.18 -0.262,0.18\" fill=\"#ffd84d\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,-0.05 0.5,0 0.2,0.05\" fill=\"#ffd84d\"/></svg>"
           }
         ]
       }
@@ -290,6 +318,20 @@
             "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.456\" y=\"-0.38\" width=\"0.912\" height=\"0.912\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
           }
         ]
+      },
+      "attack": {
+        "duration": 0.2,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.40\" width=\"0.96\" height=\"0.96\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.48,-0.08 0.66,0 0.48,0.08\" fill=\"#7a8a9a\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.40\" width=\"0.96\" height=\"0.96\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.48,-0.08 0.78,0 0.48,0.08\" fill=\"#7a8a9a\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"-0.48\" y=\"-0.40\" width=\"0.96\" height=\"0.96\" fill=\"#7a8a9a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.48,-0.08 0.66,0 0.48,0.08\" fill=\"#7a8a9a\"/></svg>"
+          }
+        ]
       }
     },
     "shielded": {
@@ -336,6 +378,20 @@
           },
           {
             "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.395,0 0.198,0.342 -0.198,0.342 -0.395,0 -0.198,-0.342 0.198,-0.342\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "attack": {
+        "duration": 0.2,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.416,0 0.208,0.36 -0.208,0.36 -0.416,0 -0.208,-0.36 0.208,-0.36\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.4,-0.08 0.56,0 0.4,0.08\" fill=\"#5fd0ff\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.416,0 0.208,0.36 -0.208,0.36 -0.416,0 -0.208,-0.36 0.208,-0.36\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.4,-0.08 0.68,0 0.4,0.08\" fill=\"#5fd0ff\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.416,0 0.208,0.36 -0.208,0.36 -0.416,0 -0.208,-0.36 0.208,-0.36\" fill=\"#5fd0ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.4,-0.08 0.56,0 0.4,0.08\" fill=\"#5fd0ff\"/></svg>"
           }
         ]
       }
@@ -386,6 +442,20 @@
             "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.074,-0.342 0.131,-0.342 0.131,-0.103 0.371,-0.103 0.371,0.103 0.131,0.103 0.131,0.342 -0.074,0.342 -0.074,0.103 -0.314,0.103 -0.314,-0.103 -0.074,-0.103\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
           }
         ]
+      },
+      "attack": {
+        "duration": 0.2,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.078,-0.36 0.138,-0.36 0.138,-0.108 0.39,-0.108 0.39,0.108 0.138,0.108 0.138,0.36 -0.078,0.36 -0.078,0.108 -0.33,0.108 -0.33,-0.108 -0.078,-0.108\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.37,-0.07 0.57,0 0.37,0.07\" fill=\"#5fff8a\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.078,-0.36 0.138,-0.36 0.138,-0.108 0.39,-0.108 0.39,0.108 0.138,0.108 0.138,0.36 -0.078,0.36 -0.078,0.108 -0.33,0.108 -0.33,-0.108 -0.078,-0.108\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.37,-0.07 0.69,0 0.37,0.07\" fill=\"#5fff8a\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.078,-0.36 0.138,-0.36 0.138,-0.108 0.39,-0.108 0.39,0.108 0.138,0.108 0.138,0.36 -0.078,0.36 -0.078,0.108 -0.33,0.108 -0.33,-0.108 -0.078,-0.108\" fill=\"#5fff8a\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.37,-0.07 0.57,0 0.37,0.07\" fill=\"#5fff8a\"/></svg>"
+          }
+        ]
       }
     },
     "boss": {
@@ -432,6 +502,20 @@
           },
           {
             "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.57 0.196,-0.174 0.633,-0.11 0.316,0.198 0.39,0.633 0,0.428 -0.39,0.633 -0.316,0.198 -0.633,-0.11 -0.196,-0.174\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "attack": {
+        "duration": 0.2,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.6 0.206,-0.183 0.666,-0.116 0.333,0.208 0.411,0.666 0,0.45 -0.411,0.666 -0.333,0.208 -0.666,-0.116 -0.206,-0.183\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.6,-0.1 0.8,0 0.6,0.1\" fill=\"#c98aff\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.6 0.206,-0.183 0.666,-0.116 0.333,0.208 0.411,0.666 0,0.45 -0.411,0.666 -0.333,0.208 -0.666,-0.116 -0.206,-0.183\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.6,-0.1 0.92,0 0.6,0.1\" fill=\"#c98aff\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0,-0.6 0.206,-0.183 0.666,-0.116 0.333,0.208 0.411,0.666 0,0.45 -0.411,0.666 -0.333,0.208 -0.666,-0.116 -0.206,-0.183\" fill=\"#c98aff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.6,-0.1 0.8,0 0.6,0.1\" fill=\"#c98aff\"/></svg>"
           }
         ]
       }

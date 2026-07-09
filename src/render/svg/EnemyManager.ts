@@ -95,9 +95,15 @@ class EnemyRenderProxy {
     }
 
     const hitReaction = enemy.hitReaction;
+    const attackAnimation = enemy.attackAnimation;
     const gameSeconds = enemy.gameSeconds;
     const inHitReaction =
       hitReaction && enemy.hitAnimTime > 0 && gameSeconds - enemy.hitAnimTime < hitReaction.duration;
+    const inAttack =
+      !inHitReaction &&
+      attackAnimation &&
+      enemy.attackAnimTime > 0 &&
+      gameSeconds - enemy.attackAnimTime < attackAnimation.duration;
 
     if (inHitReaction) {
       const elapsedInHit = gameSeconds - enemy.hitAnimTime;
@@ -105,6 +111,16 @@ class EnemyRenderProxy {
       const frameCount = refImages?.length || 1;
       const hitFrameIdx = Math.floor((elapsedInHit / hitReaction!.duration) * frameCount) % frameCount;
       const spriteId = `enemy-${enemy.type}-hit-f${hitFrameIdx}`;
+      if (spriteId !== this.lastSpriteId) {
+        this.el.setAttribute("href", `#${spriteId}`);
+        this.lastSpriteId = spriteId;
+      }
+    } else if (inAttack) {
+      const elapsedInAttack = gameSeconds - enemy.attackAnimTime;
+      const refImages = attackAnimation!.referenceImages;
+      const frameCount = refImages?.length || 1;
+      const attackFrameIdx = Math.floor((elapsedInAttack / attackAnimation!.duration) * frameCount) % frameCount;
+      const spriteId = `enemy-${enemy.type}-attack-f${attackFrameIdx}`;
       if (spriteId !== this.lastSpriteId) {
         this.el.setAttribute("href", `#${spriteId}`);
         this.lastSpriteId = spriteId;

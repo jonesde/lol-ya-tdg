@@ -154,6 +154,16 @@ function buildSymbolsFromConstants(themeOverride?: MapThemeData | null): string 
         );
       }
     }
+    const attack = enemyVisual.attack;
+    if (attack) {
+      for (let frameIndex = 0; frameIndex < attack.referenceImages.length; frameIndex++) {
+        const frame = attack.referenceImages[frameIndex]!;
+        const innerContent = stripSvgWrapper(frame.svg);
+        symbolParts.push(
+          `<symbol id="enemy-${typeId}-attack-f${frameIndex}" viewBox="-1 -1 2 2">${innerContent}</symbol>`,
+        );
+      }
+    }
   }
 
   for (const [typeId, towerVisual] of Object.entries(activeTheme.towers)) {
