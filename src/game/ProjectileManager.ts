@@ -71,6 +71,7 @@ interface LightningTarget {
   takeDamage(dmg: number): void;
   applyStun?(duration: number): void;
   applyBurn?(dps: number, duration: number): void;
+  applyKnockback?(amount: number): void;
 }
 
 interface GridRef {
@@ -324,60 +325,8 @@ export class ProjectileManager {
     }
 
     if (towerType === "sniper" && towerLevel >= 5 && variant === "B") {
-      projectile.maxHitCount = (pierce ?? 0) - 1;
+      projectile.maxHitCount = Math.max(0, (pierce ?? 1) - 1);
     }
-  }
-
-  private clampKnockback(
-    enemyX: number,
-    enemyY: number,
-    knockDx: number,
-    knockDy: number,
-    knockAmount: number,
-  ): { x: number; y: number } {
-    if (!this.grid) {
-      return { x: enemyX + knockDx * knockAmount, y: enemyY + knockDy * knockAmount };
-    }
-
-    const grid = this.grid;
-    const stepSize = 1;
-    const steps = Math.floor(knockAmount / stepSize);
-    let clampedX = enemyX;
-    let clampedY = enemyY;
-
-    for (let step = 0; step < steps; step++) {
-      const nextX = clampedX + knockDx * stepSize;
-      const nextY = clampedY + knockDy * stepSize;
-
-      const tileX = Math.floor(nextX / grid.tileSize);
-      const tileY = Math.floor(nextY / grid.tileSize);
-
-      if (tileX < 0 || tileY < 0 || tileX >= grid.width || tileY >= grid.height) {
-        break;
-      }
-
-      const tile = grid.tiles[tileY]?.[tileX];
-      if (!tile) break;
-
-      if (tile.type === "terrain") {
-        break;
-      }
-
-      if (tile.type === "path" && grid.blocked.has(`${tileX},${tileY}`)) {
-        break;
-      }
-
-      clampedX = nextX;
-      clampedY = nextY;
-    }
-
-    const remainder = knockAmount - Math.floor(knockAmount / stepSize) * stepSize;
-    if (remainder > 0) {
-      clampedX += knockDx * remainder;
-      clampedY += knockDy * remainder;
-    }
-
-    return { x: clampedX, y: clampedY };
   }
 
   update(dt: number): void {
@@ -502,6 +451,7 @@ export class ProjectileManager {
       applyBurn?(dps: number, duration: number): void;
       applySlow?(factor: number, duration: number): void;
       applyStun?(duration: number): void;
+      applyKnockback?(amount: number): void;
       applyMarkTarget?(mult: number, duration: number): void;
       applyAntiHeal?(duration: number): void;
     },
@@ -593,21 +543,14 @@ export class ProjectileManager {
         projectile.knockback *
         (this.grid?.tileSize ?? GRID_TILE_SIZE) *
         Math.max(0.1, Math.min(2, KNOCKBACK_HP_DIVISOR / enemy.maxHp));
-      const dx = enemy.x - projectile.x;
-      const dy = enemy.y - projectile.y;
-      const knockDist = Math.sqrt(dx * dx + dy * dy);
-      if (knockDist > 0) {
-        const knockDx = dx / knockDist;
-        const knockDy = dy / knockDist;
-        const clamped = this.clampKnockback(enemy.x, enemy.y, knockDx, knockDy, knockAmount);
-        enemy.x = clamped.x;
-        enemy.y = clamped.y;
+      if (knockAmount > 0 && enemy.applyKnockback) {
+        enemy.applyKnockback(knockAmount);
       }
     }
 
     if (projectile.maxHitCount > 0) {
       projectile.hitCount++;
-      if (projectile.hitCount <= projectile.maxHitCount) {
+      if (projectile.hitCount < projectile.maxHitCount) {
         // Fixed-aim projectiles travel toward a fixed world point, so they must
         // not re-home onto an enemy — continue straight and hit whatever lies
         // along the aim line (handled by the targetId === 0 branch next frame).

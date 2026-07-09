@@ -20,6 +20,11 @@ interface SlowEntry {
   remaining: number;
 }
 
+interface BurnEntry {
+  dps: number;
+  timer: number;
+}
+
 interface EnemyMetaRef {
   baseHp: number;
   speed: number;
@@ -97,8 +102,7 @@ export class Enemy {
   stunTimer!: number;
   reachedBase!: boolean;
   removed!: boolean;
-  burnTimer!: number;
-  burnDps!: number;
+  burnStack!: BurnEntry[];
   hitAnimTime!: number;
   _gameSeconds: number = 0;
 
@@ -170,8 +174,7 @@ export class Enemy {
     this.slowFactor = 1;
     this.slowStack = [];
     this.stunTimer = 0;
-    this.burnTimer = 0;
-    this.burnDps = 0;
+    this.burnStack = [];
     this.hitAnimTime = 0;
     this._gameSeconds = 0;
     this.moveAngle = 0;
@@ -225,8 +228,44 @@ export class Enemy {
   }
 
   applyBurn(dps: number, duration: number) {
-    this.burnDps = Math.max(this.burnDps, dps);
-    this.burnTimer = Math.max(this.burnTimer, duration);
+    // Each burn is tracked independently and stacks until its own timer expires,
+    // so a short high-DPS burn cannot extend a weaker long-duration burn (and
+    // multiple burns apply their full combined DPS).
+    this.burnStack.push({ dps, timer: duration });
+  }
+
+  // Knockback pushes the enemy backward along the path centerline (toward the
+  // spawn). The displacement is written to centerX/centerY — the only positional
+  // state the per-frame update derives x/y from — so it survives the next update
+  // tick (writing x/y directly was a no-op because update recomputes x/y every
+  // frame). The push is clamped to the path: it cannot move before the first
+  // waypoint, so a knocked-back enemy never leaves the corridor.
+  applyKnockback(amount: number): void {
+    if (amount <= 0 || !this.path || this.path.length === 0 || this.pathIdx <= 0) return;
+    let remaining = amount;
+    while (remaining > 0 && this.pathIdx > 0) {
+      const waypoint = this.grid.tileToWorld(this.path[this.pathIdx]!.x, this.path[this.pathIdx]!.y);
+      const deltaX = this.centerX - waypoint.x;
+      const deltaY = this.centerY - waypoint.y;
+      const dist = Math.hypot(deltaX, deltaY);
+      if (dist >= remaining) {
+        this.centerX -= (deltaX / dist) * remaining;
+        this.centerY -= (deltaY / dist) * remaining;
+        remaining = 0;
+      } else {
+        this.centerX = waypoint.x;
+        this.centerY = waypoint.y;
+        remaining -= dist;
+        this.pathIdx--;
+        if (this.pathIdx + 1 < this.path.length) {
+          const prevWaypoint = this.grid.tileToWorld(this.path[this.pathIdx]!.x, this.path[this.pathIdx]!.y);
+          const nextWaypoint = this.grid.tileToWorld(this.path[this.pathIdx + 1]!.x, this.path[this.pathIdx + 1]!.y);
+          this.moveAngle = Math.atan2(nextWaypoint.y - prevWaypoint.y, nextWaypoint.x - prevWaypoint.x);
+        }
+      }
+    }
+    this.x = this.centerX + this.laneOffsetX;
+    this.y = this.centerY + this.laneOffsetY;
   }
 
   applyMarkTarget(mult: number, duration: number) {
@@ -364,9 +403,15 @@ export class Enemy {
     if (this.stunTimer > 0) {
       this.stunTimer -= dt;
     }
-    if (this.burnTimer > 0 && !this.removed) {
-      this.burnTimer -= dt;
-      this.takeDamage(this.burnDps * dt, true);
+    if (!this.removed) {
+      for (let burnIndex = this.burnStack.length - 1; burnIndex >= 0; burnIndex--) {
+        const burnEntry = this.burnStack[burnIndex]!;
+        burnEntry.timer -= dt;
+        this.takeDamage(burnEntry.dps * dt, true);
+        if (burnEntry.timer <= 0) {
+          this.burnStack.splice(burnIndex, 1);
+        }
+      }
     }
     if (this.removed) return;
     if (this.markTargetTimer > 0) {

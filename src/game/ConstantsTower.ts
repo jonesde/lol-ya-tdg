@@ -150,6 +150,9 @@ export const GHOST_PARTICLE_COUNT = 14;
 export const GHOST_OPACITY = 0.5;
 // electric fence range in tiles; px radius = grid.tileSize * ELECTRIC_FENCE_RANGE_TILES (Phase 5c)
 export const ELECTRIC_FENCE_RANGE_TILES = 0.75;
+// electric fence zap interval in seconds — gated like ICE_BURST_INTERVAL so the
+// contact damage/stun fires on a cadence instead of every frame (Tower.js)
+export const ELECTRIC_FENCE_INTERVAL = 1;
 
 // knockback: health scaling divisor — lower HP enemies get more knockback (ProjectileManager.js)
 export const KNOCKBACK_HP_DIVISOR = 64;

@@ -92,41 +92,54 @@ function tick(): void {
 
   // Fixed-timestep accumulator. timeScale comes from runState, which input
   // commands may have updated.
-  const scaledDt = rawDt * (engine.runState.state === GameState.PAUSED ? 0 : engine.runState.timeScale);
-  engine.lastScaledDt = scaledDt;
-  accumulator += scaledDt;
-  accumulator = Math.min(accumulator, FIXED_DT * MAX_STEPS_PER_FRAME);
-  while (accumulator >= FIXED_DT) {
-    engine.update(FIXED_DT);
-    accumulator -= FIXED_DT;
+  try {
+    const scaledDt = rawDt * (engine.runState.state === GameState.PAUSED ? 0 : engine.runState.timeScale);
+    engine.lastScaledDt = scaledDt;
+    accumulator += scaledDt;
+    accumulator = Math.min(accumulator, FIXED_DT * MAX_STEPS_PER_FRAME);
+    while (accumulator >= FIXED_DT) {
+      engine.update(FIXED_DT);
+      accumulator -= FIXED_DT;
+    }
+
+    // Produce and post snapshot every tick. Phase 7: one snapshot per tick.
+    const snapshot = buildSnapshot(engine, lastAppliedCommandId);
+    postMessage({ type: "snapshot", snapshot });
+
+    // Phase 9 persist batching: flush to the host only on significant events so
+    // we do not hit the persist store on every dirty mutation. Triggers: wave
+    // increased, game transitioned to VICTORY/GAME_OVER, a new milestone claim
+    // appeared, or a 5s fallback elapsed while dirty.
+    const milestoneKeyCount = Object.keys(snapshot.meta.milestoneRewardsClaimed).length;
+    const waveChanged = snapshot.meta.currentWave !== lastFlushWave;
+    const stateTerminal =
+      (snapshot.meta.state === GameState.VICTORY || snapshot.meta.state === GameState.GAME_OVER) &&
+      lastFlushState !== snapshot.meta.state;
+    const milestoneGained = milestoneKeyCount > lastFlushMilestoneKeys;
+    const fallbackElapsed = now - lastFlushTime >= PERSIST_FLUSH_FALLBACK_MS;
+    if (engine.persistDirty && (waveChanged || stateTerminal || milestoneGained || fallbackElapsed)) {
+      host.schedulePersistSave(buildPersistSlice(engine));
+      engine.persistDirty = false;
+      lastFlushTime = now;
+    }
+    lastFlushWave = snapshot.meta.currentWave;
+    lastFlushState = snapshot.meta.state;
+    lastFlushMilestoneKeys = milestoneKeyCount;
+  } catch (err) {
+    // A simulation or snapshot error must not kill the tick loop. Report it and
+    // keep scheduling so the game stays alive (and the error is visible).
+    const errorMessage = `Tick failed: ${(err as Error).message}`;
+    const errorStack = (err as Error).stack;
+    postMessage(
+      errorStack
+        ? { type: "workerError", message: errorMessage, stack: errorStack }
+        : { type: "workerError", message: errorMessage },
+    );
+    accumulator = 0;
+  } finally {
+    // Schedule next tick. setTimeout from inside the tick keeps the loop alive.
+    scheduleTick();
   }
-
-  // Produce and post snapshot every tick. Phase 7: one snapshot per tick.
-  const snapshot = buildSnapshot(engine, lastAppliedCommandId);
-  postMessage({ type: "snapshot", snapshot });
-
-  // Phase 9 persist batching: flush to the host only on significant events so
-  // we do not hit the persist store on every dirty mutation. Triggers: wave
-  // increased, game transitioned to VICTORY/GAME_OVER, a new milestone claim
-  // appeared, or a 5s fallback elapsed while dirty.
-  const milestoneKeyCount = Object.keys(snapshot.meta.milestoneRewardsClaimed).length;
-  const waveChanged = snapshot.meta.currentWave !== lastFlushWave;
-  const stateTerminal =
-    (snapshot.meta.state === GameState.VICTORY || snapshot.meta.state === GameState.GAME_OVER) &&
-    lastFlushState !== snapshot.meta.state;
-  const milestoneGained = milestoneKeyCount > lastFlushMilestoneKeys;
-  const fallbackElapsed = now - lastFlushTime >= PERSIST_FLUSH_FALLBACK_MS;
-  if (engine.persistDirty && (waveChanged || stateTerminal || milestoneGained || fallbackElapsed)) {
-    host.schedulePersistSave(buildPersistSlice(engine));
-    engine.persistDirty = false;
-    lastFlushTime = now;
-  }
-  lastFlushWave = snapshot.meta.currentWave;
-  lastFlushState = snapshot.meta.state;
-  lastFlushMilestoneKeys = milestoneKeyCount;
-
-  // Schedule next tick. setTimeout from inside the tick keeps the loop alive.
-  scheduleTick();
 }
 
 function stopLoop(): void {

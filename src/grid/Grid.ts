@@ -149,8 +149,12 @@ export class Grid {
     const tileType = this.tiles[y]![x]!;
     if (tileType.type === "path") {
       const towerKey = `${x},${y}`;
-      if (!this.blocked.has(towerKey)) return false;
+      // The tower may be live (in `blocked`) or already destroyed/ghosted (in
+      // `ghostTowers`); resolve from whichever holds it so a ghosted tower can
+      // still be sold/unregistered instead of leaking forever.
+      if (!this.blocked.has(towerKey) && !this.ghostTowers.has(towerKey)) return false;
       this.blocked.delete(towerKey);
+      this.ghostTowers.delete(towerKey);
       this._blockCount--;
       this.recomputePaths();
       return true;
@@ -169,6 +173,7 @@ export class Grid {
     const towerKey = `${x},${y}`;
     this.blocked.delete(towerKey);
     this.ghostTowers.add(towerKey);
+    this._blockCount--;
     this.recomputePaths();
   }
 
@@ -178,6 +183,7 @@ export class Grid {
     const towerKey = `${x},${y}`;
     this.ghostTowers.delete(towerKey);
     this.blocked.add(towerKey);
+    this._blockCount++;
     this.recomputePaths();
   }
 
@@ -188,6 +194,7 @@ export class Grid {
     for (const key of this.ghostTowers) {
       this.blocked.add(key);
     }
+    this._blockCount += this.ghostTowers.size;
     this.ghostTowers.clear();
     this.recomputePaths();
   }

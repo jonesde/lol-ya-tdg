@@ -9,6 +9,7 @@ import {
   CANCEL_BUILD_WINDOW_MS,
   CHARGE_SHOT_COUNT,
   CHARGE_SHOT_MULT,
+  ELECTRIC_FENCE_INTERVAL,
   ELECTRIC_FENCE_RANGE_TILES,
   GHOST_RESTORE_BASE_SECONDS,
   GHOST_RESTORE_PER_LEVEL,
@@ -252,6 +253,7 @@ export class Tower {
   terrainHeight: number;
   chargeShotCount: number;
   iceBurstTimer: number;
+  fenceTimer: number;
   cachedTargetId: number | null;
   maxHealth: number;
   health: number;
@@ -311,6 +313,7 @@ export class Tower {
     this._statsCacheKey = "";
     this.chargeShotCount = 0;
     this.iceBurstTimer = 0;
+    this.fenceTimer = 0;
     this.cachedTargetId = null;
     this.isGhost = false;
     this.ghostTimer = 0;
@@ -821,11 +824,15 @@ export class Tower {
     // Electric Fence variant (sturdyWall B): zap enemies that touch the wall,
     // dealing contact damage and briefly stunning them (stopping motion + attacks).
     if (stats.fenceDamage > 0) {
-      const tileSize = this.grid?.tileSize || 36;
-      const fenceRangePx = tileSize * ELECTRIC_FENCE_RANGE_TILES;
-      for (const enemy of enemyManager.getEnemiesInRange(this.x, this.y, fenceRangePx)) {
-        enemy.takeDamage(stats.fenceDamage);
-        if (enemy.applyStun) enemy.applyStun(stats.fenceStun);
+      this.fenceTimer += dt;
+      if (this.fenceTimer >= ELECTRIC_FENCE_INTERVAL) {
+        this.fenceTimer = 0;
+        const tileSize = this.grid?.tileSize || 36;
+        const fenceRangePx = tileSize * ELECTRIC_FENCE_RANGE_TILES;
+        for (const enemy of enemyManager.getEnemiesInRange(this.x, this.y, fenceRangePx)) {
+          enemy.takeDamage(stats.fenceDamage);
+          if (enemy.applyStun) enemy.applyStun(stats.fenceStun);
+        }
       }
     }
 

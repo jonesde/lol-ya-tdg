@@ -126,8 +126,7 @@ describe("Enemy", () => {
       expect(enemy.stunTimer).toBe(0);
       expect(enemy.reachedBase).toBe(false);
       expect(enemy.removed).toBe(false);
-      expect(enemy.burnTimer).toBe(0);
-      expect(enemy.burnDps).toBe(0);
+      expect(enemy.burnStack).toHaveLength(0);
     });
 
     it("sets path and pathIdx from grid", () => {
@@ -285,19 +284,21 @@ describe("Enemy", () => {
   });
 
   describe("applyBurn", () => {
-    it("sets burnDps and burnTimer", () => {
+    it("adds a burn entry", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applyBurn(5, 3.0);
-      expect(enemy.burnDps).toBe(5);
-      expect(enemy.burnTimer).toBe(3.0);
+      expect(enemy.burnStack).toHaveLength(1);
+      expect(enemy.burnStack[0]!.dps).toBe(5);
+      expect(enemy.burnStack[0]!.timer).toBeCloseTo(3.0, 4);
     });
 
-    it("does not reduce existing burn values", () => {
+    it("stacks independent burns instead of overwriting", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applyBurn(10, 5.0);
       enemy.applyBurn(5, 3.0);
-      expect(enemy.burnDps).toBe(10);
-      expect(enemy.burnTimer).toBe(5.0);
+      expect(enemy.burnStack).toHaveLength(2);
+      const totalDps = enemy.burnStack.reduce((sum, burnEntry) => sum + burnEntry.dps, 0);
+      expect(totalDps).toBe(15);
     });
   });
 

@@ -67,6 +67,8 @@ function buildMeta(engine: GameEngine): SnapshotMeta {
 
 function snapshotEnemy(e: Enemy): EnemySnapshot {
   const maxSlowRemaining = e.slowStack?.reduce((max, s) => Math.max(max, s.remaining), 0) ?? 0;
+  const maxBurnRemaining = e.burnStack?.reduce((max, burnEntry) => Math.max(max, burnEntry.timer), 0) ?? 0;
+  const totalBurnDps = e.burnStack?.reduce((sum, burnEntry) => sum + burnEntry.dps, 0) ?? 0;
   return {
     id: e.id,
     type: e.type,
@@ -84,27 +86,32 @@ function snapshotEnemy(e: Enemy): EnemySnapshot {
     removed: e.removed,
     slowFactor: e.slowFactor,
     slowTimer: maxSlowRemaining,
-    burnTimer: e.burnTimer,
+    burnTimer: maxBurnRemaining,
     hitFlash: 0,
     gameSeconds: e.gameSeconds,
     hitAnimTime: e.hitAnimTime,
     attackAnimTime: e.attackAnimTime,
     walkingFrameIndex: 0,
     isBoss: e.type === "boss",
-    statusEffects: buildEnemyStatusEffects(e, maxSlowRemaining),
+    statusEffects: buildEnemyStatusEffects(e, maxSlowRemaining, maxBurnRemaining, totalBurnDps),
     walking: e.walking,
     hitReaction: e.hitReaction,
     attackAnimation: e.attackAnimation,
   };
 }
 
-function buildEnemyStatusEffects(e: Enemy, maxSlowRemaining: number): StatusEffectSnapshot[] {
+function buildEnemyStatusEffects(
+  e: Enemy,
+  maxSlowRemaining: number,
+  maxBurnRemaining: number,
+  totalBurnDps: number,
+): StatusEffectSnapshot[] {
   const effects: StatusEffectSnapshot[] = [];
   if (e.slowFactor < 1) {
     effects.push({ kind: "slow", remaining: maxSlowRemaining, magnitude: 1 - e.slowFactor });
   }
   if (e.stunTimer > 0) effects.push({ kind: "stun", remaining: e.stunTimer, magnitude: 1 });
-  if (e.burnTimer > 0) effects.push({ kind: "burn", remaining: e.burnTimer, magnitude: e.burnDps ?? 0 });
+  if (maxBurnRemaining > 0) effects.push({ kind: "burn", remaining: maxBurnRemaining, magnitude: totalBurnDps });
   if (e.shield > 0) effects.push({ kind: "shield", remaining: 0, magnitude: e.shield });
   if (e.markTargetMult > 0) effects.push({ kind: "mark", remaining: e.markTargetTimer, magnitude: e.markTargetMult });
   return effects;

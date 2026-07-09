@@ -20,6 +20,7 @@ interface MockEnemy {
   applyBurn?: (dps: number, duration: number) => void;
   applySlow?: (factor: number, duration: number) => void;
   applyStun?: (duration: number) => void;
+  applyKnockback?: (amount: number) => void;
 }
 
 interface MockEnemyManager {
@@ -47,6 +48,7 @@ function createMockEnemy(
     applyBurn: opts.applyBurn,
     applySlow: opts.applySlow,
     applyStun: opts.applyStun,
+    applyKnockback: opts.applyKnockback,
   };
 }
 
@@ -508,6 +510,9 @@ describe("ProjectileManager", () => {
   describe("railgun knockback and stun", () => {
     it("applies knockback to target", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
+      enemy.applyKnockback = (amount) => {
+        enemy.x -= amount;
+      };
       enemyManager = createMockEnemyManager([enemy]);
       manager = new ProjectileManager(enemyManager, particles);
 
