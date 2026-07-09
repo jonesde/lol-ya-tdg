@@ -34,6 +34,8 @@ function makeTowerSnapshot(id: string, level: number, cost: number, nextLevel: n
     fireAnimTime: 0,
     fixedAimDir: null,
     isGhost: false,
+    health: 100,
+    maxHealth: 100,
     sellValue: 10,
     color: "#fff",
     animation: null,

@@ -40,6 +40,9 @@ interface MockTower {
   cancelRemainingMs: number;
   totalInvested: number;
   sellValue: number;
+  isGhost: boolean;
+  health: number;
+  maxHealth: number;
   milestoneBonus: { damagePct: number; speedPct: number; tiers: number };
   base: { fixedAim: boolean };
   fixedAimDir: string | null;
@@ -65,6 +68,9 @@ function makeMockTower(overrides: Partial<MockTower> = {}): MockTower {
     cancelRemainingMs: 0,
     totalInvested: 20,
     sellValue: 12,
+    isGhost: false,
+    health: 100,
+    maxHealth: 100,
     milestoneBonus: { damagePct: 0, speedPct: 0, tiers: 0 },
     base: { fixedAim: false },
     fixedAimDir: null,
@@ -274,5 +280,29 @@ describe("TowerPanel", () => {
     const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ variant: null }));
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.find(".spec-badge").exists()).toBe(false);
+  });
+
+  it("shows current health over max health for a normal tower", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ health: 75, maxHealth: 100 }));
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    const healthRow = wrapper.findAll(".stat-row").find((row) => row.text().includes("Health"));
+    expect(healthRow).toBeDefined();
+    expect(healthRow!.text()).toContain("75");
+    expect(healthRow!.text()).toContain("100");
+  });
+
+  it("shows Ghost in both columns when the tower is in ghost state", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
+      makeMockTower({ isGhost: true, health: 0, maxHealth: 0 }),
+    );
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    expect(wrapper.text()).not.toContain("Health");
+    const ghostRow = wrapper.find(".ghost-row");
+    expect(ghostRow.exists()).toBe(true);
+    expect(ghostRow.find(".ghost-label").exists()).toBe(true);
+    expect(ghostRow.text()).toContain("Ghost");
+    expect(ghostRow.text().match(/Ghost/g)?.length).toBe(1);
   });
 });

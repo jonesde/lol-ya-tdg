@@ -211,6 +211,8 @@ function handleFixedAim(dir: string | null) {
     <div v-if="tower.stats.chain" class="stat-row"><span>Chain</span><span>{{ tower.stats.chain }}</span></div>
     <div class="stat-row"><span>Total Damage</span><span>{{ damageStats?.total?.toLocaleString() ?? 0 }}</span></div>
     <div class="stat-row"><span>Wave Damage</span><span>{{ damageStats?.wave?.toLocaleString() ?? 0 }}</span></div>
+    <div v-if="tower.isGhost" class="stat-row ghost-row"><span class="ghost-label">Ghost</span></div>
+    <div v-else class="stat-row"><span>Health</span><span>{{ Math.ceil(tower.health) }} / {{ Math.round(tower.maxHealth) }}</span></div>
 
     <div v-if="milestoneBonus && milestoneBonus.tiers > 0" class="milestone-bonus">
       Milestone Bonus: +{{ Math.round(milestoneBonus.damagePct) }}% dmg, +{{ Math.round(milestoneBonus.speedPct) }}% speed ({{ milestoneBonus.tiers }}×1M total)
@@ -313,6 +315,17 @@ function handleFixedAim(dir: string | null) {
 .stat-row span:last-child {
   color: var(--color-text);
   font-weight: 500;
+}
+
+.ghost-row {
+  justify-content: center;
+}
+
+.ghost-row .ghost-label {
+  color: var(--color-danger);
+  font-style: italic;
+  font-weight: 600;
+  text-align: center;
 }
 
 .milestone-bonus {

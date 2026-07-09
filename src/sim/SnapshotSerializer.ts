@@ -129,6 +129,8 @@ function snapshotTower(t: Tower, persistState: PersistState): TowerSnapshot {
     fireAnimTime: t.fireAnimTime,
     fixedAimDir: t.fixedAimDir,
     isGhost: t.isGhost,
+    health: t.health,
+    maxHealth: t.maxHealth,
     sellValue: t.sellValue(),
     color: t.color,
     animation: t.animation,
