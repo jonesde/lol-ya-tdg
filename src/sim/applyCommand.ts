@@ -5,62 +5,66 @@ import type { Command } from "./Command.js";
 // This is the single switch that maps Command → engine method. It was inline
 // in MainThreadCommandDispatcher in Phase 6; Phase 7 moves it here so the
 // worker can import it without importing the dispatcher class.
-export function applyCommand(engine: GameEngine, command: Command): void {
+// Applies a command to the engine. Returns true if the command mutated visible
+// runState/persistState (so the worker knows it must post a snapshot even while
+// paused), false for pure no-ops. Every command that touches runState/persistState
+// returns true; only reserved/forward-compat stubs return false.
+export function applyCommand(engine: GameEngine, command: Command): boolean {
   switch (command.type) {
     case "input:click":
       engine.handleClick(command.worldX, command.worldY);
-      break;
+      return true;
     case "input:key":
       // Raw key events are not serialized — Input.ts maps keys to action:*
       // commands locally. Reserved for the worker era if key intents move.
-      break;
+      return false;
     case "action:togglePause":
       engine.togglePause();
-      break;
+      return true;
     case "action:cycleSpeed":
       if (command.direction === 1) {
         engine.cycleSpeed();
       } else {
         engine.cycleSpeedReverse();
       }
-      break;
+      return true;
     case "action:upgradeSelected":
       engine.upgradeSelected();
-      break;
+      return true;
     case "action:sellSelected":
       void engine.sellSelected();
-      break;
+      return true;
     case "action:executeSell":
       engine.executeSellById(command.towerId);
-      break;
+      return true;
     case "action:downgradeSelected":
       engine.downgradeSelected();
-      break;
+      return true;
     case "action:specialize":
       engine.specializeSelected(command.variant);
-      break;
+      return true;
     case "action:cancelSelected":
       engine.cancelSelected();
-      break;
+      return true;
     case "action:setTargeting":
       engine.setTargeting(command.mode);
-      break;
+      return true;
     case "action:setFixedAimDir":
       engine.setFixedAimDir(command.dir);
-      break;
+      return true;
     case "action:cancelBuildMode":
       engine.cancelBuildMode();
-      break;
+      return true;
     case "action:selectBuildType":
       // The worker is authoritative for runState.selectedTowerType; the main thread
       // sets gameStore.selectedTowerType for the local build preview and dispatches
       // this command so the worker can place towers on input:click. Fix #1.
       engine.runState.selectedTowerType = command.towerType as TowerId | null;
-      break;
+      return true;
     case "action:selectTower":
       // Phase 7 implements selectTowerById (was tech debt in Phase 6).
       engine.selectTowerById(command.towerId);
-      break;
+      return true;
     // NOTE: lifecycle:setTheme is intentionally absent — mid-run theme
     // switching is out of scope per README.md. The WorkerEntry message handler
     // retains a defensive no-op "setTheme" case for forward-compat.
@@ -69,16 +73,17 @@ export function applyCommand(engine: GameEngine, command: Command): void {
     case "llm:setTargeting":
     case "llm:holdFormation":
       // No-op until the commander plane is built (ArchitecturePlan.md §4.3).
-      break;
+      return false;
     // init and dispose are lifecycle messages handled by the worker entry
     // (not pushed onto the command queue), but they are part of the Command
     // union so we list them here as no-ops for exhaustiveness.
     case "lifecycle:init":
     case "lifecycle:dispose":
-      break;
+      return false;
     default: {
       const _exhaustive: never = command;
       void _exhaustive;
+      return false;
     }
   }
 }

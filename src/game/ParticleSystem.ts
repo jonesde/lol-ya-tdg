@@ -63,14 +63,20 @@ export class ParticleSystem {
   }
 
   update(dt: number): void {
-    for (const p of this.particles) {
-      p.ox += p.deltaX * dt;
-      p.oy += p.deltaY * dt;
-      p.deltaX *= 0.98;
-      p.deltaY *= 0.98;
-      p.life -= dt;
+    // In-place compaction instead of filter() so we don't allocate a fresh array
+    // every tick (bounded by MAX_PARTICLES). Write-index swap keeps the live
+    // particles packed at the front; trailing slots are dropped via length.
+    let write = 0;
+    for (let read = 0; read < this.particles.length; read++) {
+      const particle = this.particles[read]!;
+      particle.ox += particle.deltaX * dt;
+      particle.oy += particle.deltaY * dt;
+      particle.deltaX *= 0.98;
+      particle.deltaY *= 0.98;
+      particle.life -= dt;
+      if (particle.life > 0) this.particles[write++] = particle;
     }
-    this.particles = this.particles.filter((p) => p.life > 0);
+    this.particles.length = write;
   }
 
   getRenderData(): RenderParticle[] {

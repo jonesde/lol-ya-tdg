@@ -16,7 +16,14 @@ export interface SimulationSnapshot {
   // Authoritative enemy paths (tile coords), rerouted by the worker when a tower
   // blocks a path. The main thread renders path highlights from this rather than
   // its own Grid copy, so the highlight stays in sync with the simulation.
-  paths: Array<Array<{ x: number; y: number }> | null>;
+  // `undefined` on ticks where the path version has not changed since the last
+  // posted snapshot — the main thread keeps its cached copy (see SnapshotSerializer).
+  // Typed as `| undefined` (not `?`) so it can be assigned undefined under
+  // exactOptionalPropertyTypes; the main thread treats undefined/null identically.
+  paths: Array<Array<{ x: number; y: number }> | null> | undefined;
+  // Path version accompanying `paths`. Present every tick so the main thread can
+  // detect a reroute even if a future refactor re-adds per-tick paths.
+  pathsVersion: number;
   // Ephemeral visual effects generated this tick: lightning bolt segments and
   // stun aura positions. Populated by the simulation during update() and
   // consumed (cleared) when this snapshot is built, so the main thread renders
@@ -45,8 +52,11 @@ export interface SnapshotMeta {
   // camera is excluded — main-thread-only UI state, read from gameStore.camera directly
   lastScaledDt: number; // renderer uses this for animation interpolation
   endScreenData: GameRunState["endScreenData"];
-  gemBreakdown: GameRunState["gemBreakdown"];
-  milestoneRewardsClaimed: Record<number, boolean>;
+  // NOTE: gemBreakdown and milestoneRewardsClaimed are intentionally NOT mirrored
+  // into the snapshot. `gemBreakdown` is delivered to the UI via
+  // `endScreenData` (set on triggerEnd), and `milestoneRewardsClaimed` is only
+  // read worker-side for persist-flush decisions (directly from runState). Both
+  // were previously deep-cloned every postMessage for no consumer on the main thread.
 }
 
 // Entity snapshots — plain data only, no methods, no closures.
@@ -131,19 +141,20 @@ export interface TowerSnapshot {
   isGhost: boolean;
   health: number;
   maxHealth: number;
-  sellValue: number;
   color: string;
   animation: MapThemeAnimation | null;
-  // Precomputed UI-decision fields (Phase 8 — replace method calls on the
-  // selectedTower snapshot, which would break since it is a plain data object).
-  canUpgrade: TowerUpgradeCheck;
-  upgradeCostAt5: number; // cost to specialize to level 5
-  levelCosts: number[];
-  canCancel: boolean;
-  cancelRemainingMs: number;
-  milestoneBonus: { damagePct: number; speedPct: number; tiers: number };
-  stats: TowerStatsSnapshot;
+  // Cheap per-tower fields (always present).
   base: { fixedAim: boolean };
+  placedAt: number; // build timestamp (ms); TowerPanel derives cancel window locally
+  // Derived UI-decision fields — COMPUTED ONLY for the selected tower (see
+  // SnapshotSerializer.snapshotTower). They are optional here because
+  // non-selected towers omit them to avoid per-tower recompute every tick.
+  canUpgrade?: TowerUpgradeCheck;
+  upgradeCostAt5?: number; // cost to specialize to level 5
+  levelCosts?: number[];
+  sellValue?: number;
+  milestoneBonus?: { damagePct: number; speedPct: number; tiers: number };
+  stats?: TowerStatsSnapshot;
 }
 
 // Projectile and Particle snapshots: REUSE the existing DTO types.

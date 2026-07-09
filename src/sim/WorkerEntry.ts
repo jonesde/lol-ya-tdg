@@ -1,4 +1,4 @@
-import { FIXED_DT, GameState, type GameStateValue, MAX_ACCUM, MAX_STEPS_PER_FRAME } from "@/game/Constants.js";
+import { FIXED_DT, GameState, MAX_ACCUM, MAX_STEPS_PER_FRAME } from "@/game/Constants.js";
 import { GameEngine } from "@/game/GameEngine.js";
 import { applyCommand } from "./applyCommand.js";
 import type { Command } from "./Command.js";
@@ -31,13 +31,16 @@ let lastTime = 0;
 let accumulator = 0;
 let tickTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let running = false;
+// Ensures the worker posts at least one snapshot after (re)start so the main
+// thread establishes a baseline (initial map/grid, first paths) even if the run
+// begins in PAUSED with no applied command yet. Reset on every startLoop.
+let hasPostedSnapshot = false;
 
 // Persist-flush throttling state: the worker tracks the last snapshot's wave,
 // state, and milestone-claim key count so it can flush to the host only on
 // significant events (wave change / game end / milestone claim) plus a 5s
 // fallback. This avoids a persist-store write on every persist mutation.
 let lastFlushWave = 0;
-let lastFlushState: GameStateValue | null = null;
 let lastFlushMilestoneKeys = 0;
 let lastFlushTime = 0;
 
@@ -51,6 +54,7 @@ function postMessage(msg: WorkerToMainMessage): void {
 function startLoop(): void {
   if (running) return;
   running = true;
+  hasPostedSnapshot = false;
   lastTime = 0; // re-anchored on first tick
   accumulator = 0;
   scheduleTick();
@@ -72,13 +76,19 @@ function tick(): void {
 
   // Drain command queue before any simulation work.
   // Commands are applied in arrival order; each may mutate runState/persistState.
+  // Track whether any command actually mutated visible state this tick — that is
+  // the signal (NOT commandQueue.length, which is 0 by the time we decide) that
+  // we must post a snapshot even while paused.
+  let stateMutatedThisTick = false;
   while (commandQueue.length > 0) {
     const command = commandQueue.shift()!;
     if (command.commandId !== undefined) {
       lastAppliedCommandId = command.commandId;
     }
     try {
-      applyCommand(engine, command);
+      if (applyCommand(engine, command)) {
+        stateMutatedThisTick = true;
+      }
     } catch (err) {
       const errorMessage = `Command ${command.type} failed: ${(err as Error).message}`;
       const errorStack = (err as Error).stack;
@@ -102,29 +112,53 @@ function tick(): void {
       accumulator -= FIXED_DT;
     }
 
-    // Produce and post snapshot every tick. Phase 7: one snapshot per tick.
-    const snapshot = buildSnapshot(engine, lastAppliedCommandId);
-    postMessage({ type: "snapshot", snapshot });
+    const state = engine.runState.state;
+    const terminal = state === GameState.VICTORY || state === GameState.GAME_OVER;
 
-    // Phase 9 persist batching: flush to the host only on significant events so
-    // we do not hit the persist store on every dirty mutation. Triggers: wave
-    // increased, game transitioned to VICTORY/GAME_OVER, a new milestone claim
-    // appeared, or a 5s fallback elapsed while dirty.
-    const milestoneKeyCount = Object.keys(snapshot.meta.milestoneRewardsClaimed).length;
-    const waveChanged = snapshot.meta.currentWave !== lastFlushWave;
-    const stateTerminal =
-      (snapshot.meta.state === GameState.VICTORY || snapshot.meta.state === GameState.GAME_OVER) &&
-      lastFlushState !== snapshot.meta.state;
-    const milestoneGained = milestoneKeyCount > lastFlushMilestoneKeys;
-    const fallbackElapsed = now - lastFlushTime >= PERSIST_FLUSH_FALLBACK_MS;
-    if (engine.persistDirty && (waveChanged || stateTerminal || milestoneGained || fallbackElapsed)) {
-      host.schedulePersistSave(buildPersistSlice(engine));
-      engine.persistDirty = false;
-      lastFlushTime = now;
+    // Skip the snapshot entirely when nothing can have changed. When paused
+    // (scaledDt === 0) AND no command mutated visible state this tick, the
+    // engine state is static — building + structured-cloning a full snapshot is
+    // pure waste. We still post when a command applied (so build/select/pause
+    // actions show up while paused) and we always post at least the first
+    // snapshot so the main thread establishes a baseline.
+    const idle = engine.lastScaledDt === 0 && !stateMutatedThisTick;
+
+    if (terminal) {
+      // Final frame: post exactly once, then stop the loop until the next init.
+      const snapshot = buildSnapshot(engine, lastAppliedCommandId);
+      postMessage({ type: "snapshot", snapshot });
+      hasPostedSnapshot = true;
+      // Persist any pending dirty state now (the loop is stopping, and the
+      // dispose flush may be delayed if the route is not unmounted promptly).
+      if (engine.persistDirty) {
+        host.schedulePersistSave(buildPersistSlice(engine));
+        engine.persistDirty = false;
+      }
+      stopLoop();
+      return;
     }
-    lastFlushWave = snapshot.meta.currentWave;
-    lastFlushState = snapshot.meta.state;
-    lastFlushMilestoneKeys = milestoneKeyCount;
+
+    if (!idle || !hasPostedSnapshot) {
+      const snapshot = buildSnapshot(engine, lastAppliedCommandId);
+      postMessage({ type: "snapshot", snapshot });
+      hasPostedSnapshot = true;
+
+      // Phase 9 persist batching: flush to the host only on significant events so
+      // we do not hit the persist store on every dirty mutation. Reads live
+      // runState directly (the snapshot may not exist when idle). Triggers: wave
+      // increased, a new milestone claim appeared, or a 5s fallback elapsed while dirty.
+      const milestoneKeyCount = Object.keys(engine.runState.milestoneRewardsClaimed).length;
+      const waveChanged = engine.runState.currentWave !== lastFlushWave;
+      const milestoneGained = milestoneKeyCount > lastFlushMilestoneKeys;
+      const fallbackElapsed = now - lastFlushTime >= PERSIST_FLUSH_FALLBACK_MS;
+      if (engine.persistDirty && (waveChanged || milestoneGained || fallbackElapsed)) {
+        host.schedulePersistSave(buildPersistSlice(engine));
+        engine.persistDirty = false;
+        lastFlushTime = now;
+      }
+      lastFlushWave = engine.runState.currentWave;
+      lastFlushMilestoneKeys = milestoneKeyCount;
+    }
   } catch (err) {
     // A simulation or snapshot error must not kill the tick loop. Report it and
     // keep scheduling so the game stays alive (and the error is visible).
@@ -137,8 +171,10 @@ function tick(): void {
     );
     accumulator = 0;
   } finally {
-    // Schedule next tick. setTimeout from inside the tick keeps the loop alive.
-    scheduleTick();
+    // Schedule next tick only while the loop is still running. stopLoop() (terminal
+    // path above) sets running=false, so we must NOT reschedule here or we'd spin
+    // a no-op 60Hz tick forever after the run ends.
+    if (running) scheduleTick();
   }
 }
 
@@ -175,13 +211,17 @@ self.onmessage = (event: MessageEvent<MainToWorkerMessage>) => {
   const msg = event.data;
   switch (msg.type) {
     case "init": {
+      // Harden re-entry: a terminal run may leave the loop stopped while a new
+      // `init` arrives on the same worker. stopLoop() first guarantees a clean
+      // loop state (clears any pending timeout) before we build the new engine
+      // and startLoop() below.
+      stopLoop();
       // Construct the engine with plain state and the worker host bindings.
       // The engine no longer takes Pinia stores — Phase 1 made runState/persistState
       // authoritative. We pass them in directly.
       engine = new GameEngine(msg.persistState, msg.themeBundle, host, msg.mapIndex, msg.randomMapParams);
       // Reset persist-flush tracking for the new run.
       lastFlushWave = 0;
-      lastFlushState = null;
       lastFlushMilestoneKeys = 0;
       lastFlushTime = performance.now();
       // For random maps, loadMap uses mapIndex -1; branch to loadRandomMap so

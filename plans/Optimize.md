@@ -448,6 +448,137 @@ update(dt: number): void {
 
 ---
 
+## Finding 7 — Particles: render-only effect, removed from the snapshot (dominant per-tick clone)
+
+### Problem
+`WorkerEntry.tick` builds + `structuredClone`s a full `SimulationSnapshot` every active tick. The
+largest remaining per-tick cost at scale is the particle array: `GameEngine` owns a `ParticleSystem`
+(`GameEngine.ts:198`), updates it every tick (`GameEngine.ts:303`), and `SnapshotSerializer.ts:50`
+serializes the **entire live set** (`engine.particleManager?.getRenderData()`, up to
+`MAX_PARTICLES = 400` moving `RenderParticle`s) into the snapshot. Enemies and projectiles must stay in
+the worker (the engine mutates them), but particles are purely cosmetic and can be a **main-thread
+UI-layer effect** — they do not affect gameplay. Shipping them every tick is the dominant avoidable
+serialization, and it is the one entity class the engine does not need.
+
+### Approach
+The worker stops *simulating* particles. All game-side `spawn(...)` calls are redirected to a
+**worker-side `ParticleSpawner`** that records sparse spawn *requests*. `buildSnapshot` includes a
+`particleSpawns: ParticleSpawnRequest[] | undefined` only when the buffer is non-empty (gated, unlike
+`lightningEffects`/`stunEffects` which always send `[]`), then clears it — mirroring
+`consumeRenderVisualEffects` (`ProjectileManager.ts:832`). The main thread owns the real `ParticleSystem`,
+spawns from the snapshot deltas, and simulates + renders it in its existing rAF loop. The `particles`
+field is deleted from `SimulationSnapshot` entirely.
+
+This reuses the **existing** render-only-effect precedent (`lightningEffects`/`stunEffects` →
+`effectManager.syncVisualEffectsFromSnapshot`, `SvgGameRoot.vue:358`): particles differ only in that
+they need ongoing simulation, so the main thread runs `ParticleSystem.update` each frame.
+
+### Code sketch — shared spawner interface (consolidate 3 dupes)
+`TowerManager.ts:69`, `EnemyManager.ts:8`, and the `ParticleSystem` interface in `ProjectileManager.ts:145`
+all declare the same `spawn(x, y, color, count, opts)` shape. Replace with one exported interface:
+```ts
+export interface ParticleSpawnRequest {
+  x: number;
+  y: number;
+  color: string;
+  count: number;
+  speed: number;
+  life: number;
+}
+
+export interface ParticleSpawner {
+  spawn(x: number, y: number, color: string, count: number, opts: { speed?: number; life?: number; size?: number }): void;
+  consumeSpawns?(): ParticleSpawnRequest[] | undefined;
+}
+```
+
+### Code sketch — worker-side buffering spawner
+```ts
+class WorkerParticleSpawner implements ParticleSpawner {
+  private buffer: ParticleSpawnRequest[] = [];
+  spawn(x: number, y: number, color: string, count: number, opts: { speed?: number; life?: number; size?: number }): void {
+    this.buffer.push({ x, y, color, count, speed: opts.speed ?? 60, life: opts.life ?? 0.5 });
+  }
+  // Engine-scoped (not module-scoped) so per-engine buildSnapshot tests stay deterministic,
+  // like `lastPostedPathVersion` (Caveat 2). Returns + clears only when non-empty.
+  consumeSpawns(): ParticleSpawnRequest[] | undefined {
+    if (this.buffer.length === 0) return undefined;
+    const out = this.buffer;
+    this.buffer = [];
+    return out;
+  }
+}
+```
+
+### Code sketch — `GameEngine` stops owning a `ParticleSystem`
+- Remove `particleManager: ParticleSystem | null` (`GameEngine.ts:88`, set `:133`, created `:198`,
+  updated `:303`, ghost-spawn `:339`).
+- Add `particleSpawner: ParticleSpawner` (constructor param, default `new NoopParticleSpawner()` so the
+  existing `new GameEngine(...)` call sites in tests stay green).
+- `_initMap` (`GameEngine.ts:198-214`): pass `this.particleSpawner` into `EnemyManager` /
+  `ProjectileManager` / `TowerManager` instead of the `ParticleSystem`.
+- `update` (`GameEngine.ts:303`): drop `this.particleManager?.update(dt)`.
+- Ghost spawn (`GameEngine.ts:339`): `this.particleSpawner?.spawn(...)`.
+- `WorkerEntry.ts:222`: construct + inject `new WorkerParticleSpawner()`.
+- Legacy non-worker path (`MainThreadCommandDispatcher` / `MainThreadHostBindings`): inject the shared
+  main-thread `ParticleSystem` itself as the spawner (spawns land straight in it; `consumeSpawns` is
+  `undefined`, so no deltas are needed).
+
+### Code sketch — `SnapshotSerializer` + `SimulationSnapshot`
+`SnapshotSerializer.ts`:
+```ts
+// replace the `particles: ...` line (was :50) with:
+const particleSpawns = engine.particleSpawner?.consumeSpawns?.() ?? undefined;
+// ...
+// particleSpawns,        // sparse, non-empty only (gated like `paths`)
+```
+`SimulationSnapshot.ts`: delete `particles: ParticleSnapshot[]` (`:14`) and the `ParticleSnapshot` type
+(`:164`); add:
+```ts
+// Sparse particle spawn requests emitted this tick. Present ONLY when the worker's
+// spawn buffer is non-empty, so quiet ticks send nothing — unlike lightning/stun
+// effects which always ship `[]`. The main thread spawns each request into its own
+// `ParticleSystem` and consumes the array exactly once.
+particleSpawns: ParticleSpawnRequest[] | undefined;
+```
+
+### Code sketch — main thread owns sim + render (`SvgGameRoot.vue`)
+- Add a component-scoped `const mainParticleSystem = new ParticleSystem();` (reuse `src/game/ParticleSystem.ts`).
+- `handleWorkerMessage` `case "snapshot"`: after `snapshotStore.apply(msg.snapshot)`, if
+  `snapshot.particleSpawns` is present, call
+  `mainParticleSystem.spawn(req.x, req.y, req.color, req.count, { speed: req.speed, life: req.life })`
+  per request.
+- `renderLoop` (`:356`): replace `particleManager.syncFromGameEngine(snapshot.particles)` with a
+  main-thread sim step:
+  ```ts
+  const nowMs = performance.now();
+  const particleDt = Math.min(0.05, (nowMs - lastParticleFrame) / 1000) || 0;
+  lastParticleFrame = nowMs;
+  mainParticleSystem.update(particleDt);
+  particleManager.syncFromGameEngine(mainParticleSystem.getRenderData());
+  ```
+- `onUnmounted`: add `mainParticleSystem.clear();`.
+- `ParticleManager.syncFromGameEngine` and the `Particle` render type (`render/svg/types.ts:126`) already
+  match `ParticleSystem.getRenderData()` (`{ id, x, y, color, size, opacity }`) — **no change** there.
+
+### Code sketch — `stores/game.ts` (optional cleanup)
+`particleManager: ParticleSystem | null` (`stores/game.ts:103,142,238,245,250`) is dead in the worker
+path. Remove it + the `particleManager` param of `setManagers` (`:241-251`), or keep it holding
+`mainParticleSystem` for the legacy adapter. Confirm at implementation.
+
+### Risk / Notes
+- **Behavior-preserving for gameplay.** Particle *appearance* (spawn positions, colors, counts, sizes)
+  is unchanged. Only the motion timing follows the rAF `dt` (variable; pauses when the tab is hidden)
+  instead of the fixed 60 Hz sim `dt`. This is acceptable and arguably better (no wasted sim when
+  backgrounded) for a purely cosmetic layer.
+- `MAX_PARTICLES = 400` cap stays on the main-thread `ParticleSystem`.
+- Spawn-request volume is sparse: one request per hit / kill / build / ghost, each bundling up to ~14
+  particles. Structured-clone of a tiny array happens only on active ticks, replacing the per-tick clone
+  of up to 400 live, moving particles — the dominant cost is eliminated.
+- `ParticleManager` render pool (`PARTICLE_POOL_SIZE = 300`, `render/svg/types.ts:22`) is unchanged.
+
+---
+
 ## Implementation Caveats (pre-implementation corrections)
 
 Corrections derived from review of the plan against the source. The findings' approach sections
@@ -486,6 +617,31 @@ above already incorporate them; this section records why each change was made.
 
 ---
 
+## Phase 2: Architectural & Follow-ups
+
+### P2-1. Snapshot backpressure — rate-match worker→rAF (VALID, architectural)
+The dominant per-tick cost on huge waves is enemy/projectile/particle *entity* serialization, which
+Findings 1–6 (and Finding 7) do not fully remove — Finding 7 only removes particles. The next
+lever is to have the main thread ack consumption so the worker only posts when the last snapshot was
+rendered (rate-match to rAF), avoiding `structuredClone` when the worker outruns rAF (background
+tab, 30 Hz display). This requires a **main→worker** ack message and a consumption-tracking field —
+an architectural change that violates the stated Non-Goal ("no new data structures for hot path logic").
+**Flag as Phase 2, not now.** (Note: after Finding 7, the per-tick entity set is enemies +
+projectiles + towers only; if backpressure is ever pursued, particles are already off the snapshot.)
+
+### P2-2. `getRenderData` per-tick array allocations (VALID, known follow-up)
+`ParticleSystem.getRenderData()` (`ParticleSystem.ts:82` — the original note cited `:823`, a mis-line)
+and `ProjectileManager.getRenderData()` (`ProjectileManager.ts:818`) allocate fresh arrays every
+snapshot. Finding 6's risk note (`Optimize.md:446-447`) already acknowledges this ("could be folded
+into the same visitor pattern later if needed"). The only safe wins are a reused scratch buffer /
+visitor pattern or capping array size. **Nuance:** `postMessage` clones *synchronously at call time*,
+so the worker-side source array is free to reuse immediately after the call returns (the main thread
+holds a separate cloned object) — a reused outer buffer is technically viable; the inner per-entity
+objects still churn. `SharedArrayBuffer` would remove the clone entirely but needs COOP/COEP headers
+— out of scope. Low-risk Phase-2 follow-up.
+
+---
+
 ## Implementation Order & Verification
 
 1. **Finding 4** (trivial, safe) — confirm no perf regression, no gameplay change.
@@ -508,6 +664,13 @@ above already incorporate them; this section records why each change was made.
    a test asserting `findNearestEnemy` returns the same enemy before/after the visitor conversion
    (including the equal-distance tie-break: first-found wins).
 
+7. **Finding 7** (particles → main-thread render-only) — verify no `particles` array remains in the
+   snapshot; `particleSpawns` (sparse, non-empty only) appears on spawn ticks and is consumed once;
+   the main-thread `ParticleSystem` still simulates + renders identically; the existing manager tests
+   (`game-projectile-manager`, `tower-manager`, `enemy-manager`, `enemy-attack`, `waves`) stay
+   green (they inject their own mock spawner); replace the `tests/unit/sim/snapshot.test.ts:57`
+   `expect(snap.particles).toBeInstanceOf(Array)` assertion with a `particleSpawns` check.
+
 ### Suggested verification
 - Existing unit suite (`tests/unit/*`, `tests/integration/*`) must stay green. `buildSnapshot` output
   now varies by engine state: `paths` are omitted unless `grid.pathVersion` changed since the last
@@ -527,4 +690,5 @@ above already incorporate them; this section records why each change was made.
 
 ### Estimated risk
 Low across all items: each is "stop doing redundant work" with behavior-preserving guards. Findings
-1–4 are the load-bearing ones; 5–6 are polish.
+1–4 are the load-bearing ones; 5–6 are polish. Finding 7 is structural but behavior-preserving
+for gameplay — only particle motion timing follows rAF instead of the fixed sim `dt` (cosmetic).

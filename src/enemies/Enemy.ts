@@ -53,6 +53,7 @@ interface GridRef {
 interface EnemyManagerRef {
   enemies: Enemy[];
   getEnemiesInRange(x: number, y: number, range: number): Enemy[];
+  forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void;
   towerAt(x: number, y: number): Tower | null;
 }
 
@@ -429,12 +430,11 @@ export class Enemy {
     }
 
     if (this.heal > 0 && this.antiHealTimer <= 0 && enemyManager) {
-      const nearbyAllies = enemyManager.getEnemiesInRange(this.x, this.y, this.healRange);
-      for (const ally of nearbyAllies) {
-        if (ally === this) continue;
-        if (ally.antiHealTimer > 0) continue;
+      enemyManager.forEachEnemyInRange(this.x, this.y, this.healRange, (ally) => {
+        if (ally === this) return;
+        if (ally.antiHealTimer > 0) return;
         ally.hp = Math.min(ally.maxHp, ally.hp + ally.maxHp * this.heal * dt);
-      }
+      });
     }
 
     if (this.stunTimer > 0) {
@@ -579,9 +579,8 @@ export class Enemy {
   // moveAngle).
   private resolveCollisions(enemyManager: EnemyManagerRef | null): void {
     if (!enemyManager) return;
-    const neighbors = enemyManager.getEnemiesInRange(this.centerX, this.centerY, this.grid.tileSize);
-    for (const other of neighbors) {
-      if (other === this) continue;
+    enemyManager.forEachEnemyInRange(this.centerX, this.centerY, this.grid.tileSize, (other) => {
+      if (other === this) return;
       const perpA = { x: -Math.sin(this.moveAngle), y: Math.cos(this.moveAngle) };
       const perpB = { x: -Math.sin(other.moveAngle), y: Math.cos(other.moveAngle) };
       const ax = this.centerX + this.laneOffsetX;
@@ -592,7 +591,7 @@ export class Enemy {
       const deltaY = by - ay;
       const dist = Math.hypot(deltaX, deltaY);
       const overlap = this.radius + other.radius - dist;
-      if (overlap <= 0) continue;
+      if (overlap <= 0) return;
       const separation = overlap / 2;
       let thisSign: number;
       let otherSign: number;
@@ -613,7 +612,7 @@ export class Enemy {
       this.laneOffsetY += separation * thisSign * perpA.y;
       other.laneOffsetX += separation * otherSign * perpB.x;
       other.laneOffsetY += separation * otherSign * perpB.y;
-    }
+    });
   }
 
   // Returns the lowest-health adjacent live (non-ghost) tower this enemy is in

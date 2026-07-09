@@ -93,6 +93,11 @@ export class GameEngine {
   startingLives: number;
   waveTopTowers: { tower: Tower; rank: number; dmg: number; startTime: number }[] | null;
   lastScaledDt: number = 0;
+  // Path-version gate for snapshot serialization: the last grid.pathVersion we
+  // included in a posted snapshot. Resets per run so each engine starts clean
+  // (see _initMap). Engine-scoped (not module-scoped) so direct buildSnapshot
+  // callers in tests behave deterministically.
+  lastPostedPathVersion: number = 0;
   shouldEndGame: boolean = false;
   gameEnded: boolean = false;
   persistDirty: boolean = false;
@@ -152,6 +157,10 @@ export class GameEngine {
 
   _initMap(mapIndex: number, mapData: GeneratedMap, persistState: PersistState): void {
     this.persistState = persistState;
+    // Reset the path-version gate so the first snapshot after a (re)load always
+    // includes the authoritative paths (the main thread needs them to draw the
+    // initial highlights, and to notice reroutes on the first build/sell).
+    this.lastPostedPathVersion = 0;
 
     this.runState = {
       state: GameState.PAUSED,

@@ -21,20 +21,39 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
   const persistState = engine.persistState;
   const visualEffects = engine.projectileManager?.consumeRenderVisualEffects() ?? { lightning: [], stuns: [] };
 
+  // Paths only change on tower build/sell/ghost (event-driven, versioned by
+  // grid.pathVersion). Ship the full path arrays only when the version changed
+  // since the last posted snapshot; the main thread keeps its cached copy on
+  // frames where `paths` is omitted. The version is always included so a reroute
+  // is still detectable even if this gating is reverted.
+  const grid = engine.grid;
+  let paths: SimulationSnapshot["paths"];
+  let pathsVersion = 0;
+  if (grid) {
+    pathsVersion = grid.pathVersion;
+    if (grid.pathVersion !== engine.lastPostedPathVersion) {
+      paths = grid.paths;
+      engine.lastPostedPathVersion = grid.pathVersion;
+    }
+  }
+
+  const selectedTowerId = engine.runState.selectedTowerId;
+
   return {
     schemaVersion: 1,
     frameId: nextFrameId++,
     lastAppliedCommandId,
     meta: buildMeta(engine),
     enemies: enemies.map(snapshotEnemy),
-    towers: towers.map((tower) => snapshotTower(tower, persistState)),
+    towers: towers.map((tower) => snapshotTower(tower, persistState, tower.id === selectedTowerId)),
     projectiles: (engine.projectileManager?.getRenderData() ?? []) as ProjectileSnapshot[],
     particles: (engine.particleManager?.getRenderData() ?? []) as ParticleSnapshot[],
     spawnStates: (engine.waveManager?.spawnStates ?? []).map((state, spawnIndex) => ({
       ...state,
       pendingCount: engine.enemyManager?.getPendingCountForSpawn(spawnIndex) ?? 0,
     })),
-    paths: engine.grid?.paths ?? [],
+    paths,
+    pathsVersion,
     lightningEffects: visualEffects.lightning,
     stunEffects: visualEffects.stuns,
   };
@@ -60,8 +79,6 @@ function buildMeta(engine: GameEngine): SnapshotMeta {
     bossesReachedBaseThisRun: rs.bossesReachedBaseThisRun,
     lastScaledDt: engine.lastScaledDt,
     endScreenData: rs.endScreenData,
-    gemBreakdown: rs.gemBreakdown,
-    milestoneRewardsClaimed: rs.milestoneRewardsClaimed,
   };
 }
 
@@ -117,8 +134,13 @@ function buildEnemyStatusEffects(
   return effects;
 }
 
-function snapshotTower(t: Tower, persistState: PersistState): TowerSnapshot {
-  return {
+function snapshotTower(t: Tower, persistState: PersistState, isSelected: boolean): TowerSnapshot {
+  // Cheap per-tower path: only the visual/structural fields the render managers
+  // and selection logic read every frame. The derived UI-decision fields
+  // (sellValue, canUpgrade, levelCosts, milestoneBonus, upgradeCostAt5, stats)
+  // are consumed ONLY by TowerPanel for the *selected* tower, so we compute them
+  // once per tick for the single selected tower instead of every tower on the map.
+  const base: TowerSnapshot = {
     id: t.id,
     type: t.type,
     x: t.x,
@@ -138,13 +160,19 @@ function snapshotTower(t: Tower, persistState: PersistState): TowerSnapshot {
     isGhost: t.isGhost,
     health: t.health,
     maxHealth: t.maxHealth,
-    sellValue: t.sellValue(),
     color: t.color,
     animation: t.animation,
+    base: { fixedAim: t.base.fixedAim ?? false },
+    placedAt: t.placedAt,
+  };
+
+  if (!isSelected) return base;
+
+  return {
+    ...base,
+    sellValue: t.sellValue(),
     canUpgrade: t.canUpgrade(persistState),
     levelCosts: [...t.levelCosts],
-    canCancel: t.canCancel(),
-    cancelRemainingMs: t.cancelRemainingMs(),
     milestoneBonus: t.currentMilestoneBonus(),
     upgradeCostAt5: (() => {
       const lv5Cost = t.upgradeCost(5);
@@ -162,6 +190,5 @@ function snapshotTower(t: Tower, persistState: PersistState): TowerSnapshot {
       splash: t.stats.splash,
       chain: t.stats.chain,
     },
-    base: { fixedAim: t.base.fixedAim ?? false },
   };
 }

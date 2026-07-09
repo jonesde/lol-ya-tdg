@@ -17,6 +17,16 @@ interface PendingEnemyEntry {
 
 const SpatialCellSize = 100;
 
+// Spatial-hash cell coordinates can be negative (enemies can briefly leave the
+// map bounds during collision separation). Offset each coordinate by a power of
+// two well beyond any map's cell range so the packed key stays a positive
+// integer, and use a stride of 2*offset so every (cellX, cellY) pair maps to a
+// unique key. Map cell coords top out around a few dozen, far below 1<<16.
+const SPATIAL_AXIS_OFFSET = 1 << 16;
+function spatialCellKey(cellX: number, cellY: number): number {
+  return (cellX + SPATIAL_AXIS_OFFSET) * (2 * SPATIAL_AXIS_OFFSET) + (cellY + SPATIAL_AXIS_OFFSET);
+}
+
 export class EnemyManager {
   grid: Grid;
   particles: ParticleManagerRef;
@@ -25,7 +35,7 @@ export class EnemyManager {
   theme: MapThemeData | null;
   defaultEnemyVisuals: Record<string, EnemyVisualMeta>;
   towerManager: TowerManager | null = null;
-  private spatialHash: Map<string, Enemy[]>;
+  private spatialHash: Map<number, Enemy[]>;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
 
@@ -166,7 +176,9 @@ export class EnemyManager {
     this.spatialHash.clear();
     for (const enemy of this.enemies) {
       if (enemy.removed) continue;
-      const cellKey = `${Math.floor(enemy.x / SpatialCellSize)},${Math.floor(enemy.y / SpatialCellSize)}`;
+      const cellX = Math.floor(enemy.x / SpatialCellSize);
+      const cellY = Math.floor(enemy.y / SpatialCellSize);
+      const cellKey = spatialCellKey(cellX, cellY);
       const bucket = this.spatialHash.get(cellKey);
       if (bucket) {
         bucket.push(enemy);
@@ -177,19 +189,21 @@ export class EnemyManager {
   }
 
   addToSpatialHash(enemy: Enemy): void {
-    const cellKey = `${Math.floor(enemy.x / SpatialCellSize)},${Math.floor(enemy.y / SpatialCellSize)}`;
+    const cellX = Math.floor(enemy.x / SpatialCellSize);
+    const cellY = Math.floor(enemy.y / SpatialCellSize);
+    const cellKey = spatialCellKey(cellX, cellY);
     const bucket = this.spatialHash.get(cellKey);
     if (bucket) {
       bucket.push(enemy);
     } else {
       this.spatialHash.set(cellKey, [enemy]);
     }
-    enemy.lastCellX = Math.floor(enemy.x / SpatialCellSize);
-    enemy.lastCellY = Math.floor(enemy.y / SpatialCellSize);
+    enemy.lastCellX = cellX;
+    enemy.lastCellY = cellY;
   }
 
   removeFromSpatialHash(enemy: Enemy): void {
-    const cellKey = `${enemy.lastCellX},${enemy.lastCellY}`;
+    const cellKey = spatialCellKey(enemy.lastCellX, enemy.lastCellY);
     const bucket = this.spatialHash.get(cellKey);
     if (!bucket) return;
     const index = bucket.indexOf(enemy);
@@ -203,7 +217,7 @@ export class EnemyManager {
       const currentCellY = Math.floor(enemy.y / SpatialCellSize);
       if (currentCellX === enemy.lastCellX && currentCellY === enemy.lastCellY) continue;
       this.removeFromSpatialHash(enemy);
-      const cellKey = `${currentCellX},${currentCellY}`;
+      const cellKey = spatialCellKey(currentCellX, currentCellY);
       const bucket = this.spatialHash.get(cellKey);
       if (bucket) {
         bucket.push(enemy);
@@ -212,6 +226,30 @@ export class EnemyManager {
       }
       enemy.lastCellX = currentCellX;
       enemy.lastCellY = currentCellY;
+    }
+  }
+
+  // Allocation-free range query. Iterates the same buckets and applies the same
+  // distance filter as getEnemiesInRange, but invokes `cb` per surviving enemy
+  // instead of building a result array — eliminating per-call array allocation
+  // (and the GC churn it causes under heavy waves / lightning usage).
+  forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void {
+    const rangeSquared = range * range;
+    const cellRadius = Math.ceil(range / SpatialCellSize);
+    const centerCellX = Math.floor(x / SpatialCellSize);
+    const centerCellY = Math.floor(y / SpatialCellSize);
+
+    for (let cellX = centerCellX - cellRadius; cellX <= centerCellX + cellRadius; cellX++) {
+      for (let cellY = centerCellY - cellRadius; cellY <= centerCellY + cellRadius; cellY++) {
+        const bucket = this.spatialHash.get(spatialCellKey(cellX, cellY));
+        if (!bucket) continue;
+        for (const enemy of bucket) {
+          if (enemy.removed || enemy.reachedBase) continue;
+          const deltaX = enemy.x - x;
+          const deltaY = enemy.y - y;
+          if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) cb(enemy);
+        }
+      }
     }
   }
 
@@ -224,7 +262,7 @@ export class EnemyManager {
 
     for (let cellX = centerCellX - cellRadius; cellX <= centerCellX + cellRadius; cellX++) {
       for (let cellY = centerCellY - cellRadius; cellY <= centerCellY + cellRadius; cellY++) {
-        const bucket = this.spatialHash.get(`${cellX},${cellY}`);
+        const bucket = this.spatialHash.get(spatialCellKey(cellX, cellY));
         if (!bucket) continue;
         for (const enemy of bucket) {
           if (enemy.removed || enemy.reachedBase) continue;

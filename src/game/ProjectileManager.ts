@@ -101,6 +101,23 @@ export interface EnemyManager {
     applyMarkTarget?(mult: number, duration: number): void;
     applyAntiHeal?(duration: number): void;
   }[];
+  forEachEnemyInRange(
+    x: number,
+    y: number,
+    range: number,
+    cb: (enemy: {
+      id: number;
+      type: string;
+      x: number;
+      y: number;
+      hp: number;
+      maxHp: number;
+      removed: boolean;
+      takeDamage(dmg: number, armorPiercing?: boolean): void;
+      applySlow?(factor: number, duration: number): void;
+      applyStun?(duration: number): void;
+    }) => void,
+  ): void;
   getEnemyById(
     id: number,
   ): {
@@ -746,7 +763,15 @@ export class ProjectileManager {
     if (tower) {
       tower.totalDamageDealt += amount;
       tower.waveDamage += amount;
-      tower.clearStatsCache();
+      // Intentionally do NOT clearStatsCache here. Tower.stats is keyed by
+      // _computeCacheKey, which already encodes every runtime-mutable input:
+      // totalDamageDealt (milestone tier), level, and variant. The other inputs
+      // (general addons, terrain height, tower addons) are fixed for the run, so
+      // the cache recomputes exactly when damage crosses a milestone threshold.
+      // The previous per-hit clear forced a redundant _computeStats on the next
+      // stats read (which, post-Finding 1, happens every frame for the selected
+      // tower). doUpgrade/specialize still clear the cache where level/variant
+      // change.
     }
   }
 
@@ -757,63 +782,33 @@ export class ProjectileManager {
     excludeId?: number,
     excludeIds?: Set<number>,
   ): LightningTarget | null {
-    const fullRangeEnemies = this.enemyManager.getEnemiesInRange(x, y, range);
-
-    if (fullRangeEnemies.length <= 8) {
-      let closest: LightningTarget | null = null;
-      let closestDist = Infinity;
-      for (const enemy of fullRangeEnemies) {
-        if (enemy.id === excludeId) continue;
-        if (excludeIds?.has(enemy.id)) continue;
-        const dx = enemy.x - x;
-        const dy = enemy.y - y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < closestDist) {
-          closestDist = dist;
-          closest = enemy;
-        }
-      }
-      return closest;
-    }
+    // Allocation-free nearest-enemy search via the spatial-hash visitor. The
+    // original built (up to 4) enemy arrays per call; here we scan incrementally
+    // widening sub-ranges and stop at the first sub-range that yields a candidate
+    // (any enemy found in a smaller sub-range is strictly closer than anything in
+    // a larger one, so a later, wider scan cannot beat it). Strict `<` on squared
+    // distance preserves the original first-found-wins tie-break exactly (cell
+    // iteration order is unchanged from getEnemiesInRange).
+    let best: LightningTarget | null = null;
+    let bestDistSquared = Infinity;
 
     const tileSize = GRID_TILE_SIZE;
-    const halfTileRange = 0.5 * tileSize;
-    const quarterRange = 0.25 * range;
-    const halfRange = 0.5 * range;
-
-    const subRanges = [halfTileRange, quarterRange, halfRange];
+    const subRanges = [0.5 * tileSize, 0.25 * range, 0.5 * range, range];
     for (const subRange of subRanges) {
-      const subEnemies = this.enemyManager.getEnemiesInRange(x, y, subRange);
-      let closest: LightningTarget | null = null;
-      let closestDist = Infinity;
-      for (const enemy of subEnemies) {
-        if (enemy.id === excludeId) continue;
-        if (excludeIds?.has(enemy.id)) continue;
-        const dx = enemy.x - x;
-        const dy = enemy.y - y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < closestDist) {
-          closestDist = dist;
-          closest = enemy;
+      this.enemyManager.forEachEnemyInRange(x, y, subRange, (enemy) => {
+        if (enemy.id === excludeId) return;
+        if (excludeIds?.has(enemy.id)) return;
+        const deltaX = enemy.x - x;
+        const deltaY = enemy.y - y;
+        const distSquared = deltaX * deltaX + deltaY * deltaY;
+        if (distSquared < bestDistSquared) {
+          bestDistSquared = distSquared;
+          best = enemy;
         }
-      }
-      if (closest) return closest;
+      });
+      if (best) return best;
     }
-
-    let fallback: LightningTarget | null = null;
-    let fallbackDist = Infinity;
-    for (const enemy of fullRangeEnemies) {
-      if (enemy.id === excludeId) continue;
-      if (excludeIds?.has(enemy.id)) continue;
-      const dx = enemy.x - x;
-      const dy = enemy.y - y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < fallbackDist) {
-        fallbackDist = dist;
-        fallback = enemy;
-      }
-    }
-    return fallback;
+    return best;
   }
 
   private removeProjectile(projectile: ProjectileGame, _reason: string): void {

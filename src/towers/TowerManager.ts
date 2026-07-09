@@ -45,6 +45,24 @@ interface EnemyManagerRef {
     pathIdx: number;
     path: { x: number; y: number }[] | null;
   } | null;
+  forEachEnemyInRange(
+    x: number,
+    y: number,
+    range: number,
+    cb: (enemy: {
+      x: number;
+      y: number;
+      pathIdx: number;
+      path: { x: number; y: number }[] | null;
+      removed: boolean;
+      maxHp: number;
+      hp: number;
+      id: number;
+      applySlow(amount: number, duration: number): void;
+      applyStun?(duration: number): void;
+      takeDamage(amount: number, armorPiercing?: boolean): void;
+    }) => void,
+  ): void;
   towerAt(x: number, y: number): Tower | null;
 }
 

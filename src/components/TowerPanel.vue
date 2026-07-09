@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted } from "vue";
 import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
-import { SELL_VALUE_RATIO, TOWER_META } from "@/game/ConstantsTower.js";
+import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO, TOWER_META } from "@/game/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
 import { useGameStore } from "@/stores/game.js";
@@ -178,14 +178,17 @@ const canAffordSpecialize = computed(() => {
   return gameStore.gold >= lv5Cost.value;
 });
 
-// Phase 4: cancel build
+// Phase 4: cancel build. Cancelled-window fields are no longer shipped in the
+// snapshot (they change every frame and are only needed here for the selected
+// tower). Derive them locally from the tower's build timestamp (placedAt).
 const canCancel = computed(() => {
-  return tower.value?.canCancel ?? false;
+  if (!tower.value) return false;
+  return Date.now() - tower.value.placedAt < CANCEL_BUILD_WINDOW_MS && tower.value.level === 1;
 });
 
 const cancelRemaining = computed(() => {
   if (!tower.value) return 0;
-  return Math.ceil((tower.value.cancelRemainingMs ?? 0) / 1000);
+  return Math.ceil(Math.max(0, CANCEL_BUILD_WINDOW_MS - (Date.now() - tower.value.placedAt)) / 1000);
 });
 
 // Phase 6: Fixed aim for railgun
