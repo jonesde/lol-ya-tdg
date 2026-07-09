@@ -36,6 +36,11 @@ let running = false;
 // thread establishes a baseline (initial map/grid, first paths) even if the run
 // begins in PAUSED with no applied command yet. Reset on every startLoop.
 let hasPostedSnapshot = false;
+// Backpressure gate (P2-1): the worker simulates at 60 Hz unconditionally, but
+// buildSnapshot()+postMessage() are gated on the main thread having consumed
+// (acked) the previous snapshot. Set true when a snapshot is posted so the next
+// running-idle tick is dropped unless an ack (or a forced post) arrives.
+let awaitingAck = false;
 
 // Persist-flush throttling state: the worker tracks the last snapshot's wave,
 // state, and milestone-claim key count so it can flush to the host only on
@@ -56,6 +61,7 @@ function startLoop(): void {
   if (running) return;
   running = true;
   hasPostedSnapshot = false;
+  awaitingAck = false;
   lastTime = 0; // re-anchored on first tick
   accumulator = 0;
   scheduleTick();
@@ -140,25 +146,42 @@ function tick(): void {
     }
 
     if (!idle || !hasPostedSnapshot) {
-      const snapshot = buildSnapshot(engine, lastAppliedCommandId);
-      postMessage({ type: "snapshot", snapshot });
-      hasPostedSnapshot = true;
+      const isBaseline = !hasPostedSnapshot;
+      // Paused AND a command mutated visible state this tick (distinct from `idle`,
+      // which is the non-mutated paused case). The only force path while paused.
+      const pausedMutation = engine.lastScaledDt === 0 && stateMutatedThisTick;
+      // Force-posts bypass backpressure: baseline, AND any tick where a command
+      // applied (paused OR running) so player input is reflected promptly.
+      const forced = isBaseline || stateMutatedThisTick;
+      if (awaitingAck && !forced) {
+        // Running (no command, not baseline) but main hasn't acked the last
+        // snapshot → drop build+post. awaitingAck stays true; next tick re-checks.
+        // Persist-flush is skipped too (still fires on forced posts / 5s fallback / dispose).
+      } else {
+        const snapshot = buildSnapshot(engine, lastAppliedCommandId);
+        postMessage({ type: "snapshot", snapshot });
+        hasPostedSnapshot = true;
+        // baseline       → true  (establish gate from first frame)
+        // pausedMutation → false (so a *next* forced post isn't swallowed)
+        // running/normal → true  (resume throttle; next running tick waits for ack)
+        awaitingAck = !pausedMutation;
 
-      // Phase 9 persist batching: flush to the host only on significant events so
-      // we do not hit the persist store on every dirty mutation. Reads live
-      // runState directly (the snapshot may not exist when idle). Triggers: wave
-      // increased, a new milestone claim appeared, or a 5s fallback elapsed while dirty.
-      const milestoneKeyCount = Object.keys(engine.runState.milestoneRewardsClaimed).length;
-      const waveChanged = engine.runState.currentWave !== lastFlushWave;
-      const milestoneGained = milestoneKeyCount > lastFlushMilestoneKeys;
-      const fallbackElapsed = now - lastFlushTime >= PERSIST_FLUSH_FALLBACK_MS;
-      if (engine.persistDirty && (waveChanged || milestoneGained || fallbackElapsed)) {
-        host.schedulePersistSave(buildPersistSlice(engine));
-        engine.persistDirty = false;
-        lastFlushTime = now;
+        // Phase 9 persist batching: flush to the host only on significant events so
+        // we do not hit the persist store on every dirty mutation. Reads live
+        // runState directly (the snapshot may not exist when idle). Triggers: wave
+        // increased, a new milestone claim appeared, or a 5s fallback elapsed while dirty.
+        const milestoneKeyCount = Object.keys(engine.runState.milestoneRewardsClaimed).length;
+        const waveChanged = engine.runState.currentWave !== lastFlushWave;
+        const milestoneGained = milestoneKeyCount > lastFlushMilestoneKeys;
+        const fallbackElapsed = now - lastFlushTime >= PERSIST_FLUSH_FALLBACK_MS;
+        if (engine.persistDirty && (waveChanged || milestoneGained || fallbackElapsed)) {
+          host.schedulePersistSave(buildPersistSlice(engine));
+          engine.persistDirty = false;
+          lastFlushTime = now;
+        }
+        lastFlushWave = engine.runState.currentWave;
+        lastFlushMilestoneKeys = milestoneKeyCount;
       }
-      lastFlushWave = engine.runState.currentWave;
-      lastFlushMilestoneKeys = milestoneKeyCount;
     }
   } catch (err) {
     // A simulation or snapshot error must not kill the tick loop. Report it and
@@ -262,6 +285,12 @@ self.onmessage = (event: MessageEvent<MainToWorkerMessage>) => {
     case "setTheme": {
       // Defensive no-op — mid-run theme switching is out of scope per README.md.
       // The MainToWorkerMessage type still includes setTheme for forward-compat.
+      break;
+    }
+    case "snapshotAck": {
+      // Main thread consumed the latest snapshot; clear the backpressure gate so
+      // the next post-eligible tick may build+post the current state.
+      awaitingAck = false;
       break;
     }
     case "dispose": {

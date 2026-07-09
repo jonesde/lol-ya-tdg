@@ -42,6 +42,7 @@ describe("worker round-trip", () => {
 
   afterEach(() => {
     gw.self = originalSelf;
+    ackReceived = 0;
   });
 
   function sendInit(): void {
@@ -60,6 +61,21 @@ describe("worker round-trip", () => {
   }
   function wait(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // Counts acks actually delivered to the worker (the worker processes snapshotAck
+  // synchronously), so this equals "acks received by the worker" used by the
+  // backpressure assertions below.
+  let ackReceived = 0;
+  function sendAck(): void {
+    mockSelf.onmessage!({ data: { type: "snapshotAck" } });
+    ackReceived++;
+  }
+  // Drives a fake main-thread rAF that posts one ack roughly every frame. Returns
+  // a stop() to clear the interval. Each tick counts as one received ack.
+  function startAckDriver(intervalMs = 16): { stop: () => void; acks: () => number } {
+    const handle = setInterval(sendAck, intervalMs);
+    return { stop: () => clearInterval(handle), acks: () => ackReceived };
   }
 
   it("initializes and produces snapshots with expected meta", async () => {
@@ -223,6 +239,129 @@ describe("worker round-trip", () => {
     const resumed = snapshotMessages(posted)[snapshotMessages(posted).length - 1]!;
     // Fresh run starts paused again.
     expect(resumed.snapshot.meta.state).toBe("paused");
+    sendDispose();
+  });
+
+  it("(P2-1a) no ack → only baseline + command-induced frames; running-idle ticks drop", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40); // baseline posts while paused (awaitingAck = true)
+
+    // Go running with NO acks sent from the "main thread".
+    sendCommand({ commandId: 1, type: "action:togglePause" });
+    await wait(40);
+    // Exactly two snapshots: baseline + the togglePause forced post.
+    expect(snapshotCount()).toBe(2);
+
+    // Further running-idle ticks must be dropped (awaitingAck still true).
+    await wait(120);
+    expect(snapshotCount()).toBe(2);
+    sendDispose();
+  });
+
+  it("(P2-1b) with ack each frame → rate-matched; snapshots track received acks", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40);
+    // Baseline (1) posted while paused.
+
+    // Start running. The togglePause command is itself a forced post.
+    sendCommand({ commandId: 1, type: "action:togglePause" });
+    await wait(20);
+    const postsBeforeAckLoop = snapshotCount(); // baseline + togglePause
+    expect(postsBeforeAckLoop).toBeGreaterThanOrEqual(2);
+
+    // Drive a fake main-thread rAF that acks one snapshot per frame (~16ms),
+    // with no further commands, for ~250ms.
+    const driver = startAckDriver(16);
+    await wait(250);
+    driver.stop();
+
+    // Posts made after the running start must track the acks the worker actually
+    // received. Tolerance absorbs setTimeout/rAF timer jitter. A command sent
+    // mid-segment would add +1; none is sent here, so upper bound is ackCount.
+    const postsAfterStart = snapshotCount() - postsBeforeAckLoop;
+    const acks = driver.acks();
+    expect(postsAfterStart).toBeGreaterThanOrEqual(acks - 2);
+    expect(postsAfterStart).toBeLessThanOrEqual(acks + 2);
+    sendDispose();
+  });
+
+  it("(P2-1b-paused) a command while paused force-posts exactly one snapshot", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40);
+    const before = snapshotCount(); // baseline only (paused + idle)
+
+    // Select a build type while paused — must force exactly one post.
+    sendCommand({ commandId: 3, type: "action:selectBuildType", towerType: "basic" });
+    await wait(40);
+    expect(snapshotCount()).toBe(before + 1);
+    // And a subsequent paused-idle tick must still be gated (awaitingAck was reset
+    // false by the pausedMutation post, but idle → no post anyway).
+    await wait(60);
+    expect(snapshotCount()).toBe(before + 1);
+    sendDispose();
+  });
+
+  it("(P2-1c) terminal → exactly one final post regardless of awaitingAck", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40);
+    // Baseline posts (awaitingAck = true). Send NO ack, then drive to victory.
+    const before = snapshotCount();
+
+    sendCommand({ commandId: 4, type: "action:debugEndRun", victory: true });
+    await wait(50);
+    // Exactly one terminal snapshot was posted even though awaitingAck was set.
+    expect(snapshotCount()).toBe(before + 1);
+    const terminal = snapshotMessages(posted)[snapshotMessages(posted).length - 1]!;
+    expect(terminal.snapshot.meta.state).toBe("victory");
+    // Loop is stopped: no further snapshots even after a long wait.
+    await wait(100);
+    expect(snapshotCount()).toBe(before + 1);
+    sendDispose();
+  });
+
+  it("(P2-1d) init re-entry resets the gate; fresh baseline posts and running frames resume with acks", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40);
+
+    // Drive to terminal (sets the gate via awaitingAck on the baseline).
+    sendCommand({ commandId: 5, type: "action:debugEndRun", victory: true });
+    await wait(50);
+    expect(snapshotMessages(posted).some((m) => m.snapshot.meta.state === "victory")).toBe(true);
+
+    // Re-init on the same (stopped) worker → gate resets, fresh baseline posts.
+    const beforeReinit = snapshotCount();
+    sendInit();
+    await wait(40);
+    expect(snapshotCount()).toBeGreaterThan(beforeReinit);
+    const resumed = snapshotMessages(posted)[snapshotMessages(posted).length - 1]!;
+    expect(resumed.snapshot.meta.state).toBe("paused");
+
+    // Now run with acks flowing: running frames must resume posting.
+    sendCommand({ commandId: 6, type: "action:togglePause" });
+    await wait(20);
+    const postsBeforeAckLoop = snapshotCount();
+    const driver = startAckDriver(16);
+    await wait(200);
+    driver.stop();
+    const postsAfterStart = snapshotCount() - postsBeforeAckLoop;
+    const acks = driver.acks();
+    expect(postsAfterStart).toBeGreaterThanOrEqual(acks - 2);
+    expect(postsAfterStart).toBeLessThanOrEqual(acks + 2);
     sendDispose();
   });
 });

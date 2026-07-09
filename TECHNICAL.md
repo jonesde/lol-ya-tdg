@@ -161,6 +161,46 @@ The simulation runs in a Web Worker; the main thread renders and produces intent
 - **HostBindings seam (`src/sim/HostBindings.ts`).** The sim reaches the outside world only through `HostBindings`: `playSound`, `notifyUi`, `schedulePersistSave`, `requestConfirm`. Implemented twice — `WorkerHostBindings` (worker → `postMessage`) and `MainThreadHostBindings` in `src/sim-adapters/` (main thread → `SoundManager`/`uiStore`/`persistStore`). This seam is what made the worker migration behavior-preserving at every step.
 - **Persistence batching.** The worker sets `persistDirty` on persist mutations and the host flushes `schedulePersistSave` only on significant events (wave change, game-over/victory, new milestone claim, or a 5s fallback), avoiding a `localStorage` write per mutation.
 
+### Snapshot Backpressure (Worker → Main Ack Gate)
+
+The worker simulates at a fixed 60 Hz unconditionally, but `buildSnapshot()` +
+`postMessage()` are **gated** on the main thread having consumed the previous
+snapshot. This avoids allocating and structured-cloning a snapshot on ticks the
+renderer never drained (underpowered machines, 30 Hz displays, brief main-thread
+stalls). The gate never blocks the simulation — only the snapshot build/post.
+
+- **Handshake:** the worker sets a module-level `awaitingAck = true` after each
+  post. The main thread's rAF render loop sends `{ type: "snapshotAck" }` once
+  per *rendered* frame (after the render-manager `syncFromGameEngine` calls,
+  before rescheduling rAF). The worker clears `awaitingAck` on `snapshotAck`. A
+  running-idle tick with `awaitingAck === true` drops the build+post entirely.
+- **Forced posts bypass the gate** (so input latency stays ≤1 frame): the
+  *baseline* (first snapshot after `(re)init`) and any tick where a `Command`
+  mutated visible state (`stateMutatedThisTick`, paused **or** running). A
+  running-command post sets `awaitingAck = true` (next running tick throttles
+  again); a paused-command post sets `awaitingAck = false` so a follow-up forced
+  post isn't swallowed. Plain paused-idle posts nothing.
+- **Behavior-preserving:** the renderer always shows the latest snapshot, so
+  dropped intermediate frames are automatically replaced by current state at the
+  next post. `startLoop()` resets `awaitingAck = false` so a fresh run starts
+  unblocked; the terminal branch posts unconditionally before `stopLoop()`.
+- **Over-acking is harmless:** if the main thread renders a stale snapshot twice
+  (e.g. 60 Hz main / 30 Hz effective worker) it acks twice; the worker may post
+  one redundant snapshot. No semantic change.
+
+**Multiple consumers (future).** The gate assumes a *single* acking consumer:
+the next post is released by the one `snapshotAck` the main thread sends. If a
+second consumer (e.g. a replay recorder, a second view, or a debug inspector)
+reads the stream, the single-ack model is insufficient — a slow or absent second
+consumer would stall the stream for the primary renderer. Supporting multiple
+consumers will require either (a) a per-consumer ack with the worker releasing a
+post only when *all* registered consumers have acked, or (b) monotonic snapshot
+sequence ids so each consumer acks independently and the worker posts when the
+*latest* snapshot has been consumed by the slowest consumer. A safety
+max-latency fallback (post anyway if `awaitingAck` has been true beyond N ms)
+should also be reconsidered then so a stalled consumer cannot starve the others.
+This is the main open design point before introducing additional stream readers.
+
 ### Router Navigation Guards
 
 `router.beforeEach` disposes the game engine and saves progress when leaving `/game`. Auto-redirects to `/game-over` or `/victory` when the game state transitions.

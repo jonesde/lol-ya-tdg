@@ -398,7 +398,6 @@ function renderLoop(): void {
     uiOverlayManager.syncPendingQueueOverlays(gameStore.grid, snapshot.spawnStates);
   }
   spawnManager.sync(snapshot.spawnStates);
-
   // Imperative path highlights — appended to grid-layer, not Vue-managed.
   // Drawn from the worker-authoritative snapshot paths (rerouted when a tower
   // blocks a path) rather than the main-thread Grid copy, which is not updated
@@ -420,6 +419,12 @@ function renderLoop(): void {
     }
     pathHighlightsGroup.innerHTML = pathSvg;
   }
+
+  // Backpressure handshake (P2-1): the main thread acks each rendered snapshot
+  // so the worker may build+post the next one. The early return at the top of
+  // this loop (no snapshot available yet) naturally defers acking until the
+  // worker's baseline snapshot arrives.
+  worker?.postMessage({ type: "snapshotAck" });
 
   renderFrameHandle = requestAnimationFrame(renderLoop);
 }

@@ -21,4 +21,5 @@ export type MainToWorkerMessage =
   | { type: "command"; command: Command }
   | { type: "confirmResult"; requestId: number; confirmed: boolean }
   | { type: "setTheme"; themeBundle: ThemeBundle } // defensive no-op in Phase 7 (mid-run theme switching out of scope)
-  | { type: "dispose" };
+  | { type: "dispose" }
+  | { type: "snapshotAck" }; // main thread consumed the latest snapshot; worker may post the next one
