@@ -518,8 +518,10 @@ describe("ProjectileManager", () => {
         speed: 100,
         range: 5,
         towerType: "railgun",
-        towerLevel: 1,
+        towerLevel: 5,
         targetId: 1,
+        knockbackBase: 0.5,
+        knockbackScale: 0.2,
       });
 
       // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
