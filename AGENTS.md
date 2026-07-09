@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Before doing anything else, always read `README.md` to understand the project, its structure, and how to work with it.
+Before doing any reqested task, if you have not already, always read `TECHNICAL.md` to understand the project, its structure, and how to work with it.
 
 ## Code Rules
 

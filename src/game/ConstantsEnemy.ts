@@ -22,7 +22,7 @@ export const ENEMY_TYPES: Record<string, EnemyMeta> = {
   minion: { baseHp: 8, speed: 1.0, bounty: 2, radius: 0.4, attackDamage: 3, attackSpeed: 0.5 },
   runner: { baseHp: 8, speed: 2.5, bounty: 4, radius: 0.4, attackDamage: 2, attackSpeed: 1.0 },
   tank: { baseHp: 32, speed: 0.4, bounty: 5, radius: 0.5, attackDamage: 10, attackSpeed: 0.35 },
-  shielded: { baseHp: 16, speed: 0.7, bounty: 6, radius: 0.4, shield: 32, attackDamage: 6, attackSpeed: 0.5 },
+  shielded: { baseHp: 16, speed: 0.7, bounty: 6, radius: 0.4, shield: 32, attackDamage: 10, attackSpeed: 0.5 },
   healer: {
     baseHp: 16,
     speed: 0.8,
