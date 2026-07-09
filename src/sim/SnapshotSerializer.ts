@@ -1,5 +1,5 @@
 import type { Enemy } from "@/enemies/Enemy.js";
-import { UPGRADE_COST_REDUCTION_PCT } from "@/game/Constants.js";
+import { UPGRADE_COST_REDUCTION_PCT, WAVE_GRAPH_MAX_SEND } from "@/game/Constants.js";
 import type { GameEngine } from "@/game/GameEngine.js";
 import type { Tower } from "@/towers/Tower.js";
 import type { PersistState } from "./PersistState.js";
@@ -42,17 +42,18 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
   const selectedTowerId = engine.runState.selectedTowerId;
 
   // Wave-graph dots only change shape every WAVE_GRAPH_INTERVAL_SECONDS (a dot
-  // is flushed) or on a front-trim/dispose, so ship the full array only when
-  // the tracker's generation changed since the last posted snapshot. The main
-  // thread keeps its cached copy on frames where `waveGraphDots` is omitted.
-  // The generation is always included so a change stays detectable.
+  // is flushed) or on a front-trim/dispose, so ship the dots window only when
+  // the tracker's generation changed since the last posted snapshot. The worker
+  // sends just the most recent WAVE_GRAPH_MAX_SEND dots; the main thread merges
+  // them into its accumulation. The generation is always included so a change
+  // stays detectable even when the window itself is omitted.
   const tracker = engine.waveGraphTracker;
   let waveGraphDots: WaveGraphDot[] | undefined;
   let waveGraphDotsGeneration = 0;
   if (tracker) {
     waveGraphDotsGeneration = tracker.getGeneration();
     if (tracker.getGeneration() !== engine.lastPostedWaveGraphGeneration) {
-      waveGraphDots = tracker.getDots().slice();
+      waveGraphDots = tracker.getDots().slice(-WAVE_GRAPH_MAX_SEND);
       engine.lastPostedWaveGraphGeneration = waveGraphDotsGeneration;
     }
   }

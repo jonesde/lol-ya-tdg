@@ -336,6 +336,10 @@ export const WAVE_GRAPH_HEIGHT = 60;
 export const WAVE_GRAPH_WIDTH = 2000;
 export const WAVE_GRAPH_DOT_SIZE = 2;
 export const WAVE_GRAPH_DOT_SPACING = 8;
+// Max dots shipped per snapshot. The worker retains far more (WAVE_GRAPH_WIDTH)
+// but only streams the most recent window so the main thread can merge and
+// refill the screen; keeps each posted frame's payload tiny.
+export const WAVE_GRAPH_MAX_SEND = 8;
 export const WAVE_GRAPH_DOT_OPACITY = 0.2;
 export const WAVE_GRAPH_DOT_OPACITY_WAVE_START = 0.5;
 export const WAVE_GRAPH_MAIN_OPACITY = 0.3;

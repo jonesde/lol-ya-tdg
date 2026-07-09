@@ -1,20 +1,71 @@
 import type { GameStore } from "@/stores/game.js";
 import type { Tower } from "@/towers/Tower.js";
-import type { SimulationSnapshot } from "./SimulationSnapshot.js";
+import { WAVE_GRAPH_DOT_SPACING, WAVE_GRAPH_WIDTH } from "@/game/Constants.js";
+import type { SimulationSnapshot, WaveGraphDot } from "./SimulationSnapshot.js";
 
 // Module-level mirror of the latest snapshot so non-reactive Vue components
 // (e.g. StatsPanel) can read it without threading the SnapshotStore instance
 // everywhere. Kept store-free to preserve the sim/main-thread boundary.
 let latestSnapshot: SimulationSnapshot | null = null;
 
-// Cache of the most recent wave-graph dots. The worker omits the (large) array
-// on most posted frames and ships it only when its generation changes, so we
-// keep the last-seen copy here and write it back into every stored snapshot via
-// apply() — see the `paths`/`pathsVersion` gating pattern.
-let latestWaveGraphDots: SimulationSnapshot["waveGraphDots"] = undefined;
+// Cache of the accumulated wave-graph dots. The worker only ships the most
+// recent window (WAVE_GRAPH_MAX_SEND dots) when its generation changes, so the
+// receiver merges each window into this accumulation to fill the screen — see
+// the `paths`/`pathsVersion` gating pattern. Cap mirrors the worker's retained
+// dot count so the accumulation never exceeds what can be displayed.
+let latestWaveGraphDots: WaveGraphDot[] = [];
+let latestWaveGraphGeneration = 0;
 
 export function getLatestSnapshot(): SimulationSnapshot | null {
   return latestSnapshot;
+}
+
+// Maximum accumulated dots: enough to fill a wide screen at the dot spacing.
+const WAVE_GRAPH_MAX_ACCUM = Math.ceil(WAVE_GRAPH_WIDTH / WAVE_GRAPH_DOT_SPACING);
+
+function areDotsEqual(a: WaveGraphDot, b: WaveGraphDot): boolean {
+  return (
+    a.damage === b.damage &&
+    a.peakEnemyHp === b.peakEnemyHp &&
+    a.gold === b.gold &&
+    a.gems === b.gems &&
+    a.baseHealth === b.baseHealth &&
+    a.baseHealthColor === b.baseHealthColor &&
+    a.waveStart === b.waveStart
+  );
+}
+
+// Merge an incoming window of (up to WAVE_GRAPH_MAX_SEND) dots into the
+// accumulated array. The window is a contiguous suffix of the true dot
+// sequence. Find the largest prefix of the window already present at the tail
+// of the accumulation (so normally only the last dot is new), then append the
+// remainder. If nothing overlaps (e.g. a long gap / "connection loss"), append
+// the whole window. Returns a new array (never aliases the incoming window).
+export function mergeWaveGraphDots(accumulated: WaveGraphDot[], window: WaveGraphDot[]): WaveGraphDot[] {
+  if (accumulated.length === 0) return window.slice();
+  const maxOverlap = Math.min(accumulated.length, window.length);
+  let overlap = 0;
+  for (let candidate = maxOverlap; candidate >= 1; candidate--) {
+    let match = true;
+    for (let i = 0; i < candidate; i++) {
+      if (!areDotsEqual(window[i]!, accumulated[accumulated.length - candidate + i]!)) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      overlap = candidate;
+      break;
+    }
+  }
+  const merged = accumulated.slice();
+  for (let i = overlap; i < window.length; i++) {
+    merged.push(window[i]!);
+  }
+  if (merged.length > WAVE_GRAPH_MAX_ACCUM) {
+    merged.splice(0, merged.length - WAVE_GRAPH_MAX_ACCUM);
+  }
+  return merged;
 }
 
 // Holds the latest snapshot and mirrors it into the Pinia gameStore for Vue
@@ -38,12 +89,23 @@ export class SnapshotStore {
 
   apply(snapshot: SimulationSnapshot): void {
     this.current = snapshot;
-    // Refresh the wave-graph dots cache when the worker included a fresh array
-    // (generation changed), then write the cached copy back so every stored
-    // snapshot — and thus getLatestSnapshot() readers — always see the dots even
-    // on frames where the worker omitted them.
-    if (snapshot.waveGraphDots) {
-      latestWaveGraphDots = snapshot.waveGraphDots;
+    // The worker ships the wave-graph dots window only when its generation
+    // changes (a dot was flushed/front-trimmed). Merge each window into the
+    // accumulated cache; write the full cache back so every stored snapshot —
+    // and thus getLatestSnapshot() readers (WaveGraph.vue) — always see the
+    // complete dots even on frames where the worker omitted them.
+    const incoming = snapshot.waveGraphDots;
+    if (incoming) {
+      const incomingGeneration = snapshot.waveGraphDotsGeneration;
+      // A new run resets the worker's generation to 0, so a drop below the last
+      // seen generation means the previous run ended — replace the cache rather
+      // than merging (otherwise the new run's dots would append onto stale data).
+      if (incomingGeneration < latestWaveGraphGeneration) {
+        latestWaveGraphDots = incoming.slice();
+      } else {
+        latestWaveGraphDots = mergeWaveGraphDots(latestWaveGraphDots, incoming);
+      }
+      latestWaveGraphGeneration = incomingGeneration;
     }
     snapshot.waveGraphDots = latestWaveGraphDots;
     latestSnapshot = snapshot;
