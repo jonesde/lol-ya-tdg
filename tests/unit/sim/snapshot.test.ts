@@ -54,7 +54,10 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(snap.towers.length).toBe(1);
     expect(snap.enemies.length).toBe(1);
     expect(snap.projectiles).toBeInstanceOf(Array);
-    expect(snap.particles).toBeInstanceOf(Array);
+    // Finding 7: particles are no longer serialized in the snapshot. The worker
+    // ships sparse spawn requests (present only when non-empty) via particleSpawns.
+    expect(snap.particles).toBeUndefined();
+    expect(snap.particleSpawns).toBeUndefined();
     expect(snap.spawnStates.length).toBe(grid.spawns.length);
     expect(typeof snap.spawnStates[0].pendingCount).toBe("number");
   });
@@ -62,7 +65,9 @@ describe("SnapshotSerializer (Phase 5)", () => {
   it("carries expected entity fields", () => {
     const engine = makeEngine();
     const grid = engine.runState.grid;
-    buildTowerOnValidTile(engine);
+    const tower = buildTowerOnValidTile(engine);
+    // Finding 1a: derived fields are shipped only for the selected tower.
+    engine.runState.selectedTowerId = String(tower.id);
     const enemy = new Enemy("boss", 2, 0, grid, 1, 0, engine.themeBundle.active, null);
     engine.enemyManager.enemies.push(enemy);
 
@@ -75,11 +80,26 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(e.angle).toBe(enemy.moveAngle);
     expect(e.statusEffects).toBeInstanceOf(Array);
 
-    const t = snap.towers[0];
+    const t = snap.towers.find((tw) => tw.id === String(tower.id))!;
     expect(t.type).toBe("basic");
     expect(t.color).toBeTruthy();
     expect(t.sellValue).toBeGreaterThan(0);
+    expect(t.canUpgrade).toBeTruthy();
+    expect(t.stats).toBeTruthy();
     expect(t.animation).toBeTruthy();
+  });
+
+  it("omits derived fields on non-selected towers", () => {
+    const engine = makeEngine();
+    buildTowerOnValidTile(engine);
+    // Finding 1a: non-selected towers must NOT carry the expensive derived
+    // fields — they are computed only for the selected tower.
+    const snap = buildSnapshot(engine, 0);
+    const t = snap.towers[0];
+    expect(t.sellValue).toBeUndefined();
+    expect(t.canUpgrade).toBeUndefined();
+    expect(t.stats).toBeUndefined();
+    expect(t.placedAt).toBeGreaterThan(0);
   });
 
   it("reflects engine mutations in subsequent snapshots", () => {

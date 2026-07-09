@@ -1,3 +1,4 @@
+import type { ParticleSpawner } from "@/game/ParticleSystem.js";
 import type { MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
 import type { SoundPlayer } from "@/sim/HostBindings.js";
 import type { PersistState } from "@/sim/PersistState.js";
@@ -66,10 +67,6 @@ interface EnemyManagerRef {
   towerAt(x: number, y: number): Tower | null;
 }
 
-interface ParticleManagerRef {
-  spawn(x: number, y: number, color: string, count: number, opts: { speed: number; life: number }): void;
-}
-
 interface ProjectileManagerRef {
   spawn(opts: {
     x: number;
@@ -110,7 +107,7 @@ interface GridRef {
 
 export class TowerManager {
   grid: GridRef;
-  particles: ParticleManagerRef;
+  particles: ParticleSpawner;
   projectiles: ProjectileManagerRef;
   sound: SoundPlayer;
   towers: Tower[];
@@ -122,7 +119,7 @@ export class TowerManager {
 
   constructor(
     grid: GridRef,
-    particles: ParticleManagerRef,
+    particles: ParticleSpawner,
     projectiles: ProjectileManagerRef,
     sound: SoundPlayer,
     theme: MapThemeData | null = null,

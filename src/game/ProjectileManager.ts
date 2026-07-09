@@ -1,3 +1,4 @@
+import type { ParticleSpawner } from "@/game/ParticleSystem.js";
 import { GRID_TILE_SIZE } from "@/render/svg/types.js";
 import type { Tower } from "@/towers/Tower.js";
 import { MAX_PROJECTILE_AGE, PROJECTILE_HIT_THRESHOLD } from "./Constants.js";
@@ -142,10 +143,6 @@ export interface EnemyManager {
   }[];
 }
 
-export interface ParticleSystem {
-  spawn(x: number, y: number, color: string, count: number, opts: { speed: number; life: number }): void;
-}
-
 export type OnStunEffectCallback = (x: number, y: number, duration: number) => void;
 export type OnGoldRewardCallback = (amount: number) => void;
 
@@ -164,7 +161,7 @@ export interface StunVisualEffect {
 export class ProjectileManager {
   private projectiles: ProjectileGame[];
   private enemyManager: EnemyManager;
-  private particles: ParticleSystem | null;
+  private particles: ParticleSpawner | null;
   private grid: GridRef | null;
   private onStunEffect: OnStunEffectCallback | null;
   private onGoldReward: OnGoldRewardCallback | null;
@@ -175,7 +172,7 @@ export class ProjectileManager {
 
   constructor(
     enemyManager: EnemyManager,
-    particles: ParticleSystem | null,
+    particles: ParticleSpawner | null,
     towerLookup: ((towerId: string) => Tower | null) | null = null,
     grid: GridRef | null = null,
   ) {

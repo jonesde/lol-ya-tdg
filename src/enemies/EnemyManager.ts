@@ -1,13 +1,10 @@
+import type { ParticleSpawner } from "@/game/ParticleSystem.js";
 import { ENEMY_POOL_SIZE } from "@/render/svg/types.js";
 import type { EnemyVisualMeta, MapThemeData } from "@/render/themes/index.js";
 import type { Tower } from "@/towers/Tower.js";
 import type { TowerManager } from "@/towers/TowerManager.js";
 import type { Grid } from "../grid/Grid.js";
 import { Enemy, resetEnemyId } from "./Enemy.js";
-
-interface ParticleManagerRef {
-  spawn(x: number, y: number, color: string, count: number, opts: { speed: number; life: number }): void;
-}
 
 interface PendingEnemyEntry {
   type: string;
@@ -29,7 +26,7 @@ function spatialCellKey(cellX: number, cellY: number): number {
 
 export class EnemyManager {
   grid: Grid;
-  particles: ParticleManagerRef;
+  particles: ParticleSpawner;
   enemies: Enemy[];
   difficultyTick: number;
   theme: MapThemeData | null;
@@ -41,7 +38,7 @@ export class EnemyManager {
 
   constructor(
     grid: Grid,
-    particles: ParticleManagerRef,
+    particles: ParticleSpawner,
     difficultyTick: number = 0,
     theme: MapThemeData | null = null,
     defaultEnemyVisuals: Record<string, EnemyVisualMeta> = {},

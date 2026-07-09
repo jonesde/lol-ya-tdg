@@ -26,6 +26,7 @@ interface MockEnemy {
 interface MockEnemyManager {
   enemies: MockEnemy[];
   getEnemiesInRange: (x: number, y: number, range: number) => MockEnemy[];
+  forEachEnemyInRange: (x: number, y: number, range: number, cb: (enemy: MockEnemy) => void) => void;
   getEnemyById: (id: number) => MockEnemy | null;
 }
 
@@ -61,6 +62,14 @@ function createMockEnemyManager(enemies: MockEnemy[]): MockEnemyManager {
         const dy = e.y - y;
         return Math.sqrt(dx * dx + dy * dy) <= range;
       });
+    },
+    forEachEnemyInRange(x, y, range, cb) {
+      for (const enemy of enemies) {
+        if (enemy.removed) continue;
+        const dx = enemy.x - x;
+        const dy = enemy.y - y;
+        if (dx * dx + dy * dy <= range * range) cb(enemy);
+      }
     },
     getEnemyById(id) {
       return enemies.find((e) => e.id === id) ?? null;

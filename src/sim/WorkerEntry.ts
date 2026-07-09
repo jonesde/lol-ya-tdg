@@ -1,5 +1,6 @@
 import { FIXED_DT, GameState, MAX_ACCUM, MAX_STEPS_PER_FRAME } from "@/game/Constants.js";
 import { GameEngine } from "@/game/GameEngine.js";
+import { WorkerParticleSpawner } from "@/game/ParticleSystem.js";
 import { applyCommand } from "./applyCommand.js";
 import type { Command } from "./Command.js";
 import type { PersistStateSlice } from "./HostBindings.js";
@@ -219,7 +220,14 @@ self.onmessage = (event: MessageEvent<MainToWorkerMessage>) => {
       // Construct the engine with plain state and the worker host bindings.
       // The engine no longer takes Pinia stores — Phase 1 made runState/persistState
       // authoritative. We pass them in directly.
-      engine = new GameEngine(msg.persistState, msg.themeBundle, host, msg.mapIndex, msg.randomMapParams);
+      engine = new GameEngine(
+        msg.persistState,
+        msg.themeBundle,
+        host,
+        msg.mapIndex,
+        msg.randomMapParams,
+        new WorkerParticleSpawner(),
+      );
       // Reset persist-flush tracking for the new run.
       lastFlushWave = 0;
       lastFlushMilestoneKeys = 0;

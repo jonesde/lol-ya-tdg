@@ -19,9 +19,72 @@ export interface RenderParticle {
   opacity: number;
 }
 
+// Sparse spawn request buffered by the worker-side spawner and shipped to the
+// main thread inside the snapshot (only when non-empty). The main thread turns
+// each request into live particles in its own ParticleSystem.
+export interface ParticleSpawnRequest {
+  x: number;
+  y: number;
+  color: string;
+  count: number;
+  speed: number;
+  life: number;
+}
+
+// Shared spawner contract. `consumeSpawns` is optional: the main-thread
+// ParticleSystem acts as its own spawner (spawns land directly in it) and has
+// no buffer to drain, while the worker spawner buffers requests and drains
+// them into the snapshot.
+export interface ParticleSpawner {
+  spawn(
+    x: number,
+    y: number,
+    color: string,
+    count: number,
+    opts: { speed?: number; life?: number; size?: number },
+  ): void;
+  consumeSpawns?(): ParticleSpawnRequest[] | undefined;
+}
+
+// Default no-op spawner so `new GameEngine(...)` call sites that do not supply
+// a spawner (e.g. tests) stay green without a particle side channel.
+export class NoopParticleSpawner implements ParticleSpawner {
+  spawn(): void {
+    /* noop */
+  }
+  consumeSpawns(): undefined {
+    return undefined;
+  }
+}
+
+// Worker-side spawner: records sparse spawn requests instead of simulating
+// particles. buildSnapshot drains the buffer when non-empty (gated like
+// `paths`), so quiet ticks ship nothing. Engine-scoped (not module-scoped) so
+// per-engine buildSnapshot tests behave deterministically.
+export class WorkerParticleSpawner implements ParticleSpawner {
+  private buffer: ParticleSpawnRequest[] = [];
+
+  spawn(
+    x: number,
+    y: number,
+    color: string,
+    count: number,
+    opts: { speed?: number; life?: number; size?: number },
+  ): void {
+    this.buffer.push({ x, y, color, count, speed: opts.speed ?? 60, life: opts.life ?? 0.5 });
+  }
+
+  consumeSpawns(): ParticleSpawnRequest[] | undefined {
+    if (this.buffer.length === 0) return undefined;
+    const out = this.buffer;
+    this.buffer = [];
+    return out;
+  }
+}
+
 const MAX_PARTICLES = 400;
 
-export class ParticleSystem {
+export class ParticleSystem implements ParticleSpawner {
   particles: ParticleGame[];
   private nextParticleId: number;
 

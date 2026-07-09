@@ -21,6 +21,7 @@ import { GameState, SELL_DISCOUNT_PCT } from "@/game/Constants.js";
 import { ENEMY_TYPES } from "@/game/ConstantsEnemy.js";
 import { TOWER_META, TowerIds } from "@/game/ConstantsTower.js";
 import { useInput } from "@/game/Input.js";
+import { ParticleSystem } from "@/game/ParticleSystem.js";
 import { EffectManager } from "@/render/svg/EffectManager.js";
 import { EnemyManager } from "@/render/svg/EnemyManager.js";
 import { ParticleManager } from "@/render/svg/ParticleManager.js";
@@ -108,10 +109,16 @@ let enemyManager!: EnemyManager;
 let towerManager!: TowerManager;
 let projectileManager!: ProjectileManager;
 let particleManager!: ParticleManager;
+// Finding 7: particles are a render-only main-thread effect. The worker ships
+// sparse spawn requests (particleSpawns); the main thread owns this ParticleSystem,
+// simulates it each rAF frame, and feeds the render ParticleManager.
+const mainParticleSystem = new ParticleSystem();
 let effectManager!: EffectManager;
 let uiOverlayManager!: UiOverlayManager;
 let spawnManager!: SpawnManager;
 let pathHighlightsGroup: SVGGElement | null = null;
+// Last timestamp (ms) used to compute the per-frame particle simulation dt.
+let lastParticleFrame: number = 0;
 
 // rAF lifecycle: the render loop must be stopped when the component unmounts
 // (route change) so a late frame never touches managers that have been disposed.
@@ -294,6 +301,17 @@ function handleWorkerMessage(event: MessageEvent): void {
   switch (msg.type) {
     case "snapshot":
       snapshotStore.apply(msg.snapshot);
+      // Finding 7: drain sparse particle spawn requests into the main-thread
+      // ParticleSystem. Each request bundles up to ~14 particles; the system
+      // owns ongoing simulation + render from here on.
+      if (msg.snapshot.particleSpawns) {
+        for (const request of msg.snapshot.particleSpawns) {
+          mainParticleSystem.spawn(request.x, request.y, request.color, request.count, {
+            speed: request.speed,
+            life: request.life,
+          });
+        }
+      }
       break;
     case "playSound":
       host.playSound(msg.name);
@@ -353,7 +371,15 @@ function renderLoop(): void {
   enemyManager.syncFromGameEngine(snapshot.enemies);
   towerManager.syncFromGameEngine(snapshot.towers, snapshot.meta.lastScaledDt);
   projectileManager.syncFromGameEngine(snapshot.projectiles);
-  particleManager.syncFromGameEngine(snapshot.particles);
+  // Finding 7: simulate + render particles on the main thread. The worker no
+  // longer ships a `particles` array; instead this rAF loop advances the
+  // main-thread ParticleSystem (pausing cleanly when the tab is hidden) and the
+  // render ParticleManager draws from its current state.
+  const particleNow = performance.now();
+  const particleDt = Math.min(0.05, (particleNow - lastParticleFrame) / 1000) || 0;
+  lastParticleFrame = particleNow;
+  mainParticleSystem.update(particleDt);
+  particleManager.syncFromGameEngine(mainParticleSystem.getRenderData());
 
   effectManager.syncVisualEffectsFromSnapshot(snapshot.lightningEffects, snapshot.stunEffects);
 
@@ -544,6 +570,7 @@ onUnmounted(() => {
   uiOverlayManager.dispose();
   spawnManager.dispose();
   pathHighlightsGroup = null;
+  mainParticleSystem.clear();
 });
 </script>
 

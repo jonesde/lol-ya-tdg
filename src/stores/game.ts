@@ -1,7 +1,6 @@
 import { defineStore } from "pinia";
 import type { EnemyManager } from "@/enemies/EnemyManager.js";
 import { GameState, StartingGold } from "@/game/Constants.js";
-import type { ParticleSystem } from "@/game/ParticleSystem.js";
 import type { ProjectileManager } from "@/game/ProjectileManager.js";
 import type { Grid } from "@/grid/Grid.js";
 import type { GeneratedMap } from "@/grid/Map.js";
@@ -100,7 +99,6 @@ interface GameStateShape {
   towerManager: TowerManager | null;
   enemyManager: EnemyManager | null;
   projectileManager: ProjectileManager | null;
-  particleManager: ParticleSystem | null;
   randomMapParams: Record<string, unknown> | null;
   worker: Worker | null;
 }
@@ -139,7 +137,6 @@ export const useGameStore = defineStore("game", {
     towerManager: null,
     enemyManager: null,
     projectileManager: null,
-    particleManager: null,
     randomMapParams: null,
     worker: null,
   }),
@@ -235,19 +232,12 @@ export const useGameStore = defineStore("game", {
       this.towerManager = null;
       this.enemyManager = null;
       this.projectileManager = null;
-      this.particleManager = null;
     },
 
-    setManagers(
-      towerManager: TowerManager,
-      enemyManager: EnemyManager,
-      projectileManager: ProjectileManager,
-      particleManager: ParticleSystem,
-    ) {
+    setManagers(towerManager: TowerManager, enemyManager: EnemyManager, projectileManager: ProjectileManager) {
       this.towerManager = towerManager;
       this.enemyManager = enemyManager;
       this.projectileManager = projectileManager;
-      this.particleManager = particleManager;
     },
 
     setCamera(x: number, y: number, zoom: number) {

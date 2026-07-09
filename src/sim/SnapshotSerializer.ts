@@ -5,7 +5,6 @@ import type { Tower } from "@/towers/Tower.js";
 import type { PersistState } from "./PersistState.js";
 import type {
   EnemySnapshot,
-  ParticleSnapshot,
   ProjectileSnapshot,
   SimulationSnapshot,
   SnapshotMeta,
@@ -47,7 +46,10 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
     enemies: enemies.map(snapshotEnemy),
     towers: towers.map((tower) => snapshotTower(tower, persistState, tower.id === selectedTowerId)),
     projectiles: (engine.projectileManager?.getRenderData() ?? []) as ProjectileSnapshot[],
-    particles: (engine.particleManager?.getRenderData() ?? []) as ParticleSnapshot[],
+    // Particles are a render-only main-thread effect (see Optimize.md Finding 7):
+    // the worker no longer simulates them. It only buffers sparse spawn requests
+    // and ships them when non-empty, so quiet ticks send nothing.
+    particleSpawns: engine.particleSpawner?.consumeSpawns?.() ?? undefined,
     spawnStates: (engine.waveManager?.spawnStates ?? []).map((state, spawnIndex) => ({
       ...state,
       pendingCount: engine.enemyManager?.getPendingCountForSpawn(spawnIndex) ?? 0,

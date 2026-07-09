@@ -42,16 +42,14 @@ function makeTowerSnapshot(id: string, level: number, cost: number, nextLevel: n
     canUpgrade: { ok: true, cost, nextLevel },
     upgradeCostAt5: 100,
     levelCosts: [0, 1, 2, 3, 4],
-    canCancel: false,
-    cancelRemainingMs: 0,
     milestoneBonus: { damagePct: 0, speedPct: 0, tiers: 0 },
     stats: { damage: 10, range: 3, fireRate: 1, splash: 0, chain: 0 },
     base: { fixedAim: false },
+    placedAt: 0,
   };
 }
 
 function makeSnapshot(selectedTowerId: string | null, tower: TowerSnapshot | null): SimulationSnapshot {
-  const emptyBreakdown = { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 };
   return {
     schemaVersion: 1,
     frameId: 1,
@@ -74,20 +72,14 @@ function makeSnapshot(selectedTowerId: string | null, tower: TowerSnapshot | nul
       bossesReachedBaseThisRun: 0,
       lastScaledDt: 0,
       endScreenData: null,
-      gemBreakdown: {
-        bossKills: { ...emptyBreakdown },
-        milestones: { ...emptyBreakdown },
-        waveCompletion: { ...emptyBreakdown },
-        firstClearBonus: 0,
-      },
-      milestoneRewardsClaimed: {},
     },
     enemies: [],
     towers: tower ? [tower] : [],
     projectiles: [],
-    particles: [],
+    particleSpawns: undefined,
     spawnStates: [],
     paths: [],
+    pathsVersion: 0,
     lightningEffects: [],
     stunEffects: [],
   };
@@ -104,14 +96,14 @@ describe("SnapshotStore selectedTower mirroring", () => {
     // First snapshot: level 1, upgrade costs 50 → Lv 2.
     store.apply(makeSnapshot(towerId, makeTowerSnapshot(towerId, 1, 50, 2)));
     expect(selected()?.level).toBe(1);
-    expect(selected()?.canUpgrade.cost).toBe(50);
-    expect(selected()?.canUpgrade.nextLevel).toBe(2);
+    expect(selected()?.canUpgrade?.cost).toBe(50);
+    expect(selected()?.canUpgrade?.nextLevel).toBe(2);
 
     // Track whether a dependent computed re-evaluates after the upgrade.
     let upgradeCostEvaluations = 0;
     const trackedUpgradeCost = computed(() => {
       upgradeCostEvaluations++;
-      return selected()?.canUpgrade.cost ?? null;
+      return selected()?.canUpgrade?.cost ?? null;
     });
     // Prime the computed + its reactive dependencies.
     expect(trackedUpgradeCost.value).toBe(50);
@@ -123,8 +115,8 @@ describe("SnapshotStore selectedTower mirroring", () => {
 
     // Values must reflect the latest snapshot...
     expect(selected()?.level).toBe(2);
-    expect(selected()?.canUpgrade.cost).toBe(80);
-    expect(selected()?.canUpgrade.nextLevel).toBe(3);
+    expect(selected()?.canUpgrade?.cost).toBe(80);
+    expect(selected()?.canUpgrade?.nextLevel).toBe(3);
     // ...and the dependent computed must have re-evaluated (reactivity fired),
     // not return the stale cached cost of 50.
     expect(trackedUpgradeCost.value).toBe(80);

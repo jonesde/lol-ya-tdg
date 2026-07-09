@@ -36,8 +36,6 @@ interface MockTower {
   canUpgrade: TowerUpgradeCheck;
   upgradeCostAt5: number;
   levelCosts: number[];
-  canCancel: boolean;
-  cancelRemainingMs: number;
   totalInvested: number;
   sellValue: number;
   isGhost: boolean;
@@ -46,6 +44,10 @@ interface MockTower {
   milestoneBonus: { damagePct: number; speedPct: number; tiers: number };
   base: { fixedAim: boolean };
   fixedAimDir: string | null;
+  // Build timestamp (ms). TowerPanel derives canCancel/cancelRemaining locally
+  // from this (Finding 1a folded-in: canCancel/cancelRemainingMs dropped from
+  // the snapshot in favor of shipping placedAt on the cheap path).
+  placedAt: number;
 }
 
 function makeMockTower(overrides: Partial<MockTower> = {}): MockTower {
@@ -64,8 +66,6 @@ function makeMockTower(overrides: Partial<MockTower> = {}): MockTower {
     canUpgrade: { ok: true, nextLevel: 2, cost: 20 },
     upgradeCostAt5: 100,
     levelCosts,
-    canCancel: false,
-    cancelRemainingMs: 0,
     totalInvested: 20,
     sellValue: 12,
     isGhost: false,
@@ -74,6 +74,7 @@ function makeMockTower(overrides: Partial<MockTower> = {}): MockTower {
     milestoneBonus: { damagePct: 0, speedPct: 0, tiers: 0 },
     base: { fixedAim: false },
     fixedAimDir: null,
+    placedAt: Date.now(),
     ...overrides,
   };
 }
@@ -253,7 +254,7 @@ describe("TowerPanel", () => {
   it("shows cancel build button when tower can be canceled", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
-      makeMockTower({ level: 1, canCancel: true, cancelRemainingMs: 45000, totalInvested: 20 }),
+      makeMockTower({ level: 1, placedAt: Date.now(), totalInvested: 20 }),
     );
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.text()).toContain("Cancel Build");
@@ -261,7 +262,9 @@ describe("TowerPanel", () => {
 
   it("does not show cancel build button when tower cannot be canceled", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ canCancel: false }));
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
+      makeMockTower({ placedAt: Date.now() - 120000 }),
+    );
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.text()).not.toContain("Cancel Build");
   });

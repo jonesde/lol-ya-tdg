@@ -1,7 +1,8 @@
 import type { Enemy } from "@/enemies/Enemy.js";
 import { resetEnemyId } from "@/enemies/Enemy.js";
 import { EnemyManager } from "@/enemies/EnemyManager.js";
-import { ParticleSystem } from "@/game/ParticleSystem.js";
+import type { ParticleSpawner } from "@/game/ParticleSystem.js";
+import { NoopParticleSpawner } from "@/game/ParticleSystem.js";
 import { ProjectileManager } from "@/game/ProjectileManager.js";
 import { WaveGraphTracker } from "@/game/WaveGraphTracker.js";
 import { Grid } from "@/grid/Grid.js";
@@ -85,7 +86,7 @@ export class GameEngine {
   towerManager: TowerManager | null;
   waveManager: WaveManagerRef | null;
   projectileManager: ProjectileManager | null;
-  particleManager: ParticleSystem | null;
+  particleSpawner: ParticleSpawner;
   waveGraphTracker: WaveGraphTracker | null = null;
   _accumulator: number;
   totalGoldEarned: number;
@@ -113,6 +114,7 @@ export class GameEngine {
     host: HostBindings,
     mapIndex: number,
     randomMapParams?: unknown,
+    particleSpawner: ParticleSpawner = new NoopParticleSpawner(),
   ) {
     this.persistState = persistState;
     this.host = host;
@@ -130,7 +132,7 @@ export class GameEngine {
     this.towerManager = null;
     this.waveManager = null;
     this.projectileManager = null;
-    this.particleManager = null;
+    this.particleSpawner = particleSpawner;
 
     this._accumulator = 0;
 
@@ -195,18 +197,17 @@ export class GameEngine {
     this.runState.grid = this.grid;
 
     const diffTick = getDifficultyTick(this.persistState);
-    this.particleManager = new ParticleSystem();
     this.enemyManager = new EnemyManager(
       this.grid,
-      this.particleManager,
+      this.particleSpawner,
       diffTick,
       this.theme,
       this.themeBundle.defaultEnemyVisuals,
     );
-    this.projectileManager = new ProjectileManager(this.enemyManager, this.particleManager, null, this.grid);
+    this.projectileManager = new ProjectileManager(this.enemyManager, this.particleSpawner, null, this.grid);
     this.towerManager = new TowerManager(
       this.grid,
-      this.particleManager,
+      this.particleSpawner,
       this.projectileManager,
       this.host,
       this.theme,
@@ -300,8 +301,6 @@ export class GameEngine {
       this.runState.waveCountdown = null;
     }
 
-    this.particleManager?.update(dt);
-
     this.projectileManager?.update(dt);
 
     this.enemyManager.update(dt, (enemy) => {
@@ -336,7 +335,7 @@ export class GameEngine {
     if (this.grid) {
       for (const tower of this.towerManager.towers) {
         if (tower.pendingGhostEffect) {
-          this.particleManager?.spawn(tower.x, tower.y, tower.color, GHOST_PARTICLE_COUNT, {
+          this.particleSpawner?.spawn(tower.x, tower.y, tower.color, GHOST_PARTICLE_COUNT, {
             life: GHOST_PARTICLE_DURATION,
             speed: 80,
           });

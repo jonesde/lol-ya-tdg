@@ -1,4 +1,4 @@
-import type { ParticleSystem } from "@/game/ParticleSystem.js";
+import type { ParticleSpawnRequest } from "@/game/ParticleSystem.js";
 import type { ProjectileManager } from "@/game/ProjectileManager.js";
 import type { MapThemeAnimation, SpawnState } from "@/render/themes/index.js";
 import type { GameRunState } from "./GameRunState.js";
@@ -11,7 +11,11 @@ export interface SimulationSnapshot {
   enemies: EnemySnapshot[];
   towers: TowerSnapshot[];
   projectiles: ProjectileSnapshot[];
-  particles: ParticleSnapshot[];
+  // Sparse particle spawn requests emitted this tick. Present ONLY when the
+  // worker's spawn buffer is non-empty, so quiet ticks send nothing — unlike
+  // lightning/stun effects which always ship []. The main thread spawns each
+  // request into its own ParticleSystem and consumes the array exactly once.
+  particleSpawns: ParticleSpawnRequest[] | undefined;
   spawnStates: SpawnStateSnapshot[]; // for spawn-queue overlay renderer
   // Authoritative enemy paths (tile coords), rerouted by the worker when a tower
   // blocks a path. The main thread renders path highlights from this rather than
@@ -159,8 +163,6 @@ export interface TowerSnapshot {
 
 // Projectile and Particle snapshots: REUSE the existing DTO types.
 //   - ProjectileManager.getRenderData() returns Array<{ id, x, y, radius, color }>
-//   - ParticleSystem.getRenderData() returns RenderParticle[]
 export type ProjectileSnapshot = ReturnType<ProjectileManager["getRenderData"]>[number];
-export type ParticleSnapshot = ReturnType<ParticleSystem["getRenderData"]>[number];
 
 export type SpawnStateSnapshot = SpawnState & { pendingCount: number };
