@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, type vi } from "vitest";
 import { TextEnemyManager } from "@/render/text/TextEnemyManager.js";
 import { TextOverlayRenderer } from "@/render/text/TextOverlayRenderer.js";
+import { TextPathRenderer } from "@/render/text/TextPathRenderer.js";
 import { TextTowerManager } from "@/render/text/TextTowerManager.js";
 import type { TextRenderScale, TextThemeAccess } from "@/render/text/types.js";
 import { createTestMapThemeStore } from "../helpers/mock-stores";
@@ -110,3 +111,36 @@ describe("TextOverlayRenderer", () => {
     expect(mockCtx.fillText).toHaveBeenCalledWith("*", 5, 5);
   });
 });
+
+describe("TextPathRenderer", () => {
+  it("draws a polyline through the scaled tile centers of each path", () => {
+    const ctx = makeCtx();
+    (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
+    (mockCtx.lineTo as ReturnType<typeof vi.fn>).mockClear();
+    const manager = new TextPathRenderer();
+    const snapshot = {
+      paths: [
+        [
+          { x: 0, y: 1 },
+          { x: 1, y: 1 },
+        ],
+      ],
+    } as never;
+    manager.render(ctx, snapshot, scale);
+    // tile (0,1) center = (18, 54); tile (1,1) center = (54, 54) under scale 1.
+    expect(mockCtx.moveTo).toHaveBeenCalledWith(18, 54);
+    expect(mockCtx.lineTo).toHaveBeenCalledWith(54, 54);
+  });
+
+  it("keeps drawing the cached path when snapshot.paths is undefined", () => {
+    const ctx = makeCtx();
+    (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
+    (mockCtx.lineTo as ReturnType<typeof vi.fn>).mockClear();
+    const manager = new TextPathRenderer();
+    manager.render(ctx, { paths: [[{ x: 2, y: 3 }]] } as never, scale);
+    (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
+    manager.render(ctx, { paths: undefined } as never, scale);
+    expect(mockCtx.moveTo).toHaveBeenCalledWith(90, 126);
+  });
+});
+

@@ -20,6 +20,7 @@ import { TextEnemyManager } from "@/render/text/TextEnemyManager.js";
 import { TextGridBuilder } from "@/render/text/TextGridBuilder.js";
 import { TextOverlayRenderer } from "@/render/text/TextOverlayRenderer.js";
 import { TextTowerManager } from "@/render/text/TextTowerManager.js";
+import { TextPathRenderer } from "@/render/text/TextPathRenderer.js";
 import type { TextRenderScale } from "@/render/text/types.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
@@ -92,6 +93,7 @@ const canvasStyle = computed(() => ({ fontFamily: FONT_FAMILY, fontSize: `${FONT
 const towerManager = new TextTowerManager();
 const enemyManager = new TextEnemyManager();
 const overlayRenderer = new TextOverlayRenderer();
+const pathRenderer = new TextPathRenderer();
 
 let disposed = false;
 let renderFrameHandle: number | null = null;
@@ -121,6 +123,7 @@ function renderFrame(): void {
     // context font persists across fillText calls until changed.
     ctx.font = `${FONT_SIZE}px ${FONT_FAMILY}`;
     ctx.clearRect(0, 0, canvasWidth.value, canvasHeight.value);
+    pathRenderer.render(ctx, snapshot, scale.value);
     towerManager.render(ctx, snapshot.towers, themeStore, scale.value);
     enemyManager.render(ctx, snapshot.enemies, themeStore, scale.value);
     overlayRenderer.render(ctx, snapshot, scale.value);
