@@ -8,7 +8,7 @@ import { EnemyManager } from "@/enemies/EnemyManager.js";
 import { Grid } from "@/grid/Grid.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { TowerManager } from "@/towers/TowerManager.js";
-import { makeBastionMap } from "../helpers/mock-grid";
+import { makeBastionMap, makeMapData } from "../helpers/mock-grid";
 import { makeParticleSystem, makeSoundManager } from "../helpers/mock-managers";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";
 
@@ -129,6 +129,86 @@ describe("Enemy attack and collision (Phases 3 & 4)", () => {
     const normalHealth = runScenario(false);
     const slowedHealth = runScenario(true);
     expect(normalHealth).toBeLessThan(slowedHealth);
+  });
+
+  it("does not skip a live tower around the corner when the blocking tower is destroyed", () => {
+    // L-shaped path: spawn (0,0) → east along row 0 → turn at (4,0) → south along
+    // column 4 → base (4,4). Tower A sits on the corner (4,0); tower B sits just
+    // around the corner (4,1). After A is destroyed, enemies still on/near the
+    // corner must re-anchor onto A's now-passable tile and attack B — not jump
+    // across B to the base.
+    const width = 6;
+    const height = 6;
+    const tiles: { type: string; height: number }[][] = [];
+    for (let rowIndex = 0; rowIndex < height; rowIndex++) {
+      const row: { type: string; height: number }[] = [];
+      for (let colIndex = 0; colIndex < width; colIndex++) {
+        row.push({ type: "terrain", height: 1 });
+      }
+      tiles.push(row);
+    }
+    for (let colIndex = 0; colIndex <= 4; colIndex++) tiles[0][colIndex].type = "path";
+    for (let rowIndex = 0; rowIndex <= 4; rowIndex++) tiles[rowIndex][4].type = "path";
+    const map = makeMapData({
+      width,
+      height,
+      spawns: [{ x: 0, y: 0 }],
+      base: { x: 4, y: 4 },
+      tiles,
+      regionId: 0,
+      level: 1,
+      style: "bastion",
+    });
+    const scenarioGrid = new Grid(map);
+    const scenarioTowers = new TowerManager(
+      scenarioGrid,
+      makeParticleSystem(),
+      { spawn() {}, fireLightning() {}, spawnLightningFlash() {} },
+      makeSoundManager(),
+    );
+    const scenarioEnemies = new EnemyManager(scenarioGrid, makeParticleSystem(), 0);
+    scenarioEnemies.setTowerManager(scenarioTowers);
+
+    const towerA = scenarioTowers.build("basic", 4, 0, makeSave(), scenarioGrid)!;
+    const towerB = scenarioTowers.build("basic", 4, 1, makeSave(), scenarioGrid)!;
+    // A dies quickly; B survives long enough to confirm the enemy attacks it.
+    towerA.health = towerA.maxHealth = 50;
+    towerB.health = towerB.maxHealth = 100000;
+
+    const enemy = new Enemy("minion", 1, 0, scenarioGrid, 1);
+
+    // Drive the enemy until tower A dies. In the real engine, `Tower.takeDamage`
+    // flips `isGhost` the instant health hits zero, but the grid only un-blocks the
+    // tile (and bumps the path version) one frame later. During that window a fast
+    // enemy / pile-up can leave it standing on the dead corner tower's own tile when
+    // the re-anchor fires. The re-anchor must anchor it on A's (now passable) tile
+    // and attack B — not snap it past B to the base.
+    let aDestroyed = false;
+    for (let i = 0; i < 5000 && !aDestroyed; i++) {
+      enemy.update(0.05, scenarioEnemies);
+      if (towerA.health <= 0) {
+        // Place the enemy at A's tile center (the post-death position that exposes
+        // the bug), then un-block A so the re-anchor fires.
+        const towerCenter = scenarioGrid.tileToWorld(4, 0);
+        enemy.centerX = towerCenter.x;
+        enemy.centerY = towerCenter.y;
+        enemy.x = towerCenter.x;
+        enemy.y = towerCenter.y;
+        scenarioGrid.setTowerGhost(4, 0);
+        towerA.isGhost = true;
+        aDestroyed = true;
+      }
+    }
+    expect(aDestroyed).toBe(true);
+
+    // Continue simulating. The enemy must now attack B rather than hop across it.
+    for (let i = 0; i < 5000; i++) {
+      enemy.update(0.05, scenarioEnemies);
+      if (enemy.removed || enemy.reachedBase) break;
+    }
+
+    expect(towerB.health).toBeLessThan(towerB.maxHealth);
+    expect(enemy.reachedBase).toBe(false);
   });
 
   it("separates a slower enemy to the right (+laneOffset) and a faster one to the left (-laneOffset)", () => {

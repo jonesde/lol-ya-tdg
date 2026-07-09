@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mergeWaveGraphDots } from "@/sim/SnapshotStore.js";
 import type { WaveGraphDot } from "@/sim/SimulationSnapshot.js";
+import { mergeWaveGraphDots } from "@/sim/SnapshotStore.js";
 
 function dot(n: number): WaveGraphDot {
   return {

@@ -335,51 +335,87 @@ export class Enemy {
   // enemy never teleports backward toward the spawn.
   reanchorToPath(newPath: { x: number; y: number }[]): void {
     this.path = newPath;
-    const baseTile = this.grid.getBase();
-    const baseWorldPos = this.grid.tileToWorld(baseTile.x, baseTile.y);
-    const currentDistSqToBase = (this.x - baseWorldPos.x) ** 2 + (this.y - baseWorldPos.y) ** 2;
     // The last path index is the base tile. Snapping to it would place the enemy on
     // the base and (next frame) trigger reachedBase prematurely, so it is never an
     // eligible anchor.
     const lastPathIdx = newPath.length - 1;
-    let minDist = Infinity;
-    let nearestIdx = 0;
-    let bestForwardIdx = -1;
-    let bestForwardDist = Infinity;
+
+    // A live (blocking) tower tile must never be an anchor: snapping an enemy onto
+    // (or past) it lets the enemy teleport across the tower instead of attacking it.
+    // This is what broke the "two towers, one around a corner" case — when the first
+    // tower became a ghost, the old straight-line-distance "forward" pick landed the
+    // enemy on the second tower's tile and it walked straight through.
+    const isPassableTile = (tileX: number, tileY: number): boolean => !this.grid.blocked.has(`${tileX},${tileY}`);
+
+    // Locate the enemy's current tile within the new path using its world-space
+    // centerline (lane-offset independent) so the anchor selection follows the path
+    // order rather than a straight line to the base (which is wrong around corners).
+    let currentIdx = -1;
+    let currentTileDistSq = Infinity;
     for (let i = 0; i < newPath.length; i++) {
       if (i === lastPathIdx) continue;
       const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
-      const distSq = (worldPos.x - this.x) ** 2 + (worldPos.y - this.y) ** 2;
-      if (distSq < minDist) {
-        minDist = distSq;
-        nearestIdx = i;
-      }
-      const distSqToBase = (worldPos.x - baseWorldPos.x) ** 2 + (worldPos.y - baseWorldPos.y) ** 2;
-      if (distSqToBase < currentDistSqToBase && distSq < bestForwardDist) {
-        bestForwardDist = distSq;
-        bestForwardIdx = i;
+      const distSq = (worldPos.x - this.centerX) ** 2 + (worldPos.y - this.centerY) ** 2;
+      if (distSq < currentTileDistSq) {
+        currentTileDistSq = distSq;
+        currentIdx = i;
       }
     }
-    if (bestForwardIdx >= 0) {
-      this.pathIdx = bestForwardIdx;
-    } else {
-      let forwardFallbackIdx = -1;
-      for (let i = nearestIdx; i < newPath.length; i++) {
-        if (i === lastPathIdx) break;
+    // If the enemy's world center is not exactly on a path tile (e.g. lane-offset),
+    // fall back to the nearest path tile as its reference index.
+    if (currentIdx < 0) {
+      let nearestDistSq = Infinity;
+      for (let i = 0; i < newPath.length; i++) {
+        if (i === lastPathIdx) continue;
         const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
-        const distSqToBase = (worldPos.x - baseWorldPos.x) ** 2 + (worldPos.y - baseWorldPos.y) ** 2;
-        if (distSqToBase <= currentDistSqToBase) {
-          forwardFallbackIdx = i;
-          break;
+        const distSq = (worldPos.x - this.centerX) ** 2 + (worldPos.y - this.centerY) ** 2;
+        if (distSq < nearestDistSq) {
+          nearestDistSq = distSq;
+          currentIdx = i;
         }
       }
-      this.pathIdx = forwardFallbackIdx >= 0 ? forwardFallbackIdx : nearestIdx;
+    }
+
+    // Anchor at the nearest *forward* passable tile (index >= currentIdx). Preferring
+    // forward keeps the enemy advancing without ever skipping a live tower that lies
+    // between it and the candidate tile. A backward passable tile is only used as a
+    // last resort (no forward passable tile exists), heavily penalized so it is never
+    // chosen over a valid forward one.
+    let anchorIdx = -1;
+    let bestScore = Infinity;
+    for (let i = 0; i < newPath.length; i++) {
+      if (i === lastPathIdx) continue;
+      const tile = newPath[i]!;
+      if (!isPassableTile(tile.x, tile.y)) continue;
+      const worldPos = this.grid.tileToWorld(tile.x, tile.y);
+      const distSq = (worldPos.x - this.centerX) ** 2 + (worldPos.y - this.centerY) ** 2;
+      const isForward = currentIdx >= 0 ? i >= currentIdx : true;
+      const score = isForward ? distSq : distSq + 1e12;
+      if (score < bestScore) {
+        bestScore = score;
+        anchorIdx = i;
+      }
+    }
+    // Last-resort fallback: if absolutely no passable tile was found (should not
+    // happen), anchor on the nearest non-base tile to avoid leaving pathIdx unset.
+    if (anchorIdx < 0) {
+      let nearestDistSq = Infinity;
+      for (let i = 0; i < newPath.length; i++) {
+        if (i === lastPathIdx) continue;
+        const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
+        const distSq = (worldPos.x - this.centerX) ** 2 + (worldPos.y - this.centerY) ** 2;
+        if (distSq < nearestDistSq) {
+          nearestDistSq = distSq;
+          anchorIdx = i;
+        }
+      }
     }
     // Final guard: never park on the base tile via a snap — always leave at least one
     // waypoint ahead so the enemy reaches base via normal movement.
-    if (this.pathIdx >= lastPathIdx) {
-      this.pathIdx = Math.max(0, lastPathIdx - 1);
+    if (anchorIdx >= lastPathIdx) {
+      anchorIdx = Math.max(0, lastPathIdx - 1);
     }
+    this.pathIdx = anchorIdx;
     const anchorTile = newPath[this.pathIdx]!;
     const anchorWorld = this.grid.tileToWorld(anchorTile.x, anchorTile.y);
     this.x = anchorWorld.x;
