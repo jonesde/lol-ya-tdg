@@ -14,7 +14,12 @@ with open('/home/jonesde/agents/lol-ya-tdg/src/render/themes/data/the-aftermath.
 print("Original enemy keys:", list(theme['enemies'].keys()))
 
 # Replace enemies
-theme['enemies'] = new_enemies
+theme['enemies'] = new_enemies['enemies']
+
+# Merge new tower definitions (preserves existing towers)
+new_towers = new_enemies.get('towers', {})
+for tower_key, tower_def in new_towers.items():
+    theme['towers'][tower_key] = tower_def
 
 # Write back with 2-space indent
 with open('/home/jonesde/agents/lol-ya-tdg/src/render/themes/data/the-aftermath.json', 'w') as f:

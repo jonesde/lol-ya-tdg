@@ -534,6 +534,216 @@ def trex_frame(phase, body_y, mouth_phase, clench=False):
 
 
 # ============================================================
+# ATTACK ANIMATIONS (3 frames, 0.2s) - single swing/attack motion
+# ============================================================
+
+def bad_bug_mandibles(body_y, open_amt):
+    top_y = body_y - (0.05 + open_amt * 0.15)
+    bot_y = body_y + (0.05 + open_amt * 0.15)
+    tip_x = 0.72 + open_amt * 0.05
+    return (
+        f'<path d="M0.58,{body_y - 0.06:.2f} Q0.7,{top_y:.2f} {tip_x:.2f},{top_y:.2f}" fill="none" stroke="#5a3a1a" stroke-width="0.05" stroke-linecap="round"/>'
+        f'<path d="M0.58,{body_y + 0.06:.2f} Q0.7,{bot_y:.2f} {tip_x:.2f},{bot_y:.2f}" fill="none" stroke="#5a3a1a" stroke-width="0.05" stroke-linecap="round"/>'
+        f'<circle cx="0.62" cy="{body_y:.2f}" r="0.03" fill="#1a1a1a"/>'
+    )
+
+
+def bad_bug_attack(phase, body_y):
+    openness = [0.3, 1.0, 0.55][phase]
+    lunge = [0.02, 0.12, 0.05][phase]
+    inner = "\n".join([
+        bad_bug_body(body_y),
+        bad_bug_leg(0, body_y, clench=True),
+        bad_bug_antennae(1, clench=True)[0],
+        bad_bug_antennae(1, clench=True)[1],
+        bad_bug_mandibles(body_y, openness),
+    ])
+    return svg_frame(f'<g transform="translate({lunge:.3f},0)">{inner}</g>')
+
+
+def mantis_attack_scythes(body_y, phase):
+    by = f"{body_y:.2f}"
+    reach = [0.4, 0.62, 0.5][phase]
+    drop = [-0.35, -0.02, 0.32][phase]
+    top = f'M0.05,{body_y - 0.1:.2f} L{0.12 + reach * 0.4:.2f},{body_y - 0.2 + drop:.2f} L{0.1 + reach:.2f},{body_y - 0.26 + drop:.2f} L{0.16 + reach:.2f},{body_y - 0.4 + drop:.2f}'
+    bot = f'M0.05,{body_y + 0.1:.2f} L{0.12 + reach * 0.4:.2f},{body_y + 0.2 + drop:.2f} L{0.1 + reach:.2f},{body_y + 0.26 + drop:.2f} L{0.16 + reach:.2f},{body_y + 0.4 + drop:.2f}'
+    spine_top = f'M{0.12 + reach:.2f},{body_y - 0.26 + drop:.2f} L{0.2 + reach:.2f},{body_y - 0.2 + drop:.2f}'
+    spine_bot = f'M{0.12 + reach:.2f},{body_y + 0.26 + drop:.2f} L{0.2 + reach:.2f},{body_y + 0.2 + drop:.2f}'
+    return (f'<g fill="none" stroke="#4a8a2a" stroke-width="0.06" stroke-linecap="round" stroke-linejoin="round">'
+            f'<path d="{top}"/><path d="{spine_top}" stroke-width="0.03"/>'
+            f'<path d="{bot}"/><path d="{spine_bot}" stroke-width="0.03"/></g>')
+
+
+def mantis_attack(phase, body_y):
+    tilt = [-8, 0, 8][phase]
+    inner = "\n".join([
+        mantis_body(body_y),
+        mantis_attack_scythes(body_y, phase),
+        mantis_legs(0, body_y, clench=True),
+    ])
+    return svg_frame(f'<g transform="rotate({tilt:.1f})">{inner}</g>')
+
+
+def yow_guy_ears(body_y, pinned):
+    s = 0.06 if pinned else 0.1
+    dy = 0.06 if pinned else 0.0
+    return (
+        f'<circle cx="-0.05" cy="{body_y - 0.42 + dy:.2f}" r="{s:.2f}" fill="#9a8a7a" stroke="#4a3a2a" stroke-width="0.02"/>'
+        f'<circle cx="0.08" cy="{body_y - 0.44 + dy:.2f}" r="{s:.2f}" fill="#9a8a7a" stroke="#4a3a2a" stroke-width="0.02"/>'
+    )
+
+
+def yow_guy_claws(body_y, phase):
+    ext = [0.0, 0.25, 0.12][phase]
+    sweep = [0.0, 0.1, -0.08][phase]
+    cx0 = 0.5 + ext * 0.5
+    return (
+        f'<path d="M0.5,{body_y - 0.1:.2f} L{cx0:.2f},{body_y - 0.1 + sweep:.2f}" stroke="#2a2a2a" stroke-width="0.06" stroke-linecap="round"/>'
+        f'<path d="M0.5,{body_y + 0.1:.2f} L{cx0:.2f},{body_y + 0.1 + sweep:.2f}" stroke="#2a2a2a" stroke-width="0.06" stroke-linecap="round"/>'
+        f'<line x1="{cx0:.2f}" y1="{body_y - 0.1 + sweep:.2f}" x2="{cx0 + 0.07:.2f}" y2="{body_y - 0.15 + sweep:.2f}" stroke="#1a1a1a" stroke-width="0.04" stroke-linecap="round"/>'
+        f'<line x1="{cx0:.2f}" y1="{body_y + 0.1 + sweep:.2f}" x2="{cx0 + 0.07:.2f}" y2="{body_y + 0.15 + sweep:.2f}" stroke="#1a1a1a" stroke-width="0.04" stroke-linecap="round"/>'
+    )
+
+
+def yow_guy_attack(phase, body_y):
+    lunge = [0.03, 0.14, 0.05][phase]
+    inner = "\n".join([
+        yow_guy_ears(body_y, pinned=(phase == 1)),
+        yow_guy_body(body_y),
+        yow_guy_leg(0, body_y, clench=True),
+        yow_guy_claws(body_y, phase),
+    ])
+    return svg_frame(f'<g transform="translate({lunge:.3f},0)">{inner}</g>')
+
+
+def shell_attack(phase, body_y):
+    flare = [0.1, 0.5, 0.2][phase]
+    inner = "\n".join([
+        shell_body(body_y),
+        f'<ellipse cx="0" cy="{body_y:.2f}" rx="0.4" ry="0.25" fill="#ff2200" opacity="{flare:.2f}"/>',
+        shell_pincers(0, body_y, clench=(phase == 1)),
+        shell_legs(0, body_y, clench=True),
+    ])
+    return svg_frame(inner)
+
+
+def mole_attack(phase, body_y):
+    glow = [0.2, 0.6, 0.35][phase]
+    swipe = [0.0, 0.22, 0.1][phase]
+    by = f"{body_y:.2f}"
+    teeth = (f'<path d="M0.5,{by} L0.62,{body_y - 0.02:.2f} L0.6,{body_y + 0.05:.2f} Z" fill="#fff" stroke="#ccc" stroke-width="0.01"/>'
+             f'<line x1="0.55" y1="{by}" x2="0.55" y2="{body_y + 0.06:.2f}" stroke="#fff" stroke-width="0.03"/>'
+             f'<line x1="0.6" y1="{by}" x2="0.6" y2="{body_y + 0.06:.2f}" stroke="#fff" stroke-width="0.03"/>')
+    glow_circles = (f'<circle cx="0.44" cy="{body_y - 0.08:.2f}" r="{0.06 + glow * 0.1:.2f}" fill="#ff8800" opacity="{glow:.2f}"/>'
+                    f'<circle cx="0.44" cy="{body_y + 0.08:.2f}" r="{0.06 + glow * 0.1:.2f}" fill="#ff8800" opacity="{glow:.2f}"/>')
+    claws = (f'<path d="M0.4,{body_y - 0.1 + swipe:.2f} L0.56,{body_y - 0.12 + swipe:.2f}" stroke="#999" stroke-width="0.05" stroke-linecap="round"/>'
+             f'<path d="M0.4,{body_y + 0.1 + swipe:.2f} L0.56,{body_y + 0.12 + swipe:.2f}" stroke="#999" stroke-width="0.05" stroke-linecap="round"/>')
+    inner = "\n".join([mole_body(body_y), glow_circles, teeth, claws, mole_legs(0, body_y, clench=True)])
+    return svg_frame(inner)
+
+
+def trex_attack(phase, body_y):
+    lunge = [0.0, -0.08, 0.14][phase]
+    inner = "\n".join([
+        trex_body(body_y),
+        trex_arms(body_y, clench=True),
+        trex_legs(0, body_y, clench=(phase == 2)),
+        trex_mouth(3, body_y),
+    ])
+    return svg_frame(f'<g transform="translate({lunge:.3f},0)">{inner}</g>')
+
+
+def make_attack_frames(frame_func):
+    frames = []
+    for phase in range(3):
+        frame_svg = frame_func(phase, 0.0)
+        frames.append({"image": frame_svg.replace(' xmlns="http://www.w3.org/2000/svg"', '')})
+    return frames
+
+
+# ============================================================
+# NEW TOWERS (sturdyWall, shotgunTank) - top-down patchwork art
+# ============================================================
+
+def tower_svg(content):
+    return f'<svg viewBox="-16 -16 32 32" xmlns="http://www.w3.org/2000/svg">{content}</svg>'
+
+
+def sturdy_wall_base():
+    c = "#b08968"
+    stroke = "#6e4f33"
+    parts = []
+    parts.append(f'<rect x="-13" y="-10" width="26" height="20" rx="1" fill="#9c8470" stroke="{stroke}" stroke-width="1"/>')
+    for i in range(-12, 13, 3):
+        parts.append(f'<line x1="{i}" y1="-10" x2="{i}" y2="10" stroke="#7a6450" stroke-width="0.6" opacity="0.6"/>')
+    parts.append(f'<rect x="-10" y="-8" width="20" height="4" rx="0.5" transform="rotate(-6)" fill="#a9824f" stroke="{stroke}" stroke-width="0.8"/>')
+    parts.append(f'<rect x="-9" y="2" width="22" height="5" rx="0.5" transform="rotate(5)" fill="#b58f57" stroke="{stroke}" stroke-width="0.8"/>')
+    parts.append(f'<rect x="-3" y="-12" width="10" height="9" rx="0.5" fill="#8f99a3" stroke="#5f6a72" stroke-width="0.8" transform="rotate(8 2 -7)"/>')
+    parts.append(f'<circle cx="-6" cy="6" r="5" fill="#2a2a2a" stroke="#111" stroke-width="1"/>')
+    parts.append(f'<circle cx="-6" cy="6" r="2.5" fill="#444" stroke="#222" stroke-width="0.6"/>')
+    for (rx, ry) in [(-11, -9), (-11, 9), (11, -9), (11, 9), (-3, -11), (7, -11)]:
+        parts.append(f'<circle cx="{rx}" cy="{ry}" r="0.8" fill="#5a4632" stroke="#3a2c1e" stroke-width="0.4"/>')
+    parts.append(f'<circle cx="0" cy="-7" r="0.6" fill="#cfd6db" stroke="#7a858c" stroke-width="0.4"/>')
+    parts.append(f'<circle cx="5" cy="-9" r="0.6" fill="#cfd6db" stroke="#7a858c" stroke-width="0.4"/>')
+    return "\n".join(parts)
+
+
+def sturdy_wall_frames():
+    base = sturdy_wall_base()
+    idle = tower_svg(base)
+    flash = tower_svg(
+        base
+        + f'<rect x="-13" y="-10" width="26" height="20" rx="1" fill="#fff7d0" opacity="0.35"/>'
+        + f'<circle cx="6" cy="-6" r="3" fill="#fff" opacity="0.6"/>'
+        + f'<circle cx="-6" cy="6" r="2" fill="#ffd27a" opacity="0.5"/>'
+        + f'<path d="M-10,-8 L-4,-2 M8,9 L3,4" stroke="#fff" stroke-width="1" opacity="0.5" stroke-linecap="round"/>'
+    )
+    return [
+        {"image": idle.replace(' xmlns="http://www.w3.org/2000/svg"', '')},
+        {"image": flash.replace(' xmlns="http://www.w3.org/2000/svg"', '')},
+    ]
+
+
+def shotgun_tank_base():
+    stroke = "#5a3a26"
+    parts = []
+    parts.append(f'<rect x="-14" y="-9" width="6" height="18" rx="2" fill="#3a2f28" stroke="#1f1812" stroke-width="1"/>')
+    for i in range(-7, 9, 3):
+        parts.append(f'<rect x="-13" y="{i}" width="4" height="2" rx="0.5" fill="#6a5a4a" stroke="#2a221c" stroke-width="0.4"/>')
+    parts.append(f'<rect x="8" y="-9" width="6" height="18" rx="2" fill="#3a2f28" stroke="#1f1812" stroke-width="1"/>')
+    for i in range(-7, 9, 3):
+        parts.append(f'<rect x="9" y="{i}" width="4" height="2" rx="0.5" fill="#6a5a4a" stroke="#2a221c" stroke-width="0.4"/>')
+    parts.append(f'<rect x="-7" y="-7" width="11" height="14" rx="1.5" fill="#c08552" stroke="{stroke}" stroke-width="1"/>')
+    parts.append(f'<rect x="-4" y="-9" width="8" height="6" rx="1" fill="#a9743f" stroke="{stroke}" stroke-width="0.8" transform="rotate(-4 0 -6)"/>')
+    parts.append(f'<rect x="-2" y="3" width="9" height="6" rx="1" fill="#b07a44" stroke="{stroke}" stroke-width="0.8" transform="rotate(5 2 6)"/>')
+    parts.append(f'<path d="M-5,-2 Q0,-4 4,-1" fill="none" stroke="#d23b3b" stroke-width="0.8" stroke-linecap="round"/>')
+    parts.append(f'<path d="M-3,4 Q1,6 5,3" fill="none" stroke="#3b6bd2" stroke-width="0.8" stroke-linecap="round"/>')
+    parts.append(f'<line x1="-7" y1="0" x2="4" y2="0" stroke="#e0c08a" stroke-width="0.6" opacity="0.7"/>')
+    parts.append(f'<rect x="2" y="-2.5" width="12" height="5" rx="1" fill="#777" stroke="#444" stroke-width="1"/>')
+    parts.append(f'<circle cx="14" cy="0" r="3" fill="#555" stroke="#333" stroke-width="1"/>')
+    parts.append(f'<circle cx="14" cy="0" r="1.3" fill="#222" stroke="#444" stroke-width="0.5"/>')
+    parts.append(f'<rect x="10" y="-3" width="2" height="6" rx="0.5" fill="#666" stroke="#444" stroke-width="0.4"/>')
+    for (bx, by) in [(-6, -6), (-6, 6), (4, -8), (4, 8)]:
+        parts.append(f'<circle cx="{bx}" cy="{by}" r="0.7" fill="#5a3a26" stroke="#3a2418" stroke-width="0.4"/>')
+    return "\n".join(parts)
+
+
+def shotgun_tank_frames():
+    base = shotgun_tank_base()
+    idle = tower_svg(base)
+    flash = (
+        f'<g transform="translate(-1.5,0)">{base}</g>'
+        + f'<polygon points="16,-5 24,-7 21,-3 26,0 21,3 24,7 16,5" fill="#ffcc33" opacity="0.85"/>'
+        + f'<polygon points="16,-3 22,-4 20,-1 23,0 20,1 22,4 16,3" fill="#fff" opacity="0.9"/>'
+        + f'<circle cx="18" cy="0" r="3" fill="#ff8800" opacity="0.6"/>'
+    )
+    return [
+        {"image": idle.replace(' xmlns="http://www.w3.org/2000/svg"', '')},
+        {"image": tower_svg(flash).replace(' xmlns="http://www.w3.org/2000/svg"', '')},
+    ]
+
+
+# ============================================================
 # FRAME GENERATION
 # ============================================================
 
@@ -584,26 +794,56 @@ shielded_hit = make_hit_frames(shell_frame, [pincer_phases])
 healer_hit = make_hit_frames(mole_frame, [glow_levels])
 boss_hit = make_hit_frames(trex_frame, [mouth_phases])
 
+# Build enemy attack animations (3 frames, 0.2s each)
+minion_attack = make_attack_frames(bad_bug_attack)
+runner_attack = make_attack_frames(mantis_attack)
+tank_attack = make_attack_frames(yow_guy_attack)
+shielded_attack = make_attack_frames(shell_attack)
+healer_attack = make_attack_frames(mole_attack)
+boss_attack = make_attack_frames(trex_attack)
+
+# Build new tower definitions (sturdyWall, shotgunTank)
+sturdy_wall_idle_frame = sturdy_wall_frames()[0]["image"]
+shotgun_tank_idle_frame = shotgun_tank_frames()[0]["image"]
+new_towers = {
+    "sturdyWall": {
+        "name": "Bastion Wall", "color": "#b08968", "icon": "◧",
+        "animation": {"duration": 0.3, "frames": sturdy_wall_frames()},
+        "walking": {"duration": 0.6, "frames": [{"image": sturdy_wall_idle_frame}]},
+    },
+    "shotgunTank": {
+        "name": "Shotgun Tank", "color": "#c08552", "icon": "◳",
+        "animation": {"duration": 0.3, "frames": shotgun_tank_frames()},
+        "walking": {"duration": 0.6, "frames": [{"image": shotgun_tank_idle_frame}]},
+    },
+}
+
 # Build enemies section
 enemies = {
     "minion": {"name": "Bad Bug", "color": "#88aa44", "shape": "●",
                "walking": {"duration": 0.8, "frames": minion_walking},
-               "hitReaction": {"duration": 0.3, "frames": minion_hit}},
+               "hitReaction": {"duration": 0.3, "frames": minion_hit},
+               "attack": {"duration": 0.2, "frames": minion_attack}},
     "runner": {"name": "Manic Mantis", "color": "#44aa44", "shape": "◆",
                "walking": {"duration": 0.6, "frames": runner_walking},
-               "hitReaction": {"duration": 0.3, "frames": runner_hit}},
+               "hitReaction": {"duration": 0.3, "frames": runner_hit},
+               "attack": {"duration": 0.2, "frames": runner_attack}},
     "tank": {"name": "Yow Guy", "color": "#886644", "shape": "■",
              "walking": {"duration": 1.0, "frames": tank_walking},
-             "hitReaction": {"duration": 0.3, "frames": tank_hit}},
+             "hitReaction": {"duration": 0.3, "frames": tank_hit},
+             "attack": {"duration": 0.2, "frames": tank_attack}},
     "shielded": {"name": "Shell Shocked", "color": "#99aabb", "shape": "◇",
                  "walking": {"duration": 0.7, "frames": shielded_walking},
-                 "hitReaction": {"duration": 0.3, "frames": shielded_hit}},
+                 "hitReaction": {"duration": 0.3, "frames": shielded_hit},
+                 "attack": {"duration": 0.2, "frames": shielded_attack}},
     "healer": {"name": "Mole Mender", "color": "#bb77aa", "shape": "▲",
                "walking": {"duration": 0.9, "frames": healer_walking},
-               "hitReaction": {"duration": 0.3, "frames": healer_hit}},
+               "hitReaction": {"duration": 0.3, "frames": healer_hit},
+               "attack": {"duration": 0.2, "frames": healer_attack}},
     "boss": {"name": "Death Draw", "color": "#cc6600", "shape": "★",
              "walking": {"duration": 1.2, "frames": boss_walking},
-             "hitReaction": {"duration": 0.4, "frames": boss_hit}},
+             "hitReaction": {"duration": 0.4, "frames": boss_hit},
+             "attack": {"duration": 0.2, "frames": boss_attack}},
 }
 
-print(json.dumps(enemies, indent=2, ensure_ascii=False))
+print(json.dumps({"enemies": enemies, "towers": new_towers}, indent=2, ensure_ascii=False))
