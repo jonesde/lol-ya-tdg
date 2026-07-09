@@ -34,7 +34,8 @@ Defend your base against 100 waves of enemies across 36 procedurally-generated m
 | `Shift` + `Tab` | Same as `Tab` but in reverse (previous tower type in build mode, or reverse cycle time scale 8× → 4× → 2× → 1×) |
 | `1`–`9` | Build mode for corresponding tower type (use current shop panel order; support up to 9 even though there are only 6 towers now) |
 | `Up Arrow` / `Down Arrow` / `Left Arrow` / `Right Arrow` | Move tower selection in that direction (direction-priority search); in build mode: move build position |
-| `w` or `u` | Upgrade the selected tower, nothing if no tower selected |
+| `w` or `u` | Upgrade the selected tower. If the tower needs specialization and only one specialization is available, selects it directly |
+| `e` or `c` | When the selected tower needs specialization: `e` selects Specialization A, `c` selects Specialization B |
 | `a` | Reverse cycle time scale (8× → 4× → 2× → 1×) |
 | `s` | Downgrade the selected tower if level >1, otherwise sell it; nothing if no tower selected |
 | `d` | Cycle time scale forward (1× → 2× → 4× → 8×) |

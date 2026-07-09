@@ -1,3 +1,4 @@
+import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useInput } from "@/composables/Input.js";
 import type { Command } from "@/sim/Command.js";
@@ -7,7 +8,9 @@ import { setCommandDispatcher } from "@/sim/commandBus.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import type { Tower } from "@/sim/towers/Tower.js";
-import { createTestGameStore, createTestUiStore } from "../helpers/mock-stores";
+import { useGameStore } from "@/stores/game.js";
+import { usePersistStore } from "@/stores/persist.js";
+import { useUiStore } from "@/stores/ui.js";
 
 const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -29,13 +32,18 @@ function makeEvent(key: string, opts: Record<string, unknown> = {}) {
 }
 
 describe("useInput", () => {
-  let gameStore: ReturnType<typeof createTestGameStore>;
-  let uiStore: ReturnType<typeof createTestUiStore>;
+  let gameStore: ReturnType<typeof useGameStore>;
+  let uiStore: ReturnType<typeof useUiStore>;
+  let persistStore: ReturnType<typeof usePersistStore>;
   let dispatcher: Dispatcher;
 
   beforeEach(() => {
-    gameStore = createTestGameStore();
-    uiStore = createTestUiStore();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    gameStore = useGameStore();
+    uiStore = useUiStore();
+    persistStore = usePersistStore();
+    persistStore.$reset();
     dispatcher = makeDispatcher();
     // Tower selection is routed through the global command bus; wire it to the
     // test dispatcher so action:selectTower commands are captured.
@@ -193,6 +201,161 @@ describe("useInput", () => {
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("u");
       expect(dispatched("action:upgradeSelected")).toBe(false);
+    });
+  });
+
+  describe("w/u keys (upgrade / specialize gate)", () => {
+    it("dispatches upgradeSelected when a tower is selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = {
+        id: "t1",
+        type: "basic",
+        level: 3,
+        canUpgrade: { ok: true, cost: 100, nextLevel: 4 },
+      } as unknown as Tower;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("w");
+      expect(dispatched("action:upgradeSelected")).toBe(true);
+      triggerInput("u");
+      expect(dispatched("action:upgradeSelected")).toBe(true);
+    });
+
+    it("does not dispatch upgradeSelected when no tower is selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = null;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("w");
+      expect(dispatched("action:upgradeSelected")).toBe(false);
+    });
+
+    it("dispatches upgradeSelected even when the tower needs a specialization (engine auto-picks)", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = {
+        id: "t1",
+        type: "basic",
+        level: 4,
+        canUpgrade: { ok: false, needVariant: true, reason: "Choose specialization" },
+      } as unknown as Tower;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("w");
+      expect(dispatched("action:upgradeSelected")).toBe(true);
+      expect(dispatched("action:specialize")).toBe(false);
+    });
+  });
+
+  describe("e key (specialize A)", () => {
+    it("dispatches specialize A when tower needs variant and variant A is unlocked", () => {
+      gameStore.setState(GameState.PLAYING);
+      persistStore.unlocked.basic!.variantA[0] = true;
+      persistStore.unlocked.basic!.variantB[0] = false;
+      const tower = {
+        id: "t1",
+        type: "basic",
+        level: 4,
+        canUpgrade: { ok: false, needVariant: true, reason: "Choose specialization" },
+      } as unknown as Tower;
+      gameStore.selectedTower = tower;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("e");
+      const spec = lastOfType("action:specialize");
+      expect(spec?.variant).toBe("A");
+    });
+
+    it("does nothing when variant A is not unlocked", () => {
+      gameStore.setState(GameState.PLAYING);
+      persistStore.unlocked.basic!.variantA[0] = false;
+      persistStore.unlocked.basic!.variantB[0] = true;
+      const tower = {
+        id: "t1",
+        type: "basic",
+        level: 4,
+        canUpgrade: { ok: false, needVariant: true, reason: "Choose specialization" },
+      } as unknown as Tower;
+      gameStore.selectedTower = tower;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("e");
+      expect(dispatched("action:specialize")).toBe(false);
+    });
+
+    it("does nothing when tower does not need variant", () => {
+      gameStore.setState(GameState.PLAYING);
+      persistStore.unlocked.basic!.variantA[0] = true;
+      const tower = {
+        id: "t1",
+        type: "basic",
+        level: 3,
+        canUpgrade: { ok: true, cost: 100, nextLevel: 4 },
+      } as unknown as Tower;
+      gameStore.selectedTower = tower;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("e");
+      expect(dispatched("action:specialize")).toBe(false);
+    });
+
+    it("does nothing when no tower is selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = null;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("e");
+      expect(dispatched("action:specialize")).toBe(false);
+    });
+  });
+
+  describe("c key (specialize B)", () => {
+    it("dispatches specialize B when tower needs variant and variant B is unlocked", () => {
+      gameStore.setState(GameState.PLAYING);
+      persistStore.unlocked.basic!.variantA[0] = false;
+      persistStore.unlocked.basic!.variantB[0] = true;
+      const tower = {
+        id: "t1",
+        type: "basic",
+        level: 4,
+        canUpgrade: { ok: false, needVariant: true, reason: "Choose specialization" },
+      } as unknown as Tower;
+      gameStore.selectedTower = tower;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("c");
+      const spec = lastOfType("action:specialize");
+      expect(spec?.variant).toBe("B");
+    });
+
+    it("does nothing when variant B is not unlocked", () => {
+      gameStore.setState(GameState.PLAYING);
+      persistStore.unlocked.basic!.variantA[0] = true;
+      persistStore.unlocked.basic!.variantB[0] = false;
+      const tower = {
+        id: "t1",
+        type: "basic",
+        level: 4,
+        canUpgrade: { ok: false, needVariant: true, reason: "Choose specialization" },
+      } as unknown as Tower;
+      gameStore.selectedTower = tower;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("c");
+      expect(dispatched("action:specialize")).toBe(false);
+    });
+
+    it("does nothing when tower does not need variant", () => {
+      gameStore.setState(GameState.PLAYING);
+      persistStore.unlocked.basic!.variantB[0] = true;
+      const tower = {
+        id: "t1",
+        type: "basic",
+        level: 3,
+        canUpgrade: { ok: true, cost: 100, nextLevel: 4 },
+      } as unknown as Tower;
+      gameStore.selectedTower = tower;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("c");
+      expect(dispatched("action:specialize")).toBe(false);
+    });
+
+    it("does nothing when no tower is selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = null;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("c");
+      expect(dispatched("action:specialize")).toBe(false);
     });
   });
 
@@ -877,7 +1040,7 @@ describe("useInput", () => {
     it("does nothing for unknown keys", () => {
       gameStore.setState(GameState.PLAYING);
       useInput(gameStore, dispatcher, uiStore);
-      triggerInput("x");
+      triggerInput("q");
       expect(dispatched("action:togglePause")).toBe(false);
       expect(dispatched("action:upgradeSelected")).toBe(false);
       expect(dispatched("action:sellSelected")).toBe(false);

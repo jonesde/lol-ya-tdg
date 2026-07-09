@@ -42,7 +42,7 @@ const row1 = buildRow(1, [
   ...["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"].map((label) => ({
     label,
     width: KEY_SIZE,
-    highlighted: label === "W" || label === "U",
+    highlighted: label === "W" || label === "U" || label === "E",
   })),
   { label: "[", width: KEY_SIZE },
   { label: "]", width: KEY_SIZE },
@@ -63,7 +63,11 @@ const row2 = buildRow(2, [
 
 const row3 = buildRow(3, [
   { label: "Shift", width: 74, highlighted: true },
-  ...["Z", "X", "C", "V", "B", "N", "M"].map((label) => ({ label, width: KEY_SIZE, highlighted: label === "X" })),
+  ...["Z", "X", "C", "V", "B", "N", "M"].map((label) => ({
+    label,
+    width: KEY_SIZE,
+    highlighted: label === "X" || label === "C",
+  })),
   { label: ",", width: KEY_SIZE },
   { label: ".", width: KEY_SIZE },
   { label: "/", width: KEY_SIZE },
@@ -293,7 +297,11 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
               </tr>
               <tr>
                 <td><kbd>W</kbd> / <kbd>U</kbd></td>
-                <td>Upgrade the selected tower</td>
+                <td>Upgrade the selected tower. If the tower needs specialization and only one specialization is available, selects it directly</td>
+              </tr>
+              <tr>
+                <td><kbd>E</kbd> / <kbd>C</kbd></td>
+                <td>When the selected tower needs specialization: <kbd>E</kbd> selects Specialization A, <kbd>C</kbd> selects Specialization B</td>
               </tr>
               <tr>
                 <td><kbd>A</kbd></td>

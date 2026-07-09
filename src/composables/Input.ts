@@ -6,6 +6,7 @@ import { type TowerId, TowerIds } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import type { GameStoreLike } from "@/stores/game.js";
+import { usePersistStore } from "@/stores/persist.js";
 import type { UiStoreLike } from "@/stores/ui.js";
 
 const towerIdList = Object.values(TowerIds) as TowerId[];
@@ -134,6 +135,16 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
           dispatch({ commandId: nextInputCommandId++, type: "action:upgradeSelected" });
         }
         break;
+      case "e":
+        if (canActNow(event.key) && gs.selectedTower) {
+          handleSpecializeKey(gs, "A", dispatch);
+        }
+        break;
+      case "c":
+        if (canActNow(event.key) && gs.selectedTower) {
+          handleSpecializeKey(gs, "B", dispatch);
+        }
+        break;
       case "a":
         if (canActNow(event.key)) {
           gs.cycleSpeedReverse();
@@ -201,6 +212,22 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
     window.removeEventListener("keydown", handleDown);
     window.removeEventListener("keyup", handleUp);
   });
+}
+
+function handleSpecializeKey(
+  gameStore: GameStoreLike,
+  variant: "A" | "B",
+  sendCommand: (command: Command) => void,
+): void {
+  const tower = gameStore.selectedTower;
+  if (!tower) return;
+  const check = (tower as unknown as { canUpgrade?: { needVariant?: boolean } }).canUpgrade;
+  if (!check?.needVariant) return;
+  const unlocked = usePersistStore().unlocked[tower.type];
+  if (!unlocked) return;
+  const unlockedVariant = variant === "A" ? !!unlocked.variantA[0] : !!unlocked.variantB[0];
+  if (!unlockedVariant) return;
+  sendCommand({ commandId: nextInputCommandId++, type: "action:specialize", variant });
 }
 
 function handleTabCycle(gameStore: GameStoreLike, previous: boolean): void {

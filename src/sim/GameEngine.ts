@@ -649,7 +649,24 @@ export class GameEngine {
     if (!tower) return;
 
     const check = tower.canUpgrade(this.persistState);
-    if (check.needVariant) return;
+    if (check.needVariant) {
+      // The tower is at the specialization gate (level 4, no variant). If only
+      // one specialization is unlocked, auto-pick it so a single upgrade action
+      // (in-tile button click or the w/u keys) specializes directly instead of
+      // doing nothing. When both (or neither) are unlocked the choice is
+      // ambiguous, so we no-op and rely on the explicit specialize path.
+      const unlocked = this.persistState.unlocked[tower.type];
+      if (unlocked) {
+        const aUnlocked = !!unlocked.variantA[0];
+        const bUnlocked = !!unlocked.variantB[0];
+        if (aUnlocked && !bUnlocked) {
+          this.specializeSelected("A");
+        } else if (bUnlocked && !aUnlocked) {
+          this.specializeSelected("B");
+        }
+      }
+      return;
+    }
     if (!check.ok) return;
 
     const cost = this.getUpgradeCost(tower);

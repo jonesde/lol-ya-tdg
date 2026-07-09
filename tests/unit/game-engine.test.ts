@@ -271,6 +271,48 @@ describe("GameEngine", () => {
       expect(engine.runState.gold).toBe(goldBefore - cost);
     });
 
+    it("upgradeSelected auto-specializes when exactly one variant is unlocked", () => {
+      engine.persistState.unlocked.basic.variantA[0] = true;
+      engine.persistState.unlocked.basic.variantB[0] = false;
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      tower.level = 4;
+      engine.runState.selectedTowerId = String(tower.id);
+      const lv5Cost = tower.upgradeCost(5);
+      engine.runState.gold = lv5Cost;
+      const goldBefore = engine.runState.gold;
+      engine.upgradeSelected();
+      const selected = engine.getSelectedTower() as Tower;
+      expect(selected.variant).toBe("A");
+      expect(selected.level).toBe(5);
+      expect(engine.runState.gold).toBe(goldBefore - lv5Cost);
+    });
+
+    it("upgradeSelected does not auto-specialize when both variants are unlocked (ambiguous)", () => {
+      engine.persistState.unlocked.basic.variantA[0] = true;
+      engine.persistState.unlocked.basic.variantB[0] = true;
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      tower.level = 4;
+      engine.runState.selectedTowerId = String(tower.id);
+      engine.runState.gold = tower.upgradeCost(5);
+      engine.upgradeSelected();
+      const selected = engine.getSelectedTower() as Tower;
+      expect(selected.variant).toBeNull();
+      expect(selected.level).toBe(4);
+    });
+
+    it("upgradeSelected does nothing when no variant is unlocked", () => {
+      engine.persistState.unlocked.basic.variantA[0] = false;
+      engine.persistState.unlocked.basic.variantB[0] = false;
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      tower.level = 4;
+      engine.runState.selectedTowerId = String(tower.id);
+      engine.runState.gold = tower.upgradeCost(5);
+      engine.upgradeSelected();
+      const selected = engine.getSelectedTower() as Tower;
+      expect(selected.variant).toBeNull();
+      expect(selected.level).toBe(4);
+    });
+
     it("sellSelected shows confirm dialog", () => {
       const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       engine.runState.selectedTowerId = String(tower.id);
