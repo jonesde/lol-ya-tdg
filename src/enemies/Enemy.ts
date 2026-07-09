@@ -32,6 +32,8 @@ interface EnemyMetaRef {
   shield?: number;
   heal?: number;
   healRange?: number;
+  attackDamage: number;
+  attackSpeed: number;
 }
 
 interface GridRef {
@@ -40,6 +42,7 @@ interface GridRef {
   tileToWorld(tx: number, ty: number): { x: number; y: number };
   getBase(): { x: number; y: number };
   blocked: Set<string>;
+  pathVersion: number;
 }
 
 interface EnemyManagerRef {
@@ -92,6 +95,14 @@ export class Enemy {
   }
   onPathBlocked!: boolean;
   moveAngle!: number;
+  // Tower the enemy is currently attacking/blocked by (live, non-ghost), or null.
+  blockedByTower: Tower | null = null;
+  // Attack ability (scaled per Phase 0; damage scales with wave/level like HP).
+  attackDamage: number = 0;
+  attackSpeed: number = 0;
+  attackTimer: number = 0;
+  // Version of the grid path this enemy is following; used to detect re-anchor needs.
+  pathVersion: number = 0;
   markTargetMult!: number;
   markTargetTimer!: number;
   antiHealTimer!: number;
@@ -134,6 +145,10 @@ export class Enemy {
     this.hp = this.maxHp;
     this.speed = meta.speed;
     this.bounty = Math.ceil(meta.bounty * (1 + 0.5 * (level - 1)));
+    this.attackDamage = meta.attackDamage * ENEMY_LEVEL_HP_MULT(level) * waveMult * diffMult;
+    this.attackSpeed = meta.attackSpeed;
+    this.attackTimer = 0;
+    this.blockedByTower = null;
 
     this.spawnIndex = spawnIndex;
     this.grid = grid;
@@ -150,6 +165,7 @@ export class Enemy {
     this.antiHealTimer = 0;
     this.path = grid.getPathFor(spawnIndex);
     this.pathIdx = 0;
+    this.pathVersion = grid.pathVersion;
     if (!this.path || this.path.length === 0) {
       this.removed = true;
       this.onPathBlocked = true;
@@ -247,6 +263,63 @@ export class Enemy {
     }
   }
 
+  // Re-anchors the enemy onto a freshly recomputed grid path (after a tower was
+  // added/removed, ghosted, or restored). Snaps to the nearest path tile that is
+  // still forward of the enemy's current position relative to the base, so the
+  // enemy never teleports backward toward the spawn.
+  reanchorToPath(newPath: { x: number; y: number }[]): void {
+    this.path = newPath;
+    const baseTile = this.grid.getBase();
+    const baseWorldPos = this.grid.tileToWorld(baseTile.x, baseTile.y);
+    const currentDistSqToBase = (this.x - baseWorldPos.x) ** 2 + (this.y - baseWorldPos.y) ** 2;
+    // The last path index is the base tile. Snapping to it would place the enemy on
+    // the base and (next frame) trigger reachedBase prematurely, so it is never an
+    // eligible anchor.
+    const lastPathIdx = newPath.length - 1;
+    let minDist = Infinity;
+    let nearestIdx = 0;
+    let bestForwardIdx = -1;
+    let bestForwardDist = Infinity;
+    for (let i = 0; i < newPath.length; i++) {
+      if (i === lastPathIdx) continue;
+      const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
+      const distSq = (worldPos.x - this.x) ** 2 + (worldPos.y - this.y) ** 2;
+      if (distSq < minDist) {
+        minDist = distSq;
+        nearestIdx = i;
+      }
+      const distSqToBase = (worldPos.x - baseWorldPos.x) ** 2 + (worldPos.y - baseWorldPos.y) ** 2;
+      if (distSqToBase < currentDistSqToBase && distSq < bestForwardDist) {
+        bestForwardDist = distSq;
+        bestForwardIdx = i;
+      }
+    }
+    if (bestForwardIdx >= 0) {
+      this.pathIdx = bestForwardIdx;
+    } else {
+      let forwardFallbackIdx = -1;
+      for (let i = nearestIdx; i < newPath.length; i++) {
+        if (i === lastPathIdx) break;
+        const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
+        const distSqToBase = (worldPos.x - baseWorldPos.x) ** 2 + (worldPos.y - baseWorldPos.y) ** 2;
+        if (distSqToBase <= currentDistSqToBase) {
+          forwardFallbackIdx = i;
+          break;
+        }
+      }
+      this.pathIdx = forwardFallbackIdx >= 0 ? forwardFallbackIdx : nearestIdx;
+    }
+    // Final guard: never park on the base tile via a snap — always leave at least one
+    // waypoint ahead so the enemy reaches base via normal movement.
+    if (this.pathIdx >= lastPathIdx) {
+      this.pathIdx = Math.max(0, lastPathIdx - 1);
+    }
+    const anchorTile = newPath[this.pathIdx]!;
+    const anchorWorld = this.grid.tileToWorld(anchorTile.x, anchorTile.y);
+    this.x = anchorWorld.x;
+    this.y = anchorWorld.y;
+  }
+
   update(dt: number, enemyManager: EnemyManagerRef | null) {
     if (this.removed || this.reachedBase) return;
 
@@ -299,84 +372,80 @@ export class Enemy {
       this.reachedBase = true;
       return;
     }
-    const target = this.grid.tileToWorld(this.path[this.pathIdx + 1]!.x, this.path[this.pathIdx + 1]!.y);
-    const deltaX = target.x - this.x;
-    const deltaY = target.y - this.y;
-    const dist = Math.hypot(deltaX, deltaY);
-    const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
-    if (step >= dist) {
-      this.x = target.x;
-      this.y = target.y;
-      this.pathIdx++;
-      if (this.pathIdx + 1 < this.path.length) {
-        const next = this.path[this.pathIdx + 1]!;
-        if (this.grid.blocked.has(`${next.x},${next.y}`)) {
-          const newPath = this.grid.getPathFor(this.spawnIndex);
-          if (newPath) {
-            this.path = newPath;
-            const baseTile = this.grid.getBase();
-            const baseWorldPos = this.grid.tileToWorld(baseTile.x, baseTile.y);
-            const currentDistSqToBase = (this.x - baseWorldPos.x) ** 2 + (this.y - baseWorldPos.y) ** 2;
-            // The last path index is the base tile. Snapping to it would place the
-            // enemy on the base and (next frame) trigger reachedBase prematurely, so
-            // it must never be eligible as a re-anchoring target.
-            const lastPathIdx = newPath.length - 1;
-            let minDist = Infinity;
-            let nearestIdx = 0;
-            let bestForwardIdx = -1;
-            let bestForwardDist = Infinity;
-            for (let i = 0; i < newPath.length; i++) {
-              if (i === lastPathIdx) continue;
-              const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
-              const distSq = (worldPos.x - this.x) ** 2 + (worldPos.y - this.y) ** 2;
-              if (distSq < minDist) {
-                minDist = distSq;
-                nearestIdx = i;
-              }
-              const distSqToBase = (worldPos.x - baseWorldPos.x) ** 2 + (worldPos.y - baseWorldPos.y) ** 2;
-              if (distSqToBase < currentDistSqToBase && distSq < bestForwardDist) {
-                bestForwardDist = distSq;
-                bestForwardIdx = i;
-              }
-            }
-            if (bestForwardIdx >= 0) {
-              this.pathIdx = bestForwardIdx;
-            } else {
-              let forwardFallbackIdx = -1;
-              for (let i = nearestIdx; i < newPath.length; i++) {
-                if (i === lastPathIdx) break;
-                const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
-                const distSqToBase = (worldPos.x - baseWorldPos.x) ** 2 + (worldPos.y - baseWorldPos.y) ** 2;
-                if (distSqToBase <= currentDistSqToBase) {
-                  forwardFallbackIdx = i;
-                  break;
-                }
-              }
-              this.pathIdx = forwardFallbackIdx >= 0 ? forwardFallbackIdx : nearestIdx;
-            }
-            // Final guard: never park on the base tile via a snap — always leave at
-            // least one waypoint ahead so the enemy reaches base via normal movement.
-            if (this.pathIdx >= lastPathIdx) {
-              this.pathIdx = Math.max(0, lastPathIdx - 1);
-            }
-            const anchorTile = newPath[this.pathIdx]!;
-            const anchorWorld = this.grid.tileToWorld(anchorTile.x, anchorTile.y);
-            this.x = anchorWorld.x;
-            this.y = anchorWorld.y;
-          } else {
-            this.onPathBlocked = true;
-            this.removed = true;
-          }
+
+    // Re-anchor to the latest grid path when it has changed since last frame (a tower
+    // was added/removed, ghosted, or restored). This replaces the old "next tile
+    // blocked → recompute BFS" check, which is no longer correct now that paths may
+    // legitimately include (passable) tower tiles.
+    const gridVersion = this.grid.pathVersion;
+    if (this.pathVersion !== gridVersion) {
+      this.pathVersion = gridVersion;
+      const newPath = this.grid.getPathFor(this.spawnIndex);
+      if (newPath) {
+        this.reanchorToPath(newPath);
+      } else {
+        this.onPathBlocked = true;
+        this.removed = true;
+        return;
+      }
+    }
+
+    // Attack-target resolution: the forward path tile may hold a live (non-ghost)
+    // tower. Because the weakest-path route deliberately crosses tower tiles, the
+    // enemy must decide whether to walk through (ghost/none) or attack (live).
+    const nextTile = this.path[this.pathIdx + 1]!;
+    const forwardTower =
+      enemyManager && this.grid.blocked.has(`${nextTile.x},${nextTile.y}`)
+        ? enemyManager.towerAt(nextTile.x, nextTile.y)
+        : null;
+    const liveTower = forwardTower && !forwardTower.isGhost ? forwardTower : null;
+
+    if (liveTower) {
+      this.blockedByTower = liveTower;
+      const towerCenter = this.grid.tileToWorld(nextTile.x, nextTile.y);
+      const deltaToTowerX = towerCenter.x - this.x;
+      const deltaToTowerY = towerCenter.y - this.y;
+      const distToTower = Math.hypot(deltaToTowerX, deltaToTowerY);
+      const contactDistance = this.grid.tileSize / 2 + this.radius;
+      this.moveAngle = Math.atan2(deltaToTowerY, deltaToTowerX);
+      if (distToTower > contactDistance) {
+        // Approach the tower boundary; pathIdx is NOT advanced while attacking.
+        const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
+        if (step >= distToTower) {
+          this.x = towerCenter.x;
+          this.y = towerCenter.y;
+        } else {
+          this.x += (deltaToTowerX / distToTower) * step;
+          this.y += (deltaToTowerY / distToTower) * step;
+        }
+      } else {
+        // At the edge: pause movement and attack the tower.
+        this.attackTimer -= dt;
+        if (this.attackTimer <= 0) {
+          liveTower.takeDamage(this.attackDamage, this);
+          this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
         }
       }
-      if (!this.removed && this.pathIdx < this.path.length - 1) {
-        const nextWaypoint = this.grid.tileToWorld(this.path[this.pathIdx + 1]!.x, this.path[this.pathIdx + 1]!.y);
-        this.moveAngle = Math.atan2(nextWaypoint.y - this.y, nextWaypoint.x - this.x);
-      }
     } else {
-      this.x += (deltaX / dist) * step;
-      this.y += (deltaY / dist) * step;
-      this.moveAngle = Math.atan2(deltaY, deltaX);
+      this.blockedByTower = null;
+      const target = this.grid.tileToWorld(nextTile.x, nextTile.y);
+      const deltaX = target.x - this.x;
+      const deltaY = target.y - this.y;
+      const dist = Math.hypot(deltaX, deltaY);
+      const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
+      if (step >= dist) {
+        this.x = target.x;
+        this.y = target.y;
+        this.pathIdx++;
+        if (this.pathIdx < this.path.length - 1) {
+          const nextWaypoint = this.grid.tileToWorld(this.path[this.pathIdx + 1]!.x, this.path[this.pathIdx + 1]!.y);
+          this.moveAngle = Math.atan2(nextWaypoint.y - this.y, nextWaypoint.x - this.x);
+        }
+      } else {
+        this.x += (deltaX / dist) * step;
+        this.y += (deltaY / dist) * step;
+        this.moveAngle = Math.atan2(deltaY, deltaX);
+      }
     }
     this.worldPos = { x: this.x, y: this.y };
   }

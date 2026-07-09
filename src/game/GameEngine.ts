@@ -205,6 +205,9 @@ export class GameEngine {
     );
     this.projectileManager.setTowerLookup((towerId) => this.towerManager?.getTowerById(towerId) ?? null);
     this.enemyManager.setTowerManager(this.towerManager);
+    this.grid.towerLookup = {
+      towerAt: (tileX: number, tileY: number) => this.towerManager?.towerAt(tileX, tileY) ?? null,
+    };
     this.projectileManager.setOnGoldReward((amount) => {
       this.earnGold(amount);
     });

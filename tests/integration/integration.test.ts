@@ -108,10 +108,13 @@ describe("Integration: Tower Placement Flow", () => {
     expect(path?.length).toBeGreaterThan(0);
   });
 
-  it("placing a tower on a critical path tile blocks the route", () => {
+  it("placing a tower on a critical path tile is permitted and a route still exists", () => {
     const grid = engine.grid!;
     const pathTile = grid.paths![0]![3];
-    expect(grid.canBuild(pathTile.x, pathTile.y)).toBe(false);
+    expect(grid.canBuild(pathTile.x, pathTile.y)).toBe(true);
+    const path = grid.getPathFor(0);
+    expect(path).not.toBeNull();
+    expect(path?.length).toBeGreaterThan(0);
   });
 
   it("tower can be selected and upgraded", () => {

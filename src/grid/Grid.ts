@@ -1,4 +1,10 @@
-import { bfsShortestPath, canPlaceWithoutBlocking } from "./Pathfinding.js";
+import { bfsShortestPath, canPlaceWithoutBlocking, dijkstraWeakestPath } from "./Pathfinding.js";
+
+// Minimal structural view of a tower needed by the weakest-path routing fallback.
+// `TowerManager.towerAt` is adapted to this shape when it is wired into the grid.
+export interface TowerLookup {
+  towerAt(x: number, y: number): { health: number; isGhost: boolean } | null;
+}
 
 interface Tile {
   type: "terrain" | "path" | "base" | "spawn";
@@ -33,8 +39,22 @@ export class Grid {
   ghostTowers: Set<string>;
   paths: (Point[] | null)[] = [];
   regionId: number = 0;
+  // Bumped on every path recompute so enemies can cheaply detect when their cached
+  // path has changed (tower added/removed, ghosted, or restored) and re-anchor.
+  pathVersion: number = 0;
+  // Optional lookup used by the weakest-path Dijkstra fallback to weight edges by
+  // live tower health. Wired by the GameEngine after both managers are constructed.
+  towerLookup: TowerLookup | null = null;
   private _blockCount: number = 0;
   private _cachedPathTiles: Set<string> | null = null;
+
+  towerHealthAt(x: number, y: number): number | undefined {
+    return this.towerLookup?.towerAt(x, y)?.health;
+  }
+
+  isGhostAt(x: number, y: number): boolean {
+    return this.towerLookup?.towerAt(x, y)?.isGhost ?? false;
+  }
 
   constructor(map: MapData) {
     this.width = map.width;
@@ -176,18 +196,45 @@ export class Grid {
     for (let i = 0; i < this.paths.length; i++) {
       const path = this.paths[i];
       if (path?.some((p) => p.x === x && p.y === y)) {
-        this.paths[i] = bfsShortestPath(this, this.spawns[i]!, this.base, this.blocked);
+        const openPath = bfsShortestPath(this, this.spawns[i]!, this.base, this.blocked);
+        this.paths[i] =
+          openPath ??
+          dijkstraWeakestPath(
+            this,
+            this.spawns[i]!,
+            this.base,
+            (tileX, tileY) => this.towerHealthAt(tileX, tileY),
+            (tileX, tileY) => this.isGhostAt(tileX, tileY),
+          );
       }
     }
     this._cachedPathTiles = null;
+    this.pathVersion++;
   }
 
   recomputePaths() {
     this.paths = [];
     this._cachedPathTiles = null;
+    this.pathVersion++;
     for (const spawn of this.spawns) {
-      const path = bfsShortestPath(this, spawn, this.base, this.blocked);
-      this.paths.push(path);
+      const openPath = bfsShortestPath(this, spawn, this.base, this.blocked);
+      if (openPath) {
+        this.paths.push(openPath);
+      } else {
+        // No open route: fall back to the weakest-path Dijkstra search, which routes
+        // enemies *through* live towers (weighted by remaining health) and treats
+        // ghosted tiles as free. The returned path may include tower tiles; enemies
+        // decide whether to walk through (ghost/none) or attack (live) per the Enemy.
+        this.paths.push(
+          dijkstraWeakestPath(
+            this,
+            spawn,
+            this.base,
+            (tileX, tileY) => this.towerHealthAt(tileX, tileY),
+            (tileX, tileY) => this.isGhostAt(tileX, tileY),
+          ),
+        );
+      }
     }
   }
 

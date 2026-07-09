@@ -155,11 +155,15 @@ describe("Grid", () => {
       expect(grid.terrainTowers.has(`${pathTile!.x},${pathTile!.y}`)).toBe(false);
     });
 
-    it("recomputes paths when a path tile is blocked", () => {
+    it("keeps a route through a path tile when a tower is placed on it (Phase 2 fallback)", () => {
       const pathTile = grid.paths![0]!.find((tile) => grid.tiles[tile.y][tile.x].type === "path" && tile.x > 0);
-      const originalPath = [...grid.paths![0]!];
+      const originalLength = grid.paths![0]!.length;
       grid.registerTower(pathTile!.x, pathTile!.y);
-      expect(grid.paths![0]!).not.toEqual(originalPath);
+      const newPath = grid.getPathFor(0);
+      expect(newPath).not.toBeNull();
+      expect(newPath!.length).toBe(originalLength);
+      // The weakest-path route crosses the tower tile rather than rerouting around it.
+      expect(newPath!.some((tile) => tile.x === pathTile!.x && tile.y === pathTile!.y)).toBe(true);
     });
 
     it("unregisters a terrain tower", () => {

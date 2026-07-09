@@ -120,6 +120,12 @@ function bfsReverseFromBase(grid: GridShape, base: Point, spawns: Point[], block
 // Check whether placing a tower at (x,y) would still leave all spawns able to reach base.
 // cachedPathTiles (optional): set of tile keys on any currently-cached path.
 //   If the tower tile is not on any cached path, blocks it cannot disconnect anything — O(1) early-out.
+//
+// Phase 2: tower tiles are traversable — the Dijkstra weakest-path fallback in
+// `Grid.recomputePaths` routes enemies *through* towers (weighted by their remaining
+// health), so placing a tower on a path tile can never disconnect spawns from the
+// base. Path-tile placement is therefore always permitted. Non-path tiles keep the
+// original reachability rejection unchanged.
 export function canPlaceWithoutBlocking(
   grid: GridShape,
   spawns: Point[],
@@ -128,6 +134,8 @@ export function canPlaceWithoutBlocking(
   existingBlocked: Set<string>,
   cachedPathTiles?: Set<string>,
 ): boolean {
+  if (grid.isPath(towerXY.x, towerXY.y)) return true;
+
   const towerKey = `${towerXY.x},${towerXY.y}`;
   // Fast path: if the tile is not on any cached path, blocking it can't disconnect anything
   if (cachedPathTiles !== undefined && !cachedPathTiles.has(towerKey)) return true;
@@ -139,4 +147,101 @@ export function canPlaceWithoutBlocking(
     if (!reachable.has(`${spawn.x},${spawn.y}`)) return false;
   }
   return true;
+}
+
+interface HeapNode {
+  key: string;
+  x: number;
+  y: number;
+  dist: number;
+  edgeWeight: number;
+}
+
+// Dijkstra weakest-path search used as a fallback when no open BFS route exists.
+// Enemies route *through* tower tiles, so edges are weighted by the live tower's
+// remaining health (weaker towers are cheaper to push through). Ghosted towers are
+// free (weight 0); tiles with no tower are a small nominal weight (0.1).
+//
+// `towerHealthAt(x, y)` returns the live tower's remaining health (or `undefined`
+// when no tower occupies the tile); `isGhostAt(x, y)` is true when a tower exists
+// but is in the ghost (passable, harmless) state.
+export function dijkstraWeakestPath(
+  grid: GridShape,
+  start: Point,
+  goal: Point,
+  towerHealthAt: (x: number, y: number) => number | undefined,
+  isGhostAt: (x: number, y: number) => boolean,
+): Point[] | null {
+  const W = grid.width;
+  const H = grid.height;
+  const key = (x: number, y: number): string => `${x},${y}`;
+  const dist = new Map<string, number>();
+  const prev = new Map<string, Point | null>();
+  const bestEdge = new Map<string, number>();
+  const dirs: [number, number][] = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+  const startKey = key(start.x, start.y);
+  dist.set(startKey, 0);
+  bestEdge.set(startKey, 0);
+  prev.set(startKey, null);
+  // Linear-scan min-heap keyed on (dist primary, edgeWeight secondary). Grid graphs
+  // are small (~600 tiles), so an array PQ is sufficient; the tie-break on edgeWeight
+  // means that among two equal-total-dist routes the path whose final edge crosses the
+  // weaker tile is recorded first.
+  const heap: HeapNode[] = [{ key: startKey, x: start.x, y: start.y, dist: 0, edgeWeight: 0 }];
+  while (heap.length > 0) {
+    let minIndex = 0;
+    for (let i = 1; i < heap.length; i++) {
+      if (
+        heap[i]!.dist < heap[minIndex]!.dist ||
+        (heap[i]!.dist === heap[minIndex]!.dist && heap[i]!.edgeWeight < heap[minIndex]!.edgeWeight)
+      ) {
+        minIndex = i;
+      }
+    }
+    const current = heap.splice(minIndex, 1)[0]!;
+    const curKey = current.key;
+    if (current.x === goal.x && current.y === goal.y) break;
+    const recorded = dist.get(curKey);
+    if (recorded !== undefined && current.dist > recorded) continue;
+    for (const [deltaX, deltaY] of dirs) {
+      const neighborX = current.x + deltaX;
+      const neighborY = current.y + deltaY;
+      if (neighborX < 0 || neighborY < 0 || neighborX >= W || neighborY >= H) continue;
+      if (
+        !grid.isPath(neighborX, neighborY) &&
+        !grid.isBase(neighborX, neighborY) &&
+        !grid.isSpawn(neighborX, neighborY)
+      ) {
+        continue;
+      }
+      const edgeWeight = isGhostAt(neighborX, neighborY) ? 0 : (towerHealthAt(neighborX, neighborY) ?? 0.1);
+      const neighborDist = current.dist + edgeWeight;
+      const neighborKey = key(neighborX, neighborY);
+      const existing = dist.get(neighborKey);
+      if (
+        existing === undefined ||
+        neighborDist < existing ||
+        (neighborDist === existing && edgeWeight < (bestEdge.get(neighborKey) ?? Infinity))
+      ) {
+        dist.set(neighborKey, neighborDist);
+        bestEdge.set(neighborKey, edgeWeight);
+        prev.set(neighborKey, { x: current.x, y: current.y });
+        heap.push({ key: neighborKey, x: neighborX, y: neighborY, dist: neighborDist, edgeWeight });
+      }
+    }
+  }
+  const goalKey = key(goal.x, goal.y);
+  if (!prev.has(goalKey)) return null;
+  const path: Point[] = [];
+  let cur: Point | null = { x: goal.x, y: goal.y };
+  while (cur) {
+    path.unshift(cur);
+    cur = prev.get(key(cur.x, cur.y)) ?? null;
+  }
+  return path;
 }

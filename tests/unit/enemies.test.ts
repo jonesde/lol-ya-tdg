@@ -144,7 +144,7 @@ describe("Enemy", () => {
       expect(enemy.y).toBe(firstTile.y);
     });
 
-    it("marks as removed when no path exists", () => {
+    it("routes through fully-blocked path tiles via the weakest-path fallback", () => {
       const bastionMap = makeBastionMap();
       const grid2 = new Grid(bastionMap);
       for (const tile of grid2.paths[0]!) {
@@ -152,9 +152,9 @@ describe("Enemy", () => {
       }
       grid2.recomputePaths();
       const enemy = new Enemy("minion", 1, 0, grid2, 1, 0);
-      expect(enemy.removed).toBe(true);
-      expect(enemy.onPathBlocked).toBe(true);
-      expect(enemy.path).toBeNull();
+      expect(enemy.removed).toBe(false);
+      expect(enemy.path).not.toBeNull();
+      expect(enemy.path!.length).toBeGreaterThan(0);
     });
   });
 
