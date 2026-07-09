@@ -692,3 +692,103 @@ objects still churn. `SharedArrayBuffer` would remove the clone entirely but nee
 Low across all items: each is "stop doing redundant work" with behavior-preserving guards. Findings
 1–4 are the load-bearing ones; 5–6 are polish. Finding 7 is structural but behavior-preserving
 for gameplay — only particle motion timing follows rAF instead of the fixed sim `dt` (cosmetic).
+
+---
+---
+
+# Detailed Plan for P2-1
+
+Plan: Worker→rAF Backpressure (gate build + post on ack)
+Goal
+Stop the worker from running buildSnapshot() + postMessage() on ticks where the main thread has not yet consumed the previous snapshot. The worker keeps simulating at 60 Hz unconditionally; only the snapshot build and post are gated. Net win: no snapshot allocation / structured-clone on ticks the renderer didn't drain (underpowered machines, 30 Hz displays, brief main-thread stalls). The change is behavior-preserving — the renderer only ever shows the latest snapshot, and dropped intermediate frames are automatically replaced by the current state at the next post.
+Mechanism
+- New worker flag: let awaitingAck = false;
+- New MainToWorkerMessage: { type: "snapshotAck" }.
+- Main thread: in renderLoop, after snapshotStore.apply(snapshot) and the render-manager sync calls, post worker.postMessage({ type: "snapshotAck" }) once per rendered frame (before rescheduling requestAnimationFrame).
+- Gate (WorkerEntry.ts:142-162): when a post is due, only buildSnapshot+postMessage if not blocked by awaitingAck. On a gated post, set awaitingAck = true.
+- On snapshotAck, set awaitingAck = false (the next tick posts the now-current snapshot).
+- Intermediate frames are dropped automatically (latest state captured at post time).
+Decoupling rule
+The fixed-timestep accumulator (WorkerEntry.ts:104-114) runs unconditionally every tick. Only buildSnapshot+postMessage reference awaitingAck. The sim never waits on the renderer.
+Gating predicate (the core of the change)
+Reuses the existing idle = engine.lastScaledDt === 0 && !stateMutatedThisTick. Replace lines 142-162:
+if (terminal) {
+  const snapshot = buildSnapshot(engine, lastAppliedCommandId);
+  postMessage({ type: "snapshot", snapshot });
+  hasPostedSnapshot = true;
+  if (engine.persistDirty) {
+    host.schedulePersistSave(buildPersistSlice(engine));
+    engine.persistDirty = false;
+  }
+  stopLoop();
+  return;
+}
+
+if (!idle || !hasPostedSnapshot) {
+  const isBaseline = !hasPostedSnapshot;
+  // Paused AND a command mutated visible state this tick (distinct from `idle`,
+  // which is the non-mutated paused case). The only force path while paused.
+  const pausedMutation = engine.lastScaledDt === 0 && stateMutatedThisTick;
+  // Force-posts bypass backpressure: baseline, AND any tick where a command
+  // applied (paused OR running) so player input is reflected promptly.
+  const forced = isBaseline || stateMutatedThisTick;
+  if (awaitingAck && !forced) {
+    // Running (no command, not baseline) but main hasn't acked the last
+    // snapshot → drop build+post. awaitingAck stays true; next tick re-checks.
+    // Persist-flush is skipped too (still fires on forced posts / 5s fallback).
+  } else {
+    const snapshot = buildSnapshot(engine, lastAppliedCommandId);
+    postMessage({ type: "snapshot", snapshot });
+    hasPostedSnapshot = true;
+    // baseline       → true  (establish gate from first frame)
+    // pausedMutation → false (so a *next* forced post isn't swallowed)
+    // running/normal → true  (resume throttle; next running tick waits for ack)
+    awaitingAck = !pausedMutation;
+    // …existing persist-flush block…
+    const milestoneKeyCount = Object.keys(engine.runState.milestoneRewardsClaimed).length;
+    const waveChanged = engine.runState.currentWave !== lastFlushWave;
+    const milestoneGained = milestoneKeyCount > lastFlushMilestoneKeys;
+    const fallbackElapsed = now - lastFlushTime >= PERSIST_FLUSH_FALLBACK_MS;
+    if (engine.persistDirty && (waveChanged || milestoneGained || fallbackElapsed)) {
+      host.schedulePersistSave(buildPersistSlice(engine));
+      engine.persistDirty = false;
+      lastFlushTime = now;
+    }
+    lastFlushWave = engine.runState.currentWave;
+    lastFlushMilestoneKeys = milestoneKeyCount;
+  }
+}
+Why forced = isBaseline || stateMutatedThisTick (and not !idle): !idle is true on every running tick, so force-posting on !idle would stream every running frame and erase the entire win (and break test (b)). The gate must throttle running-idle frames; only baseline and command-applied frames (paused or running) bypass it. awaitingAck = !pausedMutation then separates the reset behavior: a running-command post sets awaitingAck = true so the next running tick resumes throttling, while a paused-command post sets awaitingAck = false so a subsequent forced post isn't swallowed.
+Edge cases (must hold)
+1. Baseline: !hasPostedSnapshot bypasses the gate; awaitingAck = true set on it (no ack → no further posts).
+2. Idle / paused (Finding 3): pausedMutation force-posts even if awaitingAck set, then awaitingAck = false. Plain idle (paused, no command) posts nothing — unaffected.
+3. Command-applied while running: stateMutatedThisTick (scaledDt ≠ 0) force-posts even if awaitingAck set, then awaitingAck = true so the next running tick resumes throttling. Player input is reflected promptly without permanently disabling backpressure.
+4. Terminal: terminal branch is unconditional and returns before the gate; final post + stopLoop() always go out even if awaitingAck was set.
+5. dispose / re-init: startLoop() resets awaitingAck = false (with hasPostedSnapshot = false) so a fresh run starts unblocked.
+Files to change
+- src/sim/WorkerProtocol.ts — add | { type: "snapshotAck" } to MainToWorkerMessage.
+- src/sim/WorkerEntry.ts
+- add let awaitingAck = false; near hasPostedSnapshot (line 38).
+- reset awaitingAck = false; in startLoop() (line 57-62).
+- replace the post block (lines 142-162) with the gated logic above.
+- handle case "snapshotAck": awaitingAck = false; break; in self.onmessage switch (line 213).
+- src/components/SvgGameRoot.vue — in renderLoop, after the render-manager syncFromGameEngine calls and before renderFrameHandle = requestAnimationFrame(renderLoop) (line 424), post worker?.postMessage({ type: "snapshotAck" }) once per rendered frame. The early return at line 363 (no snapshot yet) naturally defers acking until the baseline arrives.
+Tests (extend tests/integration/worker-roundtrip.test.ts)
+The harness drives the worker via a mock self; "main thread" is simulated by sending messages. For rate-matched cases, drive a fake main-thread rAF (setInterval ~16 ms) that posts snapshotAck and count both acks and snapshots.
+- (a) No ack → only baseline + command-induced frames; running-idle ticks produce nothing. sendInit() (paused → baseline, awaitingAck = true), then sendCommand(togglePause) to running without any ack. Assert exactly 2 snapshots (baseline + the togglePause force-post) and that the count does not grow after a further wait (every subsequent running-idle tick is blocked). This proves the gate holds.
+- (b) With ack each frame → rate-matched, with the running-command caveat below. Start running (sendCommand(togglePause)); drive a fake rAF posting one snapshotAck per ~16 ms with no further commands. Assert snapshotCount() tracks the ack count (within a small tolerance, e.g. ±1–2 for timer jitter). Separately, while paused, send a selectBuildType command and assert exactly one snapshot is posted on that frame (pausedMutation).
+- Interaction with running commands (important): because stateMutatedThisTick force-posts even while running, a command sent during the rate-matched segment adds exactly one extra snapshot beyond the ack count (the command's own force-post), and it sets awaitingAck = true so the next running tick resumes throttling. So test (b)'s rate-match assertion must either (i) send no commands during the running+ack segment (cleanest), or (ii) if a command is sent mid-segment, add +1 to the expected upper bound and assert snapshotCount() <= ackCount + 1 (plus jitter tolerance). Do not assert strict equality while a command is in flight. This is the explicit contract for running-command frames and must be encoded so the test documents it rather than accidentally passing/failing.
+- (c) Terminal → exactly one final post, loop stops, regardless of awaitingAck. Set awaitingAck = true (post baseline, send no ack, drive to victory), then action:debugEndRun. Assert exactly one terminal snapshot and no further posts after a long wait. Extends 3c.
+- (d) init re-entry → loop re-enables cleanly; awaitingAck reset. Drive to terminal (sets the gate), re-init, run; assert the fresh baseline posts and subsequent running frames post again once acks flow. Extends 3d.
+All four pre-existing Finding-3 tests (3a–3d) must continue to pass unchanged (their pause-toggle / selectBuildType posts are forced, so the gate does not affect them).
+Risks
+- Input latency: ≤1 frame (ack returns next rAF). Negligible; already effectively present.
+- Background tabs: setTimeout + rAF both throttle to ~1 Hz together; the benefit is mostly the 30 Hz / underpowered-display mismatch — calibrate expectations.
+- Over-acking: if main renders a stale snapshot twice (main 60 Hz / worker 30 Hz), it acks twice and the worker may post one extra redundant snapshot. Harmless, behavior-preserving.
+- Persist flush on throttled ticks: skipped while blocked; still fires on forced posts, the 5 s fallback, and dispose. No persistence regression.
+- SharedArrayBuffer (true clone elimination) remains a separate stretch requiring COOP/COEP headers — out of scope; P2-1 (this plan) bounds frequency, P2-2 (pooling) bounds per-call cost.
+Implementation order
+1. WorkerProtocol.ts — add snapshotAck.
+2. WorkerEntry.ts — add flag, reset in startLoop, replace post block, handle snapshotAck case.
+3. SvgGameRoot.vue — post ack once per rendered frame in renderLoop.
+4. Tests (a)–(d) as above; run the suite; confirm 3a–3d still pass.
