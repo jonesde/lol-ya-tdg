@@ -44,6 +44,20 @@ interface GridRef {
   clearTowerGhost(x: number, y: number): void;
 }
 
+// The shape of a tower's base config as stored on the Tower instance. A
+// superset of the TowerBase config (adds `pierce`, keeps optional projSpeed).
+type TowerBaseConfig = NonNullable<Tower["base"]>;
+
+// Merges a tower's active variant `settings` over its TOWER_BASE entry. This is
+// the single source of truth for all base stat reads, so any variant can
+// override any TowerBase field (knockback, damage, health, projSpeed, …)
+// declaratively via `settings`.
+function resolveEffectiveBase(base: TowerBaseConfig, type: TowerId, variant: "A" | "B" | null): TowerBaseConfig {
+  const variantConfig = variant ? TOWER_VARIANTS[type]?.[variant] : undefined;
+  const variantSettings = variantConfig?.settings;
+  return variantSettings ? { ...base, ...variantSettings } : base;
+}
+
 interface EnemyManagerRef {
   enemies: {
     x: number;
@@ -209,6 +223,8 @@ export class Tower {
     projSpeed?: number;
     fixedAim?: boolean;
     health: number;
+    knockbackBase?: number;
+    knockbackScale?: number;
   };
   color: string;
   icon: string;
@@ -345,21 +361,22 @@ export class Tower {
     const level = this.level;
     const dmgMult = TOWER_LEVEL_DMG_MULT ** (level - 1);
     const rateMult = TOWER_LEVEL_RATE_MULT ** (level - 1);
-    let range = this.base.range * TOWER_LEVEL_RANGE_MULT ** (level - 1);
-    let damage = this.base.damage * dmgMult;
-    let fireRate = this.base.fireRate * rateMult;
-    let splash = this.base.splash || 0;
-    let chain = this.base.chain || 0;
-    let stun = this.base.stun || 0;
-    let pierce = this.base.pierce || 0;
-    let pierceFalloff = this.base.pierceFalloff || 0;
-    let slowAmt = this.base.slowAmt || 0;
-    let slowDur = this.base.slowDur || 0;
+    const effectiveBase = resolveEffectiveBase(this.base, this.type as TowerId, this.variant);
+    let range = effectiveBase.range * TOWER_LEVEL_RANGE_MULT ** (level - 1);
+    let damage = effectiveBase.damage * dmgMult;
+    let fireRate = effectiveBase.fireRate * rateMult;
+    let splash = effectiveBase.splash || 0;
+    let chain = effectiveBase.chain || 0;
+    let stun = effectiveBase.stun || 0;
+    let pierce = effectiveBase.pierce || 0;
+    let pierceFalloff = effectiveBase.pierceFalloff || 0;
+    let slowAmt = effectiveBase.slowAmt || 0;
+    let slowDur = effectiveBase.slowDur || 0;
     let marksman = false;
     let napalm = false;
     let stormcall = false;
-    let knockbackBase = 0;
-    let knockbackScale = 0;
+    let knockbackBase = effectiveBase.knockbackBase ?? 0;
+    let knockbackScale = effectiveBase.knockbackScale ?? 0;
     let thornReflectPct = 0;
     let fenceDamage = 0;
     let fenceStun = 0;
@@ -367,7 +384,7 @@ export class Tower {
 
     if (this.level >= 5 && this.variant === "A") {
       const variantA = TOWER_VARIANTS[this.type as TowerId]?.A;
-      if (variantA) {
+      if (variantA?.apply) {
         const variantAResult = variantA.apply(
           {
             range,
@@ -417,7 +434,7 @@ export class Tower {
     }
     if (this.level >= 5 && this.variant === "B") {
       const variantB = TOWER_VARIANTS[this.type as TowerId]?.B;
-      if (variantB) {
+      if (variantB?.apply) {
         const variantBResult = variantB.apply(
           {
             range,
@@ -669,7 +686,11 @@ export class Tower {
   // healing on every level/rank change.
   computeMaxHealth(): number {
     const healthMult = this.stats?.healthMult ?? 1;
-    return this.base.health * TOWER_LEVEL_DMG_MULT ** (this.level - 1) * healthMult;
+    return (
+      resolveEffectiveBase(this.base, this.type as TowerId, this.variant).health *
+      TOWER_LEVEL_DMG_MULT ** (this.level - 1) *
+      healthMult
+    );
   }
 
   recomputeMaxHealth(): void {
@@ -812,7 +833,7 @@ export class Tower {
     const rangePx = stats.range * tileSize;
     const rangeSquared = rangePx * rangePx;
 
-    if (this.base.fixedAim && this.fixedAimDir) {
+    if (resolveEffectiveBase(this.base, this.type as TowerId, this.variant).fixedAim && this.fixedAimDir) {
       const dirVectors = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] } as Record<string, [number, number]>;
       const [ddx, ddy] = dirVectors[this.fixedAimDir]!;
       this.angle = Math.atan2(ddy, ddx);
@@ -927,7 +948,7 @@ export class Tower {
       x: this.x + Math.cos(this.angle) * barrelOffset,
       y: this.y + Math.sin(this.angle) * barrelOffset,
       damage: fireDamage,
-      speed: (this.base.projSpeed || 1) * tileSize,
+      speed: (resolveEffectiveBase(this.base, this.type as TowerId, this.variant).projSpeed || 1) * tileSize,
       range: stats.range,
       towerType: this.type,
       towerLevel: this.level,

@@ -168,19 +168,8 @@ export const GHOST_OPACITY = 0.5;
 // electric fence range in tiles; px radius = grid.tileSize * ELECTRIC_FENCE_RANGE_TILES (Phase 5c)
 export const ELECTRIC_FENCE_RANGE_TILES = 0.75;
 
-// railgun knockback multiplier for railgun variant A (ProjectileManager.js)
-export const RAILGUN_KNOCKBACK_MULT = 3;
 // railgun knockback: health scaling divisor — lower HP enemies get more knockback (ProjectileManager.js)
 export const RAILGUN_KNOCK_HP_DIVISOR = 64;
-
-// railgun knockback: base amount (ProjectileManager.js)
-export const RAILGUN_KNOCKBASE = 0.3;
-// railgun knockback: per-level increment (ProjectileManager.js)
-export const RAILGUN_KNOCK_SCALE = 0.2;
-// shotgun tank B (Repulsor) knockback: base amount (5a/5c, Phase 5)
-export const SHOTGUN_KNOCKBASE = 0.3 * 1.5;
-// shotgun tank B (Repulsor) knockback: per-level increment (Phase 5)
-export const SHOTGUN_KNOCK_SCALE = 0.2 * 1.5;
 
 // ===== Tower Variant Definitions =====
 // Applied when a tower reaches level 4 and is specialized (Tower.js)
@@ -209,7 +198,13 @@ export type TowerVariantStats = {
 
 export interface TowerVariantConfig {
   name: string;
-  apply: (stats: TowerVariantStats, tierIdx: number) => TowerVariantStats;
+  // Static overrides merged over the tower's TOWER_BASE entry before stat
+  // computation. Keys are TowerBase field names; values are the corresponding
+  // TowerBase field types. Lets any variant override any base setting (e.g.
+  // knockbackBase, damage, health, projSpeed) declaratively. Dynamic/tier-based
+  // tweaks that cannot be expressed as a static value use `apply` instead.
+  settings?: Partial<TowerBase>;
+  apply?: (stats: TowerVariantStats, tierIdx: number) => TowerVariantStats;
 }
 
 export const TOWER_VARIANTS: Record<TowerId, { A: TowerVariantConfig; B: TowerVariantConfig }> = {
@@ -237,14 +232,7 @@ export const TOWER_VARIANTS: Record<TowerId, { A: TowerVariantConfig; B: TowerVa
     B: { name: "Stormcall", apply: (s, _t) => ({ ...s, stormcall: true }) },
   },
   railgun: {
-    A: {
-      name: "Knockback",
-      apply: (s, _t) => ({
-        ...s,
-        knockbackBase: RAILGUN_KNOCKBASE * RAILGUN_KNOCKBACK_MULT,
-        knockbackScale: RAILGUN_KNOCK_SCALE,
-      }),
-    },
+    A: { name: "Knockback", settings: { knockbackBase: 0.9 } },
     B: { name: "Rail Lance", apply: (s, _t) => ({ ...s, pierceFalloff: 0 }) },
   },
   sturdyWall: {
@@ -256,10 +244,7 @@ export const TOWER_VARIANTS: Record<TowerId, { A: TowerVariantConfig; B: TowerVa
   },
   shotgunTank: {
     A: { name: "Reinforced", apply: (s, tierIdx) => ({ ...s, healthMult: [1.5, 2, 3][tierIdx]! }) },
-    B: {
-      name: "Repulsor",
-      apply: (s, _t) => ({ ...s, knockbackBase: SHOTGUN_KNOCKBASE, knockbackScale: SHOTGUN_KNOCK_SCALE }),
-    },
+    B: { name: "Repulsor", settings: { knockbackBase: 0.9 } },
   },
 };
 

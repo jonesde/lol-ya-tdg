@@ -13,10 +13,8 @@ import {
   NAPALM_BURN_DPS_RATIO,
   NAPALM_BURN_DURATION,
   RAILGUN_KNOCK_HP_DIVISOR,
-  RAILGUN_KNOCK_SCALE,
-  RAILGUN_KNOCKBACK_MULT,
-  RAILGUN_KNOCKBASE,
   SPLASH_DAMAGE_RATIO,
+  TOWER_BASE,
 } from "./ConstantsTower.js";
 
 export interface ProjectileGame {
@@ -265,14 +263,17 @@ export class ProjectileManager {
       projectile.isCrit = true;
     }
 
+    const knockbackBase = opts.knockbackBase ?? TOWER_BASE[opts.towerType]?.knockbackBase ?? 0;
+    const knockbackScale = opts.knockbackScale ?? TOWER_BASE[opts.towerType]?.knockbackScale ?? 0;
+
     this.applyProjectileEffects(
       projectile,
       opts.towerType,
       opts.towerLevel,
       opts.napalm ?? false,
       opts.marksman ?? false,
-      opts.knockbackBase ?? 0,
-      opts.knockbackScale ?? 0,
+      knockbackBase,
+      knockbackScale,
       opts.variant,
       opts.pierce,
       opts.splash,
@@ -308,10 +309,6 @@ export class ProjectileManager {
 
     if (towerType === "railgun") {
       projectile.maxHitCount = 1 + tier + (pierce ?? 0);
-      projectile.knockback = RAILGUN_KNOCKBASE + RAILGUN_KNOCK_SCALE * tier;
-      if (knockback) {
-        projectile.knockback *= RAILGUN_KNOCKBACK_MULT;
-      }
       projectile.stunDuration = 0.3;
     }
 
