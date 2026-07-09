@@ -1,13 +1,15 @@
 <template>
-  <div class="text-game-root">
-    <pre ref="preEl" class="text-grid-pre" :style="preStyle">{{ gridText }}</pre>
-    <canvas
-      ref="canvasEl"
-      class="text-grid-canvas"
-      :width="canvasWidth"
-      :height="canvasHeight"
-      :style="canvasStyle"
-    ></canvas>
+  <div class="text-game-root" :style="{ width: scaledWidth + 'px', height: scaledHeight + 'px' }">
+    <div class="text-grid-scale" :style="scaleStyle">
+      <pre ref="preEl" class="text-grid-pre" :style="preStyle">{{ gridText }}</pre>
+      <canvas
+        ref="canvasEl"
+        class="text-grid-canvas"
+        :width="canvasWidth"
+        :height="canvasHeight"
+        :style="canvasStyle"
+      ></canvas>
+    </div>
   </div>
 </template>
 
@@ -26,9 +28,14 @@ import { useMapThemeStore } from "@/stores/mapTheme.js";
 const gameStore = useGameStore();
 const themeStore = useMapThemeStore();
 
-const FONT_SIZE = 12;
+const FONT_SIZE = 10;
 const FONT_FAMILY = "monospace";
-const LINE_HEIGHT_FACTOR = 1.2;
+// Collapse the line height to the font size so cells are as short as possible
+// without clipping glyphs. Monospace cells are wider than tall, so to make the
+// text map square we stretch the whole layer horizontally with `scaleX` (see
+// `cellScaleX`) rather than adding letter-spacing — letter-spacing would break
+// box-drawing connectivity between adjacent border characters.
+const LINE_HEIGHT_FACTOR = 1.0;
 
 const preEl = ref<HTMLPreElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
@@ -39,8 +46,20 @@ const gridHeight = ref(0);
 // Measured monospace cell box. In a real browser `measureText` yields the
 // advance; under jsdom it returns 0, so we fall back to a non-zero box derived
 // from the font size to avoid divide-by-zero and a collapsed canvas.
-const cellWidthPx = ref(FONT_SIZE * 0.6);
+// `cellWidthPx` is the *glyph advance* (no letter-spacing); the square aspect
+// ratio is achieved by horizontally scaling the layer via `cellScaleX`, which
+// the `<pre>` and canvas overlay both share to stay aligned.
+const charAdvancePx = ref(FONT_SIZE * 0.6);
 const cellHeightPx = ref(FONT_SIZE);
+const cellWidthPx = computed(() => charAdvancePx.value);
+// Horizontal scale that makes each cell square: stretch the (too-narrow) glyph
+// advance up to the cell height. Applied as a CSS transform to the wrapper so
+// box-drawing characters remain connected.
+const cellScaleX = computed(() => cellHeightPx.value / charAdvancePx.value);
+// Visual (post-scale) size of the whole map; the outer element reserves this so
+// the panel's `max-content` width is correct despite the transform.
+const scaledWidth = computed(() => Math.round(gridWidth.value * 3 * cellHeightPx.value));
+const scaledHeight = computed(() => Math.round(gridHeight.value * 3 * cellHeightPx.value));
 
 const scale = computed<TextRenderScale>(() => ({
   scaleX: (3 * cellWidthPx.value) / 36,
@@ -52,14 +71,20 @@ const canvasHeight = computed(() => Math.round(gridHeight.value * 3 * cellHeight
 
 // The `<pre>` and the canvas overlay must share the exact same font metrics and
 // origin, or glyphs will not sit in their cells. Drive both from one computed
-// style object.
+// style object. The wrapper applies the horizontal `scaleX` so box borders
+// stay connected; the canvas is a sibling inside that wrapper and is scaled
+// identically, preserving alignment.
 const preStyle = computed(() => ({
   fontFamily: FONT_FAMILY,
   fontSize: `${FONT_SIZE}px`,
   lineHeight: `${cellHeightPx.value}px`,
   margin: "0",
-  letterSpacing: "0",
   color: "var(--color-text-dim)",
+}));
+
+const scaleStyle = computed(() => ({
+  transform: `scaleX(${cellScaleX.value})`,
+  transformOrigin: "top left",
 }));
 
 const canvasStyle = computed(() => ({ fontFamily: FONT_FAMILY, fontSize: `${FONT_SIZE}px` }));
@@ -74,18 +99,17 @@ let renderFrameHandle: number | null = null;
 function measureCell(): void {
   const measureCanvas = document.createElement("canvas");
   const measureCtx = measureCanvas.getContext("2d");
-  let measuredWidth = 0;
+  let measuredAdvance = 0;
   if (measureCtx) {
     measureCtx.font = `${FONT_SIZE}px ${FONT_FAMILY}`;
-    measuredWidth = measureCtx.measureText("M").width || 0;
+    measuredAdvance = measureCtx.measureText("M").width || 0;
+  }
+  if (measuredAdvance > 0) {
+    charAdvancePx.value = measuredAdvance;
+  } else {
+    charAdvancePx.value = FONT_SIZE * 0.6;
   }
   cellHeightPx.value = FONT_SIZE * LINE_HEIGHT_FACTOR;
-  if (measuredWidth > 0) {
-    cellWidthPx.value = measuredWidth;
-  } else {
-    cellWidthPx.value = FONT_SIZE * 0.6;
-    cellHeightPx.value = FONT_SIZE;
-  }
 }
 
 function renderFrame(): void {
@@ -129,6 +153,10 @@ onUnmounted(() => {
 .text-game-root {
   position: relative;
   line-height: 1;
+}
+
+.text-grid-scale {
+  position: relative;
 }
 
 .text-grid-pre {
