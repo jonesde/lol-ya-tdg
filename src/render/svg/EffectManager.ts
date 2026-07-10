@@ -330,6 +330,7 @@ export class EffectManager {
 
   private generateStunArcPoints(centerX: number, centerY: number, segments: number, timeSeed: number): string {
     const points: string[] = [];
+    let firstPoint = "";
     for (let i = 0; i < segments; i++) {
       const baseAngle = (i / segments) * Math.PI * 2 - Math.PI / 2;
       const baseX = centerX + Math.cos(baseAngle) * STUN_ARC_RADIUS;
@@ -339,8 +340,13 @@ export class EffectManager {
       const jitter = (Math.sin(timeSeed + i * 3.7) * 0.5 + 0.5) * 2 - 1;
       const offsetX = tangentX * jitter * STUN_WIGGLE_RANGE;
       const offsetY = tangentY * jitter * STUN_WIGGLE_RANGE;
-      points.push(`${(baseX + offsetX).toFixed(1)},${(baseY + offsetY).toFixed(1)}`);
+      const point = `${(baseX + offsetX).toFixed(1)},${(baseY + offsetY).toFixed(1)}`;
+      if (i === 0) {
+        firstPoint = point;
+      }
+      points.push(point);
     }
+    points.push(firstPoint);
     return points.join(" ");
   }
 
