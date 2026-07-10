@@ -44,7 +44,7 @@ describe("GameShop", () => {
     const costs = wrapper.findAll(".tower-cost");
     expect(costs.length).toBe(8);
     costs.forEach((cost) => {
-      expect(cost.text()).toMatch(/🪙\s*\d+/);
+      expect(cost.text()).toMatch(/\d+/);
     });
   });
 

@@ -272,6 +272,15 @@ describe("base attack", () => {
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     enemy.baseTarget = baseTarget;
     enemy.pathIdx = enemy.path!.length - 1;
+    // Park the enemy against the base edge so it qualifies as in contact with
+    // the square (the proximity gate in Enemy.update only lets an attacking
+    // enemy damage the base when it is actually adjacent to it).
+    const baseTile = grid.getBase();
+    const baseCenter = grid.tileToWorld(baseTile.x, baseTile.y);
+    enemy.centerX = baseCenter.x + 1.5 * grid.tileSize + enemy.radius + 1;
+    enemy.centerY = baseCenter.y;
+    enemy.x = enemy.centerX;
+    enemy.y = enemy.centerY;
     return enemy;
   }
 
@@ -364,9 +373,9 @@ describe("base attack", () => {
 
     for (const enemy of enemies) {
       expect(enemy.removed).toBe(false);
-      expect(
-        distanceToBaseSquare(enemy.x, enemy.y, baseCenter.x, baseCenter.y, half),
-      ).toBeGreaterThanOrEqual(enemy.radius - 1e-6);
+      expect(distanceToBaseSquare(enemy.x, enemy.y, baseCenter.x, baseCenter.y, half)).toBeGreaterThanOrEqual(
+        enemy.radius - 1e-6,
+      );
     }
   });
 });

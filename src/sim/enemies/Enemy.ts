@@ -581,7 +581,7 @@ export class Enemy {
         // Stay put at the hold tile; the attack resolution below still runs so a
         // tower on (or adjacent to) the tile is attacked via the forward/adjacent logic.
         this.arrived = true;
-      } else {
+      } else if (this.routingMode === "route") {
         // route mode: the command is complete — revert to the default grid path and
         // fall through so the enemy immediately starts heading for the base. From
         // here it behaves like a default-mode enemy that reached the base: it sets
@@ -671,7 +671,19 @@ export class Enemy {
     }
 
     if (this.attackingBase && this.baseTarget) {
-      attackTarget = this.baseTarget;
+      // Only an enemy actually in contact with the base square may damage it.
+      // Back-row (radial > 0) enemies hold their layer but do not attack the
+      // base until the front line clears and they collapse forward into it.
+      const attackBaseTile = this.grid.getBase();
+      const attackBaseCenter = this.grid.tileToWorld(attackBaseTile.x, attackBaseTile.y);
+      const attackDistToSquare = distanceToBaseSquare(
+        this.centerX,
+        this.centerY,
+        attackBaseCenter.x,
+        attackBaseCenter.y,
+        1.5 * this.grid.tileSize,
+      );
+      if (attackDistToSquare <= this.radius + 1e-6) attackTarget = this.baseTarget;
     }
 
     // Advance only the path centerline; x/y are derived after collision resolution.
@@ -709,25 +721,29 @@ export class Enemy {
         this.centerY = towerCenter.y;
       }
     } else if (this.attackingBase) {
+      // Hold the enemy on its assigned perimeter layer: the base square expanded
+      // by `radial` tiles (radial 0 = the base edge, radial 1 = one tile
+      // further out, ...). This contains the centerline every frame so collision
+      // separation spreads enemies *along* the layer (filling the edge) instead of
+      // shoving them radially outward, one tile at a time, when a side fills.
+      // A non-dock (legacy) enemy uses the base edge (radial 0) as before.
       const baseTile = this.grid.getBase();
       const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
-      const baseHalf = 1.5 * this.grid.tileSize;
+      const layerHalf = 1.5 * this.grid.tileSize + (this.baseSlot ? this.baseSlot.radial * this.grid.tileSize : 0);
       const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
       this.moveAngle = Math.atan2(baseCenter.y - this.centerY, baseCenter.x - this.centerX);
-      const contact = baseSquareContact(baseCenter.x, baseCenter.y, baseHalf, this.centerX, this.centerY, this.radius);
-      if (contact.overlapping) {
-        const targetX = contact.contactX;
-        const targetY = contact.contactY;
-        const toTargetX = targetX - this.centerX;
-        const toTargetY = targetY - this.centerY;
-        const toTarget = Math.hypot(toTargetX, toTargetY);
-        if (step < toTarget) {
-          this.centerX += (toTargetX / toTarget) * step;
-          this.centerY += (toTargetY / toTarget) * step;
-        } else {
-          this.centerX = targetX;
-          this.centerY = targetY;
-        }
+      const contact = baseSquareContact(baseCenter.x, baseCenter.y, layerHalf, this.centerX, this.centerY, this.radius);
+      const targetX = contact.contactX;
+      const targetY = contact.contactY;
+      const toTargetX = targetX - this.centerX;
+      const toTargetY = targetY - this.centerY;
+      const toTarget = Math.hypot(toTargetX, toTargetY);
+      if (step < toTarget) {
+        this.centerX += (toTargetX / toTarget) * step;
+        this.centerY += (toTargetY / toTarget) * step;
+      } else {
+        this.centerX = targetX;
+        this.centerY = targetY;
       }
     }
 
@@ -765,16 +781,16 @@ export class Enemy {
     this.x = this.centerX + this.laneOffsetX;
     this.y = this.centerY + this.laneOffsetY;
 
-    // Keep base-attacking enemies just outside the 3x3 base square (half-extent
-    // 1.5*tileSize). Collision separation can inject an unbounded radial component
-    // into laneOffset, which would otherwise drift the rendered position to the base
-    // center; pushing it back out to the square's contact boundary makes enemies ring
-    // the base edge (corners included) instead of piling at the center.
+    // Keep base-attacking enemies on their assigned perimeter layer (the base
+    // square for non-dock enemies, expanded by `radial` tiles for docked ones)
+    // so collision separation cannot drift the rendered position sideways/around the
+    // base. Pushing it back out to the layer's contact boundary makes enemies
+    // ring the base edge (corners included) instead of piling at the center.
     if (this.attackingBase) {
       const baseTile = this.grid.getBase();
       const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
-      const baseHalf = 1.5 * this.grid.tileSize;
-      const contact = baseSquareContact(baseCenter.x, baseCenter.y, baseHalf, this.x, this.y, this.radius);
+      const layerHalf = 1.5 * this.grid.tileSize + (this.baseSlot ? this.baseSlot.radial * this.grid.tileSize : 0);
+      const contact = baseSquareContact(baseCenter.x, baseCenter.y, layerHalf, this.x, this.y, this.radius);
       if (contact.overlapping) {
         this.x = contact.contactX;
         this.y = contact.contactY;
@@ -906,4 +922,20 @@ function baseSquareContact(
     contactY: closestY + normalY * radius,
     overlapping: distance < radius,
   };
+}
+
+// Distance from (pointX, pointY) to the nearest point on the 3x3 base square
+// (centered at baseCenter, half-extent `half`). Zero when inside the square.
+function distanceToBaseSquare(
+  pointX: number,
+  pointY: number,
+  baseCenterX: number,
+  baseCenterY: number,
+  half: number,
+): number {
+  const deltaX = pointX - baseCenterX;
+  const deltaY = pointY - baseCenterY;
+  const closestX = baseCenterX + Math.max(-half, Math.min(half, deltaX));
+  const closestY = baseCenterY + Math.max(-half, Math.min(half, deltaY));
+  return Math.hypot(pointX - closestX, pointY - closestY);
 }

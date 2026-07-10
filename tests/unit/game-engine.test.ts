@@ -239,6 +239,15 @@ describe("GameEngine", () => {
       const enemy = new Enemy("boss", 1, 0, engine.grid, 1);
       enemy.baseTarget = engine.enemyManager.baseTarget;
       enemy.pathIdx = enemy.path.length - 1;
+      // Park the boss against the base edge so it qualifies as in contact with
+      // the square (the proximity gate in Enemy.update only lets an attacking
+      // enemy damage the base when it is actually adjacent to it).
+      const baseTile = engine.grid.getBase();
+      const baseCenter = engine.grid.tileToWorld(baseTile.x, baseTile.y);
+      enemy.centerX = baseCenter.x + 1.5 * engine.grid.tileSize + enemy.radius + 1;
+      enemy.centerY = baseCenter.y;
+      enemy.x = enemy.centerX;
+      enemy.y = enemy.centerY;
       engine.enemyManager.enemies.push(enemy);
 
       // The first tick flips the boss into the attackingBase state; it must not despawn.

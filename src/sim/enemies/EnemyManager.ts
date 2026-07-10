@@ -189,7 +189,7 @@ export class EnemyManager {
     const spawnWorld = this.grid.tileToWorld(spawn.x, spawn.y);
     const spawnFacingAngle = Math.atan2(spawnWorld.y - baseCenter.y, spawnWorld.x - baseCenter.x);
 
-    const capacity = Math.max(1, Math.floor(this.grid.tileSize / (2 * enemy.radius)));
+    const capacity = this.perimeterCapacityFor(enemy);
     let best: { dock: BaseDock; radial: number; score: number } | null = null;
     for (const dock of docks) {
       const dockAngle = Math.atan2(dock.outwardNormal.dy, dock.outwardNormal.dx);
@@ -226,6 +226,34 @@ export class EnemyManager {
     enemy.setSurroundPath(surroundRoute, slot);
   }
 
+  // How many enemies fit along one tile edge for this enemy: the count whose
+  // diameters (2*radius, consistent with collision overlap math) tile the edge.
+  private perimeterCapacityFor(enemy: Enemy): number {
+    return Math.max(1, Math.floor(this.grid.tileSize / (2 * enemy.radius)));
+  }
+
+  // When a front-row (radial 0) enemy dies and frees its slot, held back-row
+  // (radial > 0) enemies collapse forward into the opened slot rather than
+  // lingering out of reach. Re-runs load-balanced assignment for every back-row
+  // enemy (closest to the front first) after clearing their old occupancy, so each
+  // takes the lowest free slot — "moving out one tile at a time" becomes
+  // "collapse inward when space opens." No-op when nothing is parked outward.
+  private compactPerimeterSlots(): void {
+    const backRows = this.enemies.filter((enemy) => enemy.baseSlot && enemy.baseSlot.radial > 0);
+    if (backRows.length === 0) return;
+    for (const enemy of backRows) {
+      const slotKey = `${enemy.baseSlot!.dockIndex},${enemy.baseSlot!.radial}`;
+      const occupancy = this.perimeterOccupancy.get(slotKey) ?? 0;
+      if (occupancy <= 1) this.perimeterOccupancy.delete(slotKey);
+      else this.perimeterOccupancy.set(slotKey, occupancy - 1);
+      enemy.baseSlot = null;
+    }
+    backRows.sort((a, b) => (a.baseSlot?.radial ?? 0) - (b.baseSlot?.radial ?? 0) || a.id - b.id);
+    for (const enemy of backRows) {
+      this.assignPerimeterSlot(enemy);
+    }
+  }
+
   removeDeadEnemy(i: number): void {
     const enemy = this.enemies[i]!;
     this.particles.spawn(enemy.x, enemy.y, enemy.color, 12, { speed: 80, life: 0.5 });
@@ -239,6 +267,7 @@ export class EnemyManager {
     this.idToEnemy.delete(enemy.id);
     const removedSpawnIndex = enemy.spawnIndex;
     this.enemies.splice(i, 1);
+    this.compactPerimeterSlots();
     this.releaseOnePending(removedSpawnIndex);
   }
 

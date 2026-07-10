@@ -90,4 +90,58 @@ describe("Enemy perimeter surround routing", () => {
     expect(grid.inBounds(target.x, target.y)).toBe(true);
     expect(grid.isTerrain(target.x, target.y)).toBe(false);
   });
+
+  // A base-attack stand-in so we can observe damage gating and collapse.
+  class StubBaseTarget {
+    readonly isGhost = false;
+    health = 100;
+    takeDamage(amount: number): void {
+      this.health -= amount;
+    }
+  }
+
+  it("back-row enemies hold their layer, the front line damages the base, and they collapse forward on a front death", () => {
+    const { enemyManager } = makeManager();
+    const baseTarget = new StubBaseTarget();
+    enemyManager.baseTarget = baseTarget;
+    const enemies: Enemy[] = [];
+    for (let i = 0; i < 12; i++) {
+      const enemy = enemyManager.spawn("minion", 1, 0, 1);
+      expect(enemy).toBeTruthy();
+      enemies.push(enemy!);
+    }
+    for (let step = 0; step < 12000; step++) {
+      enemyManager.update(FIXED_DT, null);
+      if (enemies.every((e) => e.attackingBase || e.removed)) break;
+    }
+
+    const survivors = enemies.filter((e) => !e.removed && e.baseSlot);
+    expect(survivors.length).toBeGreaterThan(0);
+    const backRows = survivors.filter((e) => e.baseSlot!.radial > 0);
+    // With a radius of 0.4 the capacity is 2 per (dock, radial), so 12
+    // enemies must use back rows (radial > 0) to fit.
+    expect(backRows.length).toBeGreaterThan(0);
+
+    // Front line damages the base; total damage is bounded by the few front
+    // enemies, not by all 12 (back rows are out of contact).
+    expect(baseTarget.health).toBeLessThan(100);
+
+    // Capture radials, kill a front-row (radial 0) enemy, and confirm a
+    // back-row enemy collapses forward into the freed slot.
+    const before = new Map<number, number>();
+    for (const e of survivors) before.set(e.id, e.baseSlot!.radial);
+    const front = survivors.find((e) => e.baseSlot!.radial === 0);
+    expect(front).toBeTruthy();
+    front!.removed = true;
+    enemyManager.update(FIXED_DT, null);
+
+    let collapsed = false;
+    for (const e of enemies) {
+      if (e.removed) continue;
+      if (!e.baseSlot) continue;
+      const prior = before.get(e.id);
+      if (prior !== undefined && e.baseSlot.radial < prior) collapsed = true;
+    }
+    expect(collapsed).toBe(true);
+  });
 });
