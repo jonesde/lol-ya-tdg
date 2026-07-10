@@ -231,7 +231,7 @@ function handleFixedAim(dir: string | null) {
       Milestone Bonus: +{{ Math.round(milestoneBonus.damagePct) }}% dmg, +{{ Math.round(milestoneBonus.speedPct) }}% speed ({{ milestoneBonus.tiers }}×1M total)
     </div>
 
-    <div class="stat-row"><span>Targeting</span></div>
+    <div class="stat-row"><span>Targeting</span><kbd>F</kbd></div>
     <select class="target-select" :value="targetingMode" @change="handleTargetingChange">
       <option value="first">First</option>
       <option value="last">Last</option>
@@ -258,15 +258,15 @@ function handleFixedAim(dir: string | null) {
     <div v-if="upgradeCheck?.needVariant" class="variant-section">
       <div class="variant-title">Choose Specialization:</div>
       <button class="action-btn" :disabled="!variantAUnlocked || !canAffordSpecialize" @click="handleSpecialize('A')">
-        {{ variantInfo?.A?.name }} ({{ lv5Cost }}g)
+        <span class="btn-content">{{ variantInfo?.A?.name }} ({{ lv5Cost }}g)<kbd>E</kbd></span>
       </button>
       <button class="action-btn" :disabled="!variantBUnlocked || !canAffordSpecialize" @click="handleSpecialize('B')">
-        {{ variantInfo?.B?.name }} ({{ lv5Cost }}g)
+        <span class="btn-content">{{ variantInfo?.B?.name }} ({{ lv5Cost }}g)<kbd>C</kbd></span>
       </button>
     </div>
     <div v-else-if="upgradeCheck?.ok">
       <button class="action-btn" :disabled="!canAffordUpgrade" @click="handleUpgrade">
-        Upgrade ({{ getUpgradeCost() }}g) → Lv {{ upgradeCheck.nextLevel }}
+        <span class="btn-content">Upgrade ({{ getUpgradeCost() }}g) → Lv {{ upgradeCheck.nextLevel }}<kbd>W|U</kbd></span>
       </button>
     </div>
     <div v-else>
@@ -278,11 +278,11 @@ function handleFixedAim(dir: string | null) {
     </button>
 
     <button class="action-btn downgrade-btn" :disabled="tower.level <= 1 || tower.isGhost" @click="handleDowngrade">
-      Downgrade (Lv {{ tower.level }} → Lv {{ tower.level - 1 }}) (+{{ downgradeRefund }}g)
+      <span class="btn-content">Downgrade (Lv {{ tower.level }} → Lv {{ tower.level - 1 }}) (+{{ downgradeRefund }}g)<kbd v-if="tower.level > 1">S</kbd></span>
     </button>
 
     <button class="action-btn sell-btn" :disabled="sellDisabled" @click="handleSell">
-      {{ sellDisabled ? 'Selling disabled (discount mode)' : `Sell (+${sellValue}g)` }}
+      <span class="btn-content">{{ sellDisabled ? 'Selling disabled (discount mode)' : `Sell (+${sellValue}g)` }}<kbd v-if="tower.level <= 1">S</kbd></span>
     </button>
   </div>
 </template>
@@ -321,6 +321,7 @@ function handleFixedAim(dir: string | null) {
 .stat-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   padding: 2px 0;
   color: var(--color-text-dim);
 }
@@ -405,6 +406,25 @@ function handleFixedAim(dir: string | null) {
 .downgrade-btn {
   color: var(--color-accent);
   border-color: rgba(95, 208, 255, 0.3);
+}
+
+.btn-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+kbd {
+  font-family: inherit;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--color-text);
+  margin-left: 8px;
+  white-space: nowrap;
 }
 
 .fixed-aim-section {
