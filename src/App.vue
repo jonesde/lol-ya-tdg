@@ -11,7 +11,7 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
 
 <style>
 :root {
-  --color-bg: rgba(20, 23, 30, 1);
+  --color-bg: rgba(20, 23, 33, 1);
   --color-panel: rgba(20, 26, 40, 0.95);
   --color-border: rgba(95, 208, 255, 0.3);
   --color-accent: #5fd0ff;
