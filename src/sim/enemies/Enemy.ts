@@ -25,7 +25,7 @@ export interface AttackTarget {
 // Used by both applyRoute (custom commander routes) and reanchorToPath (grid
 // re-anchoring) so the two share one forward-snap implementation. The last path
 // tile (the base) is excluded by default because snapping onto it would mark the
-// enemy reachedBase prematurely.
+// enemy attackingBase prematurely.
 function snapPathIndex(
   path: { x: number; y: number }[],
   tile: { x: number; y: number },
@@ -131,7 +131,6 @@ export class Enemy {
   slowFactor!: number;
   slowStack!: SlowEntry[];
   stunTimer!: number;
-  reachedBase!: boolean;
   removed!: boolean;
   burnStack!: BurnEntry[];
   hitAnimTime!: number;
@@ -251,7 +250,6 @@ export class Enemy {
     this.lastCellX = -1;
     this.lastCellY = -1;
 
-    this.reachedBase = false;
     this.removed = false;
   }
 
@@ -418,7 +416,7 @@ export class Enemy {
   reanchorToPath(newPath: { x: number; y: number }[]): void {
     this.path = newPath;
     // The last path index is the base tile. Snapping to it would place the enemy on
-    // the base and (next frame) trigger reachedBase prematurely, so it is never an
+    // the base and (next frame) trigger attackingBase prematurely, so it is never an
     // eligible anchor.
     const lastPathIdx = newPath.length - 1;
 
@@ -488,7 +486,7 @@ export class Enemy {
   }
 
   update(dt: number, enemyManager: EnemyManagerRef | null) {
-    if (this.removed || this.reachedBase) return;
+    if (this.removed) return;
 
     this._gameSeconds += dt;
 
@@ -547,11 +545,12 @@ export class Enemy {
         this.arrived = true;
       } else {
         // route mode: the command is complete — revert to the default grid path and
-        // fall through so the enemy immediately starts heading for the base.
+        // fall through so the enemy immediately starts heading for the base. From
+        // here it behaves like a default-mode enemy that reached the base: it sets
+        // attackingBase and attacks the base rather than being culled.
         this.releaseToDefault();
         if (!this.path || this.pathIdx >= this.path.length - 1) {
-          this.reachedBase = true;
-          return;
+          this.attackingBase = true;
         }
       }
     }

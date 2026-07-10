@@ -56,7 +56,6 @@ function makeEnemy(id: number, type: string): never {
     maxShield: 0,
     angle: 0,
     level: 1,
-    reachedBase: false,
     onPathBlocked: false,
     removed: false,
     slowFactor: 1,

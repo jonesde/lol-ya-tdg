@@ -35,7 +35,7 @@ describe("Enemy routing (target-tile model)", () => {
 
     runUntil(enemy, manager, () => enemy.arrived);
     expect(enemy.routingMode).toBe("hold");
-    expect(enemy.reachedBase).toBe(false);
+    expect(enemy.attackingBase).toBe(false);
     // The enemy sits on the hold tile (it never passes it).
     expect(Math.floor(enemy.centerX / grid.tileSize)).toBe(holdTile.x);
     expect(Math.floor(enemy.centerY / grid.tileSize)).toBe(holdTile.y);
@@ -84,7 +84,7 @@ describe("Enemy routing (target-tile model)", () => {
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     enemy.applyRoute(null, "hold");
     expect(enemy.routingMode).toBe("default");
-    expect(enemy.reachedBase).toBe(false);
+    expect(enemy.attackingBase).toBe(false);
     expect(enemy.path).toBe(grid.getPathFor(0));
   });
 
@@ -93,7 +93,7 @@ describe("Enemy routing (target-tile model)", () => {
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     enemy.applyRoute(null, "route");
     expect(enemy.routingMode).toBe("default");
-    expect(enemy.reachedBase).toBe(false);
+    expect(enemy.attackingBase).toBe(false);
     expect(enemy.path).toBe(grid.getPathFor(0));
   });
 

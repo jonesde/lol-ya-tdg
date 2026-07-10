@@ -117,11 +117,11 @@ describe("EnemyManager", () => {
       expect(inRange).not.toContain(enemy);
     });
 
-    it("excludes enemies that reached base", () => {
+    it("includes enemies attacking the base in range queries (they still collide)", () => {
       const enemy = manager.spawn("minion", 1, 0, 1);
-      enemy.reachedBase = true;
-      const inRange = manager.getEnemiesInRange(18, 18, 10);
-      expect(inRange).not.toContain(enemy);
+      enemy.attackingBase = true;
+      const inRange = manager.getEnemiesInRange(enemy.x, enemy.y, 10);
+      expect(inRange).toContain(enemy);
     });
 
     it("returns empty array when no enemies in range", () => {
@@ -198,7 +198,7 @@ describe("EnemyManager", () => {
       const removed = manager.spawn("runner", 1, 0, 1);
       removed.removed = true;
       const reached = manager.spawn("minion", 1, 0, 1);
-      reached.reachedBase = true;
+      reached.attackingBase = true;
 
       const arr = manager.getEnemiesInRange(18, 18, 10000);
       const via: typeof arr = [];
@@ -206,9 +206,9 @@ describe("EnemyManager", () => {
 
       expect(via.map((e) => e.id)).toEqual(arr.map((e) => e.id));
       expect(arr).not.toContain(removed);
-      expect(arr).not.toContain(reached);
+      expect(arr).toContain(reached);
       expect(via).not.toContain(removed);
-      expect(via).not.toContain(reached);
+      expect(via).toContain(reached);
       expect(arr).toContain(e1);
       expect(arr).toContain(e2);
     });

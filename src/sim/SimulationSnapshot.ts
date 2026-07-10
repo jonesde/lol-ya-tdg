@@ -123,7 +123,6 @@ export interface EnemySnapshot {
   maxShield: number;
   angle: number; // moveAngle
   level: number;
-  reachedBase: boolean;
   onPathBlocked: boolean;
   removed: boolean;
   slowFactor: number; // 1.0 = not slowed

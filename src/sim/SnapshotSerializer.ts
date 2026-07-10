@@ -139,7 +139,6 @@ function snapshotEnemy(e: Enemy): EnemySnapshot {
     maxShield: e.maxShield,
     angle: e.moveAngle,
     level: e.level,
-    reachedBase: e.reachedBase,
     onPathBlocked: e.onPathBlocked,
     removed: e.removed,
     slowFactor: e.slowFactor,

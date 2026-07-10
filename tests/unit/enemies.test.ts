@@ -124,7 +124,7 @@ describe("Enemy", () => {
       expect(enemy.slowFactor).toBe(1);
       expect(enemy.slowStack).toHaveLength(0);
       expect(enemy.stunTimer).toBe(0);
-      expect(enemy.reachedBase).toBe(false);
+      expect(enemy.attackingBase).toBe(false);
       expect(enemy.removed).toBe(false);
       expect(enemy.burnStack).toHaveLength(0);
     });
@@ -310,11 +310,13 @@ describe("Enemy", () => {
       expect(enemy.removed).toBe(true);
     });
 
-    it("does nothing when reached base", () => {
+    it("keeps attacking the base without being removed once it reaches the base", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
-      enemy.reachedBase = true;
-      enemy.update(0.1, null);
-      expect(enemy.reachedBase).toBe(true);
+      enemy.pathIdx = enemy.path!.length - 1;
+      enemy.update(0.01, null);
+      expect(enemy.attackingBase).toBe(true);
+      for (let tick = 0; tick < 50; tick++) enemy.update(0.05, null);
+      expect(enemy.removed).toBe(false);
     });
 
     it("reduces stunTimer each tick", () => {

@@ -204,11 +204,11 @@ describe("Enemy attack and collision (Phases 3 & 4)", () => {
     // Continue simulating. The enemy must now attack B rather than hop across it.
     for (let i = 0; i < 5000; i++) {
       enemy.update(0.05, scenarioEnemies);
-      if (enemy.removed || enemy.reachedBase) break;
+      if (enemy.removed) break;
     }
 
     expect(towerB.health).toBeLessThan(towerB.maxHealth);
-    expect(enemy.reachedBase).toBe(false);
+    expect(enemy.attackingBase).toBe(false);
   });
 
   it("separates a slower enemy to the right (+laneOffset) and a faster one to the left (-laneOffset)", () => {

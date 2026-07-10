@@ -156,7 +156,7 @@ export class EnemyManager {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       if (!enemy) continue;
-      if (enemy.removed || enemy.reachedBase) {
+      if (enemy.removed) {
         if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
           onEnemyKill(enemy);
           handledEnemyIds.add(enemy.id);
@@ -166,7 +166,7 @@ export class EnemyManager {
       }
       const wasAttackingBase = enemy.attackingBase;
       enemy.update(dt, this);
-      if (enemy.removed || enemy.reachedBase) {
+      if (enemy.removed) {
         if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
           onEnemyKill(enemy);
           handledEnemyIds.add(enemy.id);
@@ -253,7 +253,7 @@ export class EnemyManager {
         const bucket = this.spatialHash.get(spatialCellKey(cellX, cellY));
         if (!bucket) continue;
         for (const enemy of bucket) {
-          if (enemy.removed || enemy.reachedBase) continue;
+          if (enemy.removed) continue;
           const deltaX = enemy.x - x;
           const deltaY = enemy.y - y;
           if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) cb(enemy);
@@ -274,7 +274,7 @@ export class EnemyManager {
         const bucket = this.spatialHash.get(spatialCellKey(cellX, cellY));
         if (!bucket) continue;
         for (const enemy of bucket) {
-          if (enemy.removed || enemy.reachedBase) continue;
+          if (enemy.removed) continue;
           const deltaX = enemy.x - x;
           const deltaY = enemy.y - y;
           if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) {

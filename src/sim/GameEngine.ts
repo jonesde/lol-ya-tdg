@@ -470,7 +470,7 @@ export class GameEngine {
     if (towersToClear.length > 0 && this.grid) {
       this.grid.batchClearGhosts();
       for (const enemy of this.enemyManager!.enemies) {
-        if (enemy.removed || enemy.reachedBase) continue;
+        if (enemy.removed) continue;
         const tileX = Math.floor(enemy.x / this.grid.tileSize);
         const tileY = Math.floor(enemy.y / this.grid.tileSize);
         if (this.grid.blocked.has(`${tileX},${tileY}`)) {
