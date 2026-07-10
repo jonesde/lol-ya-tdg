@@ -746,6 +746,13 @@ export class GameEngine {
       return;
     }
 
+    // When cancel is still available, always cancel (full refund) instead of
+    // selling — no confirm dialog.
+    if (tower.canCancel()) {
+      this.executeCancel(tower);
+      return;
+    }
+
     const towerId = tower.id;
     const isRefund = this.persistState.generalAddons.sellActive === "refund";
     // Compute the sell value exactly once here. It is threaded through to
@@ -800,12 +807,17 @@ export class GameEngine {
 
     if (!tower.canCancel()) return;
 
+    this.executeCancel(tower);
+  }
+
+  executeCancel(tower: Tower): void {
     const refund = tower.totalInvested;
     this.towerManager!.cancelBuild(tower);
     this.host.syncGridTower(tower.tileX, tower.tileY, false);
     setGold(this.runState, this.runState.gold + refund);
     this.totalGoldEarned += refund;
     this.runState.selectedTowerId = null;
+    this.persistDirty = true;
   }
 
   downgradeSelected(): void {

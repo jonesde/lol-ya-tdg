@@ -11,7 +11,7 @@ import {
   MILESTONE_GEMS,
   StartingGold,
 } from "@/sim/Constants.js";
-import { SELL_VALUE_RATIO } from "@/sim/ConstantsTower.js";
+import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO } from "@/sim/ConstantsTower.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { createDefaultPersistState, difficultyMultiplier as getDifficultyMultiplier } from "@/sim/PersistState.js";
 import type { Tower } from "@/sim/towers/Tower.js";
@@ -315,6 +315,8 @@ describe("GameEngine", () => {
 
     it("sellSelected shows confirm dialog", () => {
       const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      // Outside the cancel window so the confirm/sell path is exercised.
+      tower.placedAt = Date.now() - (CANCEL_BUILD_WINDOW_MS + 1000);
       engine.runState.selectedTowerId = String(tower.id);
       engine.sellSelected();
       expect(engine.towerManager?.towers).toContain(tower);
@@ -322,6 +324,7 @@ describe("GameEngine", () => {
 
     it("computes the sell value once across the confirm flow (no cross-function double call)", async () => {
       const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      tower.placedAt = Date.now() - (CANCEL_BUILD_WINDOW_MS + 1000);
       const sellValueSpy = vi.spyOn(tower, "sellValue");
       engine.runState.selectedTowerId = String(tower.id);
       // sellSelected() computes the value for the dialog and threads it into
@@ -349,6 +352,20 @@ describe("GameEngine", () => {
       engine.runState.selectedTowerId = String(tower.id);
       engine.sellSelected();
       expect(engine.runState.gold).toBe(goldBefore);
+    });
+
+    it("sellSelected cancels the tower within the cancel window", () => {
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      const goldBefore = engine.runState.gold - tower!.totalInvested;
+      engine.runState.gold = goldBefore;
+      engine.runState.selectedTowerId = String(tower!.id);
+      expect(tower!.canCancel()).toBe(true);
+      const requestConfirmSpy = vi.spyOn(engine.host, "requestConfirm");
+      engine.sellSelected();
+      expect(requestConfirmSpy).not.toHaveBeenCalled();
+      expect(engine.runState.gold).toBe(goldBefore + tower!.totalInvested);
+      expect(engine.runState.selectedTowerId).toBeNull();
+      expect(engine.towerManager?.towers).toHaveLength(0);
     });
 
     it("downgradeSelected reduces level without confirmation", () => {

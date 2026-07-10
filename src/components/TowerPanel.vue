@@ -128,10 +128,6 @@ function handleSpecialize(variant: string) {
   dispatchCommand({ commandId: 0, type: "action:specialize", variant: variant as "A" | "B" });
 }
 
-function handleCancelBuild() {
-  dispatchCommand({ commandId: 0, type: "action:cancelSelected" });
-}
-
 function handleDowngrade() {
   dispatchCommand({ commandId: 0, type: "action:downgradeSelected" });
 }
@@ -273,16 +269,21 @@ function handleFixedAim(dir: string | null) {
       <button class="action-btn" disabled>{{ upgradeCheck?.reason || 'Max' }}</button>
     </div>
 
-    <button v-if="canCancel" class="action-btn cancel-btn" @click="handleCancelBuild">
-      Cancel Build — {{ tower.totalInvested }}g ({{ cancelRemaining }}s)
-    </button>
-
     <button class="action-btn downgrade-btn" :disabled="tower.level <= 1 || tower.isGhost" @click="handleDowngrade">
       <span class="btn-content">Downgrade (Lv {{ tower.level }} → Lv {{ tower.level - 1 }}) (+{{ downgradeRefund }}g)<kbd v-if="tower.level > 1">S</kbd></span>
     </button>
 
-    <button class="action-btn sell-btn" :disabled="sellDisabled" @click="handleSell">
-      <span class="btn-content">{{ sellDisabled ? 'Selling disabled (discount mode)' : `Sell (+${sellValue}g)` }}<kbd v-if="tower.level <= 1">S</kbd></span>
+    <button
+      class="action-btn"
+      :class="canCancel ? 'cancel-btn' : 'sell-btn'"
+      :disabled="sellDisabled"
+      @click="handleSell"
+    >
+      <span class="btn-content">
+        <template v-if="canCancel">Cancel Build — {{ tower.totalInvested }}g ({{ cancelRemaining }}s)</template>
+        <template v-else>{{ sellDisabled ? 'Selling disabled (discount mode)' : `Sell (+${sellValue}g)` }}</template>
+        <kbd v-if="canCancel || tower.level <= 1">S</kbd>
+      </span>
     </button>
   </div>
 </template>

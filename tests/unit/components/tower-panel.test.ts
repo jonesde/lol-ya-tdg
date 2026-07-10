@@ -180,7 +180,9 @@ describe("TowerPanel", () => {
 
   it("shows sell button with refund value", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower({ sellValue: 12 }));
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
+      makeMockTower({ sellValue: 12, placedAt: Date.now() - 120000 }),
+    );
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.text()).toContain("Sell");
     expect(wrapper.text()).toContain("12g");
