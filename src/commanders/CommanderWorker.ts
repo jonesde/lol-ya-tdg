@@ -22,6 +22,10 @@ const memory: CommanderMemory = {
   gridLayout: undefined,
 };
 let gridLayoutToggleSent = false;
+// The run the cached layout belongs to (GameEngine.runId). On a run restart the
+// previous layout is stale and the one-shot feed-off toggle must re-arm, so the
+// engine's freshly re-enabled feed is turned back off after the new map is cached.
+let lastRunId: number | null = null;
 
 function postToMain(message: CommanderToMainMessage): void {
   self.postMessage(message);
@@ -34,6 +38,7 @@ function resetMemory(): void {
   memory.lastRoutedTowerSignature = "";
   memory.gridLayout = undefined;
   gridLayoutToggleSent = false;
+  lastRunId = null;
 }
 
 self.onmessage = (event: MessageEvent<MainToCommanderMessage>) => {
@@ -56,6 +61,17 @@ self.onmessage = (event: MessageEvent<MainToCommanderMessage>) => {
       if (!brain) break;
       const slice: CommanderSnapshotSlice = message.slice;
       const commands: Command[] = [];
+      // Detect a run restart (engine reloaded a map → runId bumped). The previous
+      // run's cached layout is stale and must be dropped, and the one-shot feed-off
+      // toggle must re-arm so the freshly re-enabled feed is turned back off after
+      // the new map is cached. Robust to same-map replays (runId changes even when
+      // mapIndex/layout do not). The first observation of a session (lastRunId null)
+      // also initializes correctly.
+      if ((slice.meta.runId ?? null) !== lastRunId) {
+        lastRunId = slice.meta.runId ?? null;
+        memory.gridLayout = undefined;
+        gridLayoutToggleSent = false;
+      }
       if (slice.gridLayout) {
         memory.gridLayout = slice.gridLayout;
         // The map never changes mid-run; emit the feed-off toggle exactly once so

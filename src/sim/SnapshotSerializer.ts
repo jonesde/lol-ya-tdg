@@ -118,6 +118,7 @@ function buildMeta(engine: GameEngine): SnapshotMeta {
     tileSize: engine.grid?.tileSize ?? 36,
     waveActive: engine.waveManager?.active ?? false,
     remainingScheduledSpawns: engine.waveManager?.getRemainingScheduledSpawns() ?? 0,
+    runId: engine.runId,
   };
 }
 

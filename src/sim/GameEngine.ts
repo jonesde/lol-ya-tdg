@@ -107,6 +107,11 @@ export class GameEngine {
   // flips it off after caching the map to keep per-tick cost at zero. Reset per run
   // alongside lastPostedPathVersion so each engine starts with the feed enabled.
   gridLayoutEnabled: boolean = true;
+  // Monotonic run identifier, bumped on every (re)load in _initMap. The commander
+  // relay/worker key their gridLayout cache + one-shot feed-off toggle to it so a
+  // stale layout from a previous run is never forwarded and the toggle re-arms on a
+  // run restart (robust even for same-map replays, where mapIndex/layout are equal).
+  runId: number = 0;
   // Last wave-graph dots generation posted (mirrors lastPostedPathVersion).
   // Reset on (re)init so the first post after a new run includes the array.
   lastPostedWaveGraphGeneration: number = 0;
@@ -176,6 +181,7 @@ export class GameEngine {
     this.lastPostedPathVersion = 0;
     this.lastPostedWaveGraphGeneration = 0;
     this.gridLayoutEnabled = true;
+    this.runId += 1;
 
     this.runState = {
       state: GameState.PAUSED,

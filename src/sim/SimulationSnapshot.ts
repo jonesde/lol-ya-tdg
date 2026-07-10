@@ -94,6 +94,11 @@ export interface SnapshotMeta {
   tileSize?: number; // grid tile size, so the worker converts world x/y → tile coords
   waveActive?: boolean; // WaveManager.active — included for future use, not a rush signal
   remainingScheduledSpawns?: number; // enemies still scheduled to spawn this wave (queue.length)
+  // Monotonic run identifier (GameEngine.runId), bumped on every (re)load. The
+  // commander relay/worker use it to detect a run restart so a stale cached
+  // gridLayout is never forwarded and the one-shot feed-off toggle re-arms. Optional
+  // so existing hand-built test literals need not list it.
+  runId?: number;
   // NOTE: gemBreakdown and milestoneRewardsClaimed are intentionally NOT mirrored
   // into the snapshot. `gemBreakdown` is delivered to the UI via
   // `endScreenData` (set on triggerEnd), and `milestoneRewardsClaimed` is only

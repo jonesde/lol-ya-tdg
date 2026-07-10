@@ -13,6 +13,12 @@ const RELAY_INTERVAL_MS = 250;
 let commanderWorker: Worker | null = null;
 let relayIntervalId: ReturnType<typeof setInterval> | null = null;
 let cachedGridLayout: number[][] | undefined;
+// The run the cached layout belongs to (GameEngine.runId). Keying the cache to the
+// run — rather than clearing it on worker stop — keeps it valid across a *worker*
+// restart within the same run (the feed stays off and the map is still correct). A
+// run restart bumps runId and must drop the stale layout so the previous map is
+// never forwarded to the worker for the new run.
+let cachedRunId: number | null = null;
 
 export function startRelay(kind: "stubby" | "stubbs"): void {
   if (commanderWorker) return;
@@ -32,6 +38,17 @@ export function startRelay(kind: "stubby" | "stubbs"): void {
 function postObservation(): void {
   const snapshot = getLatestSnapshot();
   if (!snapshot || !commanderWorker) return;
+  // A run restart (engine reloaded a map) bumps runId. The gridLayout feed is
+  // disabled once the worker caches the map, but each new run re-enables it — with
+  // a different map in general, but possibly the *same* map on a replay. So the
+  // previously cached layout is stale and must be dropped. Detecting the boundary by
+  // runId (not by gridLayout presence or mapIndex) is robust to the same-map-replay
+  // case. The fresh layout is re-cached from this same snapshot, since the engine
+  // re-enables the feed on (re)load and the snapshot therefore carries the new map.
+  if ((snapshot.meta.runId ?? null) !== cachedRunId) {
+    cachedRunId = snapshot.meta.runId ?? null;
+    cachedGridLayout = undefined;
+  }
   if (snapshot.gridLayout) {
     cachedGridLayout = snapshot.gridLayout;
   }
