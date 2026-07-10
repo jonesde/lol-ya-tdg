@@ -21,6 +21,15 @@ function distanceToBaseSquare(x: number, y: number, baseCenterX: number, baseCen
   return Math.hypot(x - closestX, y - closestY);
 }
 
+// A base-attack stand-in so we can observe damage gating and collapse.
+class StubBaseTarget {
+  readonly isGhost = false;
+  health = 100;
+  takeDamage(amount: number): void {
+    this.health -= amount;
+  }
+}
+
 describe("Enemy perimeter surround routing", () => {
   it("Issue 1: a routed enemy never enters the base square and settles just outside the edge", () => {
     const { grid, enemyManager } = makeManager();
@@ -45,9 +54,26 @@ describe("Enemy perimeter surround routing", () => {
     );
   });
 
-  it("Issue 2: enemies load-balance onto distinct perimeter docks and stay outside the square", () => {
+  it("regression: a second enemy piles in the SAME arrival tile as the first (no scatter to an adjacent tile)", () => {
+    const { enemyManager } = makeManager();
+    const first = enemyManager.spawn("minion", 1, 0, 1);
+    const second = enemyManager.spawn("minion", 1, 0, 1);
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+
+    for (let step = 0; step < 12000; step++) {
+      enemyManager.update(FIXED_DT, null);
+      if (first!.attackingBase && second!.attackingBase) break;
+    }
+
+    const firstTile = first!.currentTile();
+    const secondTile = second!.currentTile();
+    expect(`${firstTile.x},${firstTile.y}`).toBe(`${secondTile.x},${secondTile.y}`);
+  });
+
+  it("Issue 2: enemies pile in the arrival tile and overflow into neighbouring base-adjacent tiles, all outside the square", () => {
     const { grid, enemyManager } = makeManager();
-    const count = 8;
+    const count = 12;
     const enemies: Enemy[] = [];
     for (let i = 0; i < count; i++) {
       const enemy = enemyManager.spawn("minion", 1, 0, 1);
@@ -66,46 +92,28 @@ describe("Enemy perimeter surround routing", () => {
     const base = grid.getBase();
     const baseCenter = grid.tileToWorld(base.x, base.y);
     const half = 1.5 * grid.tileSize;
-    const distinctSlots = new Set<string>();
     for (const enemy of survivors) {
-      // Every enemy remains outside the base square.
+      // Every enemy remains outside the base square (none drift inside).
       expect(distanceToBaseSquare(enemy.x, enemy.y, baseCenter.x, baseCenter.y, half)).toBeGreaterThanOrEqual(
         enemy.radius - 1e-6,
       );
-      // Every enemy carries a perimeter dock assignment.
-      expect(enemy.baseSlot).not.toBeNull();
-      distinctSlots.add(`${enemy.baseSlot!.dockIndex},${enemy.baseSlot!.radial}`);
     }
-    // Spreading: enemies occupy more than one (dock, radial) slot rather than
-    // funneling into a single tile.
-    expect(distinctSlots.size).toBeGreaterThan(1);
+    // The pile spreads across more than one tile (it is not a single-file column).
+    const tiles = new Set(
+      survivors.map((e) => {
+        const t = e.currentTile();
+        return `${t.x},${t.y}`;
+      }),
+    );
+    expect(tiles.size).toBeGreaterThan(1);
   });
 
-  it("assigns a dock whose outward tile is traversable (not terrain or map edge)", () => {
+  it("front line damages the base; killing a front enemy lets a back enemy collapse forward", () => {
     const { grid, enemyManager } = makeManager();
-    const enemy = enemyManager.spawn("minion", 1, 0, 1);
-    expect(enemy).toBeTruthy();
-    expect(enemy!.baseSlot).not.toBeNull();
-    const target = enemy!.baseSlot!.targetTile;
-    expect(grid.inBounds(target.x, target.y)).toBe(true);
-    expect(grid.isTerrain(target.x, target.y)).toBe(false);
-  });
-
-  // A base-attack stand-in so we can observe damage gating and collapse.
-  class StubBaseTarget {
-    readonly isGhost = false;
-    health = 100;
-    takeDamage(amount: number): void {
-      this.health -= amount;
-    }
-  }
-
-  it("back-row enemies hold their layer, the front line damages the base, and they collapse forward on a front death", () => {
-    const { enemyManager } = makeManager();
     const baseTarget = new StubBaseTarget();
     enemyManager.baseTarget = baseTarget;
     const enemies: Enemy[] = [];
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 24; i++) {
       const enemy = enemyManager.spawn("minion", 1, 0, 1);
       expect(enemy).toBeTruthy();
       enemies.push(enemy!);
@@ -115,33 +123,29 @@ describe("Enemy perimeter surround routing", () => {
       if (enemies.every((e) => e.attackingBase || e.removed)) break;
     }
 
-    const survivors = enemies.filter((e) => !e.removed && e.baseSlot);
+    const base = grid.getBase();
+    const baseCenter = grid.tileToWorld(base.x, base.y);
+    const half = 1.5 * grid.tileSize;
+    const isAdjacent = (e: Enemy) =>
+      distanceToBaseSquare(e.centerX, e.centerY, baseCenter.x, baseCenter.y, half) <= e.radius + 1e-6;
+
+    const survivors = enemies.filter((e) => !e.removed);
     expect(survivors.length).toBeGreaterThan(0);
-    const backRows = survivors.filter((e) => e.baseSlot!.radial > 0);
-    // With a radius of 0.4 the capacity is 2 per (dock, radial), so 12
-    // enemies must use back rows (radial > 0) to fit.
-    expect(backRows.length).toBeGreaterThan(0);
-
-    // Front line damages the base; total damage is bounded by the few front
-    // enemies, not by all 12 (back rows are out of contact).
+    const fronts = survivors.filter(isAdjacent);
+    const backs = survivors.filter((e) => !isAdjacent(e));
+    // Front line touches the base and damages it; the formation has depth (back rows).
+    expect(fronts.length).toBeGreaterThan(0);
     expect(baseTarget.health).toBeLessThan(100);
+    expect(backs.length).toBeGreaterThan(0);
 
-    // Capture radials, kill a front-row (radial 0) enemy, and confirm a
-    // back-row enemy collapses forward into the freed slot.
-    const before = new Map<number, number>();
-    for (const e of survivors) before.set(e.id, e.baseSlot!.radial);
-    const front = survivors.find((e) => e.baseSlot!.radial === 0);
-    expect(front).toBeTruthy();
-    front!.removed = true;
-    enemyManager.update(FIXED_DT, null);
+    // Kill a front enemy and confirm a back enemy advances into the freed edge spot.
+    const front = fronts[0]!;
+    const beforeAdjacentIds = new Set(survivors.filter((e) => isAdjacent(e) && e !== front).map((e) => e.id));
+    front.removed = true;
+    for (let step = 0; step < 480; step++) enemyManager.update(FIXED_DT, null);
 
-    let collapsed = false;
-    for (const e of enemies) {
-      if (e.removed) continue;
-      if (!e.baseSlot) continue;
-      const prior = before.get(e.id);
-      if (prior !== undefined && e.baseSlot.radial < prior) collapsed = true;
-    }
-    expect(collapsed).toBe(true);
+    const afterAdjacent = survivors.filter((e) => !e.removed && isAdjacent(e));
+    const advanced = afterAdjacent.some((e) => !beforeAdjacentIds.has(e.id));
+    expect(advanced).toBe(true);
   });
 });

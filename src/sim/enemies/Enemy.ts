@@ -46,6 +46,15 @@ function snapPathIndex(
   return bestIdx;
 }
 
+// Lateral-seeking tuning. An enemy is treated as "blocked" only after it makes
+// little forward progress toward the base for BLOCKED_TIME seconds while another
+// enemy sits directly ahead of it. Once blocked it picks an open adjacent tile
+// (one that gets it closer to the base, or — at the base — an open base-adjacent
+// tile) and steers there, then re-evaluates after DETOUR_COOLDOWN seconds.
+const BLOCKED_PROGRESS_FACTOR = 0.3;
+const BLOCKED_TIME = 0.15;
+const DETOUR_COOLDOWN = 0.4;
+
 interface SlowEntry {
   eff: number;
   remaining: number;
@@ -78,6 +87,8 @@ interface GridRef {
   tileToWorld(tx: number, ty: number): { x: number; y: number };
   getBase(): { x: number; y: number };
   isBase(x: number, y: number): boolean;
+  isTerrain(x: number, y: number): boolean;
+  inBounds(x: number, y: number): boolean;
   blocked: Set<string>;
   pathVersion: number;
   computeSurroundRoute(
@@ -100,6 +111,11 @@ interface EnemyManagerRef {
   getEnemiesInRange(x: number, y: number, range: number): Enemy[];
   forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void;
   towerAt(x: number, y: number): Tower | null;
+  // Base-adjacent open tiles (the `baseTile` of every exposed dock), used by lateral
+  // seeking so a blocked enemy can slip into an open tile still touching the base.
+  baseDocks(): { x: number; y: number }[];
+  // Count of live enemies standing on a tile, used to pick the least-occupied detour.
+  enemiesInTile(tileX: number, tileY: number): number;
 }
 
 export class Enemy {
@@ -186,6 +202,13 @@ export class Enemy {
   antiHealTimer!: number;
   lastCellX!: number;
   lastCellY!: number;
+  // Lateral-seeking state: time spent stalled against another enemy, the previous
+  // frame's distance to the base (to measure forward progress), the tile currently
+  // being steered toward as a detour, and a cooldown between detour re-evaluations.
+  private blockedTimer: number = 0;
+  private lastObjectiveDist: number = 0;
+  private detourTile: { x: number; y: number } | null = null;
+  private detourCooldown: number = 0;
   private healTickDt: number = 0;
   private applyHealAura = (ally: Enemy): void => {
     if (ally === this) return;
@@ -686,8 +709,56 @@ export class Enemy {
       if (attackDistToSquare <= this.radius + 1e-6) attackTarget = this.baseTarget;
     }
 
+    // Lateral seeking: a blocked enemy (another enemy directly ahead, with little
+    // forward progress) steers into an open adjacent tile that gets it closer to the
+    // base. This spreads a pile across a tile's width and overflows it into
+    // neighbouring base-adjacent tiles instead of stacking one-deep or drifting out.
+    // Only default-mode enemies pile and seek; held/route enemies keep their own logic.
+    this.updateBlockedState(dt, enemyManager);
+    if (this.detourCooldown > 0) this.detourCooldown -= dt;
+    if (
+      this.routingMode === "default" &&
+      this.blockedTimer > BLOCKED_TIME &&
+      !this.detourTile &&
+      this.detourCooldown <= 0 &&
+      !attackTarget
+    ) {
+      const detour = this.chooseDetourTile(enemyManager);
+      if (detour) {
+        this.detourTile = detour;
+        this.detourCooldown = DETOUR_COOLDOWN;
+      }
+    }
+
     // Advance only the path centerline; x/y are derived after collision resolution.
-    if (hasNextTile && nextTile && moveMode === "walk" && !attackTarget) {
+    // A committed detour overrides the normal path/tower target so the enemy slips
+    // into the open tile it selected.
+    if (this.routingMode === "default" && !attackTarget && this.detourTile) {
+      const target = this.grid.tileToWorld(this.detourTile.x, this.detourTile.y);
+      const deltaX = target.x - this.centerX;
+      const deltaY = target.y - this.centerY;
+      const dist = Math.hypot(deltaX, deltaY);
+      const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
+      this.moveAngle = Math.atan2(deltaY, deltaX);
+      if (step >= dist) {
+        this.centerX = target.x;
+        this.centerY = target.y;
+      } else {
+        this.centerX += (deltaX / dist) * step;
+        this.centerY += (deltaY / dist) * step;
+      }
+      const tile = this.currentTile();
+      if (tile.x === this.detourTile.x && tile.y === this.detourTile.y) {
+        this.detourTile = null;
+        if (!this.attackingBase && this.path) {
+          this.pathIdx = snapPathIndex(this.path, tile, 0, false);
+        }
+      }
+    } else if (hasNextTile && nextTile && moveMode === "walk" && !attackTarget) {
+      // Walk the path (default or commander route) toward the next tile. This must
+      // run before the base-perimeter pull so a "route" enemy keeps following its
+      // route to the end (and reverts via releaseToDefault) instead of being held at
+      // the edge the moment it first touches the square.
       const target = this.grid.tileToWorld(nextTile.x, nextTile.y);
       const deltaX = target.x - this.centerX;
       const deltaY = target.y - this.centerY;
@@ -706,7 +777,29 @@ export class Enemy {
         this.centerX += (deltaX / dist) * step;
         this.centerY += (deltaY / dist) * step;
       }
-    } else if (moveMode === "approach" && this.blockedByTower && nextTile) {
+    } else if (this.attackingBase && !attackTarget) {
+      // Press toward the base so collision piling forms a 2-D stack (front line on
+      // the edge, further enemies filling rows behind within the arrival tile) and
+      // overflows into neighbouring base-adjacent tiles via the lateral seek. We do
+      // NOT pull every enemy onto the edge ring: that would flatten the pile to a
+      // single line and prevent the "stacked behind" rows. The keep-out below only
+      // projects an enemy out of the square when it actually penetrates, so a back
+      // enemy held behind the front line by collision stays piled in the tile.
+      const baseTile = this.grid.getBase();
+      const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
+      const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
+      this.moveAngle = Math.atan2(baseCenter.y - this.centerY, baseCenter.x - this.centerX);
+      const deltaX = baseCenter.x - this.centerX;
+      const deltaY = baseCenter.y - this.centerY;
+      const dist = Math.hypot(deltaX, deltaY);
+      if (step >= dist) {
+        this.centerX = baseCenter.x;
+        this.centerY = baseCenter.y;
+      } else {
+        this.centerX += (deltaX / dist) * step;
+        this.centerY += (deltaY / dist) * step;
+      }
+    } else if (moveMode === "approach" && this.blockedByTower && nextTile && !attackTarget) {
       const towerCenter = this.grid.tileToWorld(nextTile.x, nextTile.y);
       const deltaToTowerX = towerCenter.x - this.centerX;
       const deltaToTowerY = towerCenter.y - this.centerY;
@@ -719,31 +812,6 @@ export class Enemy {
       } else {
         this.centerX = towerCenter.x;
         this.centerY = towerCenter.y;
-      }
-    } else if (this.attackingBase) {
-      // Hold the enemy on its assigned perimeter layer: the base square expanded
-      // by `radial` tiles (radial 0 = the base edge, radial 1 = one tile
-      // further out, ...). This contains the centerline every frame so collision
-      // separation spreads enemies *along* the layer (filling the edge) instead of
-      // shoving them radially outward, one tile at a time, when a side fills.
-      // A non-dock (legacy) enemy uses the base edge (radial 0) as before.
-      const baseTile = this.grid.getBase();
-      const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
-      const layerHalf = 1.5 * this.grid.tileSize + (this.baseSlot ? this.baseSlot.radial * this.grid.tileSize : 0);
-      const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
-      this.moveAngle = Math.atan2(baseCenter.y - this.centerY, baseCenter.x - this.centerX);
-      const contact = baseSquareContact(baseCenter.x, baseCenter.y, layerHalf, this.centerX, this.centerY, this.radius);
-      const targetX = contact.contactX;
-      const targetY = contact.contactY;
-      const toTargetX = targetX - this.centerX;
-      const toTargetY = targetY - this.centerY;
-      const toTarget = Math.hypot(toTargetX, toTargetY);
-      if (step < toTarget) {
-        this.centerX += (toTargetX / toTarget) * step;
-        this.centerY += (toTargetY / toTarget) * step;
-      } else {
-        this.centerX = targetX;
-        this.centerY = targetY;
       }
     }
 
@@ -781,23 +849,136 @@ export class Enemy {
     this.x = this.centerX + this.laneOffsetX;
     this.y = this.centerY + this.laneOffsetY;
 
-    // Keep base-attacking enemies on their assigned perimeter layer (the base
-    // square for non-dock enemies, expanded by `radial` tiles for docked ones)
-    // so collision separation cannot drift the rendered position sideways/around the
-    // base. Pushing it back out to the layer's contact boundary makes enemies
-    // ring the base edge (corners included) instead of piling at the center.
-    if (this.attackingBase) {
-      const baseTile = this.grid.getBase();
-      const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
-      const layerHalf = 1.5 * this.grid.tileSize + (this.baseSlot ? this.baseSlot.radial * this.grid.tileSize : 0);
-      const contact = baseSquareContact(baseCenter.x, baseCenter.y, layerHalf, this.x, this.y, this.radius);
-      if (contact.overlapping) {
-        this.x = contact.contactX;
-        this.y = contact.contactY;
-        this.laneOffsetX = this.x - this.centerX;
-        this.laneOffsetY = this.y - this.centerY;
+    // Keep every enemy's rendered position outside the base square. A default-mode base
+    // enemy (or any base enemy that has reached its path end) also has its centerline kept
+    // out so the pile collides correctly even though it contacts the square before its
+    // path ends; a route/hold enemy mid-route keeps its centerline so it can reach the
+    // route end and revert via releaseToDefault. Projection only happens while actually
+    // overlapping the square, so a back enemy held behind the front line by collision stays
+    // piled in the tile instead of being yanked to the edge.
+    const keepOutTile = this.grid.getBase();
+    const keepOutCenter = this.grid.tileToWorld(keepOutTile.x, keepOutTile.y);
+    const keepOutContact = baseSquareContact(
+      keepOutCenter.x,
+      keepOutCenter.y,
+      1.5 * this.grid.tileSize,
+      this.x,
+      this.y,
+      this.radius,
+    );
+    if (keepOutContact.overlapping) {
+      this.x = keepOutContact.contactX;
+      this.y = keepOutContact.contactY;
+      this.laneOffsetX = this.x - this.centerX;
+      this.laneOffsetY = this.y - this.centerY;
+    }
+    if (this.attackingBase && (!hasNextTile || this.routingMode === "default")) {
+      const centerContact = baseSquareContact(
+        keepOutCenter.x,
+        keepOutCenter.y,
+        1.5 * this.grid.tileSize,
+        this.centerX,
+        this.centerY,
+        this.radius,
+      );
+      if (centerContact.overlapping) {
+        this.centerX = centerContact.contactX;
+        this.centerY = centerContact.contactY;
       }
     }
+  }
+
+  // The point every enemy is ultimately trying to reach: the base center. Used as
+  // the objective for forward-progress and "closer to base" checks during piling.
+  private objectiveCenter(): { x: number; y: number } {
+    const base = this.grid.getBase();
+    return this.grid.tileToWorld(base.x, base.y);
+  }
+
+  // True when another live enemy sits directly ahead (toward the base) within
+  // touching distance. This distinguishes "blocked by a pile" from "arrived at the
+  // edge and idle", so a lone front enemy never tries to wander off looking for a
+  // detour.
+  private isBlockedAhead(enemyManager: EnemyManagerRef | null): boolean {
+    if (!enemyManager) return false;
+    const objective = this.objectiveCenter();
+    const headingX = objective.x - this.centerX;
+    const headingY = objective.y - this.centerY;
+    const headingLen = Math.hypot(headingX, headingY);
+    if (headingLen < 1e-6) return false;
+    const hx = headingX / headingLen;
+    const hy = headingY / headingLen;
+    let blocked = false;
+    enemyManager.forEachEnemyInRange(this.centerX, this.centerY, this.grid.tileSize, (other) => {
+      if (blocked || other === this || other.removed) return;
+      const deltaX = other.centerX - this.centerX;
+      const deltaY = other.centerY - this.centerY;
+      const dist = Math.hypot(deltaX, deltaY);
+      if (dist > this.radius + other.radius + 1e-3) return;
+      if (dist > 1e-6) {
+        const dot = (deltaX / dist) * hx + (deltaY / dist) * hy;
+        if (dot > 0.3) blocked = true;
+      }
+    });
+    return blocked;
+  }
+
+  // Tracks forward progress toward the base. An enemy counts as blocked only when it
+  // has made little progress for a sustained moment AND another enemy is directly
+  // ahead of it. Pure no-progress (e.g. arrived at the edge) does not. Sets
+  // `blockedTimer`, which the lateral-seeking branch reads. `detourCooldown` is
+  // decremented here so re-evaluation pauses briefly after a detour is chosen.
+  private updateBlockedState(dt: number, enemyManager: EnemyManagerRef | null): void {
+    const objective = this.objectiveCenter();
+    const dist = Math.hypot(this.centerX - objective.x, this.centerY - objective.y);
+    const stepDist = this.speed * this.slowFactor * this.grid.tileSize * dt;
+    const progress = this.lastObjectiveDist - dist;
+    this.lastObjectiveDist = dist;
+    const stalled = progress < stepDist * BLOCKED_PROGRESS_FACTOR;
+    const ahead = this.isBlockedAhead(enemyManager);
+    if (stalled && ahead) this.blockedTimer += dt;
+    else this.blockedTimer = 0;
+  }
+
+  // Picks an open adjacent tile for a blocked enemy to slip into. A candidate must
+  // be in bounds, not terrain, not tower-blocked, and not the base itself. It must
+  // either get the enemy closer to the base, or — once at the base — be another
+  // open base-adjacent tile (so the pile spreads around the perimeter). Among valid
+  // candidates the least-occupied tile wins, tie-broken by closeness to the base.
+  private chooseDetourTile(enemyManager: EnemyManagerRef | null): { x: number; y: number } | null {
+    if (!enemyManager) return null;
+    const current = this.currentTile();
+    const objective = this.objectiveCenter();
+    const tileSize = this.grid.tileSize;
+    const currentWorld = this.grid.tileToWorld(current.x, current.y);
+    const currentDist = Math.hypot(currentWorld.x - objective.x, currentWorld.y - objective.y);
+    const baseAdjacent = new Set(enemyManager.baseDocks().map((dock) => `${dock.x},${dock.y}`));
+    const neighbors = [
+      { x: current.x + 1, y: current.y },
+      { x: current.x - 1, y: current.y },
+      { x: current.x, y: current.y + 1 },
+      { x: current.x, y: current.y - 1 },
+    ];
+    let best: { x: number; y: number } | null = null;
+    let bestScore = Infinity;
+    for (const neighbor of neighbors) {
+      if (this.grid.isBase(neighbor.x, neighbor.y)) continue;
+      if (!this.grid.inBounds(neighbor.x, neighbor.y)) continue;
+      if (this.grid.isTerrain(neighbor.x, neighbor.y)) continue;
+      if (this.grid.blocked.has(`${neighbor.x},${neighbor.y}`)) continue;
+      const neighborWorld = this.grid.tileToWorld(neighbor.x, neighbor.y);
+      const neighborDist = Math.hypot(neighborWorld.x - objective.x, neighborWorld.y - objective.y);
+      const reducesDistance = neighborDist < currentDist - 1e-3;
+      const isBaseAdjacent = baseAdjacent.has(`${neighbor.x},${neighbor.y}`);
+      if (!reducesDistance && !(this.attackingBase && isBaseAdjacent)) continue;
+      const occupancy = enemyManager.enemiesInTile(neighbor.x, neighbor.y);
+      const score = neighborDist + occupancy * (tileSize * 2);
+      if (score < bestScore) {
+        bestScore = score;
+        best = neighbor;
+      }
+    }
+    return best;
   }
 
   // Lateral collision separation against nearby enemies using the spatial hash.
@@ -814,10 +995,17 @@ export class Enemy {
       if (other === this) return;
       const perpAx = -Math.sin(this.moveAngle);
       const perpAy = Math.cos(this.moveAngle);
-      const ax = this.centerX + this.laneOffsetX;
-      const ay = this.centerY + this.laneOffsetY;
-      const bx = other.centerX + other.laneOffsetX;
-      const by = other.centerY + other.laneOffsetY;
+      // A base-attacking enemy's pile is emergent: its separation moves the *centerline*
+      // so the 2-D stack gains real extent in the position that drives `currentTile()`
+      // and base-contact (its rendered lane offset is zeroed so it does not double-count).
+      // A path-following enemy keeps its centerline intact (its spread is purely visual via
+      // the lane offset) so path/tower logic and routing are undisturbed.
+      const thisAttacks = this.attackingBase;
+      const otherAttacks = other.attackingBase;
+      const ax = thisAttacks ? this.centerX : this.centerX + this.laneOffsetX;
+      const ay = thisAttacks ? this.centerY : this.centerY + this.laneOffsetY;
+      const bx = otherAttacks ? other.centerX : other.centerX + other.laneOffsetX;
+      const by = otherAttacks ? other.centerY : other.centerY + other.laneOffsetY;
       const deltaX = bx - ax;
       const deltaY = by - ay;
       const dist = Math.hypot(deltaX, deltaY);
@@ -854,10 +1042,24 @@ export class Enemy {
         thisSign = -1;
         otherSign = 1;
       }
-      this.laneOffsetX += separation * thisSign * normalX;
-      this.laneOffsetY += separation * thisSign * normalY;
-      other.laneOffsetX += separation * otherSign * normalX;
-      other.laneOffsetY += separation * otherSign * normalY;
+      if (thisAttacks) {
+        this.centerX += separation * thisSign * normalX;
+        this.centerY += separation * thisSign * normalY;
+        this.laneOffsetX = 0;
+        this.laneOffsetY = 0;
+      } else {
+        this.laneOffsetX += separation * thisSign * normalX;
+        this.laneOffsetY += separation * thisSign * normalY;
+      }
+      if (otherAttacks) {
+        other.centerX += separation * otherSign * normalX;
+        other.centerY += separation * otherSign * normalY;
+        other.laneOffsetX = 0;
+        other.laneOffsetY = 0;
+      } else {
+        other.laneOffsetX += separation * otherSign * normalX;
+        other.laneOffsetY += separation * otherSign * normalY;
+      }
     });
   }
 
@@ -909,19 +1111,47 @@ function baseSquareContact(
   let normalX = pointX - closestX;
   let normalY = pointY - closestY;
   const distance = Math.hypot(normalX, normalY);
+  let contactX: number;
+  let contactY: number;
   if (distance > 1e-6) {
+    // Point is outside the square: normalize the outward normal and place the
+    // center a full `radius` beyond the nearest edge.
     normalX /= distance;
     normalY /= distance;
+    contactX = closestX + normalX * radius;
+    contactY = closestY + normalY * radius;
   } else {
-    const angle = Math.atan2(deltaY, deltaX);
-    normalX = Math.cos(angle);
-    normalY = Math.sin(angle);
+    // Point is inside the square. Collision can shove a centerline deep past the
+    // base center, so a plain `radius` push along the radial would still leave it
+    // inside. Eject it to `radius` outside the *nearest* edge instead.
+    const penRight = half - deltaX;
+    const penLeft = half + deltaX;
+    const penDown = half - deltaY;
+    const penUp = half + deltaY;
+    const minPen = Math.min(penRight, penLeft, penDown, penUp);
+    if (minPen === penRight) {
+      contactX = baseCenterX + half + radius;
+      contactY = pointY;
+      normalX = 1;
+      normalY = 0;
+    } else if (minPen === penLeft) {
+      contactX = baseCenterX - half - radius;
+      contactY = pointY;
+      normalX = -1;
+      normalY = 0;
+    } else if (minPen === penDown) {
+      contactX = pointX;
+      contactY = baseCenterY + half + radius;
+      normalX = 0;
+      normalY = 1;
+    } else {
+      contactX = pointX;
+      contactY = baseCenterY - half - radius;
+      normalX = 0;
+      normalY = -1;
+    }
   }
-  return {
-    contactX: closestX + normalX * radius,
-    contactY: closestY + normalY * radius,
-    overlapping: distance < radius,
-  };
+  return { contactX, contactY, overlapping: distance < radius };
 }
 
 // Distance from (pointX, pointY) to the nearest point on the 3x3 base square

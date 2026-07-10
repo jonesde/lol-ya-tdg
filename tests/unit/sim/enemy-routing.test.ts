@@ -6,7 +6,14 @@ import { getMap } from "@/sim/grid/Map.js";
 // Minimal EnemyManagerRef satisfying what Enemy.update touches (no towers, no
 // other enemies) so we can drive routing in isolation.
 function makeEnemyManager(enemy: Enemy) {
-  return { enemies: [enemy], getEnemiesInRange: () => [], forEachEnemyInRange: () => {}, towerAt: () => null };
+  return {
+    enemies: [enemy],
+    getEnemiesInRange: () => [],
+    forEachEnemyInRange: () => {},
+    towerAt: () => null,
+    baseDocks: () => [],
+    enemiesInTile: () => 0,
+  };
 }
 
 const FIXED_DT = 1 / 60;
