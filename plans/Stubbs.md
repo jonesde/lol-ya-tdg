@@ -128,14 +128,27 @@ eventual LLM, which will be told (via observation/prompt) to emit path-tile wayp
 ## 1.3 Enemy target-tile routing (`src/sim/enemies/Enemy.ts`)
 Add state, taking precedence over the default grid path, but **reusing all existing movement,
 blocking, and attack logic**:
+
+> **Pre-flight check (D):** confirm `Enemy` exposes `spawnIndex`. Both `releaseToDefault` (below)
+> and the existing re-anchor at Enemy.ts:491 read `this.spawnIndex`, so it must exist — verify in
+> `Enemy.ts` before starting Phase 1; if it is missing, add it alongside the other per-enemy fields.
+
 - Fields: `routingMode: "default" | "hold" | "route"`, plus a small `arrived: boolean` (hold only).
 - `currentTile(): Point` helper → `this.grid.worldToTile(this.centerX, this.centerY)` (the engine
   uses this as the `computeRoute` start).
-- `applyRoute(routePath: Point[], mode: "hold" | "route")`: set `this.path = routePath`,
-  `this.routingMode = mode`, `this.pathIdx = 0` (or snap to the nearest forward tile within
-  `routePath` so a mid-corridor enemy doesn't backtrack), `this.arrived = false`.
-- `releaseToDefault()`: `this.routingMode = "default"; this.path = this.grid.getPathFor(this.spawnIndex);`
-  then `this.reanchorToPath(this.path)` (reuses the existing re-anchor at Enemy.ts:336-427).
+  - `applyRoute(routePath: Point[], mode: "hold" | "route")`: set `this.path = routePath`,
+    `this.routingMode = mode`, `this.pathIdx = snapPathIndex(routePath, this.currentTile())`
+    (snap to the nearest *forward* tile within `routePath` so a mid-corridor enemy doesn't
+    backtrack — see helper below), `this.arrived = false`.
+  - `releaseToDefault()`: `this.routingMode = "default"; this.path = this.grid.getPathFor(this.spawnIndex);`
+    then `this.reanchorToPath(this.path)` (reuses the existing re-anchor at Enemy.ts:336-427).
+  - **Shared `snapPathIndex` helper (A).** Add `snapPathIndex(path: Point[], tile: Point): number`
+    that returns the index in `path` whose tile is closest to `tile` but never an index *behind*
+    the enemy's current progress (i.e. it walks `path` forward from `pathIdx`/`0`, picks the
+    nearest tile, and returns that index). Use it in `applyRoute` (above) for both `hold` and
+    `route` routes, and **reuse the same helper inside `reanchorToPath`** (Enemy.ts:336-427) so
+    grid re-anchoring and custom-route anchoring share one forward-snap implementation. This
+    removes the ambiguous "set `pathIdx = 0` (or snap…)" wording.
 - **`update()` changes (the only engine refactor, and it is small):**
   - The `pathVersion` re-anchor block (Enemy.ts:488-499) must be gated to
     `if (this.routingMode === "default")` — for `hold`/`route` the engine already owns the path,
@@ -145,8 +158,11 @@ blocking, and attack logic**:
     - `default` → `this.reachedBase = true; return;` (unchanged).
     - `hold` → `this.arrived = true; return;` (enemy stays in place; if a tower sits on its tile
       it keeps attacking it via the existing `forwardTower` logic).
-    - `route` → `this.releaseToDefault();` then fall through so the enemy immediately starts
-      following the grid path toward the base.
+    - `route` → `this.releaseToDefault();` then **fall through** (do **not** `return`) so the
+      enemy immediately starts following the grid path toward the base. Concrete change: the
+      early `return` at Enemy.ts:479-482 must be **removed for the `route` branch** (keep it for
+      `default`/`hold`); after `releaseToDefault()` sets `routingMode = "default"` and a fresh
+      `path`, execution continues into the `forwardTower`/movement block below using the new path.
   - Everything downstream of those two gates — the `forwardTower`/`attackTarget` resolution
     (Enemy.ts:506-534), the walk/approach movement (537-570), collision separation (575), the
     attack tick (579-586), and the lane-offset/position derivation (588-604) — is **untouched**.
@@ -155,6 +171,27 @@ blocking, and attack logic**:
     how the target-tile sequence (attack tower → ghosted → occupy → complete) falls out for free.
 - No change to how a `route`/`hold` enemy attacks towers in contact: it reuses the same
   `findAdjacentLiveTowerInContact` (Enemy.ts:659-679) and `forwardTower` logic as a default enemy.
+
+### 1.3.1 Null and partial routes (B)
+
+`Grid.computeRoute` can return `null` in two cases, and `applyRoute` must handle both so a bad
+command never silently freezes an enemy into `reachedBase`:
+
+- **Waypoint on terrain / fully blocked (no route to goal).** `applyRoute` must treat a `null`
+  route as "cannot honor this command" and **fall back to `releaseToDefault()`** instead of
+  assigning `this.path = null` (which would hit the `!this.path` guard at Enemy.ts:479 and mark
+  the enemy `reachedBase` without moving). This keeps the enemy on its grid path — a safe,
+  non-catastrophic default. For Commander Stubbs (Phase 2) a `null` route means "the chosen
+  waypoint cluster was unreachable"; falling back to default pathing is the correct degraded
+  behavior and the brain can retry next observation.
+- **Partial route / unreachable leg in a multi-waypoint chain.** When chaining `currentTile →
+  wp1 → … → wpN → base` (§1.2 `llm:routeGroup`), if any single leg returns `null`, drop that leg
+  and continue chaining the remaining waypoints (the enemy simply skips the unreachable waypoint
+  rather than the whole command). Only if *every* leg fails does the command fall back to
+  `releaseToDefault()`.
+
+This guarantees an `llm:*` command is always either honored or safely degraded — never a silent
+freeze.
 
 ## 1.4 Snapshot additions (for the observation + wave-emergence detection)
 `src/sim/SimulationSnapshot.ts` + `src/sim/SnapshotSerializer.ts`:
@@ -221,9 +258,11 @@ Commander Stubbs (Phase 2) reuses all of it — only the brain differs.
   function turning the throttled slice into the abstracted JSON (`{ map, enemies, towers, wave }`),
   the "semantic view" projection from §4.3. Brain-agnostic. It also **derives** `wave.pendingEnemyCount`
   by summing `slice.spawnStates.map(s => s.pendingCount)` (the overflow count the brain needs for
-  its rush guard — Issue note from review: the slice ships `pendingCount` per spawn, the observation
-  must sum it). Enemy `x/y` → `tileX/tileY` using `slice.meta.tileSize`. Towers already carry
-  `tileX/tileY`. The `wave` block: `{ currentWave, pendingEnemyCount, spawnStates, remainingScheduledSpawns, active }`.
+   its rush guard — Issue note from review: the slice ships `pendingCount` per spawn, the observation
+   must sum it). Enemy `x/y` → `tileX/tileY` using `slice.meta.tileSize`; enemies carry `hp`/`maxHp`.
+   Towers already carry `tileX`/`tileY` in the slice, but `buildObservation` must **rename
+   `TowerSnapshot.health`/`maxHealth` → `hp`/`maxHp`** in the semantic view (the real tower fields are
+   `health`/`maxHealth`, not `hp`/`maxHp`). The `wave` block: `{ currentWave, pendingEnemyCount, spawnStates, remainingScheduledSpawns, active }`.
 - `src/commanders/brain.ts` (shared): `CommanderBrain` interface — `decide(observation, memory):
   CommanderCommand[]` — the pluggable brain, plus `createBrain(kind)` registry.
   `src/commanders/stubby/brain.ts` (`StubbyBrain`) implements the hold-then-rush strategy;
@@ -239,12 +278,19 @@ Commander Stubbs (Phase 2) reuses all of it — only the brain differs.
   `gridLayout` if present and, on the **first** cache, pushes one `llm:gridLayoutToggle` command
   into the returned array, (2) runs `buildObservation` → `brain.decide` → posts `commands` back. No
   rAF, no DOM, no `getLatestSnapshot` — it is fed.
-- `src/commanders/relay.ts` (shared): the **main-thread** half. A ~4 Hz loop (`setInterval`, 250 ms,
-  per §4.3's 1–5 Hz) reads `getLatestSnapshot()`, builds a throttled slice, posts it to the worker,
-  and listens for `commands` which it forwards via `dispatchCommand`. It **never posts
-  `snapshotAck`** (passive consumer) and **owns the `gridLayout` cache** (§1.4): it includes the
-  cached `gridLayout` on every observation it forwards so the worker always has the map. It is the
-  only piece that touches the snapshot module / command bus.
+  - `src/commanders/relay.ts` (shared): the **main-thread** half. A ~4 Hz loop (`setInterval`, 250 ms,
+   per §4.3's 1–5 Hz) reads `getLatestSnapshot()`, builds a throttled slice, posts it to the worker,
+   and listens for `commands` which it forwards via `dispatchCommand`. It **never posts
+   `snapshotAck`** (passive consumer) and **owns the `gridLayout` cache** (§1.4): it includes the
+   cached `gridLayout` on every observation it forwards so the worker always has the map. It is the
+   only piece that touches the snapshot module / command bus.
+   **Pausing (G — no explicit pause needed).** The relay does **not** need an explicit pause path.
+   While the game is paused the snapshot is static, so the worker just re-reads an unchanged field
+   and re-issues commands that are idempotent no-ops (guarded by `seenByWave` / the
+   wave-number-keyed sets in both brains). The 4 Hz `setInterval` is cheap enough to keep running;
+   if desired, gate the per-tick *post* on `gameStore` run-state to skip work while paused, but this
+   is optional polish, not required for correctness. The worker itself never needs pausing because
+   it is purely a stateless function of the observation it is fed.
 - `src/commanders/index.ts`: `setEnemyCommander(kind: "none" | "stubby" | "stubbs")` /
   `stopEnemyCommander()` — owns the worker + relay lifecycle (create/terminate the worker when
   switching modes), forwarding `kind` in the `start` message.
@@ -259,7 +305,7 @@ if (slice.gridLayout) memory.gridLayout = slice.gridLayout;
 {
   map: memory.gridLayout,                // cached; 0=terrain,1=path,2=base,3=spawn
   enemies: [{ id, tileX, tileY, level, hp, maxHp }],   // world x/y → tile via meta.tileSize
-  towers:  [{ tileX, tileY, level, hp, maxHp }],
+  towers:  [{ tileX, tileY, level, health, maxHealth }], // renamed from TowerSnapshot.health/maxHealth
   wave: { currentWave, pendingEnemyCount, spawnStates, remainingScheduledSpawns, active }
 }
 ```
@@ -334,13 +380,16 @@ that engine seam end-to-end.
   of the towers set — tile coords + ids — used to detect when a re-route is warranted), and the
   cached `gridLayout`.
 - **On newly-seen enemies** (ids in the current wave not yet in `seenByWave.get(wave)`): immediately
-  emit `llm:routeGroup(enemyIds, waypoints)` — **no hold phase at all**. Waypoints steer the group
-  **through the strongest tower cluster** so the enemies attack and destroy those towers (reusing
-  the existing in-contact approach/attack logic via the target-tile model) on their way to the base.
+  emit `llm:routeGroup(enemyIds, [waypoint])` — a **single** waypoint (per the algorithm below),
+  **no hold phase at all**. The engine does all routing (`Grid.computeRoute`, §1.2); the waypoint
+  steers the group toward the chosen target tower so the enemies attack and destroy it (reusing the
+  existing in-contact approach/attack logic via the target-tile model) on their way to the base.
   Add the ids to `seenByWave.get(wave)`.
-- **Target selection:** from the observation `towers` (each has `tileX/tileY/hp/maxHp`), pick the
-  highest-value cluster (the tower, or small neighborhood of towers, with the greatest combined
-  `hp`) that sits between the enemies and the base. That cluster's location drives the waypoint(s).
+- **Target selection:** pick **one** tower at a time (the highest-value live tower ahead of the
+  group) via the concrete algorithm in the next subsection. A single 4 Hz observation refresh means
+  that once a targeted tower is destroyed, the next `decide` call simply selects the next tower and
+  re-routes — so there is **no need to chain multiple waypoints**. The chosen tower's location drives
+  the single waypoint.
 - **Re-route trigger:** recompute the tower signature each observation; when it changes (a targeted
   tower died, or a new tower was built), re-emit `llm:routeGroup` for the still-active ids of the
   current wave so the group keeps steering into the remaining defenses. Update
@@ -348,11 +397,42 @@ that engine seam end-to-end.
 - **Per-wave reset:** on wave-number change, create a fresh `seenByWave` entry for the new wave
   (Stubbs has no idle/holding phases to reset).
 
+### Target-tower selection algorithm (`StubbsBrain`, pure)
+
+All helpers are pure functions over the observation; the worker calls this once per `decide`. The
+brain only outputs a **single** waypoint tile — `Grid.computeRoute` (§1.2) handles the actual
+routing, so the brain never computes paths itself.
+
+> **Field note:** `buildObservation` must expose tower `health`/`maxHealth` (the real
+> `TowerSnapshot` fields are `health`/`maxHealth`, **not** the `hp`/`maxHp` written earlier in this
+> plan) and enemy `tileX`/`tileY` (derived from world `x`/`y` via `meta.tileSize`).
+
+1. `liveTowers` = towers where `!isGhost && health > 0`.
+2. `distToBase` = one **BFS from the base tile over path/spawn/base tiles** (`gridLayout ∈ {1,2,3}`,
+   ignoring towers — the engine's dijkstra fallback routes *through* them). This is the authoritative
+   "between enemies and base" measure and is reused for both targeting and waypoint snapping.
+3. `enemyTile` = representative enemy position: the nearest enemy tile (or the mean of the current
+   wave's enemy tiles) converted via `meta.tileSize`.
+4. **Score & filter:** for each live tower, require it to be **ahead** of the group
+   (`distToBase[tower] < distToBase[enemyTile]`); the chosen target is the highest-`health` tower
+   among those ahead. A **single** tower is targeted (no clustering) — sequential re-routing handles
+   the rest as each falls.
+5. `waypoint` = the **path tile nearest (Euclidean) to the target tower's `tileX`/`tileY`** using
+   `gridLayout` (a tower may sit on a terrain tile, so the waypoint must be a path tile near it). The
+   engine then routes the enemies to that tile via `computeRoute`.
+6. **If no live towers are ahead** → emit **no command** (default pathing already sends the group to
+   the base). Still record the ids in `seenByWave` so they are not re-dispatched.
+7. **Re-route trigger:** `signature = liveTowers.map(t => \`${t.tileX},${t.tileY}:${Math.round(t.health)}\`).sort().join("|")`.
+   When it differs from `memory.lastRoutedTowerSignature` (target died, or a new tower rose), re-emit
+   `llm:routeGroup` for the still-active current-wave ids toward the new target's waypoint and update
+   the signature. As towers fall, the group advances into the next defense automatically at the next
+   4 Hz tick.
+
 ### Waypoint constraint (key design tension)
 Waypoints **must be path tiles** (§1.1): both `bfsShortestPath` and `dijkstraWeakestPath` only visit
 `path`/`base`/`spawn` tiles, and a blocking tower occupies a path tile it was built on. So
 `StubbsBrain` does **not** emit raw tower coordinates blindly — it selects the **path-tile waypoint
-nearest the target tower cluster** (using the cached `gridLayout`) and relies on `computeRoute`'s
+nearest the target tower** (using the cached `gridLayout`) and relies on `computeRoute`'s
 dijkstra fallback to actually thread the enemies *through* the blocking towers toward the base.
 Because the target-tile model (§1.3) already attacks any tower on the route's forward tile, a
 waypoint whose tile holds a live tower is handled automatically: the enemy attacks it, proceeds when
@@ -376,14 +456,21 @@ is required; the engine's existing forward-tower attack does the work.)
   0` (next-wave spillover guard).** Assert the worker emits exactly one `llm:gridLayoutToggle` after
   first receiving `gridLayout`. Pure-function tests, no worker.
 - `tests/unit/commanders/stubbs-brain.test.ts`: feed fake observations; assert the aggressive
-  tower-routing behavior — enemies are routed **immediately** on being seen (no hold), the emitted
-  `llm:routeGroup` waypoints steer toward the strongest tower cluster, a re-route fires when the
-  observed `towers` set changes (targeted tower dies or a new tower appears), and dispatch is
-  idempotent per wave / resets across waves. Pure-function tests, no worker.
+  tower-routing behavior — enemies are routed **immediately** on being seen (no hold) with a **single
+  waypoint**; the emitted `llm:routeGroup` waypoint targets the **highest-`health` live tower that is
+  ahead of the group** (assert the BFS `distToBase` "ahead" filter excludes towers behind the
+  enemies); assert **no command is emitted when no live towers are ahead**; assert a **re-route fires
+  when the tower signature changes** (targeted tower dies or a new tower appears) and the new waypoint
+  targets the next-highest tower; and dispatch is idempotent per wave / resets across waves.
+  Pure-function tests, no worker.
 - `tests/unit/sim/enemy-routing.test.ts`: `applyRoute("hold")` freezes advance at the target tile
   (and attacks a tower there); `applyRoute("route")` follows waypoints then defaults back to the
   base on completion; empty-waypoint `releaseToDefault()` reverts to default path / reaches base;
-  the `pathVersion` re-anchor is **not** applied while `routingMode !== "default"`.
+  the `pathVersion` re-anchor is **not** applied while `routingMode !== "default"`. **Null-route
+  coverage (B):** `applyRoute(null, "hold" | "route")` must fall back to `releaseToDefault()`
+  (assert `routingMode === "default"` and the enemy follows its grid path rather than freezing with
+  `reachedBase`); a multi-waypoint chain where one leg returns `null` drops only that leg and still
+  routes the rest; a chain where *every* leg fails also falls back to `releaseToDefault()`.
 - `tests/unit/sim/applyCommand.test.ts` (extend): `llm:*` commands no longer no-op and mutate state;
   `llm:gridLayoutToggle` flips `engine.gridLayoutEnabled`; `getEnemiesByIds` maps ids correctly.
 - `tests/integration/commander.test.ts`: spin up a real `GameEngine` plus a test-local
