@@ -52,10 +52,18 @@ the snapshot exposes `enemy.id: number`):
   - `applyCommanderRoute(enemyIds, waypoints)` → compute a routed path and `enemy.setRoutePath(path)`
   - `applyCommanderSetTargeting(enemyIds, mode)` → store `enemy.targetingMode` (used only
     by future logic; harmless now)
-- `GameEngine` computes each enemy's routed path by chaining
-  `bfsShortestPath(grid, currentTile, wp, blocked)` (from `src/sim/grid/Pathfinding.ts`)
-  through each waypoint, then to `grid.base`, dropping duplicate joints. Reuses the
-  existing BFS avoidance of live towers.
+- `GameEngine` computes each enemy's routed path by chaining a **route-to-base** call
+  through each waypoint, then to `grid.base`, dropping duplicate joints. This must use the
+  **exact same routing enemies already use to reach the base** — `bfsShortestPath` alone is
+  insufficient because it refuses tower tiles, whereas real enemy routing falls back to
+  `dijkstraWeakestPath` (which routes *through* live towers, weighted by remaining health).
+  So add a new `Grid` method, e.g. `computeRouteToBase(start: Point): Point[] | null`, that
+  mirrors `Grid.recomputePaths` (`Grid.ts:222-246`):
+  `bfsShortestPath(this, start, this.base, this.blocked) ?? dijkstraWeakestPath(this, start, this.base, this.towerHealthAt, this.isGhostAt)`
+  (`dijkstraWeakestPath` at `Pathfinding.ts:168`). `applyCommanderRoute` chains
+  `computeRouteToBase` from `currentTile → wp1 → … → wpN → base`, concatenating the segments
+  and dropping duplicate joints. This keeps commander routing behavior-identical to the
+  default enemy path, including the tower-crossing fallback.
 
 ## 3. Enemy routing override (`src/sim/enemies/Enemy.ts`)
 Add state + behavior, taking precedence over the default grid path:
@@ -96,6 +104,9 @@ Add state + behavior, taking precedence over the default grid path:
 - **`meta.tileSize`** = `engine.grid?.tileSize ?? 36` (read from `Grid`, **not**
   `GameRunState` — `tileSize` lives on `Grid`, not on the run-state scalars). Always
   included so Stubbs converts world `x/y` → tile coords with the correct constant.
+- **`meta.waveActive`** = `engine.waveManager?.active ?? false` (set `true` in
+  `startNextWave`; never reset). Included so the observation carries the wave-active flag
+  for future use (it is **not** a valid rush signal — see §5/§8).
 
 ## 5. Commander client — `src/commanders/` (own Web Worker, option B)
 Stubbs is a client of the sim, in his own worker. Layout:
@@ -103,6 +114,20 @@ Stubbs is a client of the sim, in his own worker. Layout:
 - `src/commanders/protocol.ts`: `MainToCommanderMessage` / `CommanderToMainMessage`
   (mirrors `src/sim/WorkerProtocol.ts`) — `start`, `stop`, `observation` (snapshot slice),
   `commands` (array of `llm:*` `Command`s). Keeps the two sides decoupled and serializable.
+  Define the slice type explicitly so the worker's input contract is intentional (not "the
+  whole snapshot"):
+  ```ts
+  // The abstracted, throttled view the relay sends to the worker. Built from
+  // getLatestSnapshot(); everything Stubbs needs, nothing it doesn't.
+  export interface CommanderSnapshotSlice {
+    gridLayout: number[][] | undefined;   // present on the first slice of a run, undefined after
+    enemies: EnemySnapshot[];
+    towers: TowerSnapshot[];
+    spawnStates: SpawnStateSnapshot[];
+    meta: SnapshotMeta;                   // includes remainingScheduledSpawns, tileSize, waveActive
+  }
+  ```
+  `MainToCommanderMessage.observation` carries a `CommanderSnapshotSlice`.
 - `src/commanders/stubbs/observation.ts`: `buildObservation(snapshotSlice): CommanderObservation`
   — pure function turning the throttled snapshot slice into the abstracted JSON
   (`{ map, enemies, towers, wave }`). This is the "semantic view" projection from §4.3.
@@ -157,10 +182,10 @@ are converted to tile coords inside the worker using `meta.tileSize`.
   re-fire.
   (Note: `spawnStates` only transitions to `closed` after the wave is fully cleared
   — too late for this trigger — so use `remainingScheduledSpawns` + overflow pending,
-  not `spawnStates`, to decide. `wave.active` is included in the observation for
-  completeness/future use, but it is **not** a valid rush signal — `WaveManager.active`
-  is set `true` at wave start and never reset, so it stays `true` after wave 1 and
-  cannot distinguish "spawning" from "wave in progress".)
+  not `spawnStates`, to decide. `wave.active` is included in the observation for future
+  use, but it is **not** a valid rush signal — `WaveManager.active` is set `true` at wave
+  start and never reset, so it stays `true` after wave 1 and cannot distinguish
+  "spawning" from "wave in progress".)
 - On next wave (wave number change / new countdown): reset to `idle` and create a fresh
   `seenByWave` entry for the new wave.
 
@@ -184,6 +209,16 @@ guard is sufficient.
   *Commander Stubbs*, bound to `uiStore.enemyCommander`.
 - `SvgGameRoot.vue` (`onUnmounted` near `setCommandDispatcher(null)`): call
   `stopEnemyCommander()` so the worker + relay never leak when leaving `/game`.
+- **Commander-stop cleanup (prevents frozen enemies):** `stopEnemyCommander()` must
+  release any enemies it left in `hold` mode before terminating the worker + relay.
+  On the main thread it has access to both `getLatestSnapshot()` and `dispatchCommand`,
+  so immediately before terminating: read the current enemy ids from the latest snapshot
+  (`getLatestSnapshot()?.enemies.map(e => e.id)`) and dispatch a single
+  `llm:routeGroup(enemyIds, [])` (empty waypoints = "release to default path") so every
+  held enemy reverts `routingMode = "default"` and re-anchors to its grid path. This is
+  required both when the user switches the drop-down back to *No Commander* and on
+  `SvgGameRoot` unmount. Without it, held enemies would stay frozen forever because no
+  release command is ever sent.
 
 ## 7. Tests
 - `tests/unit/commanders/observation.test.ts`: `buildObservation` over a fake snapshot slice
@@ -201,18 +236,24 @@ guard is sufficient.
   follows waypoints; empty-waypoint release reverts to default path / reaches base.
 - `tests/unit/sim/applyCommand.test.ts` (extend): `llm:*` commands no longer no-op and
   mutate state.
+
+## 8. Integration test (separate phase)
+Implement the real-Stubbs-worker round-trip **after** the unit tests above. `stubbs-brain.test.ts`
+already covers the hold→rush state machine (including the wave-boundary and spillover
+guards), so this integration test can stay lean — it validates the transport + engine seam,
+not the decision logic.
 - `tests/integration/commander.test.ts`: spin up a real `GameEngine` plus a
   test-local `CommandDispatcher` that forwards to `applyCommand(engine, cmd)`, and
   drive the **real Stubbs worker** via the existing mock-`self` import pattern
   (see `tests/integration/worker-roundtrip.test.ts`, which mocks the
   `DedicatedWorkerGlobalScope` and imports `@/commanders/stubbs/StubbsWorker.ts`).
-  Feed the worker a `sim`/`observation` message built from `getLatestSnapshot()`
+  Feed the worker an `observation` message built from `getLatestSnapshot()`
   after a wave has spawned, capture its `commands` posts, and apply them back
   through `applyCommand`. Assert enemies stay put (don't advance) while spawning,
   then all advance to the base together on the rush. `MainThreadCommandDispatcher`
   no longer exists (removed in Phase 7), so do **not** instantiate it.
 
-## 8. Notes / risks
+## 9. Notes / risks
 - Stubbs is a **command producer only**; everything stays within the existing spine. The
   sim worker, snapshot ack gate, and `Command` schema are untouched.
 - The relay sends an *abstracted, throttled slice* to the worker — not the raw 60 Hz
@@ -226,18 +267,26 @@ guard is sufficient.
   messages are exactly the seams the real LLM commander will use. Swapping `StubbsBrain`
   for `LLMBrain` (API transport + prompt + parse) is an isolated change with no engine,
   protocol, or UI impact — this is the point of building Stubbs this way.
+- **The observation carries the full semantic view even though `StubbsBrain` doesn't use
+  all of it.** `buildObservation` exposes every enemy (with tile/hp), every tower, the
+  `map`/`gridLayout`, `wave.active` (`meta.waveActive`), and the `waypoints` field, so a
+  future `LLMBrain` has everything it needs. `StubbsBrain`'s current deterministic strategy
+  only consumes a subset (hold-at-current-tile + empty-waypoint release); the unused fields
+  are present for forward-compat, not dead code.
 - **`llm:routeGroup` waypoints must be path tiles.** Enemies can only traverse
-  `path`/`base`/`spawn` tiles (BFS refuses terrain), so arbitrary-tile routing is
-  impossible today. Keep the `waypoints` field for the eventual LLM, but document
-  the constraint at the `Command` schema and have `buildObservation`/`StubbsBrain`
-  only ever emit path-tile waypoints (Stubbs itself only uses the empty-waypoint
-  release).
+  `path`/`base`/`spawn` tiles (both `bfsShortestPath` and `dijkstraWeakestPath` only visit
+  those), so arbitrary-tile routing is impossible today. Routing between waypoints uses
+  `Grid.computeRouteToBase` (bfs + `dijkstraWeakestPath` fallback), the **same logic the
+  default enemy path uses**, so it can cross towers. Keep the `waypoints` field for the
+  eventual LLM, but document the constraint at the `Command` schema and have
+  `buildObservation`/`StubbsBrain` only ever emit path-tile waypoints (Stubbs itself only
+  uses the empty-waypoint release).
 - **Rush signal is `remainingScheduledSpawns` (wave `queue.length`), not the
   overflow-only `pendingEnemyCount` nor `spawnStates`.** `spawnStates` close only
   after a wave is fully cleared (too late); the overflow pending count is `0` for
   almost every wave. `remainingScheduledSpawns === 0` (plus overflow pending `0`)
-  is the correct "all enemies have emerged" test. `wave.active` is exposed for
-  completeness but is **not** a rush signal: `WaveManager.active` is set `true` at
+  is the correct "all enemies have emerged" test. `wave.active` (`meta.waveActive`) is
+  exposed for future use but is **not** a rush signal: `WaveManager.active` is set `true` at
   wave start and never reset, so it stays `true` after wave 1.
 - **`gridLayout` is shipped once per run** (gated by a `gridLayoutSent` boolean, not
   `pathVersion`) because terrain is run-constant; Stubbs caches it in worker memory.
@@ -246,5 +295,10 @@ guard is sufficient.
   plus the `remainingScheduledSpawns` guard (see §5).** The rush captures only the
   current wave's seen ids, and cannot fire once the next wave's queue is populated, so
   spillover enemies are never folded into a released rush command.
+- **Commander-stop cleanup (`stopEnemyCommander`, see §6):** before terminating the
+  worker + relay it dispatches `llm:routeGroup(allCurrentEnemyIds, [])` to release any
+  held enemies back to their default path. Without this, disabling the commander (drop-down
+  back to *No Commander*, or leaving `/game`) would leave held enemies frozen forever, since
+  no release command is ever sent.
 - All commander code (`src/commanders/`) depends on the sim only through the public seams:
   `getLatestSnapshot()`, `dispatchCommand`, and the `SimulationSnapshot`/`Command` types.
