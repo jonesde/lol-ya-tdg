@@ -69,19 +69,19 @@ describe("ProjectileManager", () => {
   });
 
   describe("init()", () => {
-    it("creates PROJECTILE_POOL_SIZE circle elements", () => {
+    it("creates PROJECTILE_POOL_SIZE text elements", () => {
       pm.init(layer as unknown as SVGGElement);
       expect(documentCreateElementNS).toHaveBeenCalledTimes(PROJECTILE_POOL_SIZE);
-      const circleCalls = documentCreateElementNS.mock.calls.filter((call) => call[1] === "circle");
-      expect(circleCalls.length).toBe(PROJECTILE_POOL_SIZE);
+      const textCalls = documentCreateElementNS.mock.calls.filter((call) => call[1] === "text");
+      expect(textCalls.length).toBe(PROJECTILE_POOL_SIZE);
     });
 
-    it("sets r=3, fill=#ffffff on circle elements", () => {
+    it("sets font-size=6, fill=#ffffff on text elements", () => {
       pm.init(layer as unknown as SVGGElement);
-      const circles = layer.children.filter((c) => c.tagName === "circle");
-      for (const circle of circles) {
-        expect(circle.attributes.r).toBe("3");
-        expect(circle.attributes.fill).toBe("#ffffff");
+      const texts = layer.children.filter((c) => c.tagName === "text");
+      for (const text of texts) {
+        expect(text.attributes["font-size"]).toBe("6");
+        expect(text.attributes.fill).toBe("#ffffff");
       }
     });
 
@@ -103,13 +103,14 @@ describe("ProjectileManager", () => {
       pm.init(layer as unknown as SVGGElement);
     });
 
-    it("shows circle elements for circle projectiles", () => {
-      pm.syncFromGameEngine([{ id: 1, x: 10, y: 20, radius: 5, color: "#ff0000" }]);
-      const firstCircle = layer.children[0];
-      expect(firstCircle.style.visibility).toBe("visible");
-      expect(firstCircle.attributes.transform).toBe("translate(10, 20)");
-      expect(firstCircle.attributes.r).toBe("5");
-      expect(firstCircle.attributes.fill).toBe("#ff0000");
+    it("shows text elements for projectiles with glyph + color", () => {
+      pm.syncFromGameEngine([{ id: 1, x: 10, y: 20, radius: 5, color: "#ff0000", icon: "◉" }]);
+      const firstText = layer.children[0];
+      expect(firstText.style.visibility).toBe("visible");
+      expect(firstText.attributes.transform).toBe("translate(10, 20)");
+      expect(firstText.attributes["font-size"]).toBe("10");
+      expect(firstText.attributes.fill).toBe("#ff0000");
+      expect(firstText.textContent).toBe("◉");
     });
 
     it("hides unused pool elements after sync", () => {

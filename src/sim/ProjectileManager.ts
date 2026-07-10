@@ -24,6 +24,7 @@ export interface ProjectileGame {
   y: number;
   radius: number;
   color: string;
+  icon: string;
   damage: number;
   speed: number;
   range: number;
@@ -169,7 +170,8 @@ export class ProjectileManager {
   private towerLookup: ((towerId: string) => Tower | null) | null = null;
   private pendingLightning: LightningVisualEffect[];
   private pendingStuns: StunVisualEffect[];
-  private renderDataBuffer: Array<{ id: number; x: number; y: number; radius: number; color: string }> = [];
+  private renderDataBuffer: Array<{ id: number; x: number; y: number; radius: number; color: string; icon: string }> =
+    [];
 
   constructor(
     enemyManager: EnemyManager,
@@ -212,6 +214,8 @@ export class ProjectileManager {
     targetId: number;
     targetX?: number;
     targetY?: number;
+    color?: string;
+    icon?: string;
     slowAmt?: number;
     slowDur?: number;
     towerId?: string;
@@ -237,7 +241,8 @@ export class ProjectileManager {
       x: opts.x,
       y: opts.y,
       radius: opts.towerType === "cannon" ? 5 : 3,
-      color: "#ffcf4d",
+      color: opts.color ?? "#ffcf4d",
+      icon: opts.icon ?? "•",
       damage: opts.damage,
       speed: opts.speed,
       range: opts.range,
@@ -644,6 +649,7 @@ export class ProjectileManager {
     range?: number;
     chain?: number;
     stormcall?: boolean;
+    color?: string;
   }): void {
     let current: LightningTarget | null = this.enemyManager.getEnemyById(opts.targetId);
     if (!current || current.removed) return;
@@ -667,7 +673,7 @@ export class ProjectileManager {
     }
     chainTargets.push(current);
     if (this.particles) {
-      this.particles.spawn(current.x, current.y, "#ffcf4d", 3, { speed: 30, life: 0.2 });
+      this.particles.spawn(current.x, current.y, opts.color ?? "#ffcf4d", 3, { speed: 30, life: 0.2 });
     }
 
     const chainedIds = new Set<number>([current.id]);
@@ -683,7 +689,7 @@ export class ProjectileManager {
       chainTargets.push(nextTarget);
       chainedIds.add(nextTarget.id);
       if (this.particles) {
-        this.particles.spawn(nextTarget.x, nextTarget.y, "#ffcf4d", 3, { speed: 30, life: 0.2 });
+        this.particles.spawn(nextTarget.x, nextTarget.y, opts.color ?? "#ffcf4d", 3, { speed: 30, life: 0.2 });
       }
       // Burn Circuit: chained enemies take burn damage over time
       if (opts.burnCircuit && nextTarget.applyBurn) {
@@ -713,7 +719,7 @@ export class ProjectileManager {
         this.recordDamage(opts.towerId, stormDamage);
         chainTargets.push(stormTarget);
         if (this.particles) {
-          this.particles.spawn(stormTarget.x, stormTarget.y, "#ffcf4d", 3, { speed: 30, life: 0.2 });
+          this.particles.spawn(stormTarget.x, stormTarget.y, opts.color ?? "#ffcf4d", 3, { speed: 30, life: 0.2 });
         }
         this.pendingLightning.push({ x1: opts.originX, y1: opts.originY, x2: stormTarget.x, y2: stormTarget.y });
       }
@@ -810,12 +816,12 @@ export class ProjectileManager {
     projectile.active = false;
   }
 
-  getRenderData(): Array<{ id: number; x: number; y: number; radius: number; color: string }> {
+  getRenderData(): Array<{ id: number; x: number; y: number; radius: number; color: string; icon: string }> {
     const result = this.renderDataBuffer;
     result.length = 0;
     for (const p of this.projectiles) {
       if (p.active) {
-        result.push({ id: p.id, x: p.x, y: p.y, radius: p.radius, color: p.color });
+        result.push({ id: p.id, x: p.x, y: p.y, radius: p.radius, color: p.color, icon: p.icon });
       }
     }
     return result;

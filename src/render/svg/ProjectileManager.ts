@@ -2,25 +2,29 @@ import type { Projectile } from "./types.js";
 import { PROJECTILE_POOL_SIZE, SVG_NS } from "./types.js";
 
 export class ProjectileManager {
-  private pool: SVGCircleElement[] = [];
+  private pool: SVGTextElement[] = [];
   private idToIndex: Map<number, number> = new Map();
   private freeIndexStack: number[] = [];
   private overflowIds: Set<number> = new Set();
   private activeIdScratch: Set<number> = new Set();
   private lastRadius: string[] = [];
   private lastFill: string[] = [];
+  private lastIcon: string[] = [];
 
   init(layer: SVGGElement): void {
     for (let i = PROJECTILE_POOL_SIZE - 1; i >= 0; i--) {
-      const circle = document.createElementNS(SVG_NS, "circle");
-      circle.setAttribute("r", "3");
-      circle.setAttribute("fill", "#ffffff");
-      circle.style.visibility = "hidden";
-      layer.appendChild(circle);
-      this.pool.push(circle);
+      const text = document.createElementNS(SVG_NS, "text");
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("dominant-baseline", "central");
+      text.setAttribute("font-size", "6");
+      text.setAttribute("fill", "#ffffff");
+      text.style.visibility = "hidden";
+      layer.appendChild(text);
+      this.pool.push(text);
       this.freeIndexStack.push(i);
       this.lastRadius.push("");
       this.lastFill.push("");
+      this.lastIcon.push("");
     }
   }
 
@@ -37,27 +41,32 @@ export class ProjectileManager {
       }
       const poolIndex = this.idToIndex.get(proj.id);
       if (poolIndex === undefined) continue;
-      const circle = this.pool[poolIndex]!;
-      circle.style.visibility = "visible";
-      circle.setAttribute("transform", `translate(${proj.x}, ${proj.y})`);
-      const radiusString = String(proj.radius);
-      if (radiusString !== this.lastRadius[poolIndex]) {
-        circle.setAttribute("r", radiusString);
-        this.lastRadius[poolIndex] = radiusString;
+      const text = this.pool[poolIndex]!;
+      text.style.visibility = "visible";
+      text.setAttribute("transform", `translate(${proj.x}, ${proj.y})`);
+      const fontSizeString = String(proj.radius * 2);
+      if (fontSizeString !== this.lastRadius[poolIndex]) {
+        text.setAttribute("font-size", fontSizeString);
+        this.lastRadius[poolIndex] = fontSizeString;
       }
       const fillColor = proj.color || "#ffffff";
       if (fillColor !== this.lastFill[poolIndex]) {
-        circle.setAttribute("fill", fillColor);
+        text.setAttribute("fill", fillColor);
         this.lastFill[poolIndex] = fillColor;
+      }
+      const iconText = proj.icon || "•";
+      if (iconText !== this.lastIcon[poolIndex]) {
+        text.textContent = iconText;
+        this.lastIcon[poolIndex] = iconText;
       }
     }
 
     this.activeIdScratch.clear();
     for (const p of projectiles) this.activeIdScratch.add(p.id);
     for (const [id, index] of this.idToIndex) {
-      const circle = this.pool[index]!;
+      const text = this.pool[index]!;
       if (!this.activeIdScratch.has(id)) {
-        circle.style.visibility = "hidden";
+        text.style.visibility = "hidden";
         this.freeIndexStack.push(index);
         this.idToIndex.delete(id);
       }
@@ -70,9 +79,9 @@ export class ProjectileManager {
   }
 
   dispose(): void {
-    for (const circle of this.pool) {
-      if (circle.parentNode) {
-        circle.parentNode.removeChild(circle);
+    for (const text of this.pool) {
+      if (text.parentNode) {
+        text.parentNode.removeChild(text);
       }
     }
     this.pool = [];

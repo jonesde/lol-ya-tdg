@@ -141,6 +141,8 @@ interface ProjectileManagerRef {
     targetId: number;
     targetX?: number;
     targetY?: number;
+    color?: string;
+    icon?: string;
     slowAmt?: number;
     slowDur?: number;
     towerId?: string;
@@ -177,6 +179,7 @@ interface ProjectileManagerRef {
     range?: number;
     chain?: number;
     stormcall?: boolean;
+    color?: string;
   }): void;
 }
 
@@ -976,6 +979,7 @@ export class Tower {
         range: stats.range,
         chain: stats.chain,
         stormcall: stats.stormcall,
+        color: this.color,
       });
       this.fireAnimTime = this._gameSeconds;
       if (sound) sound.playSound(`shoot_${this.type as TowerId}`);
@@ -993,6 +997,8 @@ export class Tower {
       targetId: target.id,
       targetX: target.x,
       targetY: target.y,
+      color: this.color,
+      icon: this.icon,
       slowAmt: stats.slowAmt,
       slowDur: stats.slowDur,
       napalm: stats.napalm,

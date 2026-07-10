@@ -121,6 +121,7 @@ export interface Projectile {
   y: number;
   radius: number;
   color: string;
+  icon: string;
 }
 
 export interface Particle {
