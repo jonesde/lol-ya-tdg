@@ -20,6 +20,15 @@ interface StunEffect {
   maxLife: number;
 }
 
+// Minimal structural view of the Grid needed to anchor the splash circle on a
+// nearby unoccupied path tile. The main-thread `Grid` (gameStore.grid) satisfies
+// this shape structurally, so no import of the sim Grid type is required.
+interface SplashGridQuery {
+  isPath(x: number, y: number): boolean;
+  inBounds(x: number, y: number): boolean;
+  blocked: Set<string>;
+}
+
 const LIGHTNING_SEGMENTS = 5;
 const LIGHTNING_STROKE_WIDTH = 2;
 const LIGHTNING_LIFE_SECONDS = 1 / 3;
@@ -45,6 +54,7 @@ export class EffectManager {
   private buildPreviewSpriteEl: SVGUseElement | null = null;
   private rangeCircleEl: SVGCircleElement | null = null;
   private buildRangeCircleEl: SVGCircleElement | null = null;
+  private splashCircleEl: SVGCircleElement | null = null;
   private upgradeButtonEl: SVGGElement | null = null;
   private upgradeButtonBgEl: SVGRectElement | null = null;
   private upgradeButtonTextEl: SVGTextElement | null = null;
@@ -111,6 +121,14 @@ export class EffectManager {
     this.buildRangeCircleEl.setAttribute("stroke-dasharray", "4,3");
     this.buildRangeCircleEl.style.visibility = "hidden";
     layer.appendChild(this.buildRangeCircleEl);
+
+    this.splashCircleEl = document.createElementNS(SVG_NS, "circle");
+    this.splashCircleEl.setAttribute("fill", "none");
+    this.splashCircleEl.setAttribute("stroke", "rgba(255,180,40,0.75)");
+    this.splashCircleEl.setAttribute("stroke-width", "1.5");
+    this.splashCircleEl.setAttribute("stroke-dasharray", "3,3");
+    this.splashCircleEl.style.visibility = "hidden";
+    layer.appendChild(this.splashCircleEl);
 
     this.upgradeButtonEl = document.createElementNS(SVG_NS, "g");
     this.upgradeButtonEl.style.visibility = "hidden";
@@ -180,11 +198,47 @@ export class EffectManager {
     selectedTower: { x: number; y: number; type: string; level: number } | null,
     buildValid: boolean,
     dt: number,
+    grid?: SplashGridQuery | null,
   ): void {
     this.syncLightning(dt);
     this.syncStun(dt);
     this.syncBuildPreview(buildTilePos, selectedTowerType, buildPreviewColor, buildValid);
-    this.syncUpgradeButton(selectedTower);
+    this.syncUpgradeButton(selectedTower, grid);
+  }
+
+  // Returns the splash radius (in tiles) from the tower's computed stats.splash,
+  // which already includes base value + per-level scaling + variant tier + addons.
+  // Mirrors ProjectileManager, so the previewed circle matches the actual AoE.
+  private computeSplashRadiusTiles(statsSplash: number): number {
+    return statsSplash ?? 0;
+  }
+
+  // Finds the nearest unoccupied path tile to a tower so the splash circle sits
+  // where enemies actually walk, rather than on the tower (or a terrain tile).
+  // Expands in Chebyshev rings; returns the tile center, or null if none nearby.
+  private findSplashAnchor(
+    grid: SplashGridQuery,
+    towerTileX: number,
+    towerTileY: number,
+  ): { cx: number; cy: number } | null {
+    const excludeKey = `${towerTileX},${towerTileY}`;
+    const maxRing = 6;
+    for (let ring = 1; ring <= maxRing; ring++) {
+      for (let deltaX = -ring; deltaX <= ring; deltaX++) {
+        for (let deltaY = -ring; deltaY <= ring; deltaY++) {
+          if (Math.abs(deltaX) !== ring && Math.abs(deltaY) !== ring) continue;
+          const neighborX = towerTileX + deltaX;
+          const neighborY = towerTileY + deltaY;
+          if (!grid.inBounds(neighborX, neighborY)) continue;
+          if (!grid.isPath(neighborX, neighborY)) continue;
+          const tileKey = `${neighborX},${neighborY}`;
+          if (tileKey === excludeKey) continue;
+          if (grid.blocked.has(tileKey)) continue;
+          return { cx: neighborX * TILE_SIZE + TILE_SIZE / 2, cy: neighborY * TILE_SIZE + TILE_SIZE / 2 };
+        }
+      }
+    }
+    return null;
   }
 
   syncVisualEffectsFromSnapshot(
@@ -438,6 +492,20 @@ export class EffectManager {
         this.buildRangeCircleEl.setAttribute("r", String(rangePx));
         this.buildRangeCircleEl.setAttribute("stroke", buildValid ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)");
       }
+
+      const splashTiles = this.computeSplashRadiusTiles(TOWER_BASE[selectedTowerType]?.splash ?? 0);
+      if (this.splashCircleEl) {
+        if (splashTiles > 0) {
+          this.splashCircleEl.style.visibility = "visible";
+          // Splash circle sits one tile above the preview so it does not overlap
+          // the centered range circle, keeping the two radii visually distinct.
+          this.splashCircleEl.setAttribute("transform", `translate(${centerX}, ${centerY - TILE_SIZE})`);
+          this.splashCircleEl.setAttribute("r", String(splashTiles * TILE_SIZE));
+          this.splashCircleEl.setAttribute("stroke", buildValid ? "rgba(255,180,40,0.75)" : "rgba(255,0,0,0.6)");
+        } else {
+          this.splashCircleEl.style.visibility = "hidden";
+        }
+      }
     } else {
       if (this.buildPreviewEl) {
         this.buildPreviewEl.style.visibility = "hidden";
@@ -448,55 +516,89 @@ export class EffectManager {
       if (this.buildRangeCircleEl) {
         this.buildRangeCircleEl.style.visibility = "hidden";
       }
+      if (this.splashCircleEl) {
+        this.splashCircleEl.style.visibility = "hidden";
+      }
     }
   }
 
-  private syncUpgradeButton(selectedTower: { x: number; y: number; type: string; level: number } | null): void {
-    if (selectedTower) {
-      const towerId = (selectedTower as { id?: string }).id ?? null;
-      if (towerId === this.lastSelectedTowerId && selectedTower.level === this.lastSelectedTowerLevel) {
-        return;
-      }
-      this.lastSelectedTowerId = towerId;
-      this.lastSelectedTowerLevel = selectedTower.level;
-      if (this.upgradeButtonEl) {
-        this.upgradeButtonEl.style.visibility = "visible";
-        const buttonX = selectedTower.x + TILE_SIZE / 2 - 12;
-        const buttonY = selectedTower.y - TILE_SIZE / 2 + 2;
-        this.upgradeButtonEl.setAttribute("transform", `translate(${buttonX}, ${buttonY})`);
+  private syncUpgradeButton(
+    selectedTower: { x: number; y: number; type: string; level: number } | null,
+    grid?: SplashGridQuery | null,
+  ): void {
+    const tower = selectedTower as {
+      x: number;
+      y: number;
+      type: string;
+      level: number;
+      id?: string;
+      tileX: number;
+      tileY: number;
+      stats?: { splash: number };
+    } | null;
+    if (tower) {
+      const towerId = tower.id ?? null;
+      const cached =
+        towerId !== null && towerId === this.lastSelectedTowerId && tower.level === this.lastSelectedTowerLevel;
+      if (!cached) {
+        this.lastSelectedTowerId = towerId;
+        this.lastSelectedTowerLevel = tower.level;
+        if (this.upgradeButtonEl) {
+          this.upgradeButtonEl.style.visibility = "visible";
+          const buttonX = tower.x + TILE_SIZE / 2 - 12;
+          const buttonY = tower.y - TILE_SIZE / 2 + 2;
+          this.upgradeButtonEl.setAttribute("transform", `translate(${buttonX}, ${buttonY})`);
 
-        if (this.upgradeButtonBgEl) {
-          this.upgradeButtonBgEl.setAttribute("x", "0");
-          this.upgradeButtonBgEl.setAttribute("y", "0");
-          this.upgradeButtonBgEl.setAttribute("width", "10");
-          this.upgradeButtonBgEl.setAttribute("height", "10");
+          if (this.upgradeButtonBgEl) {
+            this.upgradeButtonBgEl.setAttribute("x", "0");
+            this.upgradeButtonBgEl.setAttribute("y", "0");
+            this.upgradeButtonBgEl.setAttribute("width", "10");
+            this.upgradeButtonBgEl.setAttribute("height", "10");
+          }
+
+          if (this.upgradeButtonTextEl) {
+            this.upgradeButtonTextEl.setAttribute("x", "5");
+            this.upgradeButtonTextEl.setAttribute("y", "5");
+            this.upgradeButtonTextEl.textContent = "^";
+          }
         }
 
-        if (this.upgradeButtonTextEl) {
-          this.upgradeButtonTextEl.setAttribute("x", "5");
-          this.upgradeButtonTextEl.setAttribute("y", "5");
-          this.upgradeButtonTextEl.textContent = "^";
+        if (this.selectedTileRectEl) {
+          this.selectedTileRectEl.style.visibility = "visible";
+          const tileX = Math.floor(tower.x / TILE_SIZE) * TILE_SIZE + 1;
+          const tileY = Math.floor(tower.y / TILE_SIZE) * TILE_SIZE + 1;
+          this.selectedTileRectEl.setAttribute("transform", `translate(${tileX}, ${tileY})`);
+          this.selectedTileRectEl.setAttribute("width", String(TILE_SIZE - 2));
+          this.selectedTileRectEl.setAttribute("height", String(TILE_SIZE - 2));
+        }
+
+        if (this.rangeCircleEl) {
+          this.rangeCircleEl.style.visibility = "visible";
+          this.rangeCircleEl.setAttribute("transform", `translate(${tower.x}, ${tower.y})`);
+          const towerBase = TOWER_BASE[tower.type];
+          const baseRange = towerBase?.range ?? 3.5;
+          const rangeTiles = baseRange * TOWER_LEVEL_RANGE_MULT ** (tower.level - 1);
+          const rangePx = rangeTiles * TILE_SIZE;
+          this.rangeCircleEl.setAttribute("r", String(rangePx));
+          this.rangeCircleEl.setAttribute("stroke", "rgba(0,255,0,0.6)");
         }
       }
 
-      if (this.selectedTileRectEl) {
-        this.selectedTileRectEl.style.visibility = "visible";
-        const tileX = Math.floor(selectedTower.x / TILE_SIZE) * TILE_SIZE + 1;
-        const tileY = Math.floor(selectedTower.y / TILE_SIZE) * TILE_SIZE + 1;
-        this.selectedTileRectEl.setAttribute("transform", `translate(${tileX}, ${tileY})`);
-        this.selectedTileRectEl.setAttribute("width", String(TILE_SIZE - 2));
-        this.selectedTileRectEl.setAttribute("height", String(TILE_SIZE - 2));
-      }
-
-      if (this.rangeCircleEl) {
-        this.rangeCircleEl.style.visibility = "visible";
-        this.rangeCircleEl.setAttribute("transform", `translate(${selectedTower.x}, ${selectedTower.y})`);
-        const towerBase = TOWER_BASE[selectedTower.type];
-        const baseRange = towerBase?.range ?? 3.5;
-        const rangeTiles = baseRange * TOWER_LEVEL_RANGE_MULT ** (selectedTower.level - 1);
-        const rangePx = rangeTiles * TILE_SIZE;
-        this.rangeCircleEl.setAttribute("r", String(rangePx));
-        this.rangeCircleEl.setAttribute("stroke", "rgba(0,255,0,0.6)");
+      // Splash circle: recomputed every frame because its anchor depends on nearby
+      // path-tile occupancy, which changes when towers are built/sold around it.
+      const splashTiles = this.computeSplashRadiusTiles(tower.stats?.splash ?? 0);
+      if (this.splashCircleEl) {
+        if (splashTiles > 0) {
+          const anchor = (grid ? this.findSplashAnchor(grid, tower.tileX, tower.tileY) : null) ?? {
+            cx: tower.x,
+            cy: tower.y,
+          };
+          this.splashCircleEl.style.visibility = "visible";
+          this.splashCircleEl.setAttribute("transform", `translate(${anchor.cx}, ${anchor.cy})`);
+          this.splashCircleEl.setAttribute("r", String(splashTiles * TILE_SIZE));
+        } else {
+          this.splashCircleEl.style.visibility = "hidden";
+        }
       }
     } else {
       this.lastSelectedTowerId = null;
@@ -544,6 +646,9 @@ export class EffectManager {
     }
     if (this.buildRangeCircleEl?.parentNode) {
       this.buildRangeCircleEl.parentNode.removeChild(this.buildRangeCircleEl);
+    }
+    if (this.splashCircleEl?.parentNode) {
+      this.splashCircleEl.parentNode.removeChild(this.splashCircleEl);
     }
     if (this.upgradeButtonEl?.parentNode) {
       this.upgradeButtonEl.parentNode.removeChild(this.upgradeButtonEl);

@@ -145,6 +145,24 @@ describe("ProjectileManager", () => {
       const renderData = manager.getRenderData();
       expect(renderData[0]!.radius).toBe(3);
     });
+
+    it("uses the forwarded splash value for cannon instead of a hardcoded radius", () => {
+      manager.spawn({
+        x: 0,
+        y: 0,
+        damage: 10,
+        speed: 200,
+        range: 5,
+        towerType: "cannon",
+        towerLevel: 1,
+        targetId: 1,
+        splash: 0.5,
+      });
+
+      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
+      const proj = (manager as any).projectiles[0]!;
+      expect(proj.splashRadius).toBe(0.5);
+    });
   });
 
   describe("circle projectile update", () => {

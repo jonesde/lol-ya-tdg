@@ -37,6 +37,7 @@ import {
   TOWER_LEVEL_DMG_MULT,
   TOWER_LEVEL_RANGE_MULT,
   TOWER_LEVEL_RATE_MULT,
+  TOWER_LEVEL_SPLASH_MULT,
   TOWER_META,
   TOWER_VARIANTS,
   type TowerId,
@@ -409,7 +410,7 @@ export class Tower {
     let range = effectiveBase.range * TOWER_LEVEL_RANGE_MULT ** (level - 1);
     let damage = effectiveBase.damage * dmgMult;
     let fireRate = effectiveBase.fireRate * rateMult;
-    let splash = effectiveBase.splash || 0;
+    let splash = (effectiveBase.splash || 0) * TOWER_LEVEL_SPLASH_MULT ** (level - 1);
     let chain = effectiveBase.chain || 0;
     let stun = effectiveBase.stun || 0;
     let pierce = effectiveBase.pierce || 0;

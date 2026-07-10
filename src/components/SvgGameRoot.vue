@@ -395,6 +395,7 @@ function renderLoop(): void {
     selectedTower,
     buildPreviewValid.value,
     snapshot.meta.lastScaledDt,
+    gameStore.grid,
   );
   uiOverlayManager.syncFromGameEngine(snapshot.enemies, selectedTower);
   if (gameStore.grid) {

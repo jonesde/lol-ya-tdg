@@ -12,6 +12,7 @@ import {
   TOWER_LEVEL_DMG_MULT,
   TOWER_LEVEL_RANGE_MULT,
   TOWER_LEVEL_RATE_MULT,
+  TOWER_LEVEL_SPLASH_MULT,
   TOWER_META,
   UPGRADE_COST_BASE,
 } from "@/sim/Constants.js";
@@ -160,6 +161,13 @@ describe("Tower", () => {
     it("includes splash for cannon at level 1", () => {
       const tower = new Tower("cannon", 0, 0, makeSave(), makeMockGrid());
       expect(tower.stats.splash).toBe(TOWER_BASE.cannon.splash);
+    });
+
+    it("scales splash radius with tower level using TOWER_LEVEL_SPLASH_MULT", () => {
+      const tower = new Tower("cannon", 0, 0, makeSave(), makeMockGrid());
+      tower.level = 6;
+      const expectedSplash = (TOWER_BASE.cannon.splash ?? 0) * TOWER_LEVEL_SPLASH_MULT ** 5;
+      expect(tower.stats.splash).toBeCloseTo(expectedSplash, 4);
     });
 
     it("includes chain for lightning at level 1", () => {

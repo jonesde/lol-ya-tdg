@@ -322,11 +322,10 @@ export class ProjectileManager {
       projectile.burnDuration = NAPALM_BURN_DURATION;
     }
 
-    // Base splash radius: cannon has an inherent radius; other towers use the
-    // computed stats.splash (variant + Wide Blast addon). Take the max so a
-    // cannon's base radius is never lost.
-    const baseSplash = towerType === "cannon" ? 2 : 0;
-    projectile.splashRadius = Math.max(baseSplash, splash ?? 0);
+    // Splash radius comes from the computed stats.splash (base + per-level scaling
+    // + variant tier + addons), forwarded by Tower.fire. No hardcoded tower-type
+    // override, so the visual circle matches the real AoE damage.
+    projectile.splashRadius = splash ?? 0;
 
     if (towerType === "railgun") {
       projectile.maxHitCount = 1 + tier + (pierce ?? 0);

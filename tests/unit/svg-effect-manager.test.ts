@@ -225,6 +225,117 @@ describe("EffectManager", () => {
     });
   });
 
+  describe("splash damage circle", () => {
+    function splashCircle(): SVGCircleElement {
+      const circles = Array.from(layer.querySelectorAll("circle")) as SVGCircleElement[];
+      return circles.find((circle) => circle.getAttribute("stroke-dasharray") === "3,3")!;
+    }
+
+    function makeGrid(opts: { isPath: (x: number, y: number) => boolean; blocked?: Set<string> }): unknown {
+      return { isPath: opts.isPath, inBounds: () => true, blocked: opts.blocked ?? new Set<string>() };
+    }
+
+    it("creates a hidden dotted splash circle on init", () => {
+      const splash = splashCircle();
+      expect(splash).toBeTruthy();
+      expect(splash.style.visibility).toBe("hidden");
+      expect(splash.getAttribute("stroke-dasharray")).toBe("3,3");
+    });
+
+    it("hides the splash circle when nothing is selected or building", () => {
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      expect(splashCircle().style.visibility).toBe("hidden");
+    });
+
+    it("draws the splash circle one tile above the preview in build mode (cannon)", () => {
+      const buildTilePos = { tileX: 2, tileY: 3 };
+      manager.syncFromGameEngine(buildTilePos, "cannon", null, null, true, 1 / 60);
+      const splash = splashCircle();
+      expect(splash.style.visibility).toBe("visible");
+      // center of tile (2,3) is (90,126); splash sits one tile (36px) above -> y=90
+      expect(splash.getAttribute("transform")).toBe("translate(90, 90)");
+      // cannon base splash radius is 0.5 tiles -> r = 18
+      expect(splash.getAttribute("r")).toBe("18");
+    });
+
+    it("hides the splash circle in build mode for a no-splash tower", () => {
+      const buildTilePos = { tileX: 2, tileY: 3 };
+      manager.syncFromGameEngine(buildTilePos, "basic", null, null, true, 1 / 60);
+      expect(splashCircle().style.visibility).toBe("hidden");
+    });
+
+    it("anchors the splash circle on the nearest unoccupied path tile for a selected tower", () => {
+      const grid = makeGrid({ isPath: (x, y) => x === 3 && y === 2 });
+      const selectedTower = {
+        id: "t1",
+        x: 90,
+        y: 90,
+        type: "cannon",
+        level: 1,
+        tileX: 2,
+        tileY: 2,
+        stats: { splash: 0.5 },
+      } as unknown as { x: number; y: number; type: string; level: number };
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, grid as never);
+      const splash = splashCircle();
+      expect(splash.style.visibility).toBe("visible");
+      // nearest path tile is (3,2) -> center (126,90); tower tile (2,2) is avoided
+      expect(splash.getAttribute("transform")).toBe("translate(126, 90)");
+      expect(splash.getAttribute("r")).toBe("18");
+    });
+
+    it("falls back to the tower center when no path tile is reachable", () => {
+      const grid = makeGrid({ isPath: () => false });
+      const selectedTower = {
+        id: "t1",
+        x: 90,
+        y: 90,
+        type: "cannon",
+        level: 1,
+        tileX: 2,
+        tileY: 2,
+        stats: { splash: 0.5 },
+      } as unknown as { x: number; y: number; type: string; level: number };
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, grid as never);
+      const splash = splashCircle();
+      expect(splash.style.visibility).toBe("visible");
+      expect(splash.getAttribute("transform")).toBe("translate(90, 90)");
+    });
+
+    it("hides the splash circle for a selected no-splash tower", () => {
+      const grid = makeGrid({ isPath: (x) => x >= 3 });
+      const selectedTower = {
+        id: "t1",
+        x: 90,
+        y: 90,
+        type: "basic",
+        level: 1,
+        tileX: 2,
+        tileY: 2,
+        stats: { splash: 0 },
+      } as unknown as { x: number; y: number; type: string; level: number };
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, grid as never);
+      expect(splashCircle().style.visibility).toBe("hidden");
+    });
+
+    it("does not crash when grid is null for a selected tower", () => {
+      const selectedTower = {
+        id: "t1",
+        x: 90,
+        y: 90,
+        type: "cannon",
+        level: 1,
+        tileX: 2,
+        tileY: 2,
+        stats: { splash: 0.5 },
+      } as unknown as { x: number; y: number; type: string; level: number };
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, null);
+      const splash = splashCircle();
+      expect(splash.style.visibility).toBe("visible");
+      expect(splash.getAttribute("transform")).toBe("translate(90, 90)");
+    });
+  });
+
   describe("dispose()", () => {
     it("removes all pooled elements from the layer", () => {
       expect(layer.children.length).toBeGreaterThan(0);

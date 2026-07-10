@@ -81,6 +81,9 @@ export const TOWER_LEVEL_DMG_MULT = 1.8;
 export const TOWER_LEVEL_RATE_MULT = 1.4;
 // range multiplier per level: base * TOWER_LEVEL_RANGE_MULT^(level-1) (Tower.js)
 export const TOWER_LEVEL_RANGE_MULT = 1.1;
+// splash radius multiplier per level: base * TOWER_LEVEL_SPLASH_MULT^(level-1) (Tower.js)
+// applied before variant/addon multipliers so they stack on top, same as range.
+export const TOWER_LEVEL_SPLASH_MULT = 1.2;
 // upgrade cost: meta.cost * UPGRADE_COST_BASE^(nextLevel-2) (Tower.js)
 export const UPGRADE_COST_BASE = 2;
 // sell returns: totalInvested * SELL_VALUE_RATIO (Tower.js)
