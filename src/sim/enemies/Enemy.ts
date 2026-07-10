@@ -55,6 +55,19 @@ const BLOCKED_PROGRESS_FACTOR = 0.3;
 const BLOCKED_TIME = 0.15;
 const DETOUR_COOLDOWN = 0.4;
 
+// Pile-smoothing tuning. resolveCollisions applies a hard overlap/2 correction in a
+// single pass. A front enemy pinned on the base keep-out gets shoved laterally by the
+// press from behind and re-projected by the keep-out each frame, producing the "pushed
+// aside, then a back enemy fills the gap" popping. The hard correction is what gives the
+// pile its desired multi-tile overflow, so it is kept at 1.0; instead the front line is
+// stabilized by biasing the separation axis outward from the base, gated to pairs near
+// the base so the deeper pile keeps its true lateral normal (preserving spread + forward
+// progress into freed edge slots).
+const COLLISION_STIFFNESS = 1.0; // <1 softens per-frame correction (1 = current hard behavior)
+const COLLISION_ITERATIONS = 1; // resolve the spatial-hash pairs this many times per frame (cheap convergence)
+const COLLISION_RADIAL_BIAS = 0.5; // bias separation outward from the base so the front line rides the edge
+const COLLISION_RADIAL_RANGE = 1.5; // only front-line pairs within this many tiles of the base get the bias
+
 interface SlowEntry {
   eff: number;
   remaining: number;
@@ -991,76 +1004,98 @@ export class Enemy {
   // moveAngle).
   private resolveCollisions(enemyManager: EnemyManagerRef | null): void {
     if (!enemyManager) return;
-    enemyManager.forEachEnemyInRange(this.centerX, this.centerY, this.grid.tileSize, (other) => {
-      if (other === this) return;
-      const perpAx = -Math.sin(this.moveAngle);
-      const perpAy = Math.cos(this.moveAngle);
-      // A base-attacking enemy's pile is emergent: its separation moves the *centerline*
-      // so the 2-D stack gains real extent in the position that drives `currentTile()`
-      // and base-contact (its rendered lane offset is zeroed so it does not double-count).
-      // A path-following enemy keeps its centerline intact (its spread is purely visual via
-      // the lane offset) so path/tower logic and routing are undisturbed.
-      const thisAttacks = this.attackingBase;
-      const otherAttacks = other.attackingBase;
-      const ax = thisAttacks ? this.centerX : this.centerX + this.laneOffsetX;
-      const ay = thisAttacks ? this.centerY : this.centerY + this.laneOffsetY;
-      const bx = otherAttacks ? other.centerX : other.centerX + other.laneOffsetX;
-      const by = otherAttacks ? other.centerY : other.centerY + other.laneOffsetY;
-      const deltaX = bx - ax;
-      const deltaY = by - ay;
-      const dist = Math.hypot(deltaX, deltaY);
-      const overlap = this.radius + other.radius - dist;
-      if (overlap <= 0) return;
-      const separation = overlap / 2;
-      // Use the true inter-enemy contact normal as the separation axis. A base-attacking
-      // enemy's moveAngle points radially at the base and is recomputed every frame, so the
-      // per-enemy heading-perpendiculars diverge when clustered at the base and the pair is
-      // pushed along inconsistent, rotating axes (visible jitter). The shared normal keeps the
-      // cluster stable. Fall back to this enemy's perpendicular only when coincident (dist 0)
-      // so degenerate pairs still separate deterministically.
-      let normalX: number;
-      let normalY: number;
-      if (dist > 1e-6) {
-        normalX = deltaX / dist;
-        normalY = deltaY / dist;
-      } else {
-        normalX = perpAx;
-        normalY = perpAy;
-      }
-      let thisSign: number;
-      let otherSign: number;
-      if (this.speed < other.speed) {
-        thisSign = 1;
-        otherSign = -1;
-      } else if (this.speed > other.speed) {
-        thisSign = -1;
-        otherSign = 1;
-      } else if (this.id <= other.id) {
-        thisSign = 1;
-        otherSign = -1;
-      } else {
-        thisSign = -1;
-        otherSign = 1;
-      }
-      if (thisAttacks) {
-        this.centerX += separation * thisSign * normalX;
-        this.centerY += separation * thisSign * normalY;
-        this.laneOffsetX = 0;
-        this.laneOffsetY = 0;
-      } else {
-        this.laneOffsetX += separation * thisSign * normalX;
-        this.laneOffsetY += separation * thisSign * normalY;
-      }
-      if (otherAttacks) {
-        other.centerX += separation * otherSign * normalX;
-        other.centerY += separation * otherSign * normalY;
-        other.laneOffsetX = 0;
-        other.laneOffsetY = 0;
-      } else {
-        other.laneOffsetX += separation * otherSign * normalX;
-        other.laneOffsetY += separation * otherSign * normalY;
-      }
-    });
+    const base = this.grid.getBase();
+    const baseCenter = this.grid.tileToWorld(base.x, base.y);
+    for (let iter = 0; iter < COLLISION_ITERATIONS; iter++) {
+      enemyManager.forEachEnemyInRange(this.centerX, this.centerY, this.grid.tileSize, (other) => {
+        if (other === this) return;
+        const perpAx = -Math.sin(this.moveAngle);
+        const perpAy = Math.cos(this.moveAngle);
+        // A base-attacking enemy's pile is emergent: its separation moves the *centerline*
+        // so the 2-D stack gains real extent in the position that drives `currentTile()`
+        // and base-contact (its rendered lane offset is zeroed so it does not double-count).
+        // A path-following enemy keeps its centerline intact (its spread is purely visual via
+        // the lane offset) so path/tower logic and routing are undisturbed.
+        const thisAttacks = this.attackingBase;
+        const otherAttacks = other.attackingBase;
+        const ax = thisAttacks ? this.centerX : this.centerX + this.laneOffsetX;
+        const ay = thisAttacks ? this.centerY : this.centerY + this.laneOffsetY;
+        const bx = otherAttacks ? other.centerX : other.centerX + other.laneOffsetX;
+        const by = otherAttacks ? other.centerY : other.centerY + other.laneOffsetY;
+        const deltaX = bx - ax;
+        const deltaY = by - ay;
+        const dist = Math.hypot(deltaX, deltaY);
+        const overlap = this.radius + other.radius - dist;
+        if (overlap <= 0) return;
+        const separation = (overlap / 2) * COLLISION_STIFFNESS;
+        // Use the true inter-enemy contact normal as the separation axis. A base-attacking
+        // enemy's moveAngle points radially at the base and is recomputed every frame, so the
+        // per-enemy heading-perpendiculars diverge when clustered at the base and the pair is
+        // pushed along inconsistent, rotating axes (visible jitter). The shared normal keeps the
+        // cluster stable. Fall back to this enemy's perpendicular only when coincident (dist 0)
+        // so degenerate pairs still separate deterministically.
+        let normalX: number;
+        let normalY: number;
+        if (dist > 1e-6) {
+          normalX = deltaX / dist;
+          normalY = deltaY / dist;
+        } else {
+          normalX = perpAx;
+          normalY = perpAy;
+        }
+        // For front-line pairs near the base, bias the separation axis outward from the base so
+        // the front line rides the keep-out edge instead of sliding tangentially. The bias is
+        // gated to pairs whose midpoint is within COLLISION_RADIAL_RANGE tiles of the base center
+        // so the deeper pile keeps its true lateral normal — preserving the multi-tile overflow
+        // and letting a back enemy advance into a freed edge slot. Path-following (non-attacking)
+        // pairs keep the true normal so lane separation is unaffected.
+        if (thisAttacks || otherAttacks) {
+          const midOutX = (ax + bx) / 2 - baseCenter.x;
+          const midOutY = (ay + by) / 2 - baseCenter.y;
+          const midLen = Math.hypot(midOutX, midOutY) || 1;
+          if (midLen <= COLLISION_RADIAL_RANGE * this.grid.tileSize) {
+            const bX = normalX + (midOutX / midLen) * COLLISION_RADIAL_BIAS;
+            const bY = normalY + (midOutY / midLen) * COLLISION_RADIAL_BIAS;
+            const bLen = Math.hypot(bX, bY) || 1;
+            normalX = bX / bLen;
+            normalY = bY / bLen;
+          }
+        }
+        let thisSign: number;
+        let otherSign: number;
+        if (this.speed < other.speed) {
+          thisSign = 1;
+          otherSign = -1;
+        } else if (this.speed > other.speed) {
+          thisSign = -1;
+          otherSign = 1;
+        } else if (this.id <= other.id) {
+          thisSign = 1;
+          otherSign = -1;
+        } else {
+          thisSign = -1;
+          otherSign = 1;
+        }
+        if (thisAttacks) {
+          this.centerX += separation * thisSign * normalX;
+          this.centerY += separation * thisSign * normalY;
+          this.laneOffsetX = 0;
+          this.laneOffsetY = 0;
+        } else {
+          this.laneOffsetX += separation * thisSign * normalX;
+          this.laneOffsetY += separation * thisSign * normalY;
+        }
+        if (otherAttacks) {
+          other.centerX += separation * otherSign * normalX;
+          other.centerY += separation * otherSign * normalY;
+          other.laneOffsetX = 0;
+          other.laneOffsetY = 0;
+        } else {
+          other.laneOffsetX += separation * otherSign * normalX;
+          other.laneOffsetY += separation * otherSign * normalY;
+        }
+      });
+    }
   }
 
   // Returns the lowest-health adjacent live (non-ghost) tower this enemy is in
