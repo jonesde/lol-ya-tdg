@@ -157,6 +157,8 @@ function tick(): void {
         // Running (no command, not baseline) but main hasn't acked the last
         // snapshot → drop build+post. awaitingAck stays true; next tick re-checks.
         // Persist-flush is skipped too (still fires on forced posts / 5s fallback / dispose).
+        // Drain the particle spawn buffer so dropped ticks don't accumulate requests that
+        // would all burst onto the screen on the next posted snapshot.
         engine.particleSpawner?.consumeSpawns?.();
       } else {
         const snapshot = buildSnapshot(engine, lastAppliedCommandId);
@@ -306,6 +308,8 @@ self.onmessage = (event: MessageEvent<MainToWorkerMessage>) => {
         engine.dispose();
         engine = null;
       }
+      // Resolve any in-flight requestConfirm promises so a dispose (or worker
+      // termination) never leaves a dangling unresolved confirm.
       host.clearPendingConfirms();
       // Signal the main thread that it is safe to terminate — the final persist
       // flush (if any) has been posted. Fix #3.

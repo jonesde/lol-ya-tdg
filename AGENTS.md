@@ -6,7 +6,10 @@ Before doing any reqested task, if you have not already, always read `TECHNICAL.
 
 **Code Variable Name Rule**: Always use descriptive variable names with full words. Instead of 'ts' use a descriptive full-word form like 'tileSize' or 'timestamp' (both could be 'ts'). NEVER use a one letter variable name, instead use at least one full word.
 
-**Code Line Splitting Rule**: Target roughly 100 character lines. Use available line width for parameter lists, inline defined arrays/lists and objects/maps, and all other sequences of expressions within a single statement. Never put one short parameter/value per line. 
+**Code Line Splitting Rule**: Target roughly 100 character lines. Use available line width for parameter lists, inline defined arrays/lists and objects/maps, and all other sequences of expressions within a single statement.
+
+**Comments Rule**: Avoid adding comments. Let the code explain itself. Use comments to explain why/impact, never what the code does. When in doubt, don't comment.
+**Non-Local Exception**: Always comment when a side effect crosses an ownership/module boundary. For flow control side effects including function calls and flag/state/setting changes, comment on both context and impact.
 
 ## Search and Replace Workflow
 

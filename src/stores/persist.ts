@@ -222,6 +222,10 @@ export const usePersistStore = defineStore("persist", {
             this.$state = migrated;
             return;
           } catch (error) {
+            // A transient parse/migrate error must not clobber already-loaded
+            // good data (store already starts at defaults; a genuinely corrupt
+            // save still ends up at defaults via the initial state). Leave the
+            // current state untouched.
             const uiStore = useUiStore();
             uiStore.showNotification("Failed to load save - keeping current progress.");
             console.warn("persist.load failed; leaving state unchanged:", error);

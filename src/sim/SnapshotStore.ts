@@ -15,6 +15,9 @@ let latestSnapshot: SimulationSnapshot | null = null;
 // dot count so the accumulation never exceeds what can be displayed.
 let latestWaveGraphDots: WaveGraphDot[] = [];
 let latestWaveGraphGeneration = 0;
+// The monotonic GameEngine.runId that bumps on every reload. Used to detect a
+// new run so stale dots from a previous run don't leak into the new one even
+// when the generation-based reset (below) doesn't catch it cleanly.
 let lastWaveGraphRunId: number | null = null;
 
 export function getLatestSnapshot(): SimulationSnapshot | null {
@@ -105,6 +108,9 @@ export class SnapshotStore {
     const incoming = snapshot.waveGraphDots;
     if (incoming) {
       const incomingGeneration = snapshot.waveGraphDotsGeneration;
+      // A run change (engine reload bumps runId) must reset the accumulation so
+      // dots from a previous run never leak into the new one, even if the
+      // generation-based reset below doesn't catch it cleanly.
       const runId = snapshot.meta.runId ?? null;
       if (runId !== null && runId !== lastWaveGraphRunId) {
         latestWaveGraphDots = [];

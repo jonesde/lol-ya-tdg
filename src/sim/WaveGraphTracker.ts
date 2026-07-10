@@ -74,6 +74,8 @@ export class WaveGraphTracker {
       this._intervalMinLives = this.runState.lives;
     }
 
+    // Track the running max enemy-HP sum across the whole interval, not just the
+    // sum at flush time, so the recorded peak reflects any peak reached earlier.
     const currentEnemyHpSum = this._sumEnemyHp();
     if (currentEnemyHpSum > this._intervalPeakEnemyHp) {
       this._intervalPeakEnemyHp = currentEnemyHpSum;

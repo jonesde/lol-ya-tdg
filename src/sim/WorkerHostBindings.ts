@@ -50,6 +50,9 @@ export class WorkerHostBindings implements HostBindings {
     }
   }
 
+  // Resolves every pending confirm promise (with false) and clears the map.
+  // Called on dispose / worker termination so no confirm promise is left
+  // dangling forever when the worker can no longer receive a confirmResult.
   clearPendingConfirms(): void {
     for (const resolve of this.pendingConfirms.values()) {
       resolve(false);
