@@ -76,7 +76,7 @@
     },
     "cannon": {
       "name": "Junk Cannon",
-      "color": "#7a6a5a",
+      "color": "#5a4a3a",
       "icon": "◉",
       "animation": {
         "duration": 0.5,
