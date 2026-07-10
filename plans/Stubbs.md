@@ -38,6 +38,14 @@ the snapshot exposes `enemy.id: number`):
 - These are the *exact* command surface the eventual LLM will emit.
 
 ## 2. Engine wiring (`src/sim/applyCommand.ts` + `src/sim/GameEngine.ts`)
+- `GameEngine.ts`: extend the `WaveManagerRef` interface (lines 65-79) to expose the
+  fields the commander needs, keeping the interface narrow per the existing pattern
+  (avoid leaking the internal `WaveEntry` type):
+  - `active: boolean` — whether a wave has begun (set `true` in `startNextWave`).
+  - `getRemainingScheduledSpawns(): number` — returns `queue.length`, the count of
+    enemies still scheduled to spawn this wave. Implement on `WaveManager` alongside
+    the existing `active` field; the serializer reads
+    `engine.waveManager?.getRemainingScheduledSpawns() ?? 0`.
 - `applyCommand.ts`: implement the three `llm:*` cases (return `true` so the worker
   force-posts the snapshot). Each calls a new `GameEngine` method:
   - `applyCommanderHold(enemyIds, holdTile)` → `enemy.setHoldMode(holdTile)`
@@ -63,18 +71,31 @@ Add state + behavior, taking precedence over the default grid path:
 
 ## 4. Snapshot additions (for Stubbs' observation + wave-emergence detection)
 `src/sim/SimulationSnapshot.ts` + `src/sim/SnapshotSerializer.ts`:
-- **`gridLayout: number[][]`** posted on `grid.pathVersion` change (gated like `paths`):
-  `0=terrain, 1=path, 2=base, 3=spawn`, built from `engine.grid.tiles`. Satisfies the
-  "binary Path/Terrain map" requirement.
-- **`meta.remainingScheduledSpawns`** = `engine.waveManager.queue.length` (count of enemies
-  still scheduled to spawn this wave). This — not the overflow-only pending queue — is
-  the correct "entire wave emerged" signal. `pendingEnemyCount` (sum of
-  `getPendingCountForSpawn`) counts only the overflow queue (used when the render pool
-  is exhausted) and is `0` for almost every wave, so it alone cannot detect emergence.
-  Stubbs rushes when `remainingScheduledSpawns === 0` AND the overflow pending count
-  is `0` (i.e. every enemy is now active on the field, held by Stubbs).
-- **`meta.tileSize`** (always included) so Stubbs converts world `x/y` → tile coords with
-  the correct constant.
+- **`gridLayout: number[][]` (sent once per run, not every tick).** `gridLayout`
+  (`0=terrain, 1=path, 2=base, 3=spawn`, built from `engine.grid.tiles`) is constant
+  for a whole run — terrain tiles never change mid-run (only tower build/sell changes
+  `pathVersion`, which must **not** trigger a re-send). So gate it with a plain boolean,
+  not the `pathVersion` mechanism:
+  - Add `gridLayoutSent: boolean = false` to `GameEngine` (reset to `false` in
+    `_initMap` so a new run re-sends).
+  - In `buildSnapshot`, include `gridLayout` only when `!engine.gridLayoutSent`; on
+    first include, set `engine.gridLayoutSent = true`.
+  - Add `gridLayout: number[][] | undefined` to `SimulationSnapshot` (present on exactly
+    the first posted snapshot of a run; `undefined` thereafter).
+  - The relay forwards the slice as-is; **Commander Stubbs caches `gridLayout` in worker
+    `memory` on first receipt and reuses it for every later `buildObservation`** (it never
+    changes). This keeps the steady-state per-tick cost at zero.
+- **`meta.remainingScheduledSpawns`** = `engine.waveManager.getRemainingScheduledSpawns()`
+  (count of enemies still scheduled to spawn this wave, i.e. `queue.length`). This — not
+  the overflow-only pending queue — is the correct "entire wave emerged" signal.
+  `pendingEnemyCount` (sum of `getPendingCountForSpawn`) counts only the overflow queue
+  (used when the render pool is exhausted) and is `0` for almost every wave, so it alone
+  cannot detect emergence. Stubbs rushes when `remainingScheduledSpawns === 0` AND the
+  overflow pending count is `0` (i.e. every enemy is now active on the field, held by
+  Stubbs).
+- **`meta.tileSize`** = `engine.grid?.tileSize ?? 36` (read from `Grid`, **not**
+  `GameRunState` — `tileSize` lives on `Grid`, not on the run-state scalars). Always
+  included so Stubbs converts world `x/y` → tile coords with the correct constant.
 
 ## 5. Commander client — `src/commanders/` (own Web Worker, option B)
 Stubbs is a client of the sim, in his own worker. Layout:
@@ -106,27 +127,54 @@ Stubbs is a client of the sim, in his own worker. Layout:
 
 ### Observation JSON built in the worker (`buildObservation`)
 ```ts
+// In StubbsWorker.onmessage(observation): cache gridLayout once, then reuse it.
+if (slice.gridLayout) memory.gridLayout = slice.gridLayout;
+
+// buildObservation reads the cached gridLayout, not the per-tick slice:
 {
-  map: gridLayout,                       // 0=terrain,1=path,2=base,3=spawn
+  map: memory.gridLayout,                // cached; 0=terrain,1=path,2=base,3=spawn
   enemies: [{ id, tileX, tileY, level, hp, maxHp }],
   towers:  [{ tileX, tileY, level, hp, maxHp }],
-  wave: { currentWave, pendingEnemyCount, spawnStates }
+  wave: { currentWave, pendingEnemyCount, spawnStates, remainingScheduledSpawns, active }
 }
 ```
-World `x/y` are converted to tile coords inside the worker using `meta.tileSize`.
+`remainingScheduledSpawns` and `active` come from `meta` / `waveManager`; world `x/y`
+are converted to tile coords inside the worker using `meta.tileSize`.
 
 ### Strategy (`StubbsBrain.decide`) — state machine `idle → holding → rushing`, per wave
-- While spawning (`pendingEnemyCount > 0` or any spawn open): issue `llm:holdFormation`
-  for **newly-seen** enemy ids, holding each at its **current tile** (≈ near spawn),
-  tracked in the brain's `memory` set to avoid re-dispatching.
+- **Memory shape:** `memory` holds `phase: "idle" | "holding" | "rushing"`,
+  `seenByWave: Map<number, Set<number>>` (enemy ids seen, keyed by wave number — see
+  hardening below), `lastRushWaveNumber: number | null`, and the cached `gridLayout`.
+- While spawning (`pendingEnemyCount > 0` or `remainingScheduledSpawns > 0`): issue
+  `llm:holdFormation` for **newly-seen** enemy ids in the *current* wave, holding each
+  at its **current tile** (≈ near spawn), tracked in `seenByWave.get(currentWave)` to
+  avoid re-dispatching. New-wave enemy ids never leak into a previous wave's set.
 - Once `remainingScheduledSpawns === 0` **and** the overflow pending count is `0`
   (all enemies have emerged and are active on the field): issue one
-  `llm:routeGroup(enemyIds, [])` to release *all* to rush the base at once; record
-  `currentWave` so it doesn't re-fire.
+  `llm:routeGroup(enemyIds, [])` to release *only the current wave's* seen ids
+  (`seenByWave.get(currentWave)`) to rush the base at once; set
+  `memory.lastRushWaveNumber = currentWave` and clear that wave's set so it doesn't
+  re-fire.
   (Note: `spawnStates` only transitions to `closed` after the wave is fully cleared
   — too late for this trigger — so use `remainingScheduledSpawns` + overflow pending,
-  not `spawnStates`, to decide.)
-- On next wave (wave number change / new countdown): reset to `idle`.
+  not `spawnStates`, to decide. `wave.active` is included in the observation for
+  completeness/future use, but it is **not** a valid rush signal — `WaveManager.active`
+  is set `true` at wave start and never reset, so it stays `true` after wave 1 and
+  cannot distinguish "spawning" from "wave in progress".)
+- On next wave (wave number change / new countdown): reset to `idle` and create a fresh
+  `seenByWave` entry for the new wave.
+
+### Hardening: PRE_EMPTIVE_WAVE_TIMER race (feedback §8 #5)
+`PRE_EMPTIVE_WAVE_TIMER` (90 s) may start the next wave while Stubbs still holds the
+previous wave's enemies alive. The wave-number-keyed `seenByWave` set prevents the
+rush command from being diluted: the rush captures **only** `seenByWave.get(currentWave)`
+at fire time, so next-wave spillover enemies (which have a different wave number) are
+never folded into the released set. Furthermore, `remainingScheduledSpawns` becomes
+`> 0` the instant the next wave's queue is populated (`startNextWave` pushes the new
+queue immediately), so the rush trigger can never fire *after* new-wave enemies exist —
+the captured id set is always the held wave's enemies only. No separate "block
+re-enter idle" flag is needed; wave-number keying plus the `remainingScheduledSpawns`
+guard is sufficient.
 
 ## 6. UI — pause menu drop-down (`src/stores/ui.ts` + `src/components/PauseMenu.vue`)
 - `ui.ts`: add `enemyCommander: "none" | "stubbs"` (default `"none"`) + `setEnemyCommander(kind)`
@@ -139,11 +187,16 @@ World `x/y` are converted to tile coords inside the worker using `meta.tileSize`
 
 ## 7. Tests
 - `tests/unit/commanders/observation.test.ts`: `buildObservation` over a fake snapshot slice
-  → expected JSON shape (map codes, tile-coord conversion via tileSize, wave block).
+  → expected JSON shape (map codes from the **cached** `gridLayout` — present on the first
+  slice, `undefined` thereafter and reused from memory; tile-coord conversion via
+  `meta.tileSize`; `wave` block includes `remainingScheduledSpawns` and `active`).
 - `tests/unit/commanders/stubbs-brain.test.ts`: feed fake observations; assert the
   hold→rush transition (hold while `remainingScheduledSpawns > 0`, single release
   when `remainingScheduledSpawns === 0` and overflow pending is `0`), idempotent
-  re-dispatch, and per-wave reset. Pure-function tests, no worker.
+  re-dispatch, and per-wave reset. **Also assert the rush captures only the current
+  wave's seen ids when a wave boundary occurs (wave-number-keyed `seenByWave`), and
+  that the rush does not fire when `remainingScheduledSpawns > 0` (next-wave spillover
+  guard).** Pure-function tests, no worker.
 - `tests/unit/sim/enemy-routing.test.ts`: `setHoldMode` freezes advance; `setRoutePath`
   follows waypoints; empty-waypoint release reverts to default path / reaches base.
 - `tests/unit/sim/applyCommand.test.ts` (extend): `llm:*` commands no longer no-op and
@@ -183,9 +236,15 @@ World `x/y` are converted to tile coords inside the worker using `meta.tileSize`
   overflow-only `pendingEnemyCount` nor `spawnStates`.** `spawnStates` close only
   after a wave is fully cleared (too late); the overflow pending count is `0` for
   almost every wave. `remainingScheduledSpawns === 0` (plus overflow pending `0`)
-  is the correct "all enemies have emerged" test.
-- **`PRE_EMPTIVE_WAVE_TIMER`** may start the next wave while Stubbs is still holding
-  the previous wave's enemies alive. The per-wave reset (§5) handles this, but
-  verify the rush can fire before the next wave's spawns dilute the "seen" set.
+  is the correct "all enemies have emerged" test. `wave.active` is exposed for
+  completeness but is **not** a rush signal: `WaveManager.active` is set `true` at
+  wave start and never reset, so it stays `true` after wave 1.
+- **`gridLayout` is shipped once per run** (gated by a `gridLayoutSent` boolean, not
+  `pathVersion`) because terrain is run-constant; Stubbs caches it in worker memory.
+  No re-send on tower build/sell.
+- **`PRE_EMPTIVE_WAVE_TIMER` race (90 s) is mitigated by wave-number-keyed `seenByWave`
+  plus the `remainingScheduledSpawns` guard (see §5).** The rush captures only the
+  current wave's seen ids, and cannot fire once the next wave's queue is populated, so
+  spillover enemies are never folded into a released rush command.
 - All commander code (`src/commanders/`) depends on the sim only through the public seams:
   `getLatestSnapshot()`, `dispatchCommand`, and the `SimulationSnapshot`/`Command` types.
