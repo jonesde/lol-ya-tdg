@@ -259,7 +259,7 @@ export const TOTAL_MAPS = MAP_LEVELS.length;
 // ===== General Add-ons (Skill Tree) =====
 
 // gem costs per tier for each general add-on: [tier0, tier1, tier2]
-// extraHealth: +10, +20, +50 lives
+// extraHealth: +100, +300, +500 base health
 // startingGold: +50g, +100g, +200g
 // upgradeCostReduction: -10%, -25%, -50%
 // terrainHeightBonus: +5%, +10%, +20% per height level (1-4)
@@ -276,8 +276,8 @@ export const GENERAL_ADDON_GEM_COSTS = {
 
 export type GeneralAddonId = keyof typeof GENERAL_ADDON_GEM_COSTS;
 
-// slow healing per round values: +1, +2, +4 HP at wave start
-export const SLOW_HEALING_PER_ROUND = [1, 2, 4] as const;
+// slow healing per round values: +20, +50, +100 base health at wave start
+export const SLOW_HEALING_PER_ROUND = [20, 50, 100] as const;
 
 // gem cost per sell option sub-choice (one-time purchase, then free switching)
 export const SELL_OPTION_GEM_COST = 50;
@@ -301,9 +301,11 @@ export const UPGRADE_COST_REDUCTION_PCT = [0.1, 0.25, 0.5] as const;
 // tier values: 50, 100, 200
 export const STARTING_GOLD_BONUS = [50, 100, 200] as const;
 
-// starting health bonus per tier: flat lives added
-// tier values: 10, 20, 50 (total 100 if all 3 unlocked)
-export const STARTING_HEALTH_BONUS = [10, 20, 50] as const;
+// starting health bonus per tier: flat base health added
+// tier values: 100, 300, 500 (total 900 if all 3 unlocked; +100 base = 1000)
+export const STARTING_HEALTH_BONUS = [100, 300, 500] as const;
+
+export const STARTING_BASE_HEALTH = 100;
 
 // damage/speed milestone bonus per tier per 1M damage threshold
 // [damagePct, speedPct]

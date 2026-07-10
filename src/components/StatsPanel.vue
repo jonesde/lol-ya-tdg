@@ -68,8 +68,8 @@ const totalDamageDealt = computed(() => {
   return Math.round(total);
 });
 
-const startingLives = computed(() => gameStore.lives);
-const livesLost = computed(() => Math.max(0, startingLives.value - gameStore.lives));
+const startingLives = computed(() => gameStore.maxBaseHealth);
+const livesLost = computed(() => Math.max(0, startingLives.value - gameStore.baseHealth));
 const healingReceived = computed(() => 0);
 const goldEarned = computed(() => 0);
 const gemsEarned = computed(() => gameStore.runGemsEarned);

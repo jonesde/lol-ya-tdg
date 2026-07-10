@@ -29,8 +29,9 @@ describe("Map generation", () => {
           expect(path?.length).toBeGreaterThan(0);
           const pathTiles = path!;
           const last = pathTiles[pathTiles.length - 1];
-          expect(last.x).toBe(map.base.x);
-          expect(last.y).toBe(map.base.y);
+          const goalTiles = grid.getBaseGoalTiles();
+          const isBaseGoal = goalTiles.some((g) => g.x === last.x && g.y === last.y);
+          expect(isBaseGoal, `Map ${i}, spawn ${s} path should end on a base/perimeter tile`).toBe(true);
         }
       }
     });
@@ -370,8 +371,9 @@ describe("Map generation", () => {
           expect(path?.length).toBeGreaterThan(0);
           const pathTiles = path!;
           const last = pathTiles[pathTiles.length - 1];
-          expect(last.x).toBe(map.base.x);
-          expect(last.y).toBe(map.base.y);
+          const goalTiles = grid.getBaseGoalTiles();
+          const isBaseGoal = goalTiles.some((g) => g.x === last.x && g.y === last.y);
+          expect(isBaseGoal, `Map ${i}, spawn ${s} path should end on a base/perimeter tile`).toBe(true);
         }
       }
     });

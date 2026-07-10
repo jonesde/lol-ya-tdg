@@ -166,7 +166,8 @@ export class SnapshotStore {
     // Diff-and-write — only update fields that changed, to minimize Vue
     // reactivity overhead. Pinia reactivity is fine-grained per field.
     if (gs.gold !== meta.gold) gs.gold = meta.gold;
-    if (gs.lives !== meta.lives) gs.lives = meta.lives;
+    if (gs.baseHealth !== meta.baseHealth) gs.baseHealth = meta.baseHealth;
+    if (gs.maxBaseHealth !== meta.maxBaseHealth) gs.maxBaseHealth = meta.maxBaseHealth;
     if (gs.currentWave !== meta.currentWave) gs.currentWave = meta.currentWave;
     if (gs.waveCountdown !== meta.waveCountdown) gs.waveCountdown = meta.waveCountdown;
     if (gs.timeScale !== meta.timeScale) gs.timeScale = meta.timeScale;

@@ -43,7 +43,7 @@ describe("GameHud", () => {
   it("displays current lives", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountGameHud();
-    gameStore.lives = 15;
+    gameStore.baseHealth = 15;
     const wrapper = mount(GameHud, { global: { plugins: [pinia] } });
     expect(wrapper.text()).toContain("15");
   });

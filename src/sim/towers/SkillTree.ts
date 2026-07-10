@@ -300,11 +300,11 @@ export const GENERAL_ADDON_DEFS: Record<string, GeneralAddonDef> = {
   extraHealth: {
     key: "extraHealth",
     label: "Extra Health",
-    desc: "Gain bonus lives at the start of each run.",
+    desc: "Gain bonus health at the start of each run.",
     tiers: [
-      { label: "+10", desc: "Start with +10 lives." },
-      { label: "+20", desc: "Start with +20 lives." },
-      { label: "+50", desc: "Start with +50 lives." },
+      { label: "+100", desc: "Start with +100 health." },
+      { label: "+300", desc: "Start with +300 health." },
+      { label: "+500", desc: "Start with +500 health." },
     ],
     costs: GENERAL_ADDON_GEM_COSTS.extraHealth,
   },
@@ -324,9 +324,9 @@ export const GENERAL_ADDON_DEFS: Record<string, GeneralAddonDef> = {
     label: "Slow Healing",
     desc: "Restore health at the start of each round.",
     tiers: [
-      { label: "+1/round", desc: "Regenerate 1 HP per wave." },
-      { label: "+2/round", desc: "Regenerate 2 HP per wave." },
-      { label: "+4/round", desc: "Regenerate 4 HP per wave." },
+      { label: "+20/round", desc: "Regenerate 20 base health per wave." },
+      { label: "+50/round", desc: "Regenerate 50 base health per wave." },
+      { label: "+100/round", desc: "Regenerate 100 base health per wave." },
     ],
     costs: GENERAL_ADDON_GEM_COSTS.slowHealing,
   },

@@ -14,10 +14,17 @@ export interface GridShape {
   isSpawn(x: number, y: number): boolean;
 }
 
-export function bfsShortestPath(grid: GridShape, start: Point, goal: Point, blocked: Set<string>): Point[] | null {
+export function bfsShortestPath(
+  grid: GridShape,
+  start: Point,
+  goal: Point | Point[],
+  blocked: Set<string>,
+): Point[] | null {
   const W = grid.width;
   const H = grid.height;
   const key = (x: number, y: number): string => `${x},${y}`;
+  const goals = Array.isArray(goal) ? goal : [goal];
+  const isGoalTile = (x: number, y: number): boolean => goals.some((g) => g.x === x && g.y === y);
   const queue: Point[] = [{ x: start.x, y: start.y }];
   // Map keys are "x,y" strings, values are structured {x,y} parent references (or null for start)
   const prev = new Map<string, Point | null>();
@@ -30,9 +37,11 @@ export function bfsShortestPath(grid: GridShape, start: Point, goal: Point, bloc
   ];
   let head = 0;
 
+  if (isGoalTile(start.x, start.y)) return [{ x: start.x, y: start.y }];
+
   while (head < queue.length) {
     const { x: centerX, y: centerY } = queue[head++]!;
-    if (centerX === goal.x && centerY === goal.y) {
+    if (isGoalTile(centerX, centerY)) {
       // reconstruct path by following structured parent references
       const path: Point[] = [];
       let cur: Point | null = { x: centerX, y: centerY };
@@ -168,13 +177,15 @@ interface HeapNode {
 export function dijkstraWeakestPath(
   grid: GridShape,
   start: Point,
-  goal: Point,
+  goal: Point | Point[],
   towerHealthAt: (x: number, y: number) => number | undefined,
   isGhostAt: (x: number, y: number) => boolean,
 ): Point[] | null {
   const W = grid.width;
   const H = grid.height;
   const key = (x: number, y: number): string => `${x},${y}`;
+  const goals = Array.isArray(goal) ? goal : [goal];
+  const isGoalTile = (x: number, y: number): boolean => goals.some((g) => g.x === x && g.y === y);
   const dist = new Map<string, number>();
   const prev = new Map<string, Point | null>();
   const bestEdge = new Map<string, number>();
@@ -193,6 +204,7 @@ export function dijkstraWeakestPath(
   // means that among two equal-total-dist routes the path whose final edge crosses the
   // weaker tile is recorded first.
   const heap: HeapNode[] = [{ key: startKey, x: start.x, y: start.y, dist: 0, edgeWeight: 0 }];
+  let reached: { x: number; y: number } | null = null;
   while (heap.length > 0) {
     let minIndex = 0;
     for (let i = 1; i < heap.length; i++) {
@@ -205,7 +217,10 @@ export function dijkstraWeakestPath(
     }
     const current = heap.splice(minIndex, 1)[0]!;
     const curKey = current.key;
-    if (current.x === goal.x && current.y === goal.y) break;
+    if (isGoalTile(current.x, current.y)) {
+      reached = { x: current.x, y: current.y };
+      break;
+    }
     const recorded = dist.get(curKey);
     if (recorded !== undefined && current.dist > recorded) continue;
     for (const [deltaX, deltaY] of dirs) {
@@ -235,10 +250,9 @@ export function dijkstraWeakestPath(
       }
     }
   }
-  const goalKey = key(goal.x, goal.y);
-  if (!prev.has(goalKey)) return null;
+  if (!reached) return null;
   const path: Point[] = [];
-  let cur: Point | null = { x: goal.x, y: goal.y };
+  let cur: Point | null = reached;
   while (cur) {
     path.unshift(cur);
     cur = prev.get(key(cur.x, cur.y)) ?? null;

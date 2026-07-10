@@ -400,6 +400,7 @@ function renderLoop(): void {
   uiOverlayManager.syncFromGameEngine(snapshot.enemies, selectedTower);
   if (gameStore.grid) {
     uiOverlayManager.syncPendingQueueOverlays(gameStore.grid, snapshot.spawnStates);
+    uiOverlayManager.syncBaseHealthBar(gameStore.grid, snapshot.meta.baseHealth, snapshot.meta.maxBaseHealth);
   }
   spawnManager.sync(snapshot.spawnStates);
   // Imperative path highlights — appended to grid-layer, not Vue-managed.

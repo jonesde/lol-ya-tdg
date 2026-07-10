@@ -49,7 +49,7 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(snap.lastAppliedCommandId).toBe(7);
     expect(snap.frameId).toBeGreaterThan(0);
     expect(snap.meta.gold).toBe(engine.runState.gold);
-    expect(snap.meta.lives).toBe(engine.runState.lives);
+    expect(snap.meta.baseHealth).toBe(engine.runState.baseHealth);
     expect(snap.meta.mapIndex).toBe(0);
     expect(snap.towers.length).toBe(1);
     expect(snap.enemies.length).toBe(1);

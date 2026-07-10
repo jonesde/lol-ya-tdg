@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { GameState, StartingGold } from "@/sim/Constants.js";
+import { GameState, STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
 import type { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
@@ -76,7 +76,8 @@ interface GameStateShape {
   mapIndex: number;
   map: GeneratedMap | null;
   grid: Grid | null;
-  lives: number;
+  baseHealth: number;
+  maxBaseHealth: number;
   gold: number;
   currentWave: number;
   waveCountdown: { remaining: number; nextWave: number } | null;
@@ -110,7 +111,8 @@ export const useGameStore = defineStore("game", {
     mapIndex: -1,
     map: null,
     grid: null,
-    lives: 20,
+    baseHealth: 20,
+    maxBaseHealth: STARTING_BASE_HEALTH,
     gold: 0,
     currentWave: 0,
     waveCountdown: null,
@@ -159,8 +161,8 @@ export const useGameStore = defineStore("game", {
       this.gold = amount;
     },
 
-    loseLives(amount: number) {
-      this.lives -= amount;
+    damageBase(amount: number) {
+      this.baseHealth -= amount;
     },
 
     setWave(wave: number) {
@@ -211,7 +213,8 @@ export const useGameStore = defineStore("game", {
       this.map = mapData;
       this.grid = grid;
       this.state = GameState.PLAYING;
-      this.lives = 20;
+      this.baseHealth = STARTING_BASE_HEALTH;
+      this.maxBaseHealth = STARTING_BASE_HEALTH;
       this.gold = StartingGold[mapData.regionId]!;
       this.currentWave = 0;
       this.runGemsEarned = 0;
@@ -278,7 +281,8 @@ export const useGameStore = defineStore("game", {
       this.mapIndex = -1;
       this.map = null;
       this.grid = null;
-      this.lives = 20;
+      this.baseHealth = STARTING_BASE_HEALTH;
+      this.maxBaseHealth = STARTING_BASE_HEALTH;
       this.gold = 0;
       this.currentWave = 0;
       this.timeScale = 1;

@@ -15,6 +15,11 @@ export function resetEnemyId() {
   nextId = 1;
 }
 
+export interface AttackTarget {
+  takeDamage(amount: number, attacker?: Enemy): void;
+  readonly isGhost: boolean;
+}
+
 // Returns the index in `path` whose tile is closest to `tile`, searching forward
 // from `fromIndex` so the result is never behind the caller's current progress.
 // Used by both applyRoute (custom commander routes) and reanchorToPath (grid
@@ -139,6 +144,10 @@ export class Enemy {
   moveAngle!: number;
   // Tower the enemy is currently attacking/blocked by (live, non-ghost), or null.
   blockedByTower: Tower | null = null;
+  // True once the enemy has reached the base and is now attacking it (does not despawn).
+  attackingBase: boolean = false;
+  // The base attack target, wired by the EnemyManager/engine. Null until set at spawn.
+  baseTarget: AttackTarget | null = null;
   // Attack ability (scaled per Phase 0; damage scales with wave/level like HP).
   attackDamage: number = 0;
   attackSpeed: number = 0;
@@ -177,6 +186,7 @@ export class Enemy {
     difficultyTick: number = 0,
     theme: MapThemeData | null = null,
     defaultVisual: EnemyVisualMeta | null = null,
+    baseTarget: AttackTarget | null = null,
   ) {
     const meta = ENEMY_TYPES[type] as unknown as EnemyMetaRef;
     this.id = nextId++;
@@ -209,6 +219,7 @@ export class Enemy {
     this.attackSpeed = meta.attackSpeed;
     this.attackTimer = 0;
     this.blockedByTower = null;
+    this.baseTarget = baseTarget;
 
     this.spawnIndex = spawnIndex;
     this.grid = grid;
@@ -528,8 +539,7 @@ export class Enemy {
     }
     if (!this.path || this.pathIdx >= this.path.length - 1) {
       if (this.routingMode === "default") {
-        this.reachedBase = true;
-        return;
+        this.attackingBase = true;
       }
       if (this.routingMode === "hold") {
         // Stay put at the hold tile; the attack resolution below still runs so a
@@ -576,7 +586,7 @@ export class Enemy {
         : null;
     const liveForwardTower = forwardTower && !forwardTower.isGhost ? forwardTower : null;
 
-    let attackTarget: Tower | null = null;
+    let attackTarget: Tower | AttackTarget | null = null;
     let moveMode: "walk" | "approach" = "walk";
 
     if (liveForwardTower && nextTile) {
@@ -597,6 +607,10 @@ export class Enemy {
       } else {
         this.blockedByTower = null;
       }
+    }
+
+    if (this.attackingBase && this.baseTarget) {
+      attackTarget = this.baseTarget;
     }
 
     // Advance only the path centerline; x/y are derived after collision resolution.
@@ -632,6 +646,24 @@ export class Enemy {
       } else {
         this.centerX = towerCenter.x;
         this.centerY = towerCenter.y;
+      }
+    } else if (this.attackingBase) {
+      const baseTile = this.grid.getBase();
+      const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
+      const deltaX = baseCenter.x - this.centerX;
+      const deltaY = baseCenter.y - this.centerY;
+      const dist = Math.hypot(deltaX, deltaY);
+      const contactDistance = this.grid.tileSize / 2 + this.radius;
+      const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
+      this.moveAngle = Math.atan2(deltaY, deltaX);
+      if (dist > contactDistance) {
+        if (step < dist) {
+          this.centerX += (deltaX / dist) * step;
+          this.centerY += (deltaY / dist) * step;
+        } else {
+          this.centerX = baseCenter.x;
+          this.centerY = baseCenter.y;
+        }
       }
     }
 

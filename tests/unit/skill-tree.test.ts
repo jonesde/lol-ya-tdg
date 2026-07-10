@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
 import {
   canRefund,
+  GENERAL_ADDON_DEFS,
   getGeneralAddonValue,
   isAvailable,
   isGeneralAvailable,
@@ -532,6 +533,20 @@ describe("SkillTree — General Add-ons", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "sellOption", 0);
       expect(getGeneralAddonValue(save, "sellOption")).toBe("refund");
+    });
+  });
+
+  describe("general addon labels", () => {
+    it("extraHealth tier labels are +100/+300/+500", () => {
+      const tiers = GENERAL_ADDON_DEFS.extraHealth.tiers;
+      expect(tiers.map((tier) => tier.label)).toEqual(["+100", "+300", "+500"]);
+      expect(GENERAL_ADDON_DEFS.extraHealth.costs).toBe(GENERAL_ADDON_GEM_COSTS.extraHealth);
+    });
+
+    it("slowHealing tier labels are +20/round/+50/round/+100/round", () => {
+      const tiers = GENERAL_ADDON_DEFS.slowHealing.tiers;
+      expect(tiers.map((tier) => tier.label)).toEqual(["+20/round", "+50/round", "+100/round"]);
+      expect(GENERAL_ADDON_DEFS.slowHealing.costs).toBe(GENERAL_ADDON_GEM_COSTS.slowHealing);
     });
   });
 });

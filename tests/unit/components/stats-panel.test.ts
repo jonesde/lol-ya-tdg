@@ -81,7 +81,8 @@ function makeSnapshot(frameId: number, towers: TowerSnapshot[], enemies: unknown
     meta: {
       state: "playing",
       mapIndex: 0,
-      lives: 20,
+      baseHealth: 20,
+      maxBaseHealth: 100,
       gold: 100,
       currentWave: 1,
       waveCountdown: null,

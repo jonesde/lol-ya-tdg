@@ -1,7 +1,14 @@
 // @ts-nocheck
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
-import { FIXED_DT, GameState, STARTING_GOLD_BONUS, STARTING_HEALTH_BONUS, StartingGold } from "@/sim/Constants.js";
+import {
+  FIXED_DT,
+  GameState,
+  STARTING_BASE_HEALTH,
+  STARTING_GOLD_BONUS,
+  STARTING_HEALTH_BONUS,
+  StartingGold,
+} from "@/sim/Constants.js";
 import { TOWER_META } from "@/sim/ConstantsTower.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import {
@@ -68,11 +75,11 @@ describe("Integration: Single Wave Simulation", () => {
   it("player loses lives when enemies reach base", () => {
     engine.waveManager?.startNextWave();
 
-    const livesBefore = engine.runState.lives;
+    const livesBefore = engine.runState.baseHealth;
     runTicks(engine, 1200);
 
     if (engine.runState.state !== GameState.GAME_OVER) {
-      expect(engine.runState.lives).toBeLessThanOrEqual(livesBefore);
+      expect(engine.runState.baseHealth).toBeLessThanOrEqual(livesBefore);
     }
   });
 
@@ -213,6 +220,6 @@ describe("Integration: Economy Flow", () => {
     newEngine.loadMap(0);
 
     expect(newEngine.runState.gold).toBe(StartingGold[0] + STARTING_GOLD_BONUS[0]);
-    expect(newEngine.runState.lives).toBe(20 + STARTING_HEALTH_BONUS[0]);
+    expect(newEngine.runState.baseHealth).toBe(STARTING_BASE_HEALTH + STARTING_HEALTH_BONUS[0]);
   });
 });

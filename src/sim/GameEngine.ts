@@ -1,6 +1,6 @@
 import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
 import type { DebugKind } from "@/sim/Command.js";
-import type { Enemy } from "@/sim/enemies/Enemy.js";
+import type { AttackTarget, Enemy } from "@/sim/enemies/Enemy.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import type { GameRunState } from "@/sim/GameRunState.js";
@@ -8,8 +8,8 @@ import {
   addGold,
   createFreshGemBreakdown,
   cycleTimeScale,
+  damageBase,
   hasClaimedMilestoneRun,
-  loseLives,
   setGameState,
   setGold,
   setHoverTile,
@@ -43,7 +43,6 @@ import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";
 import { WaveManager } from "@/sim/waves/WaveManager.js";
 import {
   BONUS_GEM_BASE,
-  BOSS_LIFE_LOSS,
   BOUNTY_BLOCKED_RATIO,
   DIFFICULTY_MULT_GEM_BASE,
   GameState,
@@ -53,6 +52,7 @@ import {
   SELL_DISCOUNT_PCT,
   SELL_VALUE_RATIO,
   SLOW_HEALING_PER_ROUND,
+  STARTING_BASE_HEALTH,
   STARTING_GOLD_BONUS,
   STARTING_HEALTH_BONUS,
   StartingGold,
@@ -94,7 +94,7 @@ export class GameEngine {
   _accumulator: number;
   totalGoldEarned: number;
   totalHealingReceived: number;
-  startingLives: number;
+  maxBaseHealth: number;
   waveTopTowers: { tower: Tower; rank: number; dmg: number; startTime: number }[] | null;
   lastScaledDt: number = 0;
   // Path-version gate for snapshot serialization: the last grid.pathVersion we
@@ -154,7 +154,7 @@ export class GameEngine {
 
     this.totalGoldEarned = 0;
     this.totalHealingReceived = 0;
-    this.startingLives = 20;
+    this.maxBaseHealth = STARTING_BASE_HEALTH;
     this.waveTopTowers = null;
     this.gameEnded = false;
   }
@@ -188,7 +188,8 @@ export class GameEngine {
       mapIndex,
       map: mapData,
       grid: null,
-      lives: 20,
+      baseHealth: STARTING_BASE_HEALTH,
+      maxBaseHealth: STARTING_BASE_HEALTH,
       gold: 0,
       currentWave: 0,
       waveCountdown: null,
@@ -234,6 +235,7 @@ export class GameEngine {
     );
     this.projectileManager.setTowerLookup((towerId) => this.towerManager?.getTowerById(towerId) ?? null);
     this.enemyManager.setTowerManager(this.towerManager);
+    this.enemyManager.baseTarget = new BaseTarget(this);
     this.grid.towerLookup = {
       towerAt: (tileX: number, tileY: number) => this.towerManager?.towerAt(tileX, tileY) ?? null,
     };
@@ -264,10 +266,10 @@ export class GameEngine {
 
     const ehTier = generalAddons.extraHealth;
     if (ehTier !== null && ehTier !== undefined) {
-      this.runState.lives += STARTING_HEALTH_BONUS[ehTier] || 0;
+      this.runState.baseHealth += STARTING_HEALTH_BONUS[ehTier] || 0;
     }
 
-    this.startingLives = this.runState.lives;
+    this.maxBaseHealth = this.runState.baseHealth;
 
     const sgTier = generalAddons.startingGold;
     if (sgTier !== null && sgTier !== undefined) {
@@ -322,30 +324,29 @@ export class GameEngine {
 
     this.projectileManager?.update(dt);
 
-    this.enemyManager.update(dt, (enemy) => {
-      if (enemy.reachedBase) {
-        loseLives(this.runState, enemy.type === "boss" ? BOSS_LIFE_LOSS : 1);
-        enemy.removed = true;
+    this.enemyManager.update(
+      dt,
+      (enemy) => {
+        if (enemy.removed) {
+          if (enemy.type === "boss") {
+            this.onBossKilled();
+          }
+          if (enemy.onPathBlocked) {
+            const bounty = Math.ceil((ENEMY_TYPES[enemy.type]?.bounty || 1) * BOUNTY_BLOCKED_RATIO);
+            this.waveGraphTracker?.onGoldBounty(bounty);
+            this.earnGold(bounty);
+          } else {
+            this.onEnemyKill(enemy);
+          }
+        }
+      },
+      (enemy) => {
         this.waveManager!.baseReached = true;
         if (enemy.type === "boss") {
           this.runState.bossesReachedBaseThisRun++;
         }
-        this.host.playSound("base_hit");
-        if (this.runState.lives <= 0) {
-          this.shouldEndGame = true;
-          return;
-        }
-      } else if (enemy.type === "boss") {
-        this.onBossKilled();
-        this.onEnemyKill(enemy);
-      } else if (enemy.onPathBlocked) {
-        const bounty = Math.ceil((ENEMY_TYPES[enemy.type]?.bounty || 1) * BOUNTY_BLOCKED_RATIO);
-        this.waveGraphTracker?.onGoldBounty(bounty);
-        this.earnGold(bounty);
-      } else {
-        this.onEnemyKill(enemy);
-      }
-    });
+      },
+    );
 
     this.towerManager.update(dt, this.enemyManager);
 
@@ -482,10 +483,10 @@ export class GameEngine {
     const healTier = generalAddons.slowHealing;
     if (healTier !== null && healTier !== undefined) {
       const healAmount = SLOW_HEALING_PER_ROUND[healTier] || 0;
-      if (this.runState.lives < this.startingLives) {
-        const before = this.runState.lives;
-        this.runState.lives = Math.min(this.runState.lives + healAmount, this.startingLives);
-        this.totalHealingReceived += this.runState.lives - before;
+      if (this.runState.baseHealth < this.maxBaseHealth) {
+        const before = this.runState.baseHealth;
+        this.runState.baseHealth = Math.min(this.runState.baseHealth + healAmount, this.maxBaseHealth);
+        this.totalHealingReceived += this.runState.baseHealth - before;
       }
     }
   }
@@ -499,6 +500,15 @@ export class GameEngine {
   earnGold(amount: number): void {
     this.totalGoldEarned += amount;
     addGold(this.runState, amount);
+  }
+
+  damageBase(amount: number): void {
+    damageBase(this.runState, amount);
+    if (this.runState.baseHealth <= 0) {
+      this.runState.baseHealth = 0;
+      this.shouldEndGame = true;
+    }
+    this.host.playSound("base_hit");
   }
 
   endGame(victory: boolean): void {
@@ -746,8 +756,8 @@ export class GameEngine {
       case "addGold":
         setGold(this.runState, this.runState.gold + (amount ?? 0));
         break;
-      case "addLives":
-        this.runState.lives = Math.max(0, Math.min(99, this.runState.lives + (amount ?? 0)));
+      case "addBaseHealth":
+        this.runState.baseHealth = Math.max(0, Math.min(this.maxBaseHealth, this.runState.baseHealth + (amount ?? 0)));
         break;
       case "addGems":
         this.persistState.gems += amount ?? 0;
@@ -911,5 +921,27 @@ export class GameEngine {
       this.runState.selectedTowerType = null;
       setHoverTile(this.runState, null);
     }
+  }
+}
+
+class BaseTarget implements AttackTarget {
+  private engine: GameEngine;
+  readonly isGhost = false;
+  constructor(engine: GameEngine) {
+    this.engine = engine;
+  }
+  takeDamage(amount: number, _attacker?: Enemy): void {
+    this.engine.damageBase(amount);
+  }
+  get centerX(): number {
+    const base = this.engine.grid?.getBase();
+    return base ? this.engine.grid!.tileToWorld(base.x, base.y).x : 0;
+  }
+  get centerY(): number {
+    const base = this.engine.grid?.getBase();
+    return base ? this.engine.grid!.tileToWorld(base.x, base.y).y : 0;
+  }
+  get health(): number {
+    return this.engine.runState.baseHealth;
   }
 }

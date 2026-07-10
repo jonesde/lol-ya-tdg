@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { getMapDisplayName } from "@/sim/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
@@ -13,6 +13,10 @@ const uiStore = useUiStore();
 const themeStore = useMapThemeStore();
 
 const notificationVisible = ref(false);
+
+const baseHealthRatio = computed(() =>
+  gameStore.maxBaseHealth > 0 ? gameStore.baseHealth / gameStore.maxBaseHealth : 0,
+);
 
 let checkInterval: number | null = null;
 
@@ -86,9 +90,9 @@ watch(
         <span class="hud-label map-title">{{ getMapDisplayName(gameStore.map, themeStore.activeTheme) }}</span>
       </div>
       <div class="hud-center">
-        <span class="hud-stat lives" :class="{ warning: gameStore.lives <= 10 && gameStore.lives > 5, critical: gameStore.lives <= 5 }">
+        <span class="hud-stat lives" :class="{ warning: baseHealthRatio <= 0.5 && baseHealthRatio > 0.25, critical: baseHealthRatio <= 0.25 }">
           <span class="hud-icon">♥</span>
-          <span class="hud-value">{{ gameStore.lives }}</span>
+          <span class="hud-value">{{ gameStore.baseHealth }}</span>
         </span>
         <span class="hud-stat gold">
           <span class="hud-icon">🪙</span>

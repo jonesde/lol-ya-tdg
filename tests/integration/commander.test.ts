@@ -111,13 +111,13 @@ describe("Integration: real commander worker round-trip (stubby)", () => {
     expect(rushCommands.length).toBeGreaterThan(0);
 
     // After release, the enemies revert to default and advance to the base.
-    const livesBefore = engine.runState.lives;
+    const livesBefore = engine.runState.baseHealth;
     for (let tick = 0; tick < 2000; tick++) engine.update(FIXED_DT);
     const advanced = engine.getEnemiesByIds([heldId])[0];
     // Either the held enemy reached the base (removed) or lives dropped as the
     // wave rushed in, proving they left their hold and advanced.
     const reachedBase = advanced === undefined || advanced.reachedBase;
-    expect(reachedBase || engine.runState.lives < livesBefore).toBe(true);
+    expect(reachedBase || engine.runState.baseHealth < livesBefore).toBe(true);
 
     mockSelf.onmessage!({ data: { type: "stop" } });
   });

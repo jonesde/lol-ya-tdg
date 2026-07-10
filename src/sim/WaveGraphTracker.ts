@@ -34,7 +34,7 @@ export class WaveGraphTracker {
   private _intervalPeakEnemyHp: number = 0;
   private _intervalGold: number = 0;
   private _intervalGems: number = 0;
-  private _intervalMinLives: number = 0;
+  private _intervalMinBaseHealth: number = 0;
   private _waveStartThisInterval: boolean = false;
   private _lastKnownWave: number = 0;
   // Bumped whenever the dots array changes shape (push or front-trim) so the
@@ -57,7 +57,7 @@ export class WaveGraphTracker {
     this._maxDots = Math.ceil(this._containerWidth / WAVE_GRAPH_DOT_SPACING);
     this._prevTotalDamage = this._sumTotalDamage();
     this._prevGems = persistState.gems;
-    this._intervalMinLives = runState.lives;
+    this._intervalMinBaseHealth = runState.baseHealth;
   }
 
   update(dt: number): void {
@@ -70,8 +70,8 @@ export class WaveGraphTracker {
     }
     this._prevGems = currentGems;
 
-    if (this.runState.lives < this._intervalMinLives) {
-      this._intervalMinLives = this.runState.lives;
+    if (this.runState.baseHealth < this._intervalMinBaseHealth) {
+      this._intervalMinBaseHealth = this.runState.baseHealth;
     }
 
     // Track the running max enemy-HP sum across the whole interval, not just the
@@ -124,14 +124,14 @@ export class WaveGraphTracker {
     this._intervalDamage = Math.max(0, currentDamage - this._prevTotalDamage);
     this._prevTotalDamage = currentDamage;
 
-    const baseHealthColor = this._computeBaseHealthColor(this._intervalMinLives);
+    const baseHealthColor = this._computeBaseHealthColor(this._intervalMinBaseHealth);
 
     const dot: WaveGraphDot = {
       damage: Math.round(this._intervalDamage),
       peakEnemyHp: Math.round(this._intervalPeakEnemyHp),
       gold: Math.round(this._intervalGold),
       gems: Math.round(this._intervalGems),
-      baseHealth: this._intervalMinLives,
+      baseHealth: this._intervalMinBaseHealth,
       baseHealthColor,
       waveStart: this._waveStartThisInterval,
     };
@@ -146,13 +146,15 @@ export class WaveGraphTracker {
     this._intervalPeakEnemyHp = 0;
     this._intervalGold = 0;
     this._intervalGems = 0;
-    this._intervalMinLives = this.runState.lives;
+    this._intervalMinBaseHealth = this.runState.baseHealth;
     this._waveStartThisInterval = false;
   }
 
-  private _computeBaseHealthColor(lives: number): string {
-    if (lives >= 11) return WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN;
-    if (lives >= 6) return WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW;
+  private _computeBaseHealthColor(baseHealth: number): string {
+    const maxBase = this.runState.maxBaseHealth || 1;
+    const ratio = maxBase > 0 ? baseHealth / maxBase : 0;
+    if (ratio > 0.5) return WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN;
+    if (ratio > 0.25) return WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW;
     return WAVE_GRAPH_COLOR_BASE_HEALTH_RED;
   }
 

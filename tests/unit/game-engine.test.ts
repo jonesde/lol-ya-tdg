@@ -9,6 +9,8 @@ import {
   GameState,
   MAP_GEM_MULTIPLIERS,
   MILESTONE_GEMS,
+  STARTING_BASE_HEALTH,
+  STARTING_HEALTH_BONUS,
   StartingGold,
 } from "@/sim/Constants.js";
 import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO } from "@/sim/ConstantsTower.js";
@@ -73,9 +75,9 @@ describe("GameEngine", () => {
     it("resets lives to 20", () => {
       const persistState = createTestPersistState();
       initEngine(0, persistState);
-      engine.runState.lives = 100;
+      engine.runState.baseHealth = 100;
       initEngine(0, persistState);
-      expect(engine.runState.lives).toBe(20);
+      expect(engine.runState.baseHealth).toBe(STARTING_BASE_HEALTH);
     });
 
     it("sets currentWave to 0", () => {
@@ -129,7 +131,7 @@ describe("GameEngine", () => {
       const persistState = createTestPersistState();
       persistState.generalAddons.extraHealth = 0;
       initEngine(0, persistState);
-      expect(engine.runState.lives).toBe(20 + 10);
+      expect(engine.runState.baseHealth).toBe(STARTING_BASE_HEALTH + STARTING_HEALTH_BONUS[0]);
     });
   });
 
@@ -227,13 +229,13 @@ describe("GameEngine", () => {
     });
 
     it("loseLives decreases lives", () => {
-      engine.runState.lives -= 3;
-      expect(engine.runState.lives).toBe(20 - 3);
+      engine.runState.baseHealth -= 3;
+      expect(engine.runState.baseHealth).toBe(STARTING_BASE_HEALTH - 3);
     });
 
     it("boss reaching base costs BOSS_LIFE_LOSS lives", () => {
-      engine.runState.lives -= BOSS_LIFE_LOSS;
-      expect(engine.runState.lives).toBe(20 - BOSS_LIFE_LOSS);
+      engine.runState.baseHealth -= BOSS_LIFE_LOSS;
+      expect(engine.runState.baseHealth).toBe(STARTING_BASE_HEALTH - BOSS_LIFE_LOSS);
     });
 
     it("blocked enemy gives half bounty", () => {
@@ -526,17 +528,17 @@ describe("GameEngine", () => {
 
     it("debug mutates the authoritative runState/persistState", () => {
       const goldBefore = engine.runState.gold;
-      const livesBefore = engine.runState.lives;
+      const livesBefore = engine.runState.baseHealth;
       const gemsBefore = engine.persistState.gems;
 
       engine.debug("addGold", 1000);
-      engine.debug("addLives", 10);
+      engine.debug("addBaseHealth", 10);
       engine.debug("addGems", 100);
       engine.debug("setWave", 50);
       engine.debug("setTimeScale", 16);
 
       expect(engine.runState.gold).toBe(goldBefore + 1000);
-      expect(engine.runState.lives).toBe(livesBefore + 10);
+      expect(engine.runState.baseHealth).toBe(Math.min(livesBefore + 10, engine.runState.maxBaseHealth));
       expect(engine.persistState.gems).toBe(gemsBefore + 100);
       expect(engine.runState.currentWave).toBe(50);
       expect(engine.runState.timeScale).toBe(16);

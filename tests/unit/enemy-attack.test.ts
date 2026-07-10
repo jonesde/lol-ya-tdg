@@ -3,7 +3,7 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
-import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
+import { type AttackTarget, Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { TowerManager } from "@/sim/towers/TowerManager.js";
@@ -237,5 +237,80 @@ describe("Enemy attack and collision (Phases 3 & 4)", () => {
     const fastProj = fast.laneOffsetX * fastPerp.x + fast.laneOffsetY * fastPerp.y;
     expect(slowProj).toBeGreaterThan(0);
     expect(fastProj).toBeLessThan(0);
+  });
+});
+
+describe("base attack", () => {
+  let grid: Grid;
+  let enemyManager: EnemyManager;
+  let towerManager: TowerManager;
+
+  class StubBaseTarget implements AttackTarget {
+    readonly isGhost = false;
+    health = 100;
+    takeDamage(amount: number): void {
+      this.health -= amount;
+    }
+  }
+
+  beforeEach(() => {
+    resetEnemyId();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const themeStore = useMapThemeStore();
+    themeStore.defaultTheme = mockDefaultTheme;
+    themeStore.activeTheme = mockDefaultTheme;
+    const map = makeBastionMap();
+    grid = new Grid(map);
+    const projectiles = { spawn() {}, fireLightning() {}, spawnLightningFlash() {} };
+    towerManager = new TowerManager(grid, makeParticleSystem(), projectiles, makeSoundManager());
+    enemyManager = new EnemyManager(grid, makeParticleSystem(), 0);
+    enemyManager.setTowerManager(towerManager);
+  });
+
+  function makeAttackingEnemy(baseTarget: AttackTarget): Enemy {
+    const enemy = new Enemy("minion", 1, 0, grid, 1);
+    enemy.baseTarget = baseTarget;
+    enemy.pathIdx = enemy.path!.length - 1;
+    return enemy;
+  }
+
+  it("enemy attacks base on cooldown and does not despawn", () => {
+    const baseTarget = new StubBaseTarget();
+    const enemy = makeAttackingEnemy(baseTarget);
+    enemyManager.enemies.push(enemy);
+
+    enemy.update(0.05, enemyManager);
+    expect(enemy.attackingBase).toBe(true);
+    expect(enemy.removed).toBe(false);
+
+    const healthBefore = baseTarget.health;
+    for (let step = 0; step < 200; step++) enemy.update(0.05, enemyManager);
+    expect(baseTarget.health).toBeLessThan(healthBefore);
+    expect(enemy.removed).toBe(false);
+    expect(enemyManager.enemies).toContain(enemy);
+  });
+
+  it("two enemies both attack the base without despawning", () => {
+    const singleTarget = new StubBaseTarget();
+    const singleEnemy = makeAttackingEnemy(singleTarget);
+    for (let step = 0; step < 200; step++) singleEnemy.update(0.05, enemyManager);
+    const singleDamage = 100 - singleTarget.health;
+
+    const doubleTarget = new StubBaseTarget();
+    const enemyA = makeAttackingEnemy(doubleTarget);
+    const enemyB = makeAttackingEnemy(doubleTarget);
+    enemyManager.enemies.push(enemyA, enemyB);
+    for (let step = 0; step < 200; step++) {
+      enemyA.update(0.05, enemyManager);
+      enemyB.update(0.05, enemyManager);
+    }
+    const doubleDamage = 100 - doubleTarget.health;
+
+    expect(enemyA.attackingBase).toBe(true);
+    expect(enemyB.attackingBase).toBe(true);
+    expect(enemyA.removed).toBe(false);
+    expect(enemyB.removed).toBe(false);
+    expect(doubleDamage).toBeGreaterThan(singleDamage * 1.5);
   });
 });

@@ -4,6 +4,7 @@ import type { Grid } from "@/sim/grid/Grid.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
+import type { AttackTarget } from "./Enemy.js";
 import { Enemy, resetEnemyId } from "./Enemy.js";
 
 interface PendingEnemyEntry {
@@ -32,6 +33,7 @@ export class EnemyManager {
   theme: MapThemeData | null;
   defaultEnemyVisuals: Record<string, EnemyVisualMeta>;
   towerManager: TowerManager | null = null;
+  baseTarget: AttackTarget | null = null;
   private spatialHash: Map<number, Enemy[]>;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
@@ -82,6 +84,7 @@ export class EnemyManager {
       this.difficultyTick,
       this.theme,
       this.defaultEnemyVisuals[type] ?? null,
+      this.baseTarget,
     );
     if (!enemy.path) {
       return null;
@@ -141,7 +144,11 @@ export class EnemyManager {
     return count;
   }
 
-  update(dt: number, onEnemyKill: ((enemy: Enemy) => void) | null): void {
+  update(
+    dt: number,
+    onEnemyKill: ((enemy: Enemy) => void) | null,
+    onEnemyBeginAttackBase?: ((enemy: Enemy) => void) | null,
+  ): void {
     // Guards against the kill callback firing more than once for a single enemy
     // (e.g. if an enemy is already terminal at loop entry and the loop is later
     // refactored to not `continue`). The callback must run at most once per enemy.
@@ -157,6 +164,7 @@ export class EnemyManager {
         this.removeDeadEnemy(i);
         continue;
       }
+      const wasAttackingBase = enemy.attackingBase;
       enemy.update(dt, this);
       if (enemy.removed || enemy.reachedBase) {
         if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
@@ -164,6 +172,10 @@ export class EnemyManager {
           handledEnemyIds.add(enemy.id);
         }
         this.removeDeadEnemy(i);
+        continue;
+      }
+      if (!wasAttackingBase && enemy.attackingBase) {
+        onEnemyBeginAttackBase?.(enemy);
       }
     }
     this.updateSpatialHash();

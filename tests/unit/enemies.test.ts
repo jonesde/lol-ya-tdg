@@ -345,7 +345,7 @@ describe("Enemy", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.pathIdx = enemy.path!.length - 1;
       enemy.update(0.01, null);
-      expect(enemy.reachedBase).toBe(true);
+      expect(enemy.attackingBase).toBe(true);
       expect(enemy.removed).toBe(false);
     });
 

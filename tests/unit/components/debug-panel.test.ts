@@ -88,12 +88,14 @@ describe("DebugPanel", () => {
     expect(commands).toContainEqual(expect.objectContaining({ type: "action:debug", kind: "addGems", amount: 100 }));
   });
 
-  it("dispatches action:debug addLives on click", async () => {
+  it("dispatches action:debug addBaseHealth on click", async () => {
     const { pinia } = mountDebugPanel();
     const commands = recordCommands();
     const wrapper = mount(DebugPanel, { global: { plugins: [pinia] } });
-    await clickButton(wrapper, "Lives");
-    expect(commands).toContainEqual(expect.objectContaining({ type: "action:debug", kind: "addLives", amount: 10 }));
+    await clickButton(wrapper, "Health");
+    expect(commands).toContainEqual(
+      expect.objectContaining({ type: "action:debug", kind: "addBaseHealth", amount: 100 }),
+    );
   });
 
   it("dispatches action:debug setWave on click", async () => {

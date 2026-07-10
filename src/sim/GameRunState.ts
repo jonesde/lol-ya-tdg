@@ -1,5 +1,5 @@
 import type { GameStateValue } from "@/sim/Constants.js";
-import { StartingGold } from "@/sim/Constants.js";
+import { STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
 import type { TowerId } from "@/sim/ConstantsTower.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
@@ -13,7 +13,8 @@ export interface GameRunState {
   mapIndex: number;
   map: GeneratedMap | null;
   grid: Grid | null;
-  lives: number;
+  baseHealth: number;
+  maxBaseHealth: number;
   gold: number;
   currentWave: number;
   waveCountdown: { remaining: number; nextWave: number } | null;
@@ -64,8 +65,8 @@ export function setGold(state: GameRunState, amount: number): void {
   state.gold = amount;
 }
 
-export function loseLives(state: GameRunState, amount: number): void {
-  state.lives -= amount;
+export function damageBase(state: GameRunState, amount: number): void {
+  state.baseHealth -= amount;
 }
 
 export function setWave(state: GameRunState, wave: number): void {
@@ -123,7 +124,8 @@ export function initRunState(state: GameRunState, mapIndex: number, mapData: Gen
   state.mapIndex = mapIndex;
   state.map = mapData;
   state.grid = grid;
-  state.lives = 20;
+  state.baseHealth = STARTING_BASE_HEALTH;
+  state.maxBaseHealth = STARTING_BASE_HEALTH;
   state.gold = StartingGold[mapData.regionId]!;
   state.currentWave = 0;
   state.waveCountdown = null;

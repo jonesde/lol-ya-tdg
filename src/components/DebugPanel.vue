@@ -59,8 +59,8 @@ function dbgGems() {
   dispatchCommand({ commandId: 0, type: "action:debug", kind: "addGems", amount: 100 });
 }
 
-function dbgLives() {
-  dispatchCommand({ commandId: 0, type: "action:debug", kind: "addLives", amount: 10 });
+function dbgBaseHealth() {
+  dispatchCommand({ commandId: 0, type: "action:debug", kind: "addBaseHealth", amount: 100 });
 }
 
 function dbgSkipWave() {
@@ -99,7 +99,7 @@ function dbgSpeed() {
     </div>
     <button @click="dbgGold">🪙 +1000 Gold</button>
     <button @click="dbgGems">💎 +100 Gems</button>
-    <button @click="dbgLives">❤️ +10 Lives</button>
+    <button @click="dbgBaseHealth">❤️ +100 Health</button>
     <button @click="dbgSkipWave">⏭️ Skip Wave</button>
     <button @click="dbgKillAll">💀 Kill All</button>
     <button @click="dbgWave">🎯 Set Wave 50</button>

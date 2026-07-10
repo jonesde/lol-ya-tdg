@@ -1,7 +1,7 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it } from "vitest";
-import { GameState, StartingGold } from "@/sim/Constants.js";
+import { GameState, STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import type { Tower } from "@/sim/towers/Tower.js";
@@ -27,7 +27,7 @@ describe("GameStore", () => {
     });
 
     it("starts with lives = 20", () => {
-      expect(store.lives).toBe(20);
+      expect(store.baseHealth).toBe(20);
     });
 
     it("starts with gold = 0", () => {
@@ -161,15 +161,15 @@ describe("GameStore", () => {
     });
   });
 
-  describe("loseLives", () => {
+  describe("damageBase", () => {
     it("reduces lives by the given amount", () => {
-      store.loseLives(3);
-      expect(store.lives).toBe(17);
+      store.damageBase(3);
+      expect(store.baseHealth).toBe(17);
     });
 
     it("can reduce lives below zero", () => {
-      store.loseLives(25);
-      expect(store.lives).toBe(-5);
+      store.damageBase(25);
+      expect(store.baseHealth).toBe(-5);
     });
   });
 
@@ -251,9 +251,9 @@ describe("GameStore", () => {
     });
 
     it("resets lives to 20", () => {
-      store.lives = 100;
+      store.baseHealth = 100;
       store.initMap(0, { regionId: 0 } as unknown as GeneratedMap, null);
-      expect(store.lives).toBe(20);
+      expect(store.baseHealth).toBe(STARTING_BASE_HEALTH);
     });
 
     it("sets gold based on StartingGold for the region", () => {
@@ -387,7 +387,7 @@ describe("GameStore", () => {
     });
 
     it("resets all economy fields", () => {
-      store.lives = 5;
+      store.baseHealth = 5;
       store.gold = 500;
       store.currentWave = 50;
       store.timeScale = 8;
@@ -398,7 +398,7 @@ describe("GameStore", () => {
       store.gemBreakdown.bossKills.base = 10;
       store.setHoverUpgradeBtn(true);
       store.resetToMenu();
-      expect(store.lives).toBe(20);
+      expect(store.baseHealth).toBe(STARTING_BASE_HEALTH);
       expect(store.gold).toBe(0);
       expect(store.currentWave).toBe(0);
       expect(store.timeScale).toBe(1);

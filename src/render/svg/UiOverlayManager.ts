@@ -1,3 +1,8 @@
+import {
+  WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN,
+  WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
+  WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW,
+} from "@/sim/Constants.js";
 import type { Grid } from "../../sim/grid/Grid.js";
 import type { EnemySnapshot, SpawnStateSnapshot, TowerSnapshot } from "../../sim/SimulationSnapshot.js";
 import { BOSS_TEXT_POOL_SIZE, HP_BAR_POOL_SIZE, SHIELD_BAR_POOL_SIZE, SVG_NS } from "./types.js";
@@ -18,6 +23,10 @@ export class UiOverlayManager {
   private pendingLastTransform: string[] = [];
   private pendingLastText: string[] = [];
   private pendingLastCounts: number[] = [];
+  private baseHealthBarPool: SVGRectElement[] = [];
+  private baseHealthLastTransform: string = "";
+  private baseHealthLastWidth: string = "";
+  private baseHealthLastFill: string = "";
 
   init(layer: SVGGElement): void {
     for (let i = 0; i < HP_BAR_POOL_SIZE; i++) {
@@ -110,6 +119,32 @@ export class UiOverlayManager {
       this.pendingLastTransform.push("");
       this.pendingLastText.push("");
     }
+
+    const baseBg = document.createElementNS(SVG_NS, "rect");
+    baseBg.style.visibility = "hidden";
+    baseBg.setAttribute("width", "108");
+    baseBg.setAttribute("height", "10");
+    baseBg.setAttribute("fill", "#000000");
+    baseBg.setAttribute("opacity", "0.6");
+    layer.appendChild(baseBg);
+
+    const baseBorder = document.createElementNS(SVG_NS, "rect");
+    baseBorder.style.visibility = "hidden";
+    baseBorder.setAttribute("width", "108");
+    baseBorder.setAttribute("height", "10");
+    baseBorder.setAttribute("fill", "none");
+    baseBorder.setAttribute("stroke", "#000000");
+    baseBorder.setAttribute("stroke-width", "0.5");
+    layer.appendChild(baseBorder);
+
+    const baseFg = document.createElementNS(SVG_NS, "rect");
+    baseFg.style.visibility = "hidden";
+    baseFg.setAttribute("width", "108");
+    baseFg.setAttribute("height", "10");
+    baseFg.setAttribute("fill", WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN);
+    layer.appendChild(baseFg);
+
+    this.baseHealthBarPool = [baseBg, baseBorder, baseFg];
   }
 
   syncFromGameEngine(enemies: EnemySnapshot[], _selectedTower: TowerSnapshot | null): void {
@@ -266,6 +301,44 @@ export class UiOverlayManager {
     }
   }
 
+  syncBaseHealthBar(grid: Grid, baseHealth: number, maxBaseHealth: number): void {
+    const bg = this.baseHealthBarPool[0];
+    const border = this.baseHealthBarPool[1];
+    const fg = this.baseHealthBarPool[2];
+    if (!grid || !bg || !border || !fg) return;
+    const center = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
+    const barWidth = 108;
+    const barHeight = 10;
+    const barX = center.x - barWidth / 2;
+    const barY = center.y - grid.tileSize * 1.6 - barHeight;
+    const barTransform = `translate(${barX}, ${barY})`;
+    if (this.baseHealthLastTransform !== barTransform) {
+      bg.setAttribute("transform", barTransform);
+      border.setAttribute("transform", barTransform);
+      fg.setAttribute("transform", barTransform);
+      this.baseHealthLastTransform = barTransform;
+    }
+    bg.style.visibility = "visible";
+    border.style.visibility = "visible";
+    fg.style.visibility = "visible";
+    const ratio = maxBaseHealth > 0 ? baseHealth / maxBaseHealth : 0;
+    const fgWidth = `${Math.max(0, barWidth * ratio)}`;
+    if (this.baseHealthLastWidth !== fgWidth) {
+      fg.setAttribute("width", fgWidth);
+      this.baseHealthLastWidth = fgWidth;
+    }
+    const fgFill =
+      ratio > 0.5
+        ? WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN
+        : ratio > 0.25
+          ? WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW
+          : WAVE_GRAPH_COLOR_BASE_HEALTH_RED;
+    if (this.baseHealthLastFill !== fgFill) {
+      fg.setAttribute("fill", fgFill);
+      this.baseHealthLastFill = fgFill;
+    }
+  }
+
   dispose(): void {
     for (const el of this.hpBarPool) {
       if (el.parentNode) {
@@ -300,5 +373,12 @@ export class UiOverlayManager {
     this.shieldBarPool = [];
     this.bossTextPool = [];
     this.pendingTextPool = [];
+    for (const el of this.baseHealthBarPool) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+    this.baseHealthLastTransform = "";
+    this.baseHealthLastWidth = "";
+    this.baseHealthLastFill = "";
+    this.baseHealthBarPool = [];
   }
 }

@@ -100,7 +100,8 @@ function buildMeta(engine: GameEngine): SnapshotMeta {
   return {
     state: rs.state,
     mapIndex: rs.mapIndex,
-    lives: rs.lives,
+    baseHealth: rs.baseHealth,
+    maxBaseHealth: rs.maxBaseHealth,
     gold: rs.gold,
     currentWave: rs.currentWave,
     waveCountdown: rs.waveCountdown,

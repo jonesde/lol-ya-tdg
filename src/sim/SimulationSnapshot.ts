@@ -72,7 +72,8 @@ export interface SnapshotMeta {
   // Scalar state from GameRunState. Subset that the renderer/UI need.
   state: GameRunState["state"];
   mapIndex: number;
-  lives: number;
+  baseHealth: number;
+  maxBaseHealth: number;
   gold: number;
   currentWave: number;
   waveCountdown: { remaining: number; nextWave: number } | null;

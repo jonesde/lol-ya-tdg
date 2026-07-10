@@ -203,13 +203,13 @@ export class Grid {
     for (let i = 0; i < this.paths.length; i++) {
       const path = this.paths[i];
       if (path?.some((p) => p.x === x && p.y === y)) {
-        const openPath = bfsShortestPath(this, this.spawns[i]!, this.base, this.blocked);
+        const openPath = bfsShortestPath(this, this.spawns[i]!, this.getBaseGoalTiles(), this.blocked);
         this.paths[i] =
           openPath ??
           dijkstraWeakestPath(
             this,
             this.spawns[i]!,
-            this.base,
+            this.getBaseGoalTiles(),
             (tileX, tileY) => this.towerHealthAt(tileX, tileY),
             (tileX, tileY) => this.isGhostAt(tileX, tileY),
           );
@@ -224,7 +224,7 @@ export class Grid {
     this._cachedPathTiles = null;
     this.pathVersion++;
     for (const spawn of this.spawns) {
-      const openPath = bfsShortestPath(this, spawn, this.base, this.blocked);
+      const openPath = bfsShortestPath(this, spawn, this.getBaseGoalTiles(), this.blocked);
       if (openPath) {
         this.paths.push(openPath);
       } else {
@@ -236,7 +236,7 @@ export class Grid {
           dijkstraWeakestPath(
             this,
             spawn,
-            this.base,
+            this.getBaseGoalTiles(),
             (tileX, tileY) => this.towerHealthAt(tileX, tileY),
             (tileX, tileY) => this.isGhostAt(tileX, tileY),
           ),
@@ -255,7 +255,7 @@ export class Grid {
   // weakest-path Dijkstra search (which routes *through* live towers) when no open
   // route exists. Used by the enemy-commander `applyCommand` leg chains so a custom
   // route honors the same tower-crossing behavior as the default grid path.
-  computeRoute(start: Point, goal: Point = this.base): Point[] | null {
+  computeRoute(start: Point, goal: Point | Point[] = this.base): Point[] | null {
     const openPath = bfsShortestPath(this, start, goal, this.blocked);
     if (openPath) return openPath;
     return dijkstraWeakestPath(
@@ -281,5 +281,24 @@ export class Grid {
 
   getBase(): Point {
     return this.base;
+  }
+
+  getBaseGoalTiles(): Point[] {
+    const { x, y } = this.base;
+    const goalTiles: Point[] = [{ x, y }];
+    const ring = [
+      { x: x - 1, y: y - 1 },
+      { x, y: y - 1 },
+      { x: x + 1, y: y - 1 },
+      { x: x - 1, y },
+      { x: x + 1, y },
+      { x: x - 1, y: y + 1 },
+      { x, y: y + 1 },
+      { x: x + 1, y: y + 1 },
+    ];
+    for (const tile of ring) {
+      if (this.inBounds(tile.x, tile.y)) goalTiles.push(tile);
+    }
+    return goalTiles;
   }
 }

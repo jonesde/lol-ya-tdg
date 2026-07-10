@@ -215,8 +215,11 @@ describe("dijkstraWeakestPath", () => {
       () => true,
     );
     expect(path).not.toBeNull();
-    // Ghosted towers cost nothing, so the path should still traverse the row.
-    expect(path!.length).toBe(grid.paths[0]!.length);
+    // Ghosted towers cost nothing, so the path should still traverse the row
+    // and reach the exact base tile (single-Point goal).
+    const last = path![path!.length - 1];
+    expect(last.x).toBe(map.base.x);
+    expect(last.y).toBe(map.base.y);
   });
 
   it("returns null when start and goal are disconnected by non-path terrain", () => {

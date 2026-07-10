@@ -162,7 +162,8 @@ export function createTestStores(): { game: GameStore; persist: PersistStore; ui
       game.mapIndex = mapIndex;
       game.map = mapData;
       game.grid = grid;
-      game.lives = 20;
+      game.baseHealth = 20;
+      game.maxBaseHealth = 100;
       game.gold = StartingGold[mapData.regionId];
       game.currentWave = 0;
       game.milestoneRewardsClaimed = {};
