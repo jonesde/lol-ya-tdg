@@ -56,21 +56,30 @@ the snapshot exposes `enemy.id: number`):
 - `applyCommand.ts`: implement the three `llm:*` cases (return `true` so the worker
   force-posts the snapshot). Each calls a new `GameEngine` method:
   - `applyCommanderHold(enemyIds, holdTile)` → `enemy.setHoldMode(holdTile)`
-  - `applyCommanderRoute(enemyIds, waypoints)` → compute a routed path and `enemy.setRoutePath(path)`
+  - `applyCommanderRoute(enemyIds, waypoints)` → if `waypoints` is **empty**, this is a
+    *release to default path*: skip path computation and immediately set
+    `routingMode = "default"` + call `enemy.reanchorToPath(grid.getPathFor(spawnIndex))`
+    for each enemy (identical to the §6 stop-cleanup release, so held enemies unfreeze and
+    rejoin the grid path). If `waypoints` is non-empty, compute the chained routed path via
+    `computeRoute` (§2) and call `enemy.setRoutePath(path)`.
   - `applyCommanderSetTargeting(enemyIds, mode)` → store `enemy.targetingMode` (used only
     by future logic; harmless now)
-- `GameEngine` computes each enemy's routed path by chaining a **route-to-base** call
+- `GameEngine` computes each enemy's routed path by chaining a **route-to-goal** call
   through each waypoint, then to `grid.base`, dropping duplicate joints. This must use the
   **exact same routing enemies already use to reach the base** — `bfsShortestPath` alone is
   insufficient because it refuses tower tiles, whereas real enemy routing falls back to
   `dijkstraWeakestPath` (which routes *through* live towers, weighted by remaining health).
-  So add a new `Grid` method, e.g. `computeRouteToBase(start: Point): Point[] | null`, that
-  mirrors `Grid.recomputePaths` (`Grid.ts:222-246`):
-  `bfsShortestPath(this, start, this.base, this.blocked) ?? dijkstraWeakestPath(this, start, this.base, this.towerHealthAt, this.isGhostAt)`
-  (`dijkstraWeakestPath` at `Pathfinding.ts:168`). `applyCommanderRoute` chains
-  `computeRouteToBase` from `currentTile → wp1 → … → wpN → base`, concatenating the segments
-  and dropping duplicate joints. This keeps commander routing behavior-identical to the
-  default enemy path, including the tower-crossing fallback.
+  So add a new `Grid` method, e.g. `computeRoute(start: Point, goal: Point = this.base): Point[] | null`,
+  that mirrors `Grid.recomputePaths` (`Grid.ts:222-246`):
+  `bfsShortestPath(this, start, goal, this.blocked) ?? dijkstraWeakestPath(this, start, goal, this.towerHealthAt, this.isGhostAt)`
+  (`dijkstraWeakestPath` at `Pathfinding.ts:168`). `applyCommanderRoute` chains `computeRoute`
+  for **each** leg — `currentTile → wp1`, `wp1 → wp2`, …, `wp(N-1) → wpN`, `wpN → base` —
+  concatenating the segments and dropping duplicate joints. `computeRouteToBase(start)`
+  becomes the convenience wrapper `computeRoute(start, this.base)`. This keeps commander
+  routing behavior-identical to the default enemy path (including the tower-crossing
+  fallback) and correctly honors **every** waypoint, not just the first (the earlier
+  `computeRouteToBase`-per-segment sketch would have routed `wp1` straight to base and
+  silently dropped `wp2…wpN`).
 
 ## 3. Enemy routing override (`src/sim/enemies/Enemy.ts`)
 Add state + behavior, taking precedence over the default grid path:
@@ -89,17 +98,32 @@ Add state + behavior, taking precedence over the default grid path:
 - **`gridLayout: number[][]` (sent once per run, not every tick).** `gridLayout`
   (`0=terrain, 1=path, 2=base, 3=spawn`, built from `engine.grid.tiles`) is constant
   for a whole run — terrain tiles never change mid-run (only tower build/sell changes
-  `pathVersion`, which must **not** trigger a re-send). So gate it with a plain boolean,
-  not the `pathVersion` mechanism:
+  `pathVersion`, which must **not** trigger a re-send). Gate it with a plain boolean, not
+  the `pathVersion` mechanism, and keep the steady-state per-tick cost at zero:
   - Add `gridLayoutSent: boolean = false` to `GameEngine` (reset to `false` in
     `_initMap` so a new run re-sends).
-  - In `buildSnapshot`, include `gridLayout` only when `!engine.gridLayoutSent`; on
-    first include, set `engine.gridLayoutSent = true`.
-  - Add `gridLayout: number[][] | undefined` to `SimulationSnapshot` (present on exactly
-    the first posted snapshot of a run; `undefined` thereafter).
-  - The relay forwards the slice as-is; **Sergeant Stubby caches `gridLayout` in worker
-    `memory` on first receipt and reuses it for every later `buildObservation`** (it never
+  - In `buildSnapshot`, include `gridLayout` while `!engine.gridLayoutSent`. Do **not**
+    flip `gridLayoutSent` to `true` inside the serializer.
+  - Add `gridLayout: number[][] | undefined` to `SimulationSnapshot` (present on the
+    snapshots that still carry it; `undefined` once `gridLayoutSent` is `true`).
+
+  **Reliable delivery — the relay side owns the cache.** The commander relay polls
+  `getLatestSnapshot()` at 4 Hz while the sim worker posts at up to 60 Hz, so the relay's
+  first read is almost always a *later* snapshot that no longer carries `gridLayout`. If the
+  serializer flipped `gridLayoutSent` on the first post, the worker would never receive it.
+  To guarantee the worker still gets `gridLayout` exactly once:
+  - The relay captures `gridLayout` from the first slice that contains it and caches it in
+    module state; it then includes the cached `gridLayout` on **every** observation it
+    forwards to the commander worker, so the worker always receives it on its first
+    observation message and `buildObservation` reuses the cached `map` forever (it never
     changes). This keeps the steady-state per-tick cost at zero.
+  - The relay flips the engine gate the first time it captures `gridLayout`, so the sim
+    worker stops sending it. The flip is a one-time signal from the relay to the sim worker:
+    either a reserved no-op command (e.g. `llm:gridLayoutAck` → `applyCommand` sets
+    `engine.gridLayoutSent = true; return false;`) or a dedicated `WorkerProtocol`
+    main→worker message handled by `WorkerEntry`. Once flipped, `gridLayout` is omitted from
+    every subsequent snapshot (zero steady-state cost), satisfying the "ship once per run"
+    intent while remaining delivery-safe.
 - **`meta.remainingScheduledSpawns`** = `engine.waveManager.getRemainingScheduledSpawns()`
   (count of enemies still scheduled to spawn this wave, i.e. `queue.length`). This — not
   the overflow-only pending queue — is the correct "entire wave emerged" signal.
@@ -149,6 +173,12 @@ Layout (shared pieces at `src/commanders/`, per-commander brains under their own
   implements the hold-then-rush strategy deterministically; `src/commanders/stubbs/brain.ts`
   (`StubbsBrain`, §10) implements the aggressive tower-routing strategy. A future `LLMBrain`
   would assemble a prompt, call the API, parse the response into the same command shape.
+  **`commandId` discipline:** brains emit `llm:*` `Command`s with `commandId: 0`. The
+  relay forwards them through `dispatchCommand` (`src/sim/commandBus.ts`), which auto-assigns
+  a fresh monotonic id (it only reassigns when `commandId <= 0`). Brains must **not** invent
+  their own ids — this keeps command/confirmation correlation in the sim worker correct and
+  matches the §8 integration test (which feeds the worker's `commands` posts straight into
+  `applyCommand`, where `commandId: 0` is accepted by the `Command` union).
 - `src/commanders/CommanderWorker.ts` (shared): the worker entry
   (`new Worker(new URL("./CommanderWorker.ts", import.meta.url), { type: "module" })`).
   On `start` it builds the brain via `createBrain(kind)`; holds a small per-wave `memory`
@@ -313,8 +343,11 @@ not the decision logic.
   exposed for future use but is **not** a rush signal: `WaveManager.active` is set `true` at
   wave start and never reset, so it stays `true` after wave 1.
 - **`gridLayout` is shipped once per run** (gated by a `gridLayoutSent` boolean, not
-  `pathVersion`) because terrain is run-constant; Stubby caches it in worker memory.
-  No re-send on tower build/sell.
+  `pathVersion`) because terrain is run-constant. Delivery is relay-side: the relay caches
+  `gridLayout` from the first snapshot that carries it and forwards the cached copy on every
+  observation, flipping `gridLayoutSent` (via a one-time relay→sim-worker signal) so the
+  sim worker stops sending it. Stubby caches it in worker memory; no re-send on tower
+  build/sell.
 - **`PRE_EMPTIVE_WAVE_TIMER` race (90 s) is mitigated by wave-number-keyed `seenByWave`
   plus the `remainingScheduledSpawns` guard (see §5).** The rush captures only the
   current wave's seen ids, and cannot fire once the next wave's queue is populated, so
