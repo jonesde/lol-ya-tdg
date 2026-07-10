@@ -29,8 +29,12 @@ the snapshot exposes `enemy.id: number`):
 ```
 - `llm:routeGroup` with **empty `waypoints`** = "release to default path" (used by Stubbs
   to rush the base).
-- `llm:routeGroup` with waypoints = full arbitrary-waypoint routing (the spec's "direct
-  to a destination tile" capability).
+- `llm:routeGroup` with waypoints = routed path through the supplied waypoints to the base.
+  **Constraint (enforced by the engine):** enemies can only traverse `path`/`base`/`spawn`
+  tiles — `bfsShortestPath` refuses terrain neighbors (see `src/sim/grid/Pathfinding.ts`). So
+  every waypoint MUST lie on a path tile or it cannot be routed; there is no true "any tile"
+  destination capability today. The field stays in the schema for the eventual LLM, which will
+  be told (via the observation / prompt) to only emit path-tile waypoints.
 - These are the *exact* command surface the eventual LLM will emit.
 
 ## 2. Engine wiring (`src/sim/applyCommand.ts` + `src/sim/GameEngine.ts`)
@@ -62,8 +66,13 @@ Add state + behavior, taking precedence over the default grid path:
 - **`gridLayout: number[][]`** posted on `grid.pathVersion` change (gated like `paths`):
   `0=terrain, 1=path, 2=base, 3=spawn`, built from `engine.grid.tiles`. Satisfies the
   "binary Path/Terrain map" requirement.
-- **`meta.pendingEnemyCount`** = total pending-queue size (sum of `getPendingCountForSpawn`),
-  so Stubbs can detect "entire wave emerged".
+- **`meta.remainingScheduledSpawns`** = `engine.waveManager.queue.length` (count of enemies
+  still scheduled to spawn this wave). This — not the overflow-only pending queue — is
+  the correct "entire wave emerged" signal. `pendingEnemyCount` (sum of
+  `getPendingCountForSpawn`) counts only the overflow queue (used when the render pool
+  is exhausted) and is `0` for almost every wave, so it alone cannot detect emergence.
+  Stubbs rushes when `remainingScheduledSpawns === 0` AND the overflow pending count
+  is `0` (i.e. every enemy is now active on the field, held by Stubbs).
 - **`meta.tileSize`** (always included) so Stubbs converts world `x/y` → tile coords with
   the correct constant.
 
@@ -110,9 +119,13 @@ World `x/y` are converted to tile coords inside the worker using `meta.tileSize`
 - While spawning (`pendingEnemyCount > 0` or any spawn open): issue `llm:holdFormation`
   for **newly-seen** enemy ids, holding each at its **current tile** (≈ near spawn),
   tracked in the brain's `memory` set to avoid re-dispatching.
-- Once `pendingEnemyCount === 0` **and** all `spawnStates` are closed/transition: issue one
+- Once `remainingScheduledSpawns === 0` **and** the overflow pending count is `0`
+  (all enemies have emerged and are active on the field): issue one
   `llm:routeGroup(enemyIds, [])` to release *all* to rush the base at once; record
   `currentWave` so it doesn't re-fire.
+  (Note: `spawnStates` only transitions to `closed` after the wave is fully cleared
+  — too late for this trigger — so use `remainingScheduledSpawns` + overflow pending,
+  not `spawnStates`, to decide.)
 - On next wave (wave number change / new countdown): reset to `idle`.
 
 ## 6. UI — pause menu drop-down (`src/stores/ui.ts` + `src/components/PauseMenu.vue`)
@@ -128,15 +141,23 @@ World `x/y` are converted to tile coords inside the worker using `meta.tileSize`
 - `tests/unit/commanders/observation.test.ts`: `buildObservation` over a fake snapshot slice
   → expected JSON shape (map codes, tile-coord conversion via tileSize, wave block).
 - `tests/unit/commanders/stubbs-brain.test.ts`: feed fake observations; assert the
-  hold→rush transition (hold while spawning, single release when `pendingEnemyCount===0`),
-  idempotent re-dispatch, and per-wave reset. Pure-function tests, no worker.
+  hold→rush transition (hold while `remainingScheduledSpawns > 0`, single release
+  when `remainingScheduledSpawns === 0` and overflow pending is `0`), idempotent
+  re-dispatch, and per-wave reset. Pure-function tests, no worker.
 - `tests/unit/sim/enemy-routing.test.ts`: `setHoldMode` freezes advance; `setRoutePath`
   follows waypoints; empty-waypoint release reverts to default path / reaches base.
 - `tests/unit/sim/applyCommand.test.ts` (extend): `llm:*` commands no longer no-op and
   mutate state.
-- `tests/integration/commander.test.ts`: wire `setCommandDispatcher(new MainThreadCommandDispatcher(engine))`,
-  spin up the real Stubbs worker + relay against a spawned wave, assert enemies stay put
-  then all advance to base together (also exercises the protocol round-trip).
+- `tests/integration/commander.test.ts`: spin up a real `GameEngine` plus a
+  test-local `CommandDispatcher` that forwards to `applyCommand(engine, cmd)`, and
+  drive the **real Stubbs worker** via the existing mock-`self` import pattern
+  (see `tests/integration/worker-roundtrip.test.ts`, which mocks the
+  `DedicatedWorkerGlobalScope` and imports `@/commanders/stubbs/StubbsWorker.ts`).
+  Feed the worker a `sim`/`observation` message built from `getLatestSnapshot()`
+  after a wave has spawned, capture its `commands` posts, and apply them back
+  through `applyCommand`. Assert enemies stay put (don't advance) while spawning,
+  then all advance to the base together on the rush. `MainThreadCommandDispatcher`
+  no longer exists (removed in Phase 7), so do **not** instantiate it.
 
 ## 8. Notes / risks
 - Stubbs is a **command producer only**; everything stays within the existing spine. The
@@ -152,5 +173,19 @@ World `x/y` are converted to tile coords inside the worker using `meta.tileSize`
   messages are exactly the seams the real LLM commander will use. Swapping `StubbsBrain`
   for `LLMBrain` (API transport + prompt + parse) is an isolated change with no engine,
   protocol, or UI impact — this is the point of building Stubbs this way.
+- **`llm:routeGroup` waypoints must be path tiles.** Enemies can only traverse
+  `path`/`base`/`spawn` tiles (BFS refuses terrain), so arbitrary-tile routing is
+  impossible today. Keep the `waypoints` field for the eventual LLM, but document
+  the constraint at the `Command` schema and have `buildObservation`/`StubbsBrain`
+  only ever emit path-tile waypoints (Stubbs itself only uses the empty-waypoint
+  release).
+- **Rush signal is `remainingScheduledSpawns` (wave `queue.length`), not the
+  overflow-only `pendingEnemyCount` nor `spawnStates`.** `spawnStates` close only
+  after a wave is fully cleared (too late); the overflow pending count is `0` for
+  almost every wave. `remainingScheduledSpawns === 0` (plus overflow pending `0`)
+  is the correct "all enemies have emerged" test.
+- **`PRE_EMPTIVE_WAVE_TIMER`** may start the next wave while Stubbs is still holding
+  the previous wave's enemies alive. The per-wave reset (§5) handles this, but
+  verify the rush can fire before the next wave's spawns dilute the "seen" set.
 - All commander code (`src/commanders/`) depends on the sim only through the public seams:
   `getLatestSnapshot()`, `dispatchCommand`, and the `SimulationSnapshot`/`Command` types.
