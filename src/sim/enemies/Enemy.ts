@@ -715,8 +715,6 @@ export class Enemy {
       if (other === this) return;
       const perpAx = -Math.sin(this.moveAngle);
       const perpAy = Math.cos(this.moveAngle);
-      const perpBx = -Math.sin(other.moveAngle);
-      const perpBy = Math.cos(other.moveAngle);
       const ax = this.centerX + this.laneOffsetX;
       const ay = this.centerY + this.laneOffsetY;
       const bx = other.centerX + other.laneOffsetX;
@@ -727,6 +725,21 @@ export class Enemy {
       const overlap = this.radius + other.radius - dist;
       if (overlap <= 0) return;
       const separation = overlap / 2;
+      // Use the true inter-enemy contact normal as the separation axis. A base-attacking
+      // enemy's moveAngle points radially at the base and is recomputed every frame, so the
+      // per-enemy heading-perpendiculars diverge when clustered at the base and the pair is
+      // pushed along inconsistent, rotating axes (visible jitter). The shared normal keeps the
+      // cluster stable. Fall back to this enemy's perpendicular only when coincident (dist 0)
+      // so degenerate pairs still separate deterministically.
+      let normalX: number;
+      let normalY: number;
+      if (dist > 1e-6) {
+        normalX = deltaX / dist;
+        normalY = deltaY / dist;
+      } else {
+        normalX = perpAx;
+        normalY = perpAy;
+      }
       let thisSign: number;
       let otherSign: number;
       if (this.speed < other.speed) {
@@ -742,10 +755,10 @@ export class Enemy {
         thisSign = -1;
         otherSign = 1;
       }
-      this.laneOffsetX += separation * thisSign * perpAx;
-      this.laneOffsetY += separation * thisSign * perpAy;
-      other.laneOffsetX += separation * otherSign * perpBx;
-      other.laneOffsetY += separation * otherSign * perpBy;
+      this.laneOffsetX += separation * thisSign * normalX;
+      this.laneOffsetY += separation * thisSign * normalY;
+      other.laneOffsetX += separation * otherSign * normalX;
+      other.laneOffsetY += separation * otherSign * normalY;
     });
   }
 

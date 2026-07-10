@@ -17,7 +17,7 @@ const snapshot = computed(() => {
   void gameStore.frameId;
   return getLatestSnapshot();
 });
-// Wave composition / starting lives / healing / gold are worker-internal
+// Wave composition / starting base health / healing / gold are worker-internal
 // aggregates not surfaced in the snapshot yet (Phase 8). The stats panel reads
 // what the snapshot provides; the rest degrades gracefully.
 const waveManager = computed(() => null);
@@ -68,8 +68,8 @@ const totalDamageDealt = computed(() => {
   return Math.round(total);
 });
 
-const startingLives = computed(() => gameStore.maxBaseHealth);
-const livesLost = computed(() => Math.max(0, startingLives.value - gameStore.baseHealth));
+const startingBaseHealth = computed(() => gameStore.maxBaseHealth);
+const baseHealthLost = computed(() => Math.max(0, startingBaseHealth.value - gameStore.baseHealth));
 const healingReceived = computed(() => 0);
 const goldEarned = computed(() => 0);
 const gemsEarned = computed(() => gameStore.runGemsEarned);
@@ -155,10 +155,10 @@ function hpPercent(enemy: EnemyStat) {
             </div>
             <div class="stat-card">
               <div class="stat-card-icon">♥</div>
-              <div class="stat-card-value" :class="{ critical: livesLost > startingLives * 0.5 }">
-                {{ livesLost }}
+              <div class="stat-card-value" :class="{ critical: baseHealthLost > startingBaseHealth * 0.5 }">
+                {{ baseHealthLost }}
               </div>
-              <div class="stat-card-label">Lives Lost</div>
+              <div class="stat-card-label">Health Lost</div>
             </div>
             <div class="stat-card" v-if="healingReceived > 0">
               <div class="stat-card-icon">💚</div>

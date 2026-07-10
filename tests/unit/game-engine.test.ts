@@ -2,7 +2,6 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  BOSS_LIFE_LOSS,
   BOUNTY_BLOCKED_RATIO,
   DIFFICULTY_MULT_GEM_BASE,
   FIRST_TIME_MILESTONE_MULT,
@@ -14,6 +13,7 @@ import {
   StartingGold,
 } from "@/sim/Constants.js";
 import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO } from "@/sim/ConstantsTower.js";
+import { Enemy } from "@/sim/enemies/Enemy.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { createDefaultPersistState, difficultyMultiplier as getDifficultyMultiplier } from "@/sim/PersistState.js";
 import type { Tower } from "@/sim/towers/Tower.js";
@@ -233,9 +233,27 @@ describe("GameEngine", () => {
       expect(engine.runState.baseHealth).toBe(STARTING_BASE_HEALTH - 3);
     });
 
-    it("boss reaching base costs BOSS_LIFE_LOSS lives", () => {
-      engine.runState.baseHealth -= BOSS_LIFE_LOSS;
-      expect(engine.runState.baseHealth).toBe(STARTING_BASE_HEALTH - BOSS_LIFE_LOSS);
+    it("boss attacking the base reduces engine baseHealth via attackDamage and is not removed", () => {
+      const persistState = createTestPersistState();
+      initEngine(0, persistState);
+      const enemy = new Enemy("boss", 1, 0, engine.grid, 1);
+      enemy.baseTarget = engine.enemyManager.baseTarget;
+      enemy.pathIdx = enemy.path.length - 1;
+      engine.enemyManager.enemies.push(enemy);
+
+      // The first tick flips the boss into the attackingBase state; it must not despawn.
+      engine.update(0.05);
+      expect(enemy.attackingBase).toBe(true);
+      expect(enemy.removed).toBe(false);
+
+      // Give the base plenty of headroom so the run doesn't end mid-simulation.
+      engine.runState.baseHealth = 1000;
+      engine.runState.maxBaseHealth = 1000;
+      const healthBefore = engine.runState.baseHealth;
+      for (let step = 0; step < 200; step++) engine.update(0.05);
+
+      expect(engine.runState.baseHealth).toBeLessThan(healthBefore);
+      expect(enemy.removed).toBe(false);
     });
 
     it("blocked enemy gives half bounty", () => {
