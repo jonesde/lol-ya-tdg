@@ -56,12 +56,21 @@ export const TOWER_BASE: Record<string, TowerBase> = {
   basic: { range: 3.5, damage: 8, fireRate: 1.2, projSpeed: 14, splash: 0, health: 25 },
   ice: { range: 2.8, damage: 4, fireRate: 1.0, projSpeed: 12, slowAmt: 0.45, slowDur: 1.5, splash: 0.25, health: 20 },
   sniper: { range: 7, damage: 32, fireRate: 0.45, projSpeed: 30, splash: 0, stun: 0.2, health: 20 },
-  cannon: { range: 3.2, damage: 16, fireRate: 0.55, projSpeed: 9, splash: 0.5, health: 30 },
+  cannon: { range: 3.2, damage: 16, fireRate: 0.55, projSpeed: 5, splash: 0.5, health: 30 },
   lightning: { range: 3.5, damage: 4, fireRate: 0.8, projSpeed: 99, chain: 2, stun: 0.1, health: 22 },
   railgun: { range: 8, damage: 14, fireRate: 0.28, projSpeed: 60, fixedAim: true, pierceFalloff: 0.5, health: 28 },
-  sturdyWall: { range: 0, damage: 0, fireRate: 0, projSpeed: 0, health: 200 },
-  shotgunTank: { range: 1, damage: 8, fireRate: 1.2, projSpeed: 14, health: 250 },
+  sturdyWall: { range: 0, damage: 0, fireRate: 0, projSpeed: 0, health: 250 },
+  shotgunTank: { range: 1, damage: 8, fireRate: 1.2, projSpeed: 14, health: 150 },
 };
+
+// ===== Global Projectile Speed Tuning =====
+// Multiplies every tower's projSpeed when a projectile is spawned (Tower.js -> ProjectileManager.spawn).
+// 1 = unchanged. Lower values slow all projectiles (longer travel time, more in-flight shots, larger
+// window for a target to die before impact). Fixed-aim towers (e.g. railgun) also become less accurate
+// against moving enemies since their shots no longer re-home. Drop below an enemy's speed to let fast
+// enemies (runner = 2.5 tiles/s) outrun projectiles entirely.
+// NOTE: At 0.5 Cannon Level 1 is about the same speed as runner; at 0.25 Cannon must be upgraded to catch runners
+export const PROJECTILE_SPEED_MULTIPLIER = 0.25;
 
 // ===== Tower Level Scaling =====
 // - each level N applies: damage = base * 1.8^(N-1), rate = base * 1.4^(N-1), range = base * 1.1^(N-1) (Tower.js)

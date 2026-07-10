@@ -27,6 +27,7 @@ import {
   ICE_BURST_INTERVAL,
   ICE_BURST_RANGE,
   ICE_BURST_STUN_DURATION,
+  PROJECTILE_SPEED_MULTIPLIER,
   SELL_VALUE_RATIO,
   STATIC_FIELD_RANGE,
   STATIC_FIELD_SLOW_AMT,
@@ -990,7 +991,10 @@ export class Tower {
       x: this.x + Math.cos(this.angle) * barrelOffset,
       y: this.y + Math.sin(this.angle) * barrelOffset,
       damage: fireDamage,
-      speed: (resolveEffectiveBase(this.base, this.type as TowerId, this.variant).projSpeed || 1) * tileSize,
+      speed:
+        (resolveEffectiveBase(this.base, this.type as TowerId, this.variant).projSpeed || 1) *
+        tileSize *
+        PROJECTILE_SPEED_MULTIPLIER,
       range: stats.range,
       towerType: this.type,
       towerLevel: this.level,
