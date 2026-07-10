@@ -46,6 +46,7 @@ import {
 } from "@/sim/ConstantsTower.js";
 import type { SoundPlayer } from "@/sim/HostBindings.js";
 import type { PersistState } from "@/sim/PersistState.js";
+import { createDefaultPersistState } from "@/sim/PersistState.js";
 import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
 
 interface GridRef {
@@ -658,8 +659,8 @@ export class Tower {
     if (this.level === 4 && this.variant === null) {
       return { ok: false, reason: "Choose specialization", needVariant: true };
     }
-    if (!save) return { ok: true, cost, nextLevel: this.level + 1 };
-    const maxLvl = maxLevelFor(save, this.type, this.variant);
+    const effectiveSave = save ?? createDefaultPersistState();
+    const maxLvl = maxLevelFor(effectiveSave, this.type, this.variant);
     if (this.level >= maxLvl) return { ok: false, reason: "Max level reached" };
     return { ok: true, cost, nextLevel: this.level + 1 };
   }

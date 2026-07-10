@@ -307,14 +307,16 @@ describe("PersistStore", () => {
       expect(store.generalAddons.extraHealth).toBe(10);
     });
 
-    it("resets to defaults on unknown future version", () => {
+    it("best-effort migrates on unknown future version", () => {
       const futureData = { saveVersion: 99, gems: 9999 };
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      (localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValueOnce(JSON.stringify(futureData));
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null) // OLD_STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(futureData)); // STORAGE_KEY
       store.load();
-      expect(store.gems).toBe(0);
-      expect(store.saveVersion).toBe(2);
-      expect(warnSpy).toHaveBeenCalledWith("Unknown save version 99, resetting to defaults");
+      expect(store.gems).toBe(9999);
+      expect(store.saveVersion).toBe(99);
+      expect(warnSpy).toHaveBeenCalledWith("Unknown save version 99, best-effort migrating to current");
       warnSpy.mockRestore();
     });
 

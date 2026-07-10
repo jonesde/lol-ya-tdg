@@ -175,8 +175,8 @@ function migrateToCurrent(parsed: Record<string, unknown>): PersistStateShape {
   if (version === CURRENT_SAVE_VERSION) {
     return migrateCurrentVersion(parsed);
   }
-  console.warn(`Unknown save version ${version}, resetting to defaults`);
-  return defaultState();
+  console.warn(`Unknown save version ${version}, best-effort migrating to current`);
+  return migrateCurrentVersion(parsed);
 }
 
 export const usePersistStore = defineStore("persist", {
@@ -216,10 +216,17 @@ export const usePersistStore = defineStore("persist", {
         }
         const rawData = localStorage.getItem(STORAGE_KEY);
         if (rawData) {
-          const parsed = JSON.parse(rawData);
-          const migrated = migrateToCurrent(parsed);
-          this.$state = migrated;
-          return;
+          try {
+            const parsed = JSON.parse(rawData);
+            const migrated = migrateToCurrent(parsed);
+            this.$state = migrated;
+            return;
+          } catch (error) {
+            const uiStore = useUiStore();
+            uiStore.showNotification("Failed to load save - keeping current progress.");
+            console.warn("persist.load failed; leaving state unchanged:", error);
+            return;
+          }
         }
       } catch {
         // Corrupted save - reset

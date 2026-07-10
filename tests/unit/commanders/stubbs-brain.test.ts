@@ -27,8 +27,8 @@ function enemy(id: number, tileX: number, tileY: number): ObservationEnemy {
   return { id, tileX, tileY, level: 1, hp: 10, maxHp: 10 };
 }
 
-function tower(tileX: number, tileY: number, hp: number, maxHp = hp): ObservationTower {
-  return { tileX, tileY, level: 1, hp, maxHp };
+function tower(tileX: number, tileY: number, hp: number, maxHp = hp, level = 1): ObservationTower {
+  return { tileX, tileY, level, hp, maxHp };
 }
 
 function observation(opts: {
@@ -91,19 +91,34 @@ describe("StubbsBrain", () => {
     expect(commands).toHaveLength(0);
   });
 
-  it("re-routes when the targeted tower's hp changes (signature shift)", () => {
+  it("does NOT re-route when only a tower's hp changes (stable signature)", () => {
     const brain = createStubbsBrain();
     const memory = freshMemory();
     brain.decide(observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100), tower(3, 3, 60)] }), memory);
-    // The highest-hp ahead tower (5,3) drops to 30 — signature changes.
+    // The highest-hp ahead tower (5,3) drops to 30 — signature uses level, not hp, so it is stable.
     const reroute = brain.decide(
       observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 30), tower(3, 3, 60)] }),
       memory,
     );
+    expect(reroute).toHaveLength(0);
+  });
+
+  it("re-routes when a tower is upgraded (level change shifts the signature)", () => {
+    const brain = createStubbsBrain();
+    const memory = freshMemory();
+    brain.decide(
+      observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100, 100, 1), tower(3, 3, 60, 60, 1)] }),
+      memory,
+    );
+    // The (5,3) tower upgrades to level 2 — signature changes, forcing a re-route.
+    const reroute = brain.decide(
+      observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100, 100, 2), tower(3, 3, 60, 60, 1)] }),
+      memory,
+    );
     const waypoint = routeGroupWaypoint(reroute);
     expect(waypoint).not.toBeNull();
-    // Now the highest-hp ahead tower is (3,3).
-    expect(waypoint).toEqual({ x: 3, y: 3 });
+    // Highest-hp ahead tower is still (5,3); its nearest path tile is itself.
+    expect(waypoint).toEqual({ x: 5, y: 3 });
   });
 
   it("is idempotent per wave: a second identical observation emits nothing", () => {

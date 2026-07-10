@@ -74,6 +74,11 @@ export class WaveGraphTracker {
       this._intervalMinLives = this.runState.lives;
     }
 
+    const currentEnemyHpSum = this._sumEnemyHp();
+    if (currentEnemyHpSum > this._intervalPeakEnemyHp) {
+      this._intervalPeakEnemyHp = currentEnemyHpSum;
+    }
+
     if (this._gameTimeAccum >= WAVE_GRAPH_INTERVAL_SECONDS) {
       this._flushInterval();
     }
@@ -116,8 +121,6 @@ export class WaveGraphTracker {
     const currentDamage = this._sumTotalDamage();
     this._intervalDamage = Math.max(0, currentDamage - this._prevTotalDamage);
     this._prevTotalDamage = currentDamage;
-
-    this._intervalPeakEnemyHp = this._sumEnemyHp();
 
     const baseHealthColor = this._computeBaseHealthColor(this._intervalMinLives);
 

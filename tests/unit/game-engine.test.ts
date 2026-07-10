@@ -733,4 +733,39 @@ describe("GameEngine", () => {
       expect(engine.runState.state).toBe(GameState.MENU);
     });
   });
+
+  describe("targeting cache invalidation", () => {
+    function buildAndSelectTower(): Tower {
+      const grid = engine.runState.grid!;
+      let tower: Tower | null = null;
+      for (let x = 0; x < grid.width && !tower; x++) {
+        for (let y = 0; y < grid.height && !tower; y++) {
+          if (grid.canBuild(x, y)) {
+            tower = engine.towerManager!.build("basic", x, y, engine.persistState, grid);
+          }
+        }
+      }
+      if (!tower) throw new Error("no buildable tile found");
+      engine.runState.selectedTowerId = tower.id;
+      return tower;
+    }
+
+    it("clears cachedTargetId when the targeting mode changes", () => {
+      const persistState = createTestPersistState();
+      initEngine(0, persistState);
+      const tower = buildAndSelectTower();
+      tower.cachedTargetId = 42;
+      engine.setTargeting("closest");
+      expect(tower.cachedTargetId).toBeNull();
+    });
+
+    it("clears cachedTargetId when the fixed-aim direction changes", () => {
+      const persistState = createTestPersistState();
+      initEngine(0, persistState);
+      const tower = buildAndSelectTower();
+      tower.cachedTargetId = 42;
+      engine.setFixedAimDir("N");
+      expect(tower.cachedTargetId).toBeNull();
+    });
+  });
 });

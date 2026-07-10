@@ -15,6 +15,7 @@ let latestSnapshot: SimulationSnapshot | null = null;
 // dot count so the accumulation never exceeds what can be displayed.
 let latestWaveGraphDots: WaveGraphDot[] = [];
 let latestWaveGraphGeneration = 0;
+let lastWaveGraphRunId: number | null = null;
 
 export function getLatestSnapshot(): SimulationSnapshot | null {
   return latestSnapshot;
@@ -104,6 +105,12 @@ export class SnapshotStore {
     const incoming = snapshot.waveGraphDots;
     if (incoming) {
       const incomingGeneration = snapshot.waveGraphDotsGeneration;
+      const runId = snapshot.meta.runId ?? null;
+      if (runId !== null && runId !== lastWaveGraphRunId) {
+        latestWaveGraphDots = [];
+        latestWaveGraphGeneration = 0;
+        lastWaveGraphRunId = runId;
+      }
       // A new run resets the worker's generation to 0, so a drop below the last
       // seen generation means the previous run ended — replace the cache rather
       // than merging (otherwise the new run's dots would append onto stale data).

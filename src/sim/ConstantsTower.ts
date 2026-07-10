@@ -205,13 +205,15 @@ export interface TowerVariantConfig {
   apply?: (stats: TowerVariantStats, tierIdx: number) => TowerVariantStats;
 }
 
+export const CANNON_FRAGMENT_SPLASH_TIERS: readonly number[] = [1, 1.4, 1.8];
+
 export const TOWER_VARIANTS: Record<TowerId, { A: TowerVariantConfig; B: TowerVariantConfig }> = {
   basic: {
     A: { name: "Rapid", apply: (s, _t) => ({ ...s, fireRate: s.fireRate * 3, damage: s.damage * 0.6 }) },
     B: { name: "Heavy", apply: (s, _t) => ({ ...s, fireRate: s.fireRate * 0.5, damage: s.damage * 2.5 }) },
   },
   ice: {
-    A: { name: "Permafrost", apply: (s, tierIdx) => ({ ...s, splash: [1, 1.25, 1.5][tierIdx]! }) },
+    A: { name: "Permafrost", apply: (s, tierIdx) => ({ ...s, splash: s.splash * [1, 1.25, 1.5][tierIdx]! }) },
     B: { name: "Shatter", apply: (s, _t) => ({ ...s, damage: s.damage * 2 }) },
   },
   sniper: {
@@ -219,7 +221,10 @@ export const TOWER_VARIANTS: Record<TowerId, { A: TowerVariantConfig; B: TowerVa
     B: { name: "Piercer", apply: (s, _t) => ({ ...s, pierce: 3 }) },
   },
   cannon: {
-    A: { name: "Fragment", apply: (s, _t) => ({ ...s, splash: s.splash * 1.4 }) },
+    A: {
+      name: "Fragment",
+      apply: (s, tierIdx) => ({ ...s, splash: s.splash * CANNON_FRAGMENT_SPLASH_TIERS[tierIdx]! }),
+    },
     B: { name: "Napalm", apply: (s, _t) => ({ ...s, napalm: true }) },
   },
   lightning: {

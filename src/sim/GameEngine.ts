@@ -873,6 +873,7 @@ export class GameEngine {
     const tower = this.getSelectedTower();
     if (tower) {
       tower.targeting = mode;
+      tower.cachedTargetId = null;
     }
   }
 
@@ -880,6 +881,7 @@ export class GameEngine {
     const tower = this.getSelectedTower();
     if (tower) {
       tower.fixedAimDir = dir;
+      tower.cachedTargetId = null;
     }
   }
 

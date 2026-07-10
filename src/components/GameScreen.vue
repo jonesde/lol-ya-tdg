@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { awaitDisposeWorker } from "@/router/index.js";
 import { GameState } from "@/sim/Constants.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -47,9 +48,6 @@ function onPopState() {
     cancelLabel: "Stay",
     onConfirm() {
       disposed.value = true;
-      gameStore.worker?.postMessage({ type: "dispose" });
-      gameStore.worker?.terminate();
-      gameStore.clearWorker();
       router.push("/game-over");
     },
     onCancel() {
@@ -72,9 +70,7 @@ onUnmounted(() => {
     popstateHandler = null;
   }
   if (gameStore.worker && !disposed.value) {
-    gameStore.worker.postMessage({ type: "dispose" });
-    gameStore.worker.terminate();
-    gameStore.clearWorker();
+    void awaitDisposeWorker(gameStore.worker);
   }
 });
 </script>

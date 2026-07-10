@@ -71,6 +71,10 @@ self.onmessage = (event: MessageEvent<MainToCommanderMessage>) => {
         lastRunId = slice.meta.runId ?? null;
         memory.gridLayout = undefined;
         gridLayoutToggleSent = false;
+        memory.phase = "idle";
+        memory.seenByWave = new Map<number, Set<number>>();
+        memory.lastRushWaveNumber = null;
+        memory.lastRoutedTowerSignature = "";
       }
       if (slice.gridLayout) {
         memory.gridLayout = slice.gridLayout;

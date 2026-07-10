@@ -210,6 +210,7 @@ export const useGameStore = defineStore("game", {
       this.mapIndex = mapIndex;
       this.map = mapData;
       this.grid = grid;
+      this.state = GameState.PLAYING;
       this.lives = 20;
       this.gold = StartingGold[mapData.regionId]!;
       this.currentWave = 0;

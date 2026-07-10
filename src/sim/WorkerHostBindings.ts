@@ -49,4 +49,11 @@ export class WorkerHostBindings implements HostBindings {
       resolve(confirmed);
     }
   }
+
+  clearPendingConfirms(): void {
+    for (const resolve of this.pendingConfirms.values()) {
+      resolve(false);
+    }
+    this.pendingConfirms.clear();
+  }
 }

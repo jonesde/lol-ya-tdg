@@ -30,7 +30,6 @@ const router = createRouter({ history: createWebHistory(), routes });
 
 router.beforeEach(async (to: RouteLocationNormalized, from: RouteLocationNormalized, next: NavigationGuardNext) => {
   const gameStore = useGameStore();
-  const persistStore = usePersistStore();
 
   // Block direct access to /game without a loaded map
   // Check `gameStore.map` instead of `mapIndex` — random maps use mapIndex=-1 but still have a valid map
@@ -52,25 +51,8 @@ router.beforeEach(async (to: RouteLocationNormalized, from: RouteLocationNormali
 
   // Leaving /game — dispose the worker, wait for the "disposed" ack so the
   // final persist flush is not dropped, then terminate and save progress (fix #3).
-  if (from.name === "game" && to.name !== "game") {
-    const worker = gameStore.worker;
-    if (worker) {
-      await new Promise<void>((resolve) => {
-        const onDisposed = (event: MessageEvent): void => {
-          const data = event.data as WorkerToMainMessage | null;
-          if (data && data.type === "disposed") {
-            worker.removeEventListener("message", onDisposed);
-            resolve();
-          }
-        };
-        worker.addEventListener("message", onDisposed);
-        worker.postMessage({ type: "dispose" });
-        setTimeout(resolve, 500);
-      });
-      worker.terminate();
-      gameStore.clearWorker();
-    }
-    persistStore.save();
+  if (from.name === "game" && to.name !== "game" && gameStore.worker) {
+    await awaitDisposeWorker(gameStore.worker);
   }
 
   if (prevState === GameState.GAME_OVER && to.name !== "game-over" && to.name !== "victory") {
@@ -85,3 +67,21 @@ router.beforeEach(async (to: RouteLocationNormalized, from: RouteLocationNormali
 });
 
 export default router;
+
+export async function awaitDisposeWorker(worker: Worker): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const onDisposed = (event: MessageEvent): void => {
+      const data = event.data as WorkerToMainMessage | null;
+      if (data && data.type === "disposed") {
+        worker.removeEventListener("message", onDisposed);
+        resolve();
+      }
+    };
+    worker.addEventListener("message", onDisposed);
+    worker.postMessage({ type: "dispose" });
+    setTimeout(resolve, 500);
+  });
+  worker.terminate();
+  useGameStore().clearWorker();
+  usePersistStore().save();
+}

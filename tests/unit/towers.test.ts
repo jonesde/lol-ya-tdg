@@ -16,6 +16,7 @@ import {
   TOWER_META,
   UPGRADE_COST_BASE,
 } from "@/sim/Constants.js";
+import { CANNON_FRAGMENT_SPLASH_TIERS } from "@/sim/ConstantsTower.js";
 import { Tower } from "@/sim/towers/Tower.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
@@ -239,20 +240,47 @@ describe("Tower", () => {
       expect(tower.stats.pierce).toBe(3);
     });
 
-    it("Variant A (Permafrost) sets splash to [1, 1.25, 1.5] based on level-5", () => {
+    it("Variant A (Permafrost) multiplies the level-scaled splash by [1, 1.25, 1.5] per tier", () => {
       const tower = new Tower("ice", 0, 0, makeSave(), makeMockGrid());
+      const baseSplash = TOWER_BASE.ice.splash!;
       tower.level = 5;
       tower.variant = "A";
       tower._statsCache = null;
-      expect(tower.stats.splash).toBe(1);
+      expect(tower.stats.splash).toBeCloseTo(baseSplash * TOWER_LEVEL_SPLASH_MULT ** 4 * 1, 6);
       tower.level = 6;
       tower.variant = "A";
       tower._statsCache = null;
-      expect(tower.stats.splash).toBe(1.25);
+      expect(tower.stats.splash).toBeCloseTo(baseSplash * TOWER_LEVEL_SPLASH_MULT ** 5 * 1.25, 6);
       tower.level = 7;
       tower.variant = "A";
       tower._statsCache = null;
-      expect(tower.stats.splash).toBe(1.5);
+      expect(tower.stats.splash).toBeCloseTo(baseSplash * TOWER_LEVEL_SPLASH_MULT ** 6 * 1.5, 6);
+    });
+
+    it("Variant A (Fragment) multiplies the level-scaled splash by CANNON_FRAGMENT_SPLASH_TIERS per tier", () => {
+      const tower = new Tower("cannon", 0, 0, makeSave(), makeMockGrid());
+      const baseSplash = TOWER_BASE.cannon.splash!;
+      tower.level = 5;
+      tower.variant = "A";
+      tower._statsCache = null;
+      expect(tower.stats.splash).toBeCloseTo(
+        baseSplash * TOWER_LEVEL_SPLASH_MULT ** 4 * CANNON_FRAGMENT_SPLASH_TIERS[0]!,
+        6,
+      );
+      tower.level = 6;
+      tower.variant = "A";
+      tower._statsCache = null;
+      expect(tower.stats.splash).toBeCloseTo(
+        baseSplash * TOWER_LEVEL_SPLASH_MULT ** 5 * CANNON_FRAGMENT_SPLASH_TIERS[1]!,
+        6,
+      );
+      tower.level = 7;
+      tower.variant = "A";
+      tower._statsCache = null;
+      expect(tower.stats.splash).toBeCloseTo(
+        baseSplash * TOWER_LEVEL_SPLASH_MULT ** 6 * CANNON_FRAGMENT_SPLASH_TIERS[2]!,
+        6,
+      );
     });
 
     it("Variant A (Overload) increases chain by 2*t and damage by 1.2^t per tier", () => {
@@ -546,6 +574,14 @@ describe("Tower", () => {
       tower.variant = "A";
       const upgradeResult = tower.canUpgrade(makeSave());
       expect(upgradeResult.ok).toBe(false);
+    });
+
+    it("respects maxLevelFor when save is undefined (falls back to default persist state)", () => {
+      const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
+      tower.level = 2;
+      const upgradeResult = tower.canUpgrade(undefined);
+      expect(upgradeResult.ok).toBe(false);
+      expect(upgradeResult.reason).toBe("Max level reached");
     });
   });
 

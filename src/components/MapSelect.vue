@@ -119,8 +119,7 @@ async function startMap(index: number) {
 
   // Load map data into the store so SvgGameRoot can pick it up
   const mapData = getMap(index);
-  gameStore.mapIndex = index;
-  gameStore.map = mapData;
+  gameStore.initMap(index, mapData, null);
 
   router.push("/game");
 }
@@ -193,8 +192,7 @@ function startRandomMap() {
   const mapData = generateRandomMap(width, height, style, regionId, level, seed);
   const params = { regionId, level, style, seed, width, height };
 
-  gameStore.mapIndex = -1;
-  gameStore.map = mapData;
+  gameStore.initMap(-1, mapData, null);
   gameStore.randomMapParams = params;
 
   router.push("/game");

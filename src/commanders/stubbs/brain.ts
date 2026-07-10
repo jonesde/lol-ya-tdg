@@ -103,7 +103,7 @@ function representativeEnemyTile(enemies: ObservationEnemy[], gridLayout: number
 
 function computeTowerSignature(liveTowers: ObservationTower[]): string {
   return liveTowers
-    .map((tower) => `${tower.tileX},${tower.tileY}:${Math.round(tower.hp)}`)
+    .map((tower) => `${tower.tileX},${tower.tileY}:${tower.level}`)
     .sort()
     .join("|");
 }
