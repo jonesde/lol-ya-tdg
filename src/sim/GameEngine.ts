@@ -454,18 +454,20 @@ export class GameEngine {
       tower.waveDamage = 0;
     });
 
-    // Bulk-restore ghosted towers at wave start without N sequential recomputes:
-    // reset each tower's ghost state, then re-block their tiles in a single
-    // recompute, then reposition any enemy caught standing on a re-blocked tile.
+    // Full-restore all towers at wave start, then clear any that were ghosted
+    // so their tiles re-block in a single path recompute. Reposition enemies
+    // that were standing on a tile that just became blocked again.
+    const towersToClear: Tower[] = [];
     for (const tower of this.towerManager!.towers) {
+      tower.health = tower.maxHealth;
       if (tower.isGhost) {
         tower.isGhost = false;
-        tower.health = tower.maxHealth;
         tower.ghostTimer = 0;
+        towersToClear.push(tower);
       }
     }
-    this.grid?.batchClearGhosts();
-    if (this.grid) {
+    if (towersToClear.length > 0 && this.grid) {
+      this.grid.batchClearGhosts();
       for (const enemy of this.enemyManager!.enemies) {
         if (enemy.removed || enemy.reachedBase) continue;
         const tileX = Math.floor(enemy.x / this.grid.tileSize);
