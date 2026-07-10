@@ -17,7 +17,6 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { stopEnemyCommander } from "@/commanders/index.js";
 import { useInput } from "@/composables/Input.js";
 import { EffectManager } from "@/render/svg/EffectManager.js";
 import { EnemyManager } from "@/render/svg/EnemyManager.js";
@@ -567,7 +566,9 @@ onUnmounted(() => {
   }
   gameStore.clearWorker();
   setCommandDispatcher(null);
-  stopEnemyCommander();
+  // Reset the commander selection so the pause-menu dropdown reflects reality on
+  // the next /game entry (the worker is stopped as a side effect of this call).
+  uiStore.setEnemyCommander("none");
   worker = null;
   dispatcher = null;
   soundManager.value?.dispose();
