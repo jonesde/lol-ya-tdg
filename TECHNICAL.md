@@ -21,7 +21,7 @@ src/
 │   ├── ui.ts                    # UI overlay state: confirm dialogs, notifications, menu/skill-tree/stats/help/minimap context, debug panel, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help
 │   └── mapTheme.ts              # Map theme state: activeTheme, defaultTheme, availableThemes, preload/load actions
 ├── composables/
-│   │   ├── cameraUtils.ts           # Vue composable: reactive camera CTM transform + world/screen coordinate conversion
+│   ├── cameraUtils.ts           # Vue composable: reactive camera CTM transform + world/screen coordinate conversion
 │   └── Input.ts                 # Keyboard input composable: dispatches to Pinia stores + engine via the command seam
 ├── components/
 │   ├── GameScreen.vue           # Root game layout: SvgGameRoot + HUD + shop + tower panel + wave countdown + debug + wave graph + pause menu
@@ -58,7 +58,7 @@ src/
 │   ├── WorkerProtocol.ts        # Worker↔main thread message protocol types (snapshot, playSound, notifyUi, schedulePersistSave, gridTowerSync, requestConfirm, workerReady, workerError, setTheme, dispose, snapshotAck, init, command, confirmResult)
 │   ├── applyCommand.ts          # Maps a Command → GameEngine method (shared by worker and main-thread dispatcher)
 │   ├── commandBus.ts            # Module-level dispatch seam (setCommandDispatcher / dispatchCommand)
-│   ├── GameEngine.ts            # Core game loop: RAF driver, update/render, state transitions, rewards
+│   ├── GameEngine.ts            # Core simulation: update(dt), state transitions, rewards (no RAF, no rendering; loop lives in WorkerEntry)
 │   ├── Constants.ts             # Shared game constants: wave config, map levels, regions, boss cadence
 │   ├── ConstantsTower.ts        # Tower constants: TowerIds, tower stats, variants, milestone/splash/crit config
 │   ├── ConstantsEnemy.ts        # Enemy constants: EnemyType union, ENEMY_TYPES metadata, status effect tuning
@@ -385,7 +385,7 @@ cache supplied by the relay, not the whole thing.
 | `src/sim/Constants.ts` | Shared game constants: wave config, map levels, boss cadence, gem rewards; `Regions` slimmed (visual fields moved to theme) |
 | `src/sim/ConstantsTower.ts` | Tower constants: TowerIds, tower stats/cost, specialization variants, milestone/splash/crit config; visual fields (name, color, icon, animation, walking) moved to theme |
 | `src/sim/ConstantsEnemy.ts` | Enemy constants: EnemyType union, stats-only ENEMY_TYPES (baseHp, speed, bounty, radius, shield, heal, resist, etc.); visual fields moved to theme |
-| `src/composables/Input.ts` | Keyboard input composable (1-9 build, Arrow L/R speed, Esc dialogs/cancel, Tab cycle, u/s upgrade/sell) |
+| `src/composables/Input.ts` | Keyboard input composable: dispatches build/upgrade/sell/speed/pause intents to Pinia stores and the engine via the command seam |
 | `src/sim/EnemyWalk.ts` | Base shape vertex generation and path-d string conversion |
 | `src/sim/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback |
 | `src/sim/ParticleSystem.ts` | Game-side particle simulation: spawn, motion, life/expiry |
@@ -522,9 +522,10 @@ All component styles use `<style scoped>` to prevent leakage.
 
 | Directory | Description |
 |---|---|
-| `tests/unit/` | 25 unit test files covering all source modules (includes `map-theme.test.ts`, `spawn-manager.test.ts`, `enemy-attack.test.ts`, `snapshot-store.test.ts`, `sim/snapshot.test.ts`) |
+| `tests/unit/` | 27 unit test files covering all source modules (includes `map-theme.test.ts`, `spawn-manager.test.ts`, `enemy-attack.test.ts`, `snapshot-store.test.ts`, `snapshot-merge.test.ts`, `text-grid-builder.test.ts`, `text-render.test.ts`) |
+| `tests/unit/sim/` | Simulation unit tests: `applyCommand.test.ts`, `enemy-routing.test.ts`, `snapshot.test.ts` |
 | `tests/unit/commanders/` | Commander unit tests: `observation.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts` |
-| `tests/unit/components/` | Vue component tests (13 files, includes `pause-menu.test.ts`) |
+| `tests/unit/components/` | Vue component tests (15 files, includes `pause-menu.test.ts`, `text-game-root.test.ts`) |
 | `tests/integration/` | End-to-end wave simulation (`integration.test.ts`), worker command→snapshot round-trip (`worker-roundtrip.test.ts`), and commander worker round-trip (`commander.test.ts`) |
 | `tests/helpers/` | Shared mocks: `mock-stores.ts`, `mock-grid.ts`, `mock-managers.ts`, `mockDefaultTheme` |
 | `tests/setup.ts` | Global test setup: in-memory localStorage, Canvas 2D mock, performance.now |
