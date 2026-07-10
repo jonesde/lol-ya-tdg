@@ -16,9 +16,9 @@ src/
 ├── router/
 │   └── index.ts                 # Route definitions + navigation guards (dispose engine on route change)
 ├── stores/
-│   ├── game.ts                  # Volatile per-run state: lives, gold, wave, game state, selection, camera
-│   ├── persist.ts               # Persistent meta-progression: gems, unlocks, difficulty, map progress (localStorage)
-│   ├── ui.ts                    # UI overlay state: confirm dialogs, menu/skill-tree/stats/help context, debug panel
+│   ├── game.ts                  # Volatile per-run state: lives, gold, wave, game state, selection, camera, tower/panel positions, hover state, frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference
+│   ├── persist.ts               # Persistent meta-progression: gems, unlocks, difficulty, map progress, random-map preferences, last-selected theme (localStorage)
+│   ├── ui.ts                    # UI overlay state: confirm dialogs, notifications, menu/skill-tree/stats/help/minimap context, debug panel, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help
 │   └── mapTheme.ts              # Map theme state: activeTheme, defaultTheme, availableThemes, preload/load actions
 ├── composables/
 │   │   ├── cameraUtils.ts           # Vue composable: reactive camera CTM transform + world/screen coordinate conversion
@@ -47,7 +47,7 @@ src/
 │   ├── Command.ts               # Command discriminated-union types (input/action/lifecycle/llm) for simulation intent
 │   ├── CommandDispatcher.ts     # CommandDispatcher interface — the dispatch seam every intent flows through
 │   ├── GameRunState.ts          # Per-run plain simulation state interface + pure helper functions (formerly gameStore logic)
-│   ├── HostBindings.ts          # HostBindings interface — the only way the sim reaches the outside world (sound/UI/persist/confirm)
+│   ├── HostBindings.ts          # HostBindings interface — the only way the sim reaches the outside world (sound/UI/persist/confirm/gridTowerSync)
 │   ├── PersistState.ts          # Plain persist state interface + pure mutation helpers (formerly persistStore logic)
 │   ├── SimulationSnapshot.ts    # SimulationSnapshot + entity/meta snapshot types
 │   ├── SnapshotSerializer.ts    # buildSnapshot(): serializes the engine into a plain SimulationSnapshot
@@ -55,7 +55,7 @@ src/
 │   ├── WorkerCommandDispatcher.ts # Main-thread dispatcher: forwards commands to the worker via postMessage
 │   ├── WorkerEntry.ts           # Web Worker entry: owns GameEngine, fixed-timestep loop, command-queue drain, snapshot post
 │   ├── WorkerHostBindings.ts    # Worker-side HostBindings: posts sound/UI/persist/confirm messages to main thread
-│   ├── WorkerProtocol.ts        # Worker↔main thread message protocol types
+│   ├── WorkerProtocol.ts        # Worker↔main thread message protocol types (snapshot, playSound, notifyUi, schedulePersistSave, gridTowerSync, requestConfirm, workerReady, workerError, setTheme, dispose, snapshotAck, init, command, confirmResult)
 │   ├── applyCommand.ts          # Maps a Command → GameEngine method (shared by worker and main-thread dispatcher)
 │   ├── commandBus.ts            # Module-level dispatch seam (setCommandDispatcher / dispatchCommand)
 │   ├── GameEngine.ts            # Core game loop: RAF driver, update/render, state transitions, rewards
@@ -80,7 +80,6 @@ src/
 │   └── waves/
 │       └── WaveManager.ts       # Wave composition, boss cadence, inter-wave timer
 ├── sim-adapters/
-│   ├── MainThreadCommandDispatcher.ts # Main-thread CommandDispatcher adapter (engine-direct; legacy/non-worker path)
 │   └── MainThreadHostBindings.ts      # Main-thread HostBindings adapter: SoundManager/uiStore/persistStore
 ├── render/
 │   ├── themes/
@@ -106,8 +105,18 @@ src/
 │       ├── TextGridBuilder.ts   # Static char buffer (3×3 per tile) for the <pre> monochrome base layer
 │       ├── TextTowerManager.ts  # Draws tower theme icon at tile center on the canvas overlay
 │       ├── TextEnemyManager.ts  # Draws enemy theme glyph at scaled enemy.x/enemy.y on the canvas overlay
+│       ├── TextPathRenderer.ts  # Draws worker-authoritative enemy paths as polylines on the canvas overlay
 │       ├── TextOverlayRenderer.ts # Canvas: projectile dots, HP bars, lightning lines, stun marks
 │       └── types.ts             # TextRenderScale + TextThemeAccess shared interfaces
+├── commanders/
+│   │   ├── index.ts                 # Lifecycle: setEnemyCommander(start/stop) + stopEnemyCommander (releases held enemies via llm:routeGroup)
+│   │   ├── CommanderWorker.ts       # Web Worker entry: owns CommanderBrain + memory, dispatches decide() per observation, posts commands back
+│   │   ├── relay.ts                 # Main-thread relay: ~4 Hz poll of SnapshotStore, builds throttled slice, posts to worker, forwards commands via dispatchCommand
+│   │   ├── protocol.ts              # Main↔worker message protocol: CommanderSnapshotSlice, MainToCommanderMessage, CommanderToMainMessage
+│   │   ├── observation.ts           # Pure projection from CommanderSnapshotSlice → CommanderObservation (enemy world→tile, tower hp rename)
+│   │   ├── brain.ts                 # CommanderBrain interface + CommanderMemory state + createBrain() factory
+│   │   ├── stubby/brain.ts          # Sergeant Stubby: hold-then-rush (holds emerging enemies, rushes wave to base when wave completes)
+│   │   └── stubbs/brain.ts          # Commander Stubbs: aggressive routing to highest-HP live tower ahead of the group; re-routes on tower-set change
 └── sound/
     └── SoundManager.ts          # Lightweight WebAudio synth for game sounds
 ```
@@ -119,7 +128,7 @@ src/
 The game uses a single `<svg>` root element managed by `SvgGameRoot.vue`, replacing the previous two-layer Canvas + DOM overlay architecture. All visual content — grid tiles, towers, enemies, projectiles, particles, and effects — is rendered as SVG elements.
 
 - **Vue (Declarative):** Manages structural changes (map loading, building/selling towers, opening shops). Mounts the root SVG and static layers via `v-html` for the grid.
-- **GameEngine (Logic, in Web Worker):** Orchestrates all game logic (enemy movement, tower targeting, projectile updates, wave management). Constructor takes plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle` — no Pinia, no canvas reference. `handleClick()` accepts world coordinates; `setHover` was removed (hover is main-thread-only UI state). The engine runs inside the Web Worker (`src/sim/WorkerEntry.ts`), not on the main thread.
+- **GameEngine (Logic, in Web Worker):** Orchestrates all game logic (enemy movement, tower targeting, projectile updates, wave management). Constructor takes plain `PersistState` + `ThemeBundle` + `HostBindings` + `mapIndex` (plus optional `randomMapParams` and `particleSpawner`) — no Pinia, no canvas reference. `GameRunState` is created internally in `_initMap`, not passed in. `handleClick()` accepts world coordinates; `setHover` was removed (hover is main-thread-only UI state). The engine runs inside the Web Worker (`src/sim/WorkerEntry.ts`), not on the main thread.
 - **Direct DOM (Imperative Rendering):** A main-thread `requestAnimationFrame` loop reads the latest `SimulationSnapshot` from the `SnapshotStore` and writes per-frame properties via `setAttribute` and `style.transform`. It does not call the engine directly — all intent flows in as `Command`s and all state flows out as snapshots. Bypasses Vue's reactivity system for hot paths.
 
 The SVG structure is:
@@ -148,9 +157,9 @@ The SVG structure is:
 
 ### Four Pinia Stores
 
-- **`gameStore`** — reactive mirror/projection of the simulation `SimulationSnapshot`. The worker is authoritative for simulation state; `gameStore` holds the subset the Vue UI binds to (lives, gold, wave, game state, selection, time scale, dialog visibility) and is updated by snapshot diffs each frame. Main-thread-only state (camera, hover tile, hover-upgrade-button) also lives here. Reset when starting a new map.
-- **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons). Auto-saved to `localStorage` via manual `save()` calls.
-- **`uiStore`** — UI overlay visibility and confirm dialog state.
+- **`gameStore`** — reactive mirror/projection of the simulation `SimulationSnapshot`. The worker is authoritative for simulation state; `gameStore` holds the subset the Vue UI binds to (lives, gold, wave, game state, selection, time scale, dialog visibility, frame id, run gem/boss counters, milestone breakdown, end-screen data) and is updated by snapshot diffs each frame. Main-thread-only state (camera, hover tile, hover-upgrade-button, tower/panel positions, random-map params, worker reference) also lives here. Reset when starting a new map.
+- **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons, random-map preferences, last-selected theme). Auto-saved to `localStorage` via manual `save()` calls.
+- **`uiStore`** — UI overlay visibility and confirm dialog state, plus notifications, minimap toggle, enemy commander selection ("none"/"stubby"/"stubbs"), random-map panel visibility, and wasPlaying flags for pause/skill-tree/help (so closing these overlays restores the prior playing/paused state).
 - **`mapThemeStore`** — map theme state: `defaultTheme` (preloaded at app init for synchronous access by non-game screens) and `activeTheme` (resolved for the current run), plus `availableThemes` and preload/load actions.
 
 ### Confirm Dialogs as a Single Component
@@ -163,9 +172,9 @@ The simulation runs in a Web Worker; the main thread renders and produces intent
 
 - **Worker owns the engine.** `src/sim/WorkerEntry.ts` constructs `GameEngine` (with plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle`, not Pinia), runs a `setTimeout` fixed-timestep loop, drains a command queue at the start of each tick, and posts a `SimulationSnapshot` every tick. `requestAnimationFrame` is unavailable in a worker, so a `setTimeout`-driven loop is used instead.
 - **Commands in (`src/sim/Command.ts`).** All intent is a typed `Command`: `input:*` (e.g. `input:click`), `action:*` (pause, cycle speed, upgrade, sell, select tower/build type, targeting, …), `lifecycle:*` (`init`/`dispose`), and future `llm:*`. The main thread dispatches via `commandBus.dispatchCommand` → `WorkerCommandDispatcher`, which forwards through `postMessage`. Hover and camera are main-thread-only and never become commands.
-- **Snapshots out (`src/sim/SimulationSnapshot.ts`, `SnapshotSerializer.ts`).** Each tick the worker serializes plain-data DTOs — `enemies`, `towers`, `projectiles`, `particles`, `spawnStates`, plus a `meta` scalar block (lives, gold, wave, selection, `lastScaledDt`, etc.) and a `persistDirty` flag. `SnapshotSerializer.buildSnapshot` reads entity fields directly; the render managers' `syncFromGameEngine` signatures now take these snapshot arrays.
+- **Snapshots out (`src/sim/SimulationSnapshot.ts`, `SnapshotSerializer.ts`).** Each tick the worker serializes plain-data DTOs — `enemies`, `towers`, `projectiles`, `particleSpawns` (sparse spawn requests, consumed once by the main thread), `spawnStates`, `paths`/`pathsVersion` (worker-authoritative enemy paths for highlight rendering), `waveGraphDots`/`waveGraphDotsGeneration` (per-interval wave-graph data, shipped only when generation changes), `gridLayout` (constant map layout for the commander worker, omitted once cached), `lightningEffects`/`stunEffects` (ephemeral visual effects, consumed and cleared each build), plus a `meta` scalar block (lives, gold, wave, selection, `lastScaledDt`, etc.) and a `persistDirty` flag. `SnapshotSerializer.buildSnapshot` reads entity fields directly; the render managers' `syncFromGameEngine` signatures now take these snapshot arrays.
 - **Reactive mirror (`src/sim/SnapshotStore.ts`).** On the main thread, `SnapshotStore` holds the latest snapshot and diff-mirrors `meta` into `gameStore` (the reactive projection). The rAF render loop reads from the `SnapshotStore`, never from the engine. `gameStore` is a cache; the worker is authoritative, and reconciliation happens within one frame.
-- **HostBindings seam (`src/sim/HostBindings.ts`).** The sim reaches the outside world only through `HostBindings`: `playSound`, `notifyUi`, `schedulePersistSave`, `requestConfirm`. Implemented twice — `WorkerHostBindings` (worker → `postMessage`) and `MainThreadHostBindings` in `src/sim-adapters/` (main thread → `SoundManager`/`uiStore`/`persistStore`). This seam is what made the worker migration behavior-preserving at every step.
+- **HostBindings seam (`src/sim/HostBindings.ts`).** The sim reaches the outside world only through `HostBindings`: `playSound`, `notifyUi`, `schedulePersistSave`, `syncGridTower`, `requestConfirm`. Implemented twice — `WorkerHostBindings` (worker → `postMessage`) and `MainThreadHostBindings` in `src/sim-adapters/` (main thread → `SoundManager`/`uiStore`/`persistStore`). This seam is what made the worker migration behavior-preserving at every step.
 - **Persistence batching.** The worker sets `persistDirty` on persist mutations and the host flushes `schedulePersistSave` only on significant events (wave change, game-over/victory, new milestone claim, or a 5s fallback), avoiding a `localStorage` write per mutation.
 
 ### Snapshot Backpressure (Worker → Main Ack Gate)
@@ -248,6 +257,62 @@ take the `CanvasRenderingContext2D` as a constructor-free `render(ctx, …)` par
 (rather than calling `canvas.getContext` internally) so they are testable with the
 global `mockCtx` from `tests/setup.ts`.
 
+### LLM Enemy Commander
+
+A pluggable AI layer that issues `llm:*` commands to influence enemy behavior
+(hold positions, route to waypoints, set targeting). Two built-in "brains" ship as
+stubs for future LLM integration.
+
+**Architecture.** Three pieces:
+
+- **Relay** (`src/commanders/relay.ts`): Main-thread, passive `SnapshotStore` reader
+  at ~4 Hz. Builds a `CommanderSnapshotSlice` (throttled, not full snapshot), posts
+  to the commander worker, and forwards returned `Command[]` via
+  `commandBus.dispatchCommand`. Owns a `gridLayout` cache keyed to `runId` so the
+  one-shot feed-off toggle stays valid across worker restarts within a run. Does
+  **not** post `snapshotAck` — the single-ack backpressure gate (§"Snapshot
+  Backpressure") is untouched. A run restart (engine reloads a map → `runId` bumps)
+  drops the stale `gridLayout` cache so the previous map is never forwarded to the
+  worker for the new run.
+- **CommanderWorker** (`src/commanders/CommanderWorker.ts`): Dedicated worker running
+  the brain. Receives `start`/`stop`/`observation` messages. On each observation,
+  builds a `CommanderObservation` from the slice, calls `brain.decide(observation,
+  memory)`, and posts the returned `Command[]` back. Resets memory on `runId` change.
+- **Brains** (`src/commanders/brain.ts`, `src/commanders/stubby/brain.ts`,
+  `src/commanders/stubbs/brain.ts`): Pure functions of `CommanderObservation` +
+  `CommanderMemory` → `Command[]`. `CommanderMemory` is worker-owned scratch (phase,
+  seen-by-wave, last-rush-wave, tower signature, cached grid layout).
+
+**Observation** (`src/commanders/observation.ts`): Pure projection — enemy world x/y
+→ tile via `meta.tileSize`, tower `health/maxHealth` → `hp/maxHp`, pending spawn
+count summed across `spawnStates`. Field names are intentionally stable for a future
+LLM commander (§ArchitecturePlan §4.3).
+
+**Protocol** (`src/commanders/protocol.ts`): `CommanderSnapshotSlice` is the
+intentional input contract — a throttled, abstracted slice of the full
+`SimulationSnapshot` (enemies, towers, spawnStates, meta) plus a `gridLayout`
+cache supplied by the relay, not the whole thing.
+
+**Two built-in brains:**
+
+- **Sergeant Stubby** (`src/commanders/stubby/brain.ts`): Hold-then-rush. While a
+  wave is still emerging (`remainingScheduledSpawns > 0` or `pendingEnemyCount > 0`),
+  holds each newly-seen enemy at its current tile via `llm:holdFormation`. Once the
+  wave finishes emerging, releases all held enemies of that wave in one
+  `llm:routeGroup(enemyIds, [])` rush to the base. State keyed by wave number so
+  spillover never dilutes a prior wave's rush.
+- **Commander Stubbs** (`src/commanders/stubbs/brain.ts`): Aggressive, never holds.
+  Computes BFS distances from every base tile over path/spawn/base tiles. For each
+  newly-seen enemy, picks the highest-HP live tower that is *ahead* (closer to base)
+  of the group's representative tile, snaps to the nearest path tile, and issues
+  `llm:routeGroup` with that waypoint. Re-routes whenever the tower set signature
+  changes.
+
+**Lifecycle** (`src/commanders/index.ts`): `setEnemyCommander(kind)` starts the relay
+(which spawns the worker and sends `start`); `"none"` stops it.
+`stopEnemyCommander()` dispatches `llm:routeGroup(enemyIds, [])` for every live enemy
+(reverts held enemies to default path) before stopping the relay.
+
 ### Router Navigation Guards
 
 `router.beforeEach` disposes the game engine and saves progress when leaving `/game`. Auto-redirects to `/game-over` or `/victory` when the game state transitions.
@@ -277,9 +342,9 @@ global `mockCtx` from `tests/setup.ts`.
 
 | File | Description |
 |---|---|
-| `src/stores/game.ts` | Volatile game state: lives, gold, wave, selection, time scale, camera, end screen data |
-| `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, localStorage I/O |
-| `src/stores/ui.ts` | UI state: confirm dialog, main menu / skill tree / stats / help overlay flags, debug panel visibility |
+| `src/stores/game.ts` | Volatile game state: lives, gold, wave, selection, time scale, camera, tower/panel positions, hover state, frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference |
+| `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, random-map preferences, last-selected theme, localStorage I/O |
+| `src/stores/ui.ts` | UI state: confirm dialog, notifications, main menu / skill tree / stats / help / minimap overlay flags, debug panel visibility, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help |
 | `src/stores/mapTheme.ts` | Map theme state: activeTheme, defaultTheme (preloaded at app init), availableThemes, preload/load actions |
 
 ### Map Theme
@@ -367,6 +432,7 @@ global `mockCtx` from `tests/setup.ts`.
 | `src/render/text/TextGridBuilder.ts` | Static char buffer (3×3 chars per tile) for the `<pre>` monochrome base grid (terrain `·`, path empty, base `#`, spawn `S`) |
 | `src/render/text/TextTowerManager.ts` | Draws each tower theme `icon` in theme `color` at its tile-center on the canvas overlay |
 | `src/render/text/TextEnemyManager.ts` | Draws each enemy theme glyph (via `getEnemyGlyph(shape)`) in theme `color` at the enemy's scaled `enemy.x/enemy.y` on the canvas overlay |
+| `src/render/text/TextPathRenderer.ts` | Draws worker-authoritative enemy paths as faint polylines on the canvas overlay, caching the last non-null paths across cleared frames |
 | `src/render/text/TextOverlayRenderer.ts` | Canvas overlay: projectile dots, thin HP bars, lightning lines, stun marks (mirrors svg Projectile/UiOverlay/Effect managers) |
 | `src/render/text/types.ts` | `TextRenderScale` (separate x/y world→canvas scales) and `TextThemeAccess` interfaces |
 | `src/components/TextGameRoot.vue` | Second passive renderer: renders a `<pre>` static base grid + a `<canvas>` overlay, driven by its own rAF loop reading `getLatestSnapshot()`; no worker, no `snapshotAck`, no input |
@@ -379,6 +445,19 @@ global `mockCtx` from `tests/setup.ts`.
 | File | Description |
 |---|---|
 | `src/sound/SoundManager.ts` | WebAudio synth: shoot, hit, boss death, base hit, upgrade sounds |
+
+### Enemy Commanders
+
+| File | Description |
+|---|---|
+| `src/commanders/index.ts` | Lifecycle: `setEnemyCommander` starts/stops relay; `stopEnemyCommander` releases held enemies via `llm:routeGroup` before termination |
+| `src/commanders/CommanderWorker.ts` | Web Worker entry: owns `CommanderBrain` + memory, dispatches `decide()` per observation, posts commands back to main thread |
+| `src/commanders/relay.ts` | Main-thread relay: ~4 Hz poll of `SnapshotStore`, builds throttled slice, posts to worker, forwards commands via `dispatchCommand`; owns `gridLayout` cache keyed to `runId` |
+| `src/commanders/protocol.ts` | Main↔worker message protocol: `CommanderSnapshotSlice` (throttled snapshot slice), `MainToCommanderMessage`, `CommanderToMainMessage` |
+| `src/commanders/observation.ts` | Pure projection from `CommanderSnapshotSlice` → `CommanderObservation` (enemy world→tile, tower hp rename, pending spawn sum) |
+| `src/commanders/brain.ts` | `CommanderBrain` interface + `CommanderMemory` state + `createBrain()` factory |
+| `src/commanders/stubby/brain.ts` | Sergeant Stubby: hold-then-rush (holds emerging enemies, rushes wave to base when wave completes) |
+| `src/commanders/stubbs/brain.ts` | Commander Stubbs: aggressive routing to highest-HP live tower ahead of the group; re-routes on tower-set change |
 
 ### Camera
 
@@ -444,12 +523,13 @@ All component styles use `<style scoped>` to prevent leakage.
 | Directory | Description |
 |---|---|
 | `tests/unit/` | 25 unit test files covering all source modules (includes `map-theme.test.ts`, `spawn-manager.test.ts`, `enemy-attack.test.ts`, `snapshot-store.test.ts`, `sim/snapshot.test.ts`) |
+| `tests/unit/commanders/` | Commander unit tests: `observation.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts` |
 | `tests/unit/components/` | Vue component tests (13 files, includes `pause-menu.test.ts`) |
-| `tests/integration/` | End-to-end wave simulation (`integration.test.ts`) and worker command→snapshot round-trip (`worker-roundtrip.test.ts`) |
+| `tests/integration/` | End-to-end wave simulation (`integration.test.ts`), worker command→snapshot round-trip (`worker-roundtrip.test.ts`), and commander worker round-trip (`commander.test.ts`) |
 | `tests/helpers/` | Shared mocks: `mock-stores.ts`, `mock-grid.ts`, `mock-managers.ts`, `mockDefaultTheme` |
 | `tests/setup.ts` | Global test setup: in-memory localStorage, Canvas 2D mock, performance.now |
 
-**~900 tests** across all files.
+**~1000 tests** across all files.
 
 ### What's Covered
 
@@ -472,6 +552,7 @@ All component styles use `<style scoped>` to prevent leakage.
 | Sound | `sound-manager.test.ts` | WebAudio synth, all sound names, dispose, enabled flag |
 | Stores | `game-store.test.ts`, `persist-store.test.ts`, `ui-store.test.ts`, `map-theme.test.ts` | State, getters, actions, save/load, schema migration; theme registry, loader, normalize, store preload/load/visual getters |
 | Snapshot Store | `snapshot-store.test.ts`, `sim/snapshot.test.ts` | Latest-snapshot holding, meta mirroring into gameStore, snapshot serialization/round-trip |
+| Enemy Commanders | `tests/unit/commanders/observation.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts`, `integration/commander.test.ts` | Observation projection (world→tile, hp rename), Stubby hold-then-rush per wave, Stubbs ahead-tower routing + tower-set re-route, worker message round-trip |
 | Router | `router.test.ts` | Navigation guards, block without map, save on leave, redirects, activeTheme requirement |
 | Input | `input.test.ts` | Keyboard dispatch, timeScale, pause, upgrade/sell, escape handling |
 | Components | 13 files in `tests/unit/components/` | Rendering, user interactions, store bindings (includes PauseMenu) |
