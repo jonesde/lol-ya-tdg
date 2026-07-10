@@ -74,7 +74,9 @@ export type Command =
     }
   | { commandId: number; type: "lifecycle:dispose" }
 
-  // ---- Future LLM commands (stubs — implementations deferred to commander plane) ----
-  | { commandId: number; type: "llm:routeGroup"; groupId: string; waypoints: Array<{ x: number; y: number }> }
-  | { commandId: number; type: "llm:setTargeting"; enemyIds: string[]; mode: string }
-  | { commandId: number; type: "llm:holdFormation"; groupId: string; chokepointId: string; untilWave: number };
+  // ---- Enemy-commander commands (issued by the LLM-shaped commander worker) ----
+  // Enemies are addressed by id — EnemySnapshot.id is number (SimulationSnapshot.ts).
+  | { commandId: number; type: "llm:holdFormation"; enemyIds: number[]; holdTile: { x: number; y: number } }
+  | { commandId: number; type: "llm:routeGroup"; enemyIds: number[]; waypoints: Array<{ x: number; y: number }> }
+  | { commandId: number; type: "llm:setTargeting"; enemyIds: number[]; mode: string }
+  | { commandId: number; type: "llm:gridLayoutToggle" };

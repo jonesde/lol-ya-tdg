@@ -117,6 +117,13 @@ export class WaveManager {
     this.waveComposition = this._countTypes(this.queue);
   }
 
+  // Count of enemies still scheduled to spawn this wave (the remaining queue). This
+  // is the authoritative "entire wave emerged" signal — unlike the overflow-only
+  // pending count — because it includes every enemy the wave will still produce.
+  getRemainingScheduledSpawns(): number {
+    return this.queue.length;
+  }
+
   saveActiveSpawns(): void {
     for (let i = 0; i < this.spawnStates.length; i++) {
       if (this.spawnStates[i]!.visualState === "open") {

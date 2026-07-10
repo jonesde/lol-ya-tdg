@@ -85,11 +85,57 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
     // NOTE: lifecycle:setTheme is intentionally absent — mid-run theme
     // switching is out of scope per README.md. The WorkerEntry message handler
     // retains a defensive no-op "setTheme" case for forward-compat.
-    // LLM commands stub to no-op for now — implemented when the commander plane lands.
-    case "llm:routeGroup":
-    case "llm:setTargeting":
-    case "llm:holdFormation":
-      // No-op until the commander plane is built (ArchitecturePlan.md §4.3).
+    // LLM / enemy-commander commands (Phase 1 commander seam). These mutate enemy
+    // routing state and so return true (force-post the snapshot) except the
+    // gridLayoutToggle config flip, which returns false (no visible state change).
+    case "llm:holdFormation": {
+      const enemies = engine.getEnemiesByIds(command.enemyIds);
+      for (const enemy of enemies) {
+        const route = engine.grid?.computeRoute(enemy.currentTile(), command.holdTile) ?? null;
+        enemy.applyRoute(route, "hold");
+      }
+      return true;
+    }
+    case "llm:routeGroup": {
+      const enemies = engine.getEnemiesByIds(command.enemyIds);
+      for (const enemy of enemies) {
+        if (!engine.grid || command.waypoints.length === 0) {
+          enemy.releaseToDefault();
+          continue;
+        }
+        // Chain a computeRoute leg per waypoint, then one final leg to the base,
+        // concatenating the segments and dropping the duplicate joint between legs.
+        // An unreachable leg is dropped (the enemy simply skips that waypoint);
+        // only if every leg fails does the command fall back to releaseToDefault.
+        const chainedRoute: { x: number; y: number }[] = [];
+        let currentTile = enemy.currentTile();
+        let anyLegSucceeded = false;
+        const waypoints = [...command.waypoints, engine.grid.base];
+        for (const waypoint of waypoints) {
+          const leg = engine.grid.computeRoute(currentTile, waypoint);
+          if (!leg || leg.length === 0) continue;
+          const legNodes = chainedRoute.length > 0 ? leg.slice(1) : leg;
+          chainedRoute.push(...legNodes);
+          currentTile = waypoint;
+          anyLegSucceeded = true;
+        }
+        if (!anyLegSucceeded || chainedRoute.length === 0) {
+          enemy.releaseToDefault();
+        } else {
+          enemy.applyRoute(chainedRoute, "route");
+        }
+      }
+      return true;
+    }
+    case "llm:setTargeting": {
+      const enemies = engine.getEnemiesByIds(command.enemyIds);
+      for (const enemy of enemies) {
+        enemy.targetingMode = command.mode;
+      }
+      return true;
+    }
+    case "llm:gridLayoutToggle":
+      if (engine.grid) engine.gridLayoutEnabled = !engine.gridLayoutEnabled;
       return false;
     // init and dispose are lifecycle messages handled by the worker entry
     // (not pushed onto the command queue), but they are part of the Command

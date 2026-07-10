@@ -250,6 +250,27 @@ export class Grid {
     return paths && spawnIndex >= 0 && spawnIndex < paths.length ? (paths[spawnIndex] ?? null) : null;
   }
 
+  // Computes a route from `start` to `goal` (defaulting to the base), mirroring
+  // recomputePaths' routing policy: prefer the open BFS path, falling back to the
+  // weakest-path Dijkstra search (which routes *through* live towers) when no open
+  // route exists. Used by the enemy-commander `applyCommand` leg chains so a custom
+  // route honors the same tower-crossing behavior as the default grid path.
+  computeRoute(start: Point, goal: Point = this.base): Point[] | null {
+    const openPath = bfsShortestPath(this, start, goal, this.blocked);
+    if (openPath) return openPath;
+    return dijkstraWeakestPath(
+      this,
+      start,
+      goal,
+      (tileX, tileY) => this.towerHealthAt(tileX, tileY),
+      (tileX, tileY) => this.isGhostAt(tileX, tileY),
+    );
+  }
+
+  computeRouteToBase(start: Point): Point[] | null {
+    return this.computeRoute(start, this.base);
+  }
+
   worldToTile(wx: number, wy: number): Point {
     return { x: Math.floor(wx / this.tileSize), y: Math.floor(wy / this.tileSize) };
   }

@@ -15,6 +15,32 @@ export function resetEnemyId() {
   nextId = 1;
 }
 
+// Returns the index in `path` whose tile is closest to `tile`, searching forward
+// from `fromIndex` so the result is never behind the caller's current progress.
+// Used by both applyRoute (custom commander routes) and reanchorToPath (grid
+// re-anchoring) so the two share one forward-snap implementation. The last path
+// tile (the base) is excluded by default because snapping onto it would mark the
+// enemy reachedBase prematurely.
+function snapPathIndex(
+  path: { x: number; y: number }[],
+  tile: { x: number; y: number },
+  fromIndex: number = 0,
+  excludeLast: boolean = true,
+): number {
+  const upper = excludeLast ? path.length - 1 : path.length;
+  let bestIdx = fromIndex;
+  let bestDistSq = Infinity;
+  for (let index = fromIndex; index < upper; index++) {
+    const node = path[index]!;
+    const distSq = (node.x - tile.x) ** 2 + (node.y - tile.y) ** 2;
+    if (distSq < bestDistSq) {
+      bestDistSq = distSq;
+      bestIdx = index;
+    }
+  }
+  return bestIdx;
+}
+
 interface SlowEntry {
   eff: number;
   remaining: number;
@@ -119,6 +145,15 @@ export class Enemy {
   attackTimer: number = 0;
   attackAnimTime: number = 0;
   attackAnimation: MapThemeAnimation | null = null;
+  // Commander routing mode. `default` follows the grid path; `hold` parks at a
+  // target tile (never auto-completes); `route` follows a custom waypoint chain and
+  // reverts to `default` once it reaches the base. Set by applyRoute/releaseToDefault.
+  routingMode: "default" | "hold" | "route" = "default";
+  // True once a `hold` enemy has reached its hold tile (used only for hold mode).
+  arrived: boolean = false;
+  // Commander-assigned targeting preference (e.g. "first"/"strongest"); stored for
+  // future logic and currently harmless.
+  targetingMode: string | null = null;
   // Version of the grid path this enemy is following; used to detect re-anchor needs.
   pathVersion: number = 0;
   markTargetMult!: number;
@@ -329,6 +364,42 @@ export class Enemy {
     }
   }
 
+  // The enemy's current tile, derived from its world-space centerline (lane-offset
+  // independent). The commander uses this as the start point for computeRoute.
+  currentTile(): { x: number; y: number } {
+    return { x: Math.floor(this.centerX / this.grid.tileSize), y: Math.floor(this.centerY / this.grid.tileSize) };
+  }
+
+  // Routes the enemy along `routePath` in the given mode. A null route cannot be
+  // honored, so it falls back to releaseToDefault() (a safe, non-freezing default
+  // — see §1.3.1 of the commander plan). `pathIdx` is snapped to the nearest
+  // forward tile within the route so a mid-corridor enemy does not backtrack.
+  applyRoute(routePath: { x: number; y: number }[] | null, mode: "hold" | "route"): void {
+    if (!routePath || routePath.length === 0) {
+      this.releaseToDefault();
+      return;
+    }
+    this.path = routePath;
+    this.routingMode = mode;
+    this.pathIdx = snapPathIndex(routePath, this.currentTile());
+    this.arrived = false;
+  }
+
+  // Reverts the enemy to its default grid path for its spawn and re-anchors onto
+  // it. Used by empty-waypoint llm:routeGroup release and by the route-end fall
+  // through. Also the safe fallback for any un-honorable (null/empty) command.
+  releaseToDefault(): void {
+    this.routingMode = "default";
+    this.arrived = false;
+    const defaultPath = this.grid.getPathFor(this.spawnIndex);
+    if (!defaultPath || defaultPath.length === 0) {
+      this.path = null;
+      return;
+    }
+    this.reanchorToPath(defaultPath);
+    this.pathVersion = this.grid.pathVersion;
+  }
+
   // Re-anchors the enemy onto a freshly recomputed grid path (after a tower was
   // added/removed, ghosted, or restored). Snaps to the nearest path tile that is
   // still forward of the enemy's current position relative to the base, so the
@@ -350,31 +421,10 @@ export class Enemy {
     // Locate the enemy's current tile within the new path using its world-space
     // centerline (lane-offset independent) so the anchor selection follows the path
     // order rather than a straight line to the base (which is wrong around corners).
-    let currentIdx = -1;
-    let currentTileDistSq = Infinity;
-    for (let i = 0; i < newPath.length; i++) {
-      if (i === lastPathIdx) continue;
-      const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
-      const distSq = (worldPos.x - this.centerX) ** 2 + (worldPos.y - this.centerY) ** 2;
-      if (distSq < currentTileDistSq) {
-        currentTileDistSq = distSq;
-        currentIdx = i;
-      }
-    }
-    // If the enemy's world center is not exactly on a path tile (e.g. lane-offset),
-    // fall back to the nearest path tile as its reference index.
-    if (currentIdx < 0) {
-      let nearestDistSq = Infinity;
-      for (let i = 0; i < newPath.length; i++) {
-        if (i === lastPathIdx) continue;
-        const worldPos = this.grid.tileToWorld(newPath[i]!.x, newPath[i]!.y);
-        const distSq = (worldPos.x - this.centerX) ** 2 + (worldPos.y - this.centerY) ** 2;
-        if (distSq < nearestDistSq) {
-          nearestDistSq = distSq;
-          currentIdx = i;
-        }
-      }
-    }
+    const referenceTileX = Math.floor(this.centerX / this.grid.tileSize);
+    const referenceTileY = Math.floor(this.centerY / this.grid.tileSize);
+    const referenceTile = { x: referenceTileX, y: referenceTileY };
+    const currentIdx = snapPathIndex(newPath, referenceTile, 0);
 
     // Anchor at the nearest *forward* passable tile (index >= currentIdx). Preferring
     // forward keeps the enemy advancing without ever skipping a live tower that lies
@@ -477,16 +527,31 @@ export class Enemy {
       return;
     }
     if (!this.path || this.pathIdx >= this.path.length - 1) {
-      this.reachedBase = true;
-      return;
+      if (this.routingMode === "default") {
+        this.reachedBase = true;
+        return;
+      }
+      if (this.routingMode === "hold") {
+        // Stay put at the hold tile; the attack resolution below still runs so a
+        // tower on (or adjacent to) the tile is attacked via the forward/adjacent logic.
+        this.arrived = true;
+      } else {
+        // route mode: the command is complete — revert to the default grid path and
+        // fall through so the enemy immediately starts heading for the base.
+        this.releaseToDefault();
+        if (!this.path || this.pathIdx >= this.path.length - 1) {
+          this.reachedBase = true;
+          return;
+        }
+      }
     }
 
     // Re-anchor to the latest grid path when it has changed since last frame (a tower
-    // was added/removed, ghosted, or restored). This replaces the old "next tile
-    // blocked → recompute BFS" check, which is no longer correct now that paths may
-    // legitimately include (passable) tower tiles.
+    // was added/removed, ghosted, or restored). Gated to default-mode enemies: a
+    // hold/route enemy's path is commander-owned and must not be clobbered on a
+    // tower build/sell.
     const gridVersion = this.grid.pathVersion;
-    if (this.pathVersion !== gridVersion) {
+    if (this.routingMode === "default" && this.pathVersion !== gridVersion) {
       this.pathVersion = gridVersion;
       const newPath = this.grid.getPathFor(this.spawnIndex);
       if (newPath) {
@@ -503,9 +568,10 @@ export class Enemy {
     // enemy must decide whether to walk through (ghost/none), approach (live, not
     // yet in contact), or attack (live, in contact). A pile-up against an adjacent
     // tower also resolves to an attack (Phase 4 fallback).
-    const nextTile = this.path[this.pathIdx + 1]!;
+    const hasNextTile = this.path != null && this.pathIdx < this.path.length - 1;
+    const nextTile = hasNextTile ? this.path![this.pathIdx + 1]! : null;
     const forwardTower =
-      enemyManager && this.grid.blocked.has(`${nextTile.x},${nextTile.y}`)
+      enemyManager && nextTile && this.grid.blocked.has(`${nextTile.x},${nextTile.y}`)
         ? enemyManager.towerAt(nextTile.x, nextTile.y)
         : null;
     const liveForwardTower = forwardTower && !forwardTower.isGhost ? forwardTower : null;
@@ -513,7 +579,7 @@ export class Enemy {
     let attackTarget: Tower | null = null;
     let moveMode: "walk" | "approach" = "walk";
 
-    if (liveForwardTower) {
+    if (liveForwardTower && nextTile) {
       const towerCenter = this.grid.tileToWorld(nextTile.x, nextTile.y);
       const distToTower = Math.hypot(towerCenter.x - this.centerX, towerCenter.y - this.centerY);
       const contactDistance = this.grid.tileSize / 2 + this.radius;
@@ -534,7 +600,7 @@ export class Enemy {
     }
 
     // Advance only the path centerline; x/y are derived after collision resolution.
-    if (moveMode === "walk" && !attackTarget) {
+    if (hasNextTile && nextTile && moveMode === "walk" && !attackTarget) {
       const target = this.grid.tileToWorld(nextTile.x, nextTile.y);
       const deltaX = target.x - this.centerX;
       const deltaY = target.y - this.centerY;
@@ -545,7 +611,7 @@ export class Enemy {
         this.centerX = target.x;
         this.centerY = target.y;
         this.pathIdx++;
-        if (this.pathIdx < this.path.length - 1) {
+        if (this.path && this.pathIdx < this.path.length - 1) {
           const nextWaypoint = this.grid.tileToWorld(this.path[this.pathIdx + 1]!.x, this.path[this.pathIdx + 1]!.y);
           this.moveAngle = Math.atan2(nextWaypoint.y - this.centerY, nextWaypoint.x - this.centerX);
         }
@@ -553,7 +619,7 @@ export class Enemy {
         this.centerX += (deltaX / dist) * step;
         this.centerY += (deltaY / dist) * step;
       }
-    } else if (moveMode === "approach" && this.blockedByTower) {
+    } else if (moveMode === "approach" && this.blockedByTower && nextTile) {
       const towerCenter = this.grid.tileToWorld(nextTile.x, nextTile.y);
       const deltaToTowerX = towerCenter.x - this.centerX;
       const deltaToTowerY = towerCenter.y - this.centerY;

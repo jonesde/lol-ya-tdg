@@ -40,6 +40,11 @@ export interface SimulationSnapshot {
   // (push/front-trim/dispose). Always included so a change is still detectable
   // even when the array itself is omitted.
   waveGraphDotsGeneration: number;
+  // Constant grid-layout map for the commander worker (0=terrain, 1=path, 2=base,
+  // 3=spawn), built once from engine.grid.tiles. Gated by the engine's
+  // gridLayoutEnabled data-feed toggle: present only while enabled, undefined once
+  // the client has toggled the feed off (it caches the map and never needs it again).
+  gridLayout?: number[][] | undefined;
   // Ephemeral visual effects generated this tick: lightning bolt segments and
   // stun aura positions. Populated by the simulation during update() and
   // consumed (cleared) when this snapshot is built, so the main thread renders
@@ -83,6 +88,12 @@ export interface SnapshotMeta {
   // camera is excluded — main-thread-only UI state, read from gameStore.camera directly
   lastScaledDt: number; // renderer uses this for animation interpolation
   endScreenData: GameRunState["endScreenData"];
+  // Commander data-feed scalars (Phase 1 enemy commander). Always populated by the
+  // serializer; optional here so existing test literals that construct SnapshotMeta
+  // by hand need not list them.
+  tileSize?: number; // grid tile size, so the worker converts world x/y → tile coords
+  waveActive?: boolean; // WaveManager.active — included for future use, not a rush signal
+  remainingScheduledSpawns?: number; // enemies still scheduled to spawn this wave (queue.length)
   // NOTE: gemBreakdown and milestoneRewardsClaimed are intentionally NOT mirrored
   // into the snapshot. `gemBreakdown` is delivered to the UI via
   // `endScreenData` (set on triggerEnd), and `milestoneRewardsClaimed` is only

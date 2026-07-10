@@ -68,6 +68,7 @@ interface WaveManagerRef {
   countdownActive: boolean;
   countdownTimer: number;
   baseReached: boolean;
+  active: boolean;
   _waveGameTime: number;
   spawnStates: SpawnState[];
   update(
@@ -76,6 +77,7 @@ interface WaveManagerRef {
     onWaveStart: ((wave: number) => void) | null,
   ): void;
   startNextWave(): void;
+  getRemainingScheduledSpawns(): number;
 }
 
 export class GameEngine {
@@ -100,6 +102,11 @@ export class GameEngine {
   // (see _initMap). Engine-scoped (not module-scoped) so direct buildSnapshot
   // callers in tests behave deterministically.
   lastPostedPathVersion: number = 0;
+  // Data-feed toggle for the `gridLayout` commander snapshot field (see §1.4). When
+  // true, the serializer includes the constant grid layout; the commander worker
+  // flips it off after caching the map to keep per-tick cost at zero. Reset per run
+  // alongside lastPostedPathVersion so each engine starts with the feed enabled.
+  gridLayoutEnabled: boolean = true;
   // Last wave-graph dots generation posted (mirrors lastPostedPathVersion).
   // Reset on (re)init so the first post after a new run includes the array.
   lastPostedWaveGraphGeneration: number = 0;
@@ -168,6 +175,7 @@ export class GameEngine {
     // initial highlights, and to notice reroutes on the first build/sell).
     this.lastPostedPathVersion = 0;
     this.lastPostedWaveGraphGeneration = 0;
+    this.gridLayoutEnabled = true;
 
     this.runState = {
       state: GameState.PAUSED,
@@ -571,6 +579,20 @@ export class GameEngine {
   private getSelectedTower(): Tower | null {
     if (!this.runState.selectedTowerId || !this.towerManager) return null;
     return this.towerManager.getTowerById(this.runState.selectedTowerId) ?? null;
+  }
+
+  // Maps enemy ids → the live Enemy instances, used by applyCommand to resolve the
+  // id-addressed `llm:*` commander commands. Returns only the enemies that actually
+  // exist (ids with no matching enemy are silently dropped).
+  getEnemiesByIds(enemyIds: number[]): Enemy[] {
+    if (!this.enemyManager) return [];
+    const enemiesById = new Map(this.enemyManager.enemies.map((enemy) => [enemy.id, enemy]));
+    const matchedEnemies: Enemy[] = [];
+    for (const enemyId of enemyIds) {
+      const enemy = enemiesById.get(enemyId);
+      if (enemy) matchedEnemies.push(enemy);
+    }
+    return matchedEnemies;
   }
 
   handleClick(worldX: number, worldY: number): void {

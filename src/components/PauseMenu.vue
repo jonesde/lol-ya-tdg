@@ -43,6 +43,11 @@ function endRun() {
 function openSkillTree() {
   uiStore.openSkillTreeFromGame();
 }
+
+function handleCommanderChange(event: Event) {
+  const target = event.target as HTMLSelectElement;
+  uiStore.setEnemyCommander(target.value as "none" | "stubby" | "stubbs");
+}
 </script>
 
 <template>
@@ -74,6 +79,15 @@ function openSkillTree() {
           <span>Enemy: ×{{ diffMult.toFixed(2) }}</span>
           <span>Gems: ×{{ gemMult.toFixed(2) }}</span>
         </div>
+      </div>
+
+      <div class="commander-section">
+        <div class="commander-header">Enemy Commander</div>
+        <select class="commander-select" :value="uiStore.enemyCommander" @change="handleCommanderChange">
+          <option value="none">No Commander</option>
+          <option value="stubby">Sergeant Stubby</option>
+          <option value="stubbs">Commander Stubbs</option>
+        </select>
       </div>
 
       <div class="gems-display">💎 {{ persistStore.gems }}</div>
@@ -162,5 +176,30 @@ function openSkillTree() {
 .gems-display {
   font-size: var(--font-xl);
   color: var(--color-gem);
+}
+
+.commander-section {
+  width: 100%;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.commander-header {
+  font-size: var(--font-md);
+  font-weight: bold;
+  color: var(--color-text-dim);
+  margin-bottom: 8px;
+}
+
+.commander-select {
+  width: 100%;
+  padding: 8px;
+  font-size: var(--font-md);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+  cursor: pointer;
 }
 </style>

@@ -1,0 +1,175 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { applyCommand } from "@/sim/applyCommand.js";
+import { GameEngine } from "@/sim/GameEngine.js";
+import {
+  createTestMapThemeStore,
+  createTestPersistState,
+  createTestThemeBundle,
+  MockHostBindings,
+} from "../../helpers/mock-stores.js";
+
+const FIXED_DT = 1 / 60;
+
+describe("applyCommand llm:* commands (Phase 1 seam)", () => {
+  let engine: GameEngine;
+  let persistState: ReturnType<typeof createTestPersistState>;
+  let mockHost: MockHostBindings;
+
+  beforeEach(() => {
+    createTestMapThemeStore();
+    persistState = createTestPersistState();
+    mockHost = new MockHostBindings();
+    engine = new GameEngine(persistState, createTestThemeBundle(), mockHost, 0);
+    engine.loadMap(0);
+    engine.waveManager?.startNextWave();
+    // Tick long enough for at least one enemy to spawn.
+    for (let tick = 0; tick < 30; tick++) engine.update(FIXED_DT);
+  });
+
+  function firstEnemyId(): number {
+    const enemy = engine.enemyManager!.enemies[0]!;
+    return enemy.id;
+  }
+
+  it("llm:holdFormation sets routingMode to 'hold'", () => {
+    const enemyId = firstEnemyId();
+    const enemy = engine.getEnemiesByIds([enemyId])[0]!;
+    const tile = enemy.currentTile();
+    const result = applyCommand(engine, {
+      commandId: 0,
+      type: "llm:holdFormation",
+      enemyIds: [enemyId],
+      holdTile: tile,
+    });
+    expect(result).toBe(true);
+    expect(enemy.routingMode).toBe("hold");
+  });
+
+  it("llm:routeGroup with empty waypoints releases to default pathing", () => {
+    const enemyId = firstEnemyId();
+    const enemy = engine.getEnemiesByIds([enemyId])[0]!;
+    enemy.applyRoute(engine.grid!.computeRoute(enemy.currentTile(), engine.grid!.getPathFor(0)![3]!), "hold");
+    expect(enemy.routingMode).toBe("hold");
+    const result = applyCommand(engine, { commandId: 0, type: "llm:routeGroup", enemyIds: [enemyId], waypoints: [] });
+    expect(result).toBe(true);
+    expect(enemy.routingMode).toBe("default");
+  });
+
+  it("llm:routeGroup with a waypoint sets routingMode to 'route' with a non-null path", () => {
+    const enemyId = firstEnemyId();
+    const enemy = engine.getEnemiesByIds([enemyId])[0]!;
+    const waypoint = enemy.currentTile();
+    const result = applyCommand(engine, {
+      commandId: 0,
+      type: "llm:routeGroup",
+      enemyIds: [enemyId],
+      waypoints: [waypoint],
+    });
+    expect(result).toBe(true);
+    expect(enemy.routingMode).toBe("route");
+    expect(enemy.path).not.toBeNull();
+  });
+
+  it("llm:setTargeting stores the targeting mode on the enemy", () => {
+    const enemyId = firstEnemyId();
+    const enemy = engine.getEnemiesByIds([enemyId])[0]!;
+    const result = applyCommand(engine, {
+      commandId: 0,
+      type: "llm:setTargeting",
+      enemyIds: [enemyId],
+      mode: "strongest",
+    });
+    expect(result).toBe(true);
+    expect(enemy.targetingMode).toBe("strongest");
+  });
+
+  it("llm:gridLayoutToggle flips engine.gridLayoutEnabled and returns false", () => {
+    const before = engine.gridLayoutEnabled;
+    const result = applyCommand(engine, { commandId: 0, type: "llm:gridLayoutToggle" });
+    expect(result).toBe(false);
+    expect(engine.gridLayoutEnabled).toBe(!before);
+  });
+
+  it("getEnemiesByIds returns only matching enemies, dropping unknown ids", () => {
+    const enemyId = firstEnemyId();
+    const matched = engine.getEnemiesByIds([enemyId, 99999]);
+    expect(matched).toHaveLength(1);
+    expect(matched[0]!.id).toBe(enemyId);
+    expect(engine.getEnemiesByIds([123456])).toHaveLength(0);
+  });
+
+  it("llm:routeGroup drops an unreachable waypoint but still routes the enemy to base", () => {
+    const enemyId = firstEnemyId();
+    const enemy = engine.getEnemiesByIds([enemyId])[0]!;
+    const grid = engine.grid!;
+    // A terrain tile whose four neighbors are all terrain cannot reach the path
+    // network, so its leg is dropped. The final base leg (from the enemy's current
+    // path tile) still succeeds, so the enemy routes to the base rather than freezing.
+    let isolatedTile: { x: number; y: number } | null = null;
+    for (let y = 0; y < grid.height && !isolatedTile; y++) {
+      for (let x = 0; x < grid.width && !isolatedTile; x++) {
+        if (grid.tiles[y]![x]!.type !== "terrain") continue;
+        const neighbors = [
+          { x: x + 1, y },
+          { x: x - 1, y },
+          { x, y: y + 1 },
+          { x, y: y - 1 },
+        ];
+        const allTerrain = neighbors.every((n) =>
+          n.x >= 0 && n.y >= 0 && n.x < grid.width && n.y < grid.height
+            ? grid.tiles[n.y]![n.x]!.type === "terrain"
+            : true,
+        );
+        if (allTerrain) isolatedTile = { x, y };
+      }
+    }
+    expect(isolatedTile).not.toBeNull();
+    const result = applyCommand(engine, {
+      commandId: 0,
+      type: "llm:routeGroup",
+      enemyIds: [enemyId],
+      waypoints: [isolatedTile!],
+    });
+    expect(result).toBe(true);
+    // The unreachable leg is skipped; the enemy still advances toward the base.
+    expect(enemy.routingMode).toBe("route");
+    expect(enemy.path).not.toBeNull();
+  });
+
+  it("llm:routeGroup drops an unreachable leg but still routes the survivors", () => {
+    const enemyId = firstEnemyId();
+    const enemy = engine.getEnemiesByIds([enemyId])[0]!;
+    const grid = engine.grid!;
+    // A reachable path-tile waypoint followed by an unreachable terrain waypoint:
+    // the second leg is dropped, the first leg routes the enemy to the reachable tile.
+    let isolatedTile: { x: number; y: number } | null = null;
+    for (let y = 0; y < grid.height && !isolatedTile; y++) {
+      for (let x = 0; x < grid.width && !isolatedTile; x++) {
+        if (grid.tiles[y]![x]!.type !== "terrain") continue;
+        const neighbors = [
+          { x: x + 1, y },
+          { x: x - 1, y },
+          { x, y: y + 1 },
+          { x, y: y - 1 },
+        ];
+        const allTerrain = neighbors.every((n) =>
+          n.x >= 0 && n.y >= 0 && n.x < grid.width && n.y < grid.height
+            ? grid.tiles[n.y]![n.x]!.type === "terrain"
+            : true,
+        );
+        if (allTerrain) isolatedTile = { x, y };
+      }
+    }
+    expect(isolatedTile).not.toBeNull();
+    const reachableWaypoint = grid.getPathFor(0)![2]!;
+    const result = applyCommand(engine, {
+      commandId: 0,
+      type: "llm:routeGroup",
+      enemyIds: [enemyId],
+      waypoints: [reachableWaypoint, isolatedTile!],
+    });
+    expect(result).toBe(true);
+    expect(enemy.routingMode).toBe("route");
+    expect(enemy.path).not.toBeNull();
+  });
+});

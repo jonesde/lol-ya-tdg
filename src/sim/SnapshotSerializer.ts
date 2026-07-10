@@ -39,6 +39,17 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
     }
   }
 
+  // Commander grid-layout data feed: a constant map (0=terrain, 1=path, 2=base,
+  // 3=spawn) built from engine.grid.tiles. Gated by gridLayoutEnabled so it ships
+  // only until the worker caches it and toggles the feed off — keeping steady-state
+  // per-tick cost at zero. Terrain never changes mid-run, so no versioning needed.
+  let gridLayout: number[][] | undefined;
+  if (grid && engine.gridLayoutEnabled) {
+    gridLayout = grid.tiles.map((row) =>
+      row.map((tile) => (tile.type === "path" ? 1 : tile.type === "base" ? 2 : tile.type === "spawn" ? 3 : 0)),
+    );
+  }
+
   const selectedTowerId = engine.runState.selectedTowerId;
 
   // Wave-graph dots only change shape every WAVE_GRAPH_INTERVAL_SECONDS (a dot
@@ -80,6 +91,7 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
     stunEffects: visualEffects.stuns,
     waveGraphDots,
     waveGraphDotsGeneration,
+    gridLayout,
   };
 }
 
@@ -103,6 +115,9 @@ function buildMeta(engine: GameEngine): SnapshotMeta {
     bossesReachedBaseThisRun: rs.bossesReachedBaseThisRun,
     lastScaledDt: engine.lastScaledDt,
     endScreenData: rs.endScreenData,
+    tileSize: engine.grid?.tileSize ?? 36,
+    waveActive: engine.waveManager?.active ?? false,
+    remainingScheduledSpawns: engine.waveManager?.getRemainingScheduledSpawns() ?? 0,
   };
 }
 

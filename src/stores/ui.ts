@@ -1,4 +1,5 @@
 import { defineStore } from "pinia";
+import { setEnemyCommander as startEnemyCommander } from "@/commanders/index.js";
 import { GameState } from "@/sim/Constants.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "./game";
@@ -16,6 +17,8 @@ export interface UiStoreLike {
   openPauseMenu: () => void;
   toggleMinimap: () => void;
   closeMinimap: () => void;
+  enemyCommander: "none" | "stubby" | "stubbs";
+  setEnemyCommander: (kind: "none" | "stubby" | "stubbs") => void;
 }
 
 interface ConfirmDialogConfig {
@@ -53,6 +56,7 @@ interface UiStateShape {
   notification: NotificationState | null;
   debugPanelVisible: boolean;
   randomMapPanelVisible: boolean;
+  enemyCommander: "none" | "stubby" | "stubbs";
   wasPlayingWhenPauseOpened: boolean;
   wasPlayingWhenSkillTreeOpened: boolean;
   wasPlayingWhenHelpOpened: boolean;
@@ -71,6 +75,7 @@ function defaultUiState(): UiStateShape {
     notification: null,
     debugPanelVisible: false,
     randomMapPanelVisible: false,
+    enemyCommander: "none",
     wasPlayingWhenPauseOpened: false,
     wasPlayingWhenSkillTreeOpened: false,
     wasPlayingWhenHelpOpened: false,
@@ -178,6 +183,11 @@ export const useUiStore = defineStore("ui", {
 
     closeMinimap() {
       this.showMinimap = false;
+    },
+
+    setEnemyCommander(kind: "none" | "stubby" | "stubbs") {
+      this.enemyCommander = kind;
+      startEnemyCommander(kind);
     },
 
     closeHelpDialog() {
