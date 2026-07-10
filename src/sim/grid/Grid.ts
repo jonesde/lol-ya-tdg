@@ -271,6 +271,28 @@ export class Grid {
     return this.computeRoute(start, this.base);
   }
 
+  // Computes a route to `goal` that avoids the base interior: every base tile is
+  // added to the blocked set (except `goal` itself, if it happens to be a base
+  // tile) so BFS/Dijkstra hug the outside of the 3x3 and reach `goal` from its
+  // outer side. Used to route perimeter enemies around the base to their assigned
+  // dock instead of cutting through the interior to the nearest ring tile.
+  computeSurroundRoute(start: Point, goal: Point): Point[] | null {
+    const blocked = new Set(this.blocked);
+    for (const baseTile of this.getBaseGoalTiles()) {
+      if (baseTile.x === goal.x && baseTile.y === goal.y) continue;
+      blocked.add(`${baseTile.x},${baseTile.y}`);
+    }
+    const openPath = bfsShortestPath(this, start, goal, blocked);
+    if (openPath) return openPath;
+    return dijkstraWeakestPath(
+      this,
+      start,
+      goal,
+      (tileX, tileY) => this.towerHealthAt(tileX, tileY),
+      (tileX, tileY) => this.isGhostAt(tileX, tileY),
+    );
+  }
+
   worldToTile(wx: number, wy: number): Point {
     return { x: Math.floor(wx / this.tileSize), y: Math.floor(wy / this.tileSize) };
   }

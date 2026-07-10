@@ -19,15 +19,15 @@ export type EnemyType = "minion" | "runner" | "tank" | "shielded" | "healer" | "
 
 // referenced in Enemy.js for meta lookup, Game.js for bounty, ProjectileManager.js for type checks
 export const ENEMY_TYPES: Record<string, EnemyMeta> = {
-  minion: { baseHp: 8, speed: 1.0, bounty: 2, radius: 0.4, attackDamage: 3, attackSpeed: 0.5 },
-  runner: { baseHp: 8, speed: 2.5, bounty: 4, radius: 0.4, attackDamage: 2, attackSpeed: 1.0 },
-  tank: { baseHp: 32, speed: 0.4, bounty: 5, radius: 0.5, attackDamage: 10, attackSpeed: 0.35 },
-  shielded: { baseHp: 16, speed: 0.7, bounty: 6, radius: 0.4, shield: 32, attackDamage: 10, attackSpeed: 0.5 },
+  minion: { baseHp: 8, speed: 1.0, bounty: 2, radius: 0.29, attackDamage: 3, attackSpeed: 0.5 },
+  runner: { baseHp: 8, speed: 2.5, bounty: 4, radius: 0.19, attackDamage: 2, attackSpeed: 1.0 },
+  tank: { baseHp: 32, speed: 0.4, bounty: 5, radius: 0.49, attackDamage: 10, attackSpeed: 0.35 },
+  shielded: { baseHp: 16, speed: 0.7, bounty: 6, radius: 0.32, shield: 32, attackDamage: 10, attackSpeed: 0.5 },
   healer: {
     baseHp: 16,
     speed: 0.8,
     bounty: 7,
-    radius: 0.4,
+    radius: 0.32,
     heal: 0.03,
     healRange: 2.5,
     attackDamage: 3,
@@ -37,7 +37,7 @@ export const ENEMY_TYPES: Record<string, EnemyMeta> = {
     baseHp: 256,
     speed: 0.5,
     bounty: 100,
-    radius: 0.7,
+    radius: 0.67,
     resist: 0.3,
     slowResist: 0.8,
     attackDamage: 20,

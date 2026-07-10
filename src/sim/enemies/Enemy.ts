@@ -77,8 +77,22 @@ interface GridRef {
   getPathFor(spawnIndex: number): { x: number; y: number }[] | null;
   tileToWorld(tx: number, ty: number): { x: number; y: number };
   getBase(): { x: number; y: number };
+  isBase(x: number, y: number): boolean;
   blocked: Set<string>;
   pathVersion: number;
+  computeSurroundRoute(
+    start: { x: number; y: number },
+    goal: { x: number; y: number },
+  ): { x: number; y: number }[] | null;
+}
+
+// A perimeter dock assignment: the exposed base edge (dockIndex into the base's
+// exposed-edge list) plus how far outward (radial, in tiles) the enemy lines up,
+// and the resolved outside target tile it routes to.
+export interface BaseSlot {
+  dockIndex: number;
+  radial: number;
+  targetTile: { x: number; y: number };
 }
 
 interface EnemyManagerRef {
@@ -164,6 +178,9 @@ export class Enemy {
   targetingMode: string | null = null;
   // Version of the grid path this enemy is following; used to detect re-anchor needs.
   pathVersion: number = 0;
+  // Perimeter dock assignment (load-balanced). Null until the EnemyManager assigns
+  // one at spawn; non-null enemies route around the base to their dock target.
+  baseSlot: BaseSlot | null = null;
   markTargetMult!: number;
   markTargetTimer!: number;
   antiHealTimer!: number;
@@ -400,12 +417,29 @@ export class Enemy {
   releaseToDefault(): void {
     this.routingMode = "default";
     this.arrived = false;
-    const defaultPath = this.grid.getPathFor(this.spawnIndex);
+    let defaultPath = this.grid.getPathFor(this.spawnIndex);
+    // Prefer a base-avoiding route back to this enemy's assigned perimeter dock
+    // so a released (e.g. commander-routed) enemy still rings the base instead
+    // of cutting through the interior to the nearest ring/base tile.
+    if (this.baseSlot) {
+      const surround = this.grid.computeSurroundRoute(this.currentTile(), this.baseSlot.targetTile);
+      if (surround && surround.length > 0) defaultPath = surround;
+    }
     if (!defaultPath || defaultPath.length === 0) {
       this.path = null;
       return;
     }
     this.reanchorToPath(defaultPath);
+    this.pathVersion = this.grid.pathVersion;
+  }
+
+  // Assigns a perimeter dock and routes the enemy around the base to it. Snaps the
+  // path like reanchorToPath so a spawn-time enemy anchors at its current tile.
+  setSurroundPath(route: { x: number; y: number }[], slot: BaseSlot): void {
+    this.baseSlot = slot;
+    this.routingMode = "default";
+    this.arrived = false;
+    this.reanchorToPath(route);
     this.pathVersion = this.grid.pathVersion;
   }
 
@@ -415,10 +449,14 @@ export class Enemy {
   // enemy never teleports backward toward the spawn.
   reanchorToPath(newPath: { x: number; y: number }[]): void {
     this.path = newPath;
-    // The last path index is the base tile. Snapping to it would place the enemy on
-    // the base and (next frame) trigger attackingBase prematurely, so it is never an
-    // eligible anchor.
-    const lastPathIdx = newPath.length - 1;
+    // The last path index is the base tile for the default grid path, and snapping
+    // to it would place the enemy on the base and (next frame) trigger attackingBase
+    // prematurely — so it is never an eligible anchor. A perimeter surround route
+    // instead ends at the outside dock tile (not a base tile), which the enemy must
+    // be allowed to reach, so the last tile is only excluded when it is a base tile.
+    const lastTile = newPath[newPath.length - 1]!;
+    const lastTileIsBase = this.grid.isBase(lastTile.x, lastTile.y);
+    const lastPathIdx = lastTileIsBase ? newPath.length - 1 : newPath.length;
 
     // A live (blocking) tower tile must never be an anchor: snapping an enemy onto
     // (or past) it lets the enemy teleport across the tower instead of attacking it.
@@ -433,7 +471,7 @@ export class Enemy {
     const referenceTileX = Math.floor(this.centerX / this.grid.tileSize);
     const referenceTileY = Math.floor(this.centerY / this.grid.tileSize);
     const referenceTile = { x: referenceTileX, y: referenceTileY };
-    const currentIdx = snapPathIndex(newPath, referenceTile, 0);
+    const currentIdx = snapPathIndex(newPath, referenceTile, 0, lastTileIsBase);
 
     // Anchor at the nearest *forward* passable tile (index >= currentIdx). Preferring
     // forward keeps the enemy advancing without ever skipping a live tower that lies
@@ -558,11 +596,16 @@ export class Enemy {
     // Re-anchor to the latest grid path when it has changed since last frame (a tower
     // was added/removed, ghosted, or restored). Gated to default-mode enemies: a
     // hold/route enemy's path is commander-owned and must not be clobbered on a
-    // tower build/sell.
+    // tower build/sell. A dock-assigned enemy re-anchors onto its base-avoiding
+    // surround route so post-build reroutes still ring the base.
     const gridVersion = this.grid.pathVersion;
     if (this.routingMode === "default" && this.pathVersion !== gridVersion) {
       this.pathVersion = gridVersion;
-      const newPath = this.grid.getPathFor(this.spawnIndex);
+      let newPath = this.grid.getPathFor(this.spawnIndex);
+      if (this.baseSlot) {
+        const surround = this.grid.computeSurroundRoute(this.currentTile(), this.baseSlot.targetTile);
+        if (surround && surround.length > 0) newPath = surround;
+      }
       if (newPath) {
         this.reanchorToPath(newPath);
       } else {
@@ -570,6 +613,25 @@ export class Enemy {
         this.removed = true;
         return;
       }
+    }
+
+    // Early edge-stop (Issue 1 backstop): before any forward step, if the enemy's
+    // centerline already contacts the base square, mark it attacking the base so it
+    // clamps to the edge on this side instead of walking into the interior. Hold-mode
+    // enemies are excluded so a commander hold tile inside the base footprint stays
+    // reachable.
+    if (this.routingMode !== "hold" && !this.attackingBase) {
+      const contactBaseTile = this.grid.getBase();
+      const contactBaseCenter = this.grid.tileToWorld(contactBaseTile.x, contactBaseTile.y);
+      const contact = baseSquareContact(
+        contactBaseCenter.x,
+        contactBaseCenter.y,
+        1.5 * this.grid.tileSize,
+        this.centerX,
+        this.centerY,
+        this.radius,
+      );
+      if (contact.overlapping) this.attackingBase = true;
     }
 
     // Attack-target resolution: the forward path tile may hold a live (non-ghost)
@@ -649,19 +711,22 @@ export class Enemy {
     } else if (this.attackingBase) {
       const baseTile = this.grid.getBase();
       const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
-      const deltaX = baseCenter.x - this.centerX;
-      const deltaY = baseCenter.y - this.centerY;
-      const dist = Math.hypot(deltaX, deltaY);
-      const contactDistance = this.grid.tileSize / 2 + this.radius;
+      const baseHalf = 1.5 * this.grid.tileSize;
       const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
-      this.moveAngle = Math.atan2(deltaY, deltaX);
-      if (dist > contactDistance) {
-        if (step < dist) {
-          this.centerX += (deltaX / dist) * step;
-          this.centerY += (deltaY / dist) * step;
+      this.moveAngle = Math.atan2(baseCenter.y - this.centerY, baseCenter.x - this.centerX);
+      const contact = baseSquareContact(baseCenter.x, baseCenter.y, baseHalf, this.centerX, this.centerY, this.radius);
+      if (contact.overlapping) {
+        const targetX = contact.contactX;
+        const targetY = contact.contactY;
+        const toTargetX = targetX - this.centerX;
+        const toTargetY = targetY - this.centerY;
+        const toTarget = Math.hypot(toTargetX, toTargetY);
+        if (step < toTarget) {
+          this.centerX += (toTargetX / toTarget) * step;
+          this.centerY += (toTargetY / toTarget) * step;
         } else {
-          this.centerX = baseCenter.x;
-          this.centerY = baseCenter.y;
+          this.centerX = targetX;
+          this.centerY = targetY;
         }
       }
     }
@@ -699,6 +764,24 @@ export class Enemy {
     this.laneOffsetY = tangentialY + clampedProjection * perpY;
     this.x = this.centerX + this.laneOffsetX;
     this.y = this.centerY + this.laneOffsetY;
+
+    // Keep base-attacking enemies just outside the 3x3 base square (half-extent
+    // 1.5*tileSize). Collision separation can inject an unbounded radial component
+    // into laneOffset, which would otherwise drift the rendered position to the base
+    // center; pushing it back out to the square's contact boundary makes enemies ring
+    // the base edge (corners included) instead of piling at the center.
+    if (this.attackingBase) {
+      const baseTile = this.grid.getBase();
+      const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
+      const baseHalf = 1.5 * this.grid.tileSize;
+      const contact = baseSquareContact(baseCenter.x, baseCenter.y, baseHalf, this.x, this.y, this.radius);
+      if (contact.overlapping) {
+        this.x = contact.contactX;
+        this.y = contact.contactY;
+        this.laneOffsetX = this.x - this.centerX;
+        this.laneOffsetY = this.y - this.centerY;
+      }
+    }
   }
 
   // Lateral collision separation against nearby enemies using the spatial hash.
@@ -787,4 +870,40 @@ export class Enemy {
     }
     return lowestTower;
   }
+}
+
+// Closest point on the 3x3 base square (centered at baseCenter, half-extent `half`)
+// to the point (pointX, pointY), and the contact center that places a circle of the
+// given `radius` just outside the square along the outward normal. `overlapping` is
+// true when the point is inside (or touching) the square, so the caller can push the
+// enemy out to `contactX/contactY`. Using square distance (not distance-to-center)
+// lets enemies ring the base's outline, including the corners.
+function baseSquareContact(
+  baseCenterX: number,
+  baseCenterY: number,
+  half: number,
+  pointX: number,
+  pointY: number,
+  radius: number,
+): { contactX: number; contactY: number; overlapping: boolean } {
+  const deltaX = pointX - baseCenterX;
+  const deltaY = pointY - baseCenterY;
+  const closestX = baseCenterX + Math.max(-half, Math.min(half, deltaX));
+  const closestY = baseCenterY + Math.max(-half, Math.min(half, deltaY));
+  let normalX = pointX - closestX;
+  let normalY = pointY - closestY;
+  const distance = Math.hypot(normalX, normalY);
+  if (distance > 1e-6) {
+    normalX /= distance;
+    normalY /= distance;
+  } else {
+    const angle = Math.atan2(deltaY, deltaX);
+    normalX = Math.cos(angle);
+    normalY = Math.sin(angle);
+  }
+  return {
+    contactX: closestX + normalX * radius,
+    contactY: closestY + normalY * radius,
+    overlapping: distance < radius,
+  };
 }

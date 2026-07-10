@@ -313,4 +313,60 @@ describe("base attack", () => {
     expect(enemyB.removed).toBe(false);
     expect(doubleDamage).toBeGreaterThan(singleDamage * 1.5);
   });
+
+  function distanceToBaseSquare(x: number, y: number, baseCenterX: number, baseCenterY: number, half: number): number {
+    const deltaX = x - baseCenterX;
+    const deltaY = y - baseCenterY;
+    const closestX = baseCenterX + Math.max(-half, Math.min(half, deltaX));
+    const closestY = baseCenterY + Math.max(-half, Math.min(half, deltaY));
+    return Math.hypot(x - closestX, y - closestY);
+  }
+
+  it("base-attacking enemy settles just outside the 3x3 base square (not at the center)", () => {
+    const base = grid.getBase();
+    const baseCenter = grid.tileToWorld(base.x, base.y);
+    const half = 1.5 * grid.tileSize;
+    const target = new StubBaseTarget();
+    const enemy = makeAttackingEnemy(target);
+    enemyManager.enemies.push(enemy);
+
+    let previousX = enemy.x;
+    let previousY = enemy.y;
+    let maxStep = 0;
+    for (let step = 0; step < 400; step++) {
+      enemy.update(0.05, enemyManager);
+      maxStep = Math.max(maxStep, Math.hypot(enemy.x - previousX, enemy.y - previousY));
+      previousX = enemy.x;
+      previousY = enemy.y;
+    }
+
+    expect(enemy.removed).toBe(false);
+    expect(enemy.attackingBase).toBe(true);
+    // Rendered position ends up outside the base square (ring around its edge).
+    expect(distanceToBaseSquare(enemy.x, enemy.y, baseCenter.x, baseCenter.y, half)).toBeGreaterThanOrEqual(
+      enemy.radius - 1e-6,
+    );
+    // No teleport-scale jumps: each frame moves at most a fraction of a tile.
+    expect(maxStep).toBeLessThan(grid.tileSize);
+  });
+
+  it("clustered base-attacking enemies all stay outside the base square", () => {
+    const base = grid.getBase();
+    const baseCenter = grid.tileToWorld(base.x, base.y);
+    const half = 1.5 * grid.tileSize;
+    const target = new StubBaseTarget();
+    const enemies = [makeAttackingEnemy(target), makeAttackingEnemy(target), makeAttackingEnemy(target)];
+    enemyManager.enemies.push(...enemies);
+
+    for (let step = 0; step < 400; step++) {
+      for (const enemy of enemies) enemy.update(0.05, enemyManager);
+    }
+
+    for (const enemy of enemies) {
+      expect(enemy.removed).toBe(false);
+      expect(
+        distanceToBaseSquare(enemy.x, enemy.y, baseCenter.x, baseCenter.y, half),
+      ).toBeGreaterThanOrEqual(enemy.radius - 1e-6);
+    }
+  });
 });

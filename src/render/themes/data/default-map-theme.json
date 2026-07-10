@@ -3,7 +3,7 @@
   "label": "Polymath",
   "towers": {
     "basic": {
-      "name": "Rifle Bot",
+      "name": "Sub Tractor",
       "color": "#8fbc8f",
       "icon": "\u2500",
       "animation": {
@@ -27,7 +27,7 @@
       }
     },
     "ice": {
-      "name": "Ice Turret",
+      "name": "Frozen Factor",
       "color": "#9be7ff",
       "icon": "\u2744",
       "animation": {
@@ -51,7 +51,7 @@
       }
     },
     "sniper": {
-      "name": "Sniper Bot",
+      "name": "Unbounded Vector",
       "color": "#ffd84d",
       "icon": "\u25ce",
       "animation": {
@@ -75,7 +75,7 @@
       }
     },
     "cannon": {
-      "name": "Grenade Cannon",
+      "name": "Stochastic Distribution",
       "color": "#ff8a4d",
       "icon": "\u25cf",
       "animation": {
@@ -99,7 +99,7 @@
       }
     },
     "lightning": {
-      "name": "Stun Gun",
+      "name": "Chaining Illogic",
       "color": "#205088",
       "icon": "\u26a1",
       "animation": {
@@ -123,7 +123,7 @@
       }
     },
     "railgun": {
-      "name": "Rail Gun",
+      "name": "Linear Projection",
       "color": "#c98aff",
       "icon": "\u2550",
       "animation": {
@@ -147,7 +147,7 @@
       }
     },
     "sturdyWall": {
-      "name": "Bastion Wall",
+      "name": "Terminal Condition",
       "color": "#b08968",
       "icon": "\u25a6",
       "animation": {
@@ -171,7 +171,7 @@
       }
     },
     "shotgunTank": {
-      "name": "Shotgun Tank",
+      "name": "Scatter Plot",
       "color": "#c08552",
       "icon": "\u25a3",
       "animation": {

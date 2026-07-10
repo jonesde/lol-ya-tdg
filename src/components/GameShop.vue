@@ -213,7 +213,7 @@ onUnmounted(() => {
         <div class="tower-name-wrap">
           <div v-for="word in getTowerDisplayName(id).split(' ')" :key="word" class="tower-name">{{ word }}</div>
         </div>
-        <span class="tower-cost">🪙 {{ getCost(id) }}</span>
+        <span class="tower-cost">{{ getCost(id) }}</span>
       </div>
     </div>
   </div>

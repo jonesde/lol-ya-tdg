@@ -4,13 +4,33 @@ import type { Grid } from "@/sim/grid/Grid.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
-import type { AttackTarget } from "./Enemy.js";
+import type { AttackTarget, BaseSlot } from "./Enemy.js";
 import { Enemy, resetEnemyId } from "./Enemy.js";
 
 interface PendingEnemyEntry {
   type: string;
   level: number;
   wave: number;
+}
+
+// How far outward (in tiles) enemies may line up from an exposed base edge before
+// the formation is treated as full for that dock.
+const MAX_PERIMETER_RADIAL = 4;
+
+// One exposed outer edge-segment of the 3x3 base. `baseTile` is the base tile
+// whose outer face is the dock; `outwardNormal` points away from the base center
+// to the traversable tile just outside it.
+interface BaseDock {
+  dockIndex: number;
+  baseTile: { x: number; y: number };
+  outwardNormal: { dx: number; dy: number };
+}
+
+// Smallest absolute angle between two directions, in [0, PI].
+function angularDistance(a: number, b: number): number {
+  let delta = Math.abs(a - b) % (2 * Math.PI);
+  if (delta > Math.PI) delta = 2 * Math.PI - delta;
+  return delta;
 }
 
 const SpatialCellSize = 100;
@@ -37,6 +57,9 @@ export class EnemyManager {
   private spatialHash: Map<number, Enemy[]>;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
+  // Count of enemies occupying each perimeter slot, keyed by `${dockIndex},${radial}`.
+  // Decremented as enemies die so new spawns load-balance onto the least-occupied dock.
+  private perimeterOccupancy: Map<string, number>;
 
   constructor(
     grid: Grid,
@@ -54,6 +77,7 @@ export class EnemyManager {
     this.spatialHash = new Map();
     this.idToEnemy = new Map();
     this.pendingQueues = new Map();
+    this.perimeterOccupancy = new Map();
   }
 
   // Phase 1.5 plumbing: lets enemies resolve the tower (if any) on a tile. The
@@ -71,6 +95,7 @@ export class EnemyManager {
     this.spatialHash.clear();
     this.idToEnemy.clear();
     this.pendingQueues.clear();
+    this.perimeterOccupancy.clear();
     resetEnemyId();
   }
 
@@ -89,6 +114,7 @@ export class EnemyManager {
     if (!enemy.path) {
       return null;
     }
+    this.assignPerimeterSlot(enemy);
     this.enemies.push(enemy);
     this.idToEnemy.set(enemy.id, enemy);
     this.addToSpatialHash(enemy);
@@ -114,9 +140,101 @@ export class EnemyManager {
     this.spawn(entry.type, entry.level, spawnIndex, entry.wave);
   }
 
+  // Returns the exposed outer edge-segments of the 3x3 base. A segment is exposed
+  // only when its outward-adjacent tile is in bounds and not terrain (i.e. not a
+  // terrain tile or the map edge), so enemies can stand on the tile just outside it.
+  // The 3x3 yields up to 12 segments (3 per cardinal side); corner base tiles
+  // contribute one segment per adjacent side, giving the formation room to spread to
+  // both sides as a side fills.
+  getBaseDocks(): BaseDock[] {
+    const base = this.grid.getBase();
+    const sides: { dx: number; dy: number }[] = [
+      { dx: 0, dy: -1 },
+      { dx: 0, dy: 1 },
+      { dx: 1, dy: 0 },
+      { dx: -1, dy: 0 },
+    ];
+    const offsets = [-1, 0, 1];
+    const docks: BaseDock[] = [];
+    for (const side of sides) {
+      for (const offset of offsets) {
+        const baseTile =
+          side.dx === 0 ? { x: base.x + offset, y: base.y + side.dy } : { x: base.x + side.dx, y: base.y + offset };
+        const outwardX = baseTile.x + side.dx;
+        const outwardY = baseTile.y + side.dy;
+        if (!this.grid.inBounds(outwardX, outwardY)) continue;
+        if (this.grid.isTerrain(outwardX, outwardY)) continue;
+        docks.push({ dockIndex: docks.length, baseTile, outwardNormal: side });
+      }
+    }
+    return docks;
+  }
+
+  // Assigns the enemy to the least-occupied perimeter slot (load-balanced) and routes
+  // it around the base to that slot's outside dock tile. Enemies fill inward rings
+  // first (radial, "moving out one tile at a time") and spread laterally to both
+  // sides as each dock saturates, nearest the spawn-facing side first. Capacity per
+  // dock/radial slot is the count of enemies that fit along one tile edge using the
+  // enemy's own configured radius (consistent with collision overlap math). Falls back
+  // to the shared grid path (the enemy's constructor default) when no slot is free or
+  // reachable.
+  assignPerimeterSlot(enemy: Enemy): void {
+    if (!enemy.path) return;
+    const docks = this.getBaseDocks();
+    if (docks.length === 0) return;
+
+    const base = this.grid.getBase();
+    const baseCenter = this.grid.tileToWorld(base.x, base.y);
+    const spawn = this.grid.spawns[enemy.spawnIndex] ?? this.grid.spawns[0]!;
+    const spawnWorld = this.grid.tileToWorld(spawn.x, spawn.y);
+    const spawnFacingAngle = Math.atan2(spawnWorld.y - baseCenter.y, spawnWorld.x - baseCenter.x);
+
+    const capacity = Math.max(1, Math.floor(this.grid.tileSize / (2 * enemy.radius)));
+    let best: { dock: BaseDock; radial: number; score: number } | null = null;
+    for (const dock of docks) {
+      const dockAngle = Math.atan2(dock.outwardNormal.dy, dock.outwardNormal.dx);
+      const angular = angularDistance(dockAngle, spawnFacingAngle);
+      for (let radial = 0; radial <= MAX_PERIMETER_RADIAL; radial++) {
+        const targetTile = {
+          x: dock.baseTile.x + dock.outwardNormal.dx * (radial + 1),
+          y: dock.baseTile.y + dock.outwardNormal.dy * (radial + 1),
+        };
+        const targetKey = `${targetTile.x},${targetTile.y}`;
+        if (!this.grid.inBounds(targetTile.x, targetTile.y)) continue;
+        if (this.grid.isTerrain(targetTile.x, targetTile.y)) continue;
+        if (this.grid.blocked.has(targetKey)) continue;
+        const occupancyCount = this.perimeterOccupancy.get(`${dock.dockIndex},${radial}`) ?? 0;
+        if (occupancyCount >= capacity) continue;
+        // Load-balanced primary; radial (fill inward first) secondary; angular spread to
+        // both sides (nearest the spawn-facing side) tertiary; dock index final tiebreak.
+        const score = occupancyCount * 1e9 + radial * 1e6 + angular * 1e3 + dock.dockIndex;
+        if (!best || score < best.score) best = { dock, radial, score };
+      }
+    }
+    if (!best) return;
+
+    const slotTile = {
+      x: best.dock.baseTile.x + best.dock.outwardNormal.dx * (best.radial + 1),
+      y: best.dock.baseTile.y + best.dock.outwardNormal.dy * (best.radial + 1),
+    };
+    const surroundRoute = this.grid.computeSurroundRoute(enemy.currentTile(), slotTile);
+    if (!surroundRoute) return;
+
+    const slotKey = `${best.dock.dockIndex},${best.radial}`;
+    this.perimeterOccupancy.set(slotKey, (this.perimeterOccupancy.get(slotKey) ?? 0) + 1);
+    const slot: BaseSlot = { dockIndex: best.dock.dockIndex, radial: best.radial, targetTile: slotTile };
+    enemy.setSurroundPath(surroundRoute, slot);
+  }
+
   removeDeadEnemy(i: number): void {
     const enemy = this.enemies[i]!;
     this.particles.spawn(enemy.x, enemy.y, enemy.color, 12, { speed: 80, life: 0.5 });
+    if (enemy.baseSlot) {
+      const slotKey = `${enemy.baseSlot.dockIndex},${enemy.baseSlot.radial}`;
+      const occupancy = this.perimeterOccupancy.get(slotKey) ?? 0;
+      if (occupancy <= 1) this.perimeterOccupancy.delete(slotKey);
+      else this.perimeterOccupancy.set(slotKey, occupancy - 1);
+    }
     this.removeFromSpatialHash(enemy);
     this.idToEnemy.delete(enemy.id);
     const removedSpawnIndex = enemy.spawnIndex;
