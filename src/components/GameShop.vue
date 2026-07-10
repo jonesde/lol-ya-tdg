@@ -244,7 +244,7 @@ onUnmounted(() => {
 }
 
 .build-bar-header span {
-  font-size: 10px;
+  font-size: var(--font-xs);
   color: var(--color-text-dim);
   letter-spacing: 0.5px;
   font-weight: 500;
@@ -295,7 +295,7 @@ onUnmounted(() => {
 }
 
 .tower-icon {
-  font-size: 18px;
+  font-size: var(--font-xl);
   line-height: 1;
 }
 
@@ -306,14 +306,14 @@ onUnmounted(() => {
 }
 
 .tower-name {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text);
   text-align: center;
   line-height: 1.2;
 }
 
 .tower-cost {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 600;
   color: var(--color-gold);
 }

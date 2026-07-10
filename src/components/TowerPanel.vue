@@ -296,12 +296,12 @@ function handleFixedAim(dir: string | null) {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   z-index: 11;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .panel-header {
   font-weight: bold;
-  font-size: 14px;
+  font-size: var(--font-md);
   margin-bottom: 8px;
   cursor: grab;
   user-select: none;
@@ -312,7 +312,7 @@ function handleFixedAim(dir: string | null) {
 }
 
 .spec-badge {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: normal;
   color: var(--color-accent);
   margin-left: 6px;
@@ -344,7 +344,7 @@ function handleFixedAim(dir: string | null) {
 
 .milestone-bonus {
   margin-top: 6px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-success);
   padding: 4px;
   background: rgba(68, 255, 68, 0.08);
@@ -359,7 +359,7 @@ function handleFixedAim(dir: string | null) {
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: var(--color-text);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .variant-section {
@@ -380,7 +380,7 @@ function handleFixedAim(dir: string | null) {
   color: var(--color-text);
   border-radius: 4px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-sm);
   transition: background 0.15s;
 }
 
@@ -417,7 +417,7 @@ function handleFixedAim(dir: string | null) {
 
 kbd {
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.5);
   padding: 2px 6px;
@@ -433,7 +433,7 @@ kbd {
 }
 
 .fixed-aim-title {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-dim);
   margin-bottom: 4px;
 }
@@ -459,7 +459,7 @@ kbd {
   color: var(--color-text);
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: bold;
   transition: background 0.15s;
 }
@@ -477,6 +477,6 @@ kbd {
 .auto-dot {
   width: auto;
   padding: 0 6px;
-  font-size: 10px;
+  font-size: var(--font-xs);
 }
 </style>

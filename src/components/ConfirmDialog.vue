@@ -44,14 +44,14 @@ const uiStore = useUiStore();
 }
 
 .confirm-title {
-  font-size: 16px;
+  font-size: var(--font-xl);
   font-weight: bold;
   margin-bottom: 12px;
   color: var(--color-accent);
 }
 
 .confirm-message {
-  font-size: 14px;
+  font-size: var(--font-md);
   color: var(--color-text);
   margin-bottom: 16px;
   line-height: 1.5;
@@ -68,7 +68,7 @@ const uiStore = useUiStore();
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-md);
   transition: background 0.15s;
 }
 

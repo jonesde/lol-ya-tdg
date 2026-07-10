@@ -101,12 +101,12 @@ onUnmounted(() => {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   z-index: 12;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .panel-header {
   font-weight: bold;
-  font-size: 14px;
+  font-size: var(--font-md);
   margin-bottom: 6px;
   cursor: grab;
   user-select: none;

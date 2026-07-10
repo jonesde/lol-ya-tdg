@@ -166,7 +166,7 @@ function replayRun(entry: Record<string, unknown>) {
 
 .history-header h2 {
   color: var(--color-accent);
-  font-size: 24px;
+  font-size: var(--font-2xl);
 }
 
 .back-btn {
@@ -176,7 +176,7 @@ function replayRun(entry: Record<string, unknown>) {
   color: var(--color-text);
   border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 .back-btn:hover {
@@ -189,7 +189,7 @@ function replayRun(entry: Record<string, unknown>) {
   justify-content: center;
   flex: 1;
   color: var(--color-text-dim);
-  font-size: 16px;
+  font-size: var(--font-xl);
 }
 
 .history-list {
@@ -229,11 +229,11 @@ function replayRun(entry: Record<string, unknown>) {
 
 .map-name {
   font-weight: bold;
-  font-size: 15px;
+  font-size: var(--font-lg);
 }
 
 .result-badge {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 4px;
@@ -261,12 +261,12 @@ function replayRun(entry: Record<string, unknown>) {
 }
 
 .card-region {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-dim);
 }
 
 .card-date {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text);
   font-variant-numeric: tabular-nums;
 }
@@ -288,14 +288,14 @@ function replayRun(entry: Record<string, unknown>) {
 }
 
 .stat-label {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .stat-value {
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: 700;
   color: var(--color-text);
 }
@@ -329,7 +329,7 @@ function replayRun(entry: Record<string, unknown>) {
 }
 
 .breakdown-section h3 {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   margin: 0 0 4px;
   color: var(--color-text-dim);
@@ -338,7 +338,7 @@ function replayRun(entry: Record<string, unknown>) {
 }
 
 .breakdown-line {
-  font-size: 12px;
+  font-size: var(--font-sm);
   padding: 1px 0;
   color: var(--color-text);
 }
@@ -350,7 +350,7 @@ function replayRun(entry: Record<string, unknown>) {
 
 .play-btn {
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 700;
   border-radius: 4px;
   border: 1px solid rgba(68, 170, 255, 0.4);

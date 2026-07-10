@@ -91,7 +91,7 @@ function openSkillTree() {
 }
 
 .game-title {
-  font-size: 32px;
+  font-size: var(--font-title);
   color: var(--color-accent);
   text-shadow: 0 0 20px rgba(95, 208, 255, 0.3);
 }
@@ -105,7 +105,7 @@ function openSkillTree() {
 
 .menu-btn {
   padding: 12px 24px;
-  font-size: 15px;
+  font-size: var(--font-lg);
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.08);
@@ -132,7 +132,7 @@ function openSkillTree() {
 }
 
 .diff-header {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: bold;
   color: var(--color-text-dim);
   margin-bottom: 8px;
@@ -147,12 +147,12 @@ function openSkillTree() {
   display: flex;
   justify-content: space-between;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text-dim);
 }
 
 .gems-display {
-  font-size: 18px;
+  font-size: var(--font-xl);
   color: var(--color-gem);
 }
 </style>

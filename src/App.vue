@@ -22,6 +22,15 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
   --color-text: #e0f0ff;
   --color-text-dim: #80d8e0;
   --font-main: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-md: 14px;
+  --font-lg: 16px;
+  --font-xl: 18px;
+  --font-2xl: 20px;
+  --font-title: 32px;
+  --font-display: 72px;
+  --font-mono: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
 }
 
 *, *::before, *::after {

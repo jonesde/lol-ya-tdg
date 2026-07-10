@@ -141,7 +141,7 @@ function formatBreakdown(section: string) {
 }
 
 .end-title {
-  font-size: 32px;
+  font-size: var(--font-title);
   font-weight: 800;
   margin: 0 0 20px;
   letter-spacing: 2px;
@@ -162,14 +162,14 @@ function formatBreakdown(section: string) {
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text-dim);
   text-transform: uppercase;
   letter-spacing: 1px;
 }
 
 .stat-value {
-  font-size: 24px;
+  font-size: var(--font-2xl);
   font-weight: 700;
   color: var(--color-text);
 }
@@ -195,7 +195,7 @@ function formatBreakdown(section: string) {
 }
 
 .breakdown-section h3 {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: 600;
   margin: 0 0 8px;
   color: var(--color-text-dim);
@@ -204,7 +204,7 @@ function formatBreakdown(section: string) {
 }
 
 .breakdown-line {
-  font-size: 13px;
+  font-size: var(--font-md);
   padding: 2px 0;
   color: var(--color-text);
 }
@@ -223,7 +223,7 @@ function formatBreakdown(section: string) {
 
 .end-btn {
   padding: 10px 16px;
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
   border-radius: 6px;
   border: 1px solid var(--color-border);

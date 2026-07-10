@@ -35,7 +35,7 @@ const isLast = computed(() => gameStore.waveCountdown?.remaining === 1);
 }
 
 .wave-countdown-label {
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: 600;
   color: var(--color-text-dim);
   opacity: 0.5;
@@ -44,7 +44,7 @@ const isLast = computed(() => gameStore.waveCountdown?.remaining === 1);
 }
 
 .wave-countdown-number {
-  font-size: 72px;
+  font-size: var(--font-display);
   font-weight: 700;
   color: #ffd84d;
   opacity: 0.5;

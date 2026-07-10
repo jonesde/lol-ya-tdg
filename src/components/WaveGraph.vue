@@ -346,7 +346,7 @@ onUnmounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 4px;
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-family: var(--font-main);
   color: var(--color-text);
   pointer-events: none;
@@ -369,7 +369,7 @@ onUnmounted(() => {
 }
 
 .wg-title-label {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 700;
   color: var(--color-text);
   font-variant-numeric: tabular-nums;

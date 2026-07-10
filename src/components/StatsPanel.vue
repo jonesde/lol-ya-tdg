@@ -207,7 +207,7 @@ function hpPercent(enemy: EnemyStat) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: bold;
   color: var(--color-accent);
   margin-bottom: 16px;
@@ -223,7 +223,7 @@ function hpPercent(enemy: EnemyStat) {
   height: 28px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--font-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -243,7 +243,7 @@ function hpPercent(enemy: EnemyStat) {
 }
 
 .stats-section-title {
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: bold;
   color: var(--color-text);
   margin-bottom: 10px;
@@ -253,13 +253,13 @@ function hpPercent(enemy: EnemyStat) {
 }
 
 .enemy-count {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: normal;
   color: var(--color-text-dim);
 }
 
 .stats-empty {
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--color-text-dim);
   padding: 8px 0;
 }
@@ -280,7 +280,7 @@ function hpPercent(enemy: EnemyStat) {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .comp-dot {
@@ -301,7 +301,7 @@ function hpPercent(enemy: EnemyStat) {
 }
 
 .comp-total {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text-dim);
 }
 
@@ -322,7 +322,7 @@ function hpPercent(enemy: EnemyStat) {
   padding: 4px 8px;
   background: rgba(255, 255, 255, 0.03);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .enemy-dot {
@@ -341,7 +341,7 @@ function hpPercent(enemy: EnemyStat) {
 .enemy-level {
   color: var(--color-text-dim);
   min-width: 36px;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .enemy-hp-bar {
@@ -361,10 +361,10 @@ function hpPercent(enemy: EnemyStat) {
 
 .enemy-hp {
   color: var(--color-text-dim);
-  font-size: 11px;
+  font-size: var(--font-xs);
   min-width: 70px;
   text-align: right;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 /* Run Stats Grid */
@@ -387,14 +387,14 @@ function hpPercent(enemy: EnemyStat) {
 }
 
 .stat-card-icon {
-  font-size: 20px;
+  font-size: var(--font-2xl);
 }
 
 .stat-card-value {
-  font-size: 20px;
+  font-size: var(--font-2xl);
   font-weight: bold;
   color: var(--color-text);
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .stat-card-value.critical {
@@ -410,7 +410,7 @@ function hpPercent(enemy: EnemyStat) {
 }
 
 .stat-card-label {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.5px;

@@ -119,7 +119,7 @@ function dbgSpeed() {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .debug-panel.hidden {
@@ -143,7 +143,7 @@ function dbgSpeed() {
 }
 
 .header-icon {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .debug-close {
@@ -155,7 +155,7 @@ function dbgSpeed() {
   height: 18px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -175,7 +175,7 @@ function dbgSpeed() {
   color: var(--color-text);
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-align: left;
 }
 

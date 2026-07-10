@@ -163,7 +163,7 @@ watch(
 }
 
 .notification-message {
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--color-text);
   font-weight: 500;
 }
@@ -188,7 +188,7 @@ watch(
 }
 
 .hud-label {
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--color-text-dim);
 }
 
@@ -199,7 +199,7 @@ watch(
   padding: 2px 8px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.05);
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 
@@ -225,7 +225,7 @@ watch(
 }
 
 .hud-btn.wave-counter {
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: 500;
   color: #d0d0ff;
   gap: 6px;
@@ -238,16 +238,16 @@ watch(
 }
 
 .hud-btn.wave-counter .hud-value {
-  font-size: 20px;
+  font-size: var(--font-2xl);
   font-weight: 700;
 }
 
 .hud-btn.wave-counter .hud-icon {
-  font-size: 24px;
+  font-size: var(--font-2xl);
 }
 
 .hud-icon {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .hud-btn {
@@ -257,7 +257,7 @@ watch(
   padding: 4px 10px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--font-md);
   height: 28px;
   min-width: 40px;
   display: flex;

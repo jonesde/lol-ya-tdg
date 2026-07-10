@@ -324,7 +324,7 @@ function startRandomMap() {
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: var(--color-text);
   border-radius: 6px;
-  font-size: 14px;
+  font-size: var(--font-md);
   cursor: pointer;
 }
 
@@ -334,7 +334,7 @@ function startRandomMap() {
 
 .map-select-header h2 {
   color: var(--color-accent);
-  font-size: 24px;
+  font-size: var(--font-2xl);
 }
 
 .back-btn {
@@ -344,7 +344,7 @@ function startRandomMap() {
   color: var(--color-text);
   border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 .back-btn:hover {
@@ -372,7 +372,7 @@ function startRandomMap() {
 }
 
 .region-label {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: bold;
   letter-spacing: 0.5px;
   white-space: nowrap;
@@ -413,24 +413,24 @@ function startRandomMap() {
 
 .map-name {
   font-weight: bold;
-  font-size: 14px;
+  font-size: var(--font-md);
   margin-bottom: 6px;
 }
 
 .map-region {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-dim);
   margin-bottom: 4px;
 }
 
 .map-best {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-gold);
   margin-bottom: 2px;
 }
 
 .map-dimensions {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-dim);
 }
 
@@ -451,14 +451,14 @@ function startRandomMap() {
 }
 
 .random-map-header h3 {
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: 700;
   color: var(--color-accent);
   margin: 0;
 }
 
 .random-map-subtitle {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text-dim);
 }
 
@@ -481,7 +481,7 @@ function startRandomMap() {
 }
 
 .form-field label {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   color: var(--color-text-dim);
   text-transform: uppercase;
@@ -495,7 +495,7 @@ function startRandomMap() {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 6px;
   color: var(--color-text);
-  font-size: 14px;
+  font-size: var(--font-md);
   cursor: pointer;
 }
 
@@ -518,7 +518,7 @@ function startRandomMap() {
 
 .random-play-btn {
   padding: 10px 24px;
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 700;
   border-radius: 6px;
   border: 1px solid rgba(68, 170, 255, 0.4);

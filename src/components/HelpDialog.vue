@@ -363,7 +363,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: bold;
   color: var(--color-accent);
   margin-bottom: 16px;
@@ -379,7 +379,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
   height: 28px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--font-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -399,14 +399,14 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 }
 
 .help-section-title {
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: bold;
   color: var(--color-text);
   margin-bottom: 10px;
 }
 
 .help-description {
-  font-size: 13px;
+  font-size: var(--font-md);
   color: var(--color-text);
   line-height: 1.5;
 }
@@ -437,7 +437,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 
 .help-table td {
   padding: 6px 0;
-  font-size: 13px;
+  font-size: var(--font-md);
   vertical-align: top;
 }
 
@@ -453,7 +453,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 
 kbd {
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
   padding: 2px 6px;
@@ -484,7 +484,7 @@ kbd {
 }
 
 .kb-key-text {
-  font-size: 10px;
+  font-size: var(--font-xs);
   fill: var(--color-text);
   font-family: var(--font-main);
   pointer-events: none;
@@ -497,7 +497,7 @@ kbd {
 }
 
 .kb-label-text {
-  font-size: 10px;
+  font-size: var(--font-xs);
   font-family: var(--font-main);
 }
 
@@ -521,7 +521,7 @@ kbd {
   width: 100%;
   text-align: right;
   border: none;
-  font-size: 18px;
+  font-size: var(--font-xl);
   cursor: pointer;
   opacity: 0.3;
   transition: opacity 0.15s;

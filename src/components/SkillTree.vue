@@ -381,11 +381,11 @@ function showRefundAllConfirm() {
 
 .skill-header h2 {
   color: var(--color-accent);
-  font-size: 24px;
+  font-size: var(--font-2xl);
 }
 
 .skill-gems {
-  font-size: 16px;
+  font-size: var(--font-xl);
   color: var(--color-gem);
 }
 
@@ -397,7 +397,7 @@ function showRefundAllConfirm() {
   color: var(--color-text);
   border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 .back-btn:hover {
@@ -423,7 +423,7 @@ function showRefundAllConfirm() {
 }
 
 .category-label {
-  font-size: 13px;
+  font-size: var(--font-md);
   font-weight: bold;
   letter-spacing: 0.5px;
   white-space: nowrap;
@@ -467,12 +467,12 @@ function showRefundAllConfirm() {
 .general-label {
   color: var(--color-accent);
   font-weight: bold;
-  font-size: 13px;
+  font-size: var(--font-md);
   margin-bottom: 4px;
 }
 
 .general-desc {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-dim);
   margin-bottom: 8px;
 }
@@ -486,7 +486,7 @@ function showRefundAllConfirm() {
   color: var(--color-text);
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
   transition: all 0.15s;
 }
 
@@ -527,12 +527,12 @@ function showRefundAllConfirm() {
 
 .skill-col-header {
   font-weight: bold;
-  font-size: 14px;
+  font-size: var(--font-md);
   margin-bottom: 10px;
 }
 
 .skill-section {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: bold;
   color: var(--color-text-dim);
   margin: 10px 0 6px;
@@ -569,16 +569,16 @@ function showRefundAllConfirm() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .node-cost {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-gem);
 }
 
 .node-desc {
-  font-size: 10px;
+  font-size: var(--font-xs);
   color: var(--color-text-dim);
   margin-top: 2px;
 }
@@ -592,7 +592,7 @@ function showRefundAllConfirm() {
 
 .reset-btn {
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   background: rgba(255, 68, 68, 0.1);
   border: 1px solid rgba(255, 68, 68, 0.2);
   color: var(--color-danger);
@@ -606,7 +606,7 @@ function showRefundAllConfirm() {
 
 .refund-all-btn {
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   background: rgba(255, 68, 68, 0.1);
   border: 1px solid rgba(255, 68, 68, 0.2);
   color: var(--color-danger);
