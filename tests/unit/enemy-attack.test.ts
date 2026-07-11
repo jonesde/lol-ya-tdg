@@ -489,6 +489,69 @@ describe("contact-line steering (polite motion)", () => {
     expect(tiles.size).toBeGreaterThan(1);
   });
 
+  it("a pile against a path-blocking tower still damages it (regression: tower attack survives lateral spread)", () => {
+    // A 3-wide staging room funnels into a 1-wide choke; the tower sits on the choke
+    // mouth, so it is the only way through — enemies must pile against it (with real
+    // lateral spread on its exposed faces) rather than route around it.
+    const width = 9;
+    const height = 3;
+    const tiles: { type: string; height: number }[][] = [];
+    for (let rowIndex = 0; rowIndex < height; rowIndex++) {
+      const row: { type: string; height: number }[] = [];
+      for (let colIndex = 0; colIndex < width; colIndex++) {
+        const inRoom = colIndex <= 3;
+        const inChoke = colIndex >= 4 && rowIndex === 1;
+        row.push({ type: inRoom || inChoke ? "path" : "terrain", height: 1 });
+      }
+      tiles.push(row);
+    }
+    const map = makeMapData({
+      width,
+      height,
+      spawns: [{ x: 0, y: 1 }],
+      base: { x: width - 1, y: 1 },
+      tiles,
+      regionId: 0,
+      level: 1,
+      style: "bastion",
+    });
+    const blockGrid = new Grid(map);
+    const blockTowers = new TowerManager(
+      blockGrid,
+      makeParticleSystem(),
+      { spawn() {}, fireLightning() {}, spawnLightningFlash() {} },
+      makeSoundManager(),
+    );
+    const blockEnemies = new EnemyManager(blockGrid, makeParticleSystem(), 0);
+    blockEnemies.setTowerManager(blockTowers);
+
+    const path = blockGrid.getPathFor(0)!;
+    const towerTile = { x: 4, y: 1 };
+    const tower = blockTowers.build("basic", towerTile.x, towerTile.y, makeSave(), blockGrid)!;
+    // Enough health to survive the run but low enough that a 12-enemy pile's attacks
+    // are clearly observable.
+    tower.health = tower.maxHealth = 100000;
+
+    const count = 12;
+    const enemies: Enemy[] = [];
+    for (let i = 0; i < count; i++) {
+      const enemy = new Enemy("minion", 1, 0, blockGrid, 1);
+      enemies.push(enemy);
+      blockEnemies.enemies.push(enemy);
+    }
+    blockEnemies.updateSpatialHash();
+
+    for (let step = 0; step < 8000; step++) {
+      blockEnemies.update(1 / 60, null);
+    }
+
+    // Before the fix, the attack target was gated on center-to-center distance, which
+    // became false the moment contactLineSteer spread the pile tangentially along the
+    // tower face — so the tower took no damage. With square-distance contact, the pile
+    // keeps attacking, so health must drop below max.
+    expect(tower.health).toBeLessThan(tower.maxHealth);
+  });
+
   it("a boss pushes through a packed base line while minions slide aside (priority yielding)", () => {
     const baseTarget = new StubBaseTarget();
     enemyManager.baseTarget = baseTarget;

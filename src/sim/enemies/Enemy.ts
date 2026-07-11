@@ -708,13 +708,26 @@ export class Enemy {
 
     if (liveForwardTower && nextTile) {
       const towerCenter = this.grid.tileToWorld(nextTile.x, nextTile.y);
-      const distToTower = Math.hypot(towerCenter.x - this.centerX, towerCenter.y - this.centerY);
-      const contactDistance = this.grid.tileSize / 2 + this.radius;
+      // Gate the attack on square distance to the tower tile (mirrors the base path
+      // below, which uses distanceToBaseSquare <= radius). The center-to-center test
+      // here was only true when dead-head-on a face center; contactLineSteer spreads
+      // enemies tangentially along the face, increasing the center distance past the
+      // contact threshold, so on the next frame attackTarget became null and the tower
+      // stopped taking damage even though the enemy stayed in contact. Square distance
+      // stays true for any position along the exposed perimeter, so the attack persists
+      // through lateral spread.
+      const towerContact = distanceToBaseSquare(
+        this.centerX,
+        this.centerY,
+        towerCenter.x,
+        towerCenter.y,
+        this.grid.tileSize / 2,
+      );
       this.blockedByTower = liveForwardTower;
-      if (distToTower > contactDistance) {
-        moveMode = "approach";
-      } else {
+      if (towerContact <= this.radius + 1e-3) {
         attackTarget = liveForwardTower;
+      } else {
+        moveMode = "approach";
       }
     } else {
       const adjacentTower = this.findAdjacentLiveTowerInContact(enemyManager);
@@ -1009,15 +1022,24 @@ export class Enemy {
           }
         }
       });
-      if (!blocked) {
+      if (!blocked || checkForwardClearance) {
         // Maximin fills the largest gap first. When several open spots are equally
         // clear (e.g. both ends of a face from a centered clump), prefer the one
         // FARTHEST from the enemy's current position so the clump migrates outward
         // and fills both ends of the entry rather than cascading to one corner. The
         // distance term is tiny vs clearance so it only breaks ties, never overrides
         // a genuinely clearer spot.
+        // For back-row enemies, unblocked positions (clear forward path) are scored
+        // with a huge base so they always outrank blocked positions. Among equally
+        // clear unblocked positions the NEAREST is preferred — the enemy slides to
+        // the closest gap it can advance through, not to the farthest extreme.
         const distanceFromCurrent = Math.hypot(candidateX - originX, candidateY - originY);
-        const score = clearance + distanceFromCurrent * 1e-3;
+        let score: number;
+        if (!blocked && checkForwardClearance) {
+          score = tileSize * 100 - distanceFromCurrent * 1e-3;
+        } else {
+          score = clearance + distanceFromCurrent * 1e-3;
+        }
         if (score > bestScore) {
           bestScore = score;
           best = { x: candidateX, y: candidateY };
@@ -1027,10 +1049,15 @@ export class Enemy {
     // The enemy's own position is a valid target only for on-line enemies (a back-row
     // enemy that is blocked should always try to relocate, never accept its spot).
     if (!checkForwardClearance) considerOffset(originT);
-    for (let lateralOffset = probeStep; lateralOffset <= maxReach + 1e-6; lateralOffset += probeStep) {
-      for (const sign of [-1, 1]) {
-        considerOffset(originT + sign * lateralOffset);
-      }
+    // Scan across the full exposed span at a step that guarantees interior coverage.
+    // For narrow spans (1-tile entry) the probe step may exceed the span width, causing
+    // all candidates to collapse to the boundaries and leaving the center unevaluated.
+    // Using spanWidth/3 as the step floor ensures at least 4 sample points regardless
+    // of span size, so the center and intermediate positions participate in scoring.
+    const spanWidth = maxT - minT;
+    const coverageStep = spanWidth > 1e-6 ? Math.min(probeStep, spanWidth / 3) : probeStep;
+    for (let offsetT = minT; offsetT <= maxT + 1e-6; offsetT += coverageStep) {
+      considerOffset(offsetT);
     }
     return best;
   }
@@ -1054,34 +1081,31 @@ export class Enemy {
   ): { x: number; y: number } | null {
     if (!enemyManager) return null;
     const probeStep = this.radius * 1.5;
-    const reach = this.grid.tileSize * 2;
     const probeRadius = this.radius * 2 + this.grid.tileSize;
     let best: { x: number; y: number } | null = null;
     let bestCount = Infinity;
-    for (let lateralOffset = probeStep; lateralOffset <= reach + 1e-6; lateralOffset += probeStep) {
-      for (const sign of [-1, 1]) {
-        const clampedT = Math.max(minT, Math.min(maxT, originT + sign * lateralOffset));
-        const candidateX = originX + tangentX * (clampedT - originT);
-        const candidateY = originY + tangentY * (clampedT - originT);
-        let count = 0;
-        enemyManager.forEachEnemyInRange(candidateX, candidateY, probeRadius, (other) => {
-          if (other === this || other.removed) return;
-          const otherDeltaX = other.centerX - candidateX;
-          const otherDeltaY = other.centerY - candidateY;
-          const candidateToObjective = Math.hypot(objectiveX - candidateX, objectiveY - candidateY);
-          const otherToObjective = Math.hypot(objectiveX - other.centerX, objectiveY - other.centerY);
-          if (otherToObjective < candidateToObjective - 1e-3) {
-            const lateralDist = Math.abs(otherDeltaX * tangentX + otherDeltaY * tangentY);
-            if (lateralDist < this.radius + other.radius - 1e-3) count++;
-          }
-        });
-        if (count < bestCount) {
-          bestCount = count;
-          best = { x: candidateX, y: candidateY };
-        }
-        if (bestCount === 0) break;
+    let bestDistance = Infinity;
+    // Scan across the full exposed span so interior positions (center, between
+    // boundaries) participate even when the span is narrower than probeStep.
+    const spanWidth = maxT - minT;
+    const coverageStep = spanWidth > 1e-6 ? Math.min(probeStep, spanWidth / 3) : probeStep;
+    for (let offsetT = minT; offsetT <= maxT + 1e-6; offsetT += coverageStep) {
+      const candidateX = originX + tangentX * (offsetT - originT);
+      const candidateY = originY + tangentY * (offsetT - originT);
+      let count = 0;
+      enemyManager.forEachEnemyInRange(candidateX, candidateY, probeRadius, (other) => {
+        if (other === this || other.removed) return;
+        const otherDeltaX = other.centerX - candidateX;
+        const otherDeltaY = other.centerY - candidateY;
+        const lateralDist = Math.abs(otherDeltaX * tangentX + otherDeltaY * tangentY);
+        if (lateralDist < this.radius + other.radius - 1e-3) count++;
+      });
+      const distanceFromCurrent = Math.hypot(candidateX - originX, candidateY - originY);
+      if (count < bestCount || (count === bestCount && distanceFromCurrent < bestDistance)) {
+        bestCount = count;
+        bestDistance = distanceFromCurrent;
+        best = { x: candidateX, y: candidateY };
       }
-      if (bestCount === 0) break;
     }
     return best;
   }
@@ -1297,8 +1321,12 @@ export class Enemy {
     // A contact-line enemy is already in contact, so its only job is to slide along
     // the face to an open spot. Allow a larger per-frame lateral step than the forward
     // walk speed so a pile can flow (the bottom edge of a clump slides into empty space
-    // and the clump shifts) instead of deadlocking in a 1-D packed column.
-    const move = Math.min(step * 6, alongAbs);
+    // and the clump shifts) instead of deadlocking in a 1-D packed column. The
+    // multiplier is high enough to cross the span in a few frames but not so high that
+    // enemies visibly teleport; tune via the TUNING KNOBS in PoliteMotion.md if the
+    // pile still deadlocks or zips.
+    const lateralMultiplier = 3;
+    const move = Math.min(step * lateralMultiplier, alongAbs);
     this.centerX += tangentX * sign * move;
     this.centerY += tangentY * sign * move;
   }
@@ -1558,11 +1586,12 @@ export class Enemy {
 
   // Returns the lowest-health adjacent live (non-ghost) tower this enemy is in
   // contact with, or null. Handles the pile-up / junction case where an enemy is
-  // blocked by other enemies and ends up against a tower tile. Side towers are
-  // ignored because contact only occurs when the enemy is near the tower's center.
+  // blocked by other enemies and ends up against a tower tile. Contact uses the
+  // square-distance-to-tile test shared with the forward-tower path, so an enemy
+  // touching any exposed face of an adjacent tower qualifies, not just one dead-
+  // center on a face.
   private findAdjacentLiveTowerInContact(enemyManager: EnemyManagerRef | null): Tower | null {
     if (!enemyManager || !this.path) return null;
-    const contactDistance = this.grid.tileSize / 2 + this.radius;
     const currentTile = this.path[this.pathIdx]!;
     const candidateTiles = [
       { x: currentTile.x + 1, y: currentTile.y },
@@ -1575,8 +1604,14 @@ export class Enemy {
       const tower = enemyManager.towerAt(tile.x, tile.y);
       if (!tower || tower.isGhost) continue;
       const towerCenter = this.grid.tileToWorld(tile.x, tile.y);
-      const dist = Math.hypot(towerCenter.x - this.centerX, towerCenter.y - this.centerY);
-      if (dist > contactDistance) continue;
+      const squareContact = distanceToBaseSquare(
+        this.centerX,
+        this.centerY,
+        towerCenter.x,
+        towerCenter.y,
+        this.grid.tileSize / 2,
+      );
+      if (squareContact > this.radius + 1e-3) continue;
       if (!lowestTower || tower.health < lowestTower.health) lowestTower = tower;
     }
     return lowestTower;
