@@ -59,14 +59,24 @@ const DETOUR_COOLDOWN = 0.4;
 // single pass. A front enemy pinned on the base keep-out gets shoved laterally by the
 // press from behind and re-projected by the keep-out each frame, producing the "pushed
 // aside, then a back enemy fills the gap" popping. The hard correction is what gives the
-// pile its desired multi-tile overflow, so it is kept at 1.0; instead the front line is
-// stabilized by biasing the separation axis outward from the base, gated to pairs near
-// the base so the deeper pile keeps its true lateral normal (preserving spread + forward
-// progress into freed edge slots).
+// pile its desired multi-tile overflow, so it is kept at 1.0. Base-pile separation uses
+// the true inter-enemy contact normal (tangential separation allowed) so enemies pack
+// 2D against the base instead of collapsing into a single-file column.
 const COLLISION_STIFFNESS = 1.0; // <1 softens per-frame correction (1 = current hard behavior)
 const COLLISION_ITERATIONS = 1; // resolve the spatial-hash pairs this many times per frame (cheap convergence)
-const COLLISION_RADIAL_BIAS = 0.5; // bias separation outward from the base so the front line rides the edge
-const COLLISION_RADIAL_RANGE = 1.5; // only front-line pairs within this many tiles of the base get the bias
+
+// Base-pile fill tuning. A base-attacking enemy picks a target point along the exposed
+// edge of its own face by minimizing `density(C) * FILL_DENSITY_WEIGHT +
+// driftTiles(C) * FILL_LOCALITY_WEIGHT`, where density counts enemies near C and drift is
+// how far along the face (in tiles) C sits from the enemy's own nearest edge point.
+// Locality dominates so enemies only drift to NEARBY gaps (no global funnel), while
+// density still pulls them off an occupied spot into an adjacent open one — filling the
+// face (3-abreast on a 1-tile edge, evenly across a 2-tile edge) instead of bunching.
+const FILL_DENSITY_WEIGHT = 1.0; // score added per enemy within FILL_DENSITY_RADIUS of a candidate
+const FILL_LOCALITY_WEIGHT = 1.0; // score added per tile of lateral drift from the enemy's own edge
+const FILL_SAMPLE_STEP = 0.3; // candidate spacing along the face, in tiles
+const FILL_SAMPLE_REACH = 2.0; // max lateral drift (tiles) an enemy will consider to fill a gap
+const FILL_DENSITY_RADIUS_FACTOR = 2.5; // probe radius = this * enemy radius when counting neighbors
 
 interface SlowEntry {
   eff: number;
@@ -102,6 +112,8 @@ interface GridRef {
   isBase(x: number, y: number): boolean;
   isTerrain(x: number, y: number): boolean;
   inBounds(x: number, y: number): boolean;
+  getBaseEdgeSegments(): Array<{ x1: number; y1: number; x2: number; y2: number }>;
+  getBaseEdgeNearestPoint(pointX: number, pointY: number): { x: number; y: number };
   blocked: Set<string>;
   pathVersion: number;
   computeSurroundRoute(
@@ -127,6 +139,9 @@ interface EnemyManagerRef {
   // Base-adjacent open tiles (the `baseTile` of every exposed dock), used by lateral
   // seeking so a blocked enemy can slip into an open tile still touching the base.
   baseDocks(): { x: number; y: number }[];
+  // Every exposed dock, with its base-adjacent `baseTile` and the `outwardNormal`
+  // pointing away from the base. Used to spread the front line across a base face.
+  getBaseDocks(): { baseTile: { x: number; y: number }; outwardNormal: { dx: number; dy: number } }[];
   // Count of live enemies standing on a tile, used to pick the least-occupied detour.
   enemiesInTile(tileX: number, tileY: number): number;
 }
@@ -791,26 +806,56 @@ export class Enemy {
         this.centerY += (deltaY / dist) * step;
       }
     } else if (this.attackingBase && !attackTarget) {
-      // Press toward the base so collision piling forms a 2-D stack (front line on
-      // the edge, further enemies filling rows behind within the arrival tile) and
-      // overflows into neighbouring base-adjacent tiles via the lateral seek. We do
-      // NOT pull every enemy onto the edge ring: that would flatten the pile to a
-      // single line and prevent the "stacked behind" rows. The keep-out below only
-      // projects an enemy out of the square when it actually penetrates, so a back
-      // enemy held behind the front line by collision stays piled in the tile.
-      const baseTile = this.grid.getBase();
-      const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
+      // Press toward the least-occupied point on the exposed edge of this enemy's own
+      // face (gap-seeking), so the pile fills all open space along the base instead of
+      // bunching at the arrival point. Locality keeps each enemy near its own edge, so
+      // it drifts only into adjacent open slots (3-abreast on a 1-tile edge, evenly
+      // across a wider one) rather than funneling to a single shared point. The keep-out
+      // below projects an enemy out of the square when it actually penetrates, so a back
+      // enemy held behind the front line by collision stays piled in the tile and the
+      // whole front line still contacts and damages the base.
       const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
-      this.moveAngle = Math.atan2(baseCenter.y - this.centerY, baseCenter.x - this.centerX);
-      const deltaX = baseCenter.x - this.centerX;
-      const deltaY = baseCenter.y - this.centerY;
+      const fill = this.baseEdgeFillTarget(enemyManager);
+      const targetX = fill.x;
+      const targetY = fill.y;
+      this.moveAngle = Math.atan2(targetY - this.centerY, targetX - this.centerX);
+      const deltaX = targetX - this.centerX;
+      const deltaY = targetY - this.centerY;
       const dist = Math.hypot(deltaX, deltaY);
       if (step >= dist) {
-        this.centerX = baseCenter.x;
-        this.centerY = baseCenter.y;
+        this.centerX = targetX;
+        this.centerY = targetY;
       } else {
         this.centerX += (deltaX / dist) * step;
         this.centerY += (deltaY / dist) * step;
+      }
+    } else if (this.attackingBase && attackTarget === this.baseTarget) {
+      // Already in contact with the base and attacking it: hold the enemy's own edge
+      // slot. The tangential slide below projects toward this enemy's own nearest edge
+      // point (which is the current point, so the projection is zero), keeping it in
+      // contact with the base; the 2D pile is driven by enemy-enemy collision rather
+      // than by funneling to a shared dock point.
+      const baseTile = this.grid.getBase();
+      const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
+      const edge = this.grid.getBaseEdgeNearestPoint(this.centerX, this.centerY);
+      {
+        const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
+        const normalLen = Math.hypot(edge.x - baseCenter.x, edge.y - baseCenter.y) || 1;
+        const normalX = (edge.x - baseCenter.x) / normalLen;
+        const normalY = (edge.y - baseCenter.y) / normalLen;
+        const tangentX = -normalY;
+        const tangentY = normalX;
+        // Press toward this enemy's own edge point: with the target equal to the
+        // current edge, the tangential projection is zero, so the enemy holds its
+        // slot in contact with the base and the 2D pile is driven by collision.
+        const along = (edge.x - edge.x) * tangentX + (edge.y - edge.y) * tangentY;
+        const alongAbs = Math.abs(along);
+        if (alongAbs > 1e-3) {
+          const move = Math.min(step, alongAbs) * Math.sign(along);
+          this.moveAngle = Math.atan2(tangentY * Math.sign(along), tangentX * Math.sign(along));
+          this.centerX += tangentX * move;
+          this.centerY += tangentY * move;
+        }
       }
     } else if (moveMode === "approach" && this.blockedByTower && nextTile && !attackTarget) {
       const towerCenter = this.grid.tileToWorld(nextTile.x, nextTile.y);
@@ -899,6 +944,92 @@ export class Enemy {
         this.centerY = centerContact.contactY;
       }
     }
+  }
+
+  // The point a base-attacking enemy presses toward: the least-occupied point on the
+  // exposed edge of its own face. Candidates are sampled continuously along the face
+  // (not just discrete docks), and each is scored `density * FILL_DENSITY_WEIGHT +
+  // driftTiles * FILL_LOCALITY_WEIGHT`. Locality dominates so an enemy only drifts to a
+  // nearby open slot rather than funneling to the single emptiest point across the
+  // whole face; density still pulls it off an occupied spot, so the pile fills the
+  // available edge (3-abreast on a 1-tile edge, evenly across a wider one) instead of
+  // bunching at the arrival point. Falls back to the nearest edge point when no face
+  // span is exposed or there is no enemy manager.
+  private baseEdgeFillTarget(
+    enemyManager: EnemyManagerRef | null,
+  ): { x: number; y: number } {
+    const edge = this.grid.getBaseEdgeNearestPoint(this.centerX, this.centerY);
+    const base = this.grid.getBase();
+    const baseCenter = this.grid.tileToWorld(base.x, base.y);
+    const half = 1.5 * this.grid.tileSize;
+    const edgeDx = edge.x - baseCenter.x;
+    const edgeDy = edge.y - baseCenter.y;
+    // Outward normal of the face this enemy is pressing against.
+    let normalX: number;
+    let normalY: number;
+    if (Math.abs(edgeDx) >= Math.abs(edgeDy)) {
+      normalX = Math.sign(edgeDx) || 1;
+      normalY = 0;
+    } else {
+      normalX = 0;
+      normalY = Math.sign(edgeDy) || 1;
+    }
+    const tangentX = -normalY;
+    const tangentY = normalX;
+    // Exposed span of this face, expressed as a tangent coordinate about baseCenter.
+    let minT = Infinity;
+    let maxT = -Infinity;
+    for (const segment of this.grid.getBaseEdgeSegments()) {
+      const segCx = (segment.x1 + segment.x2) / 2;
+      const segCy = (segment.y1 + segment.y2) / 2;
+      const segDx = segCx - baseCenter.x;
+      const segDy = segCy - baseCenter.y;
+      const onFace = Math.abs(segDx) >= Math.abs(segDy)
+        ? normalX !== 0 && Math.sign(segDx) === normalX
+        : normalY !== 0 && Math.sign(segDy) === normalY;
+      if (!onFace) continue;
+      const t1 = (segment.x1 - baseCenter.x) * tangentX + (segment.y1 - baseCenter.y) * tangentY;
+      const t2 = (segment.x2 - baseCenter.x) * tangentX + (segment.y2 - baseCenter.y) * tangentY;
+      minT = Math.min(minT, t1, t2);
+      maxT = Math.max(maxT, t1, t2);
+    }
+    if (!isFinite(minT)) return edge;
+    const edgeT = edgeDx * tangentX + edgeDy * tangentY;
+    const step = FILL_SAMPLE_STEP * this.grid.tileSize;
+    const reach = FILL_SAMPLE_REACH * this.grid.tileSize;
+    const probeRadius = FILL_DENSITY_RADIUS_FACTOR * this.radius;
+    let best = edge;
+    let bestScore = Infinity;
+    for (let t = edgeT - reach; t <= edgeT + reach + 1e-6; t += step) {
+      const clampedT = Math.max(minT, Math.min(maxT, t));
+      const candidateX = baseCenter.x + normalX * half + tangentX * clampedT;
+      const candidateY = baseCenter.y + normalY * half + tangentY * clampedT;
+      const density = enemyManager
+        ? this.countEnemiesNear(enemyManager, candidateX, candidateY, probeRadius)
+        : 0;
+      const driftTiles = Math.abs(clampedT - edgeT) / this.grid.tileSize;
+      const score = density * FILL_DENSITY_WEIGHT + driftTiles * FILL_LOCALITY_WEIGHT;
+      if (score < bestScore) {
+        bestScore = score;
+        best = { x: candidateX, y: candidateY };
+      }
+    }
+    return best;
+  }
+
+  // Count of live enemies (excluding this one) within `radius` of a world point,
+  // used to score how occupied a candidate fill point on the base edge is.
+  private countEnemiesNear(
+    enemyManager: EnemyManagerRef,
+    pointX: number,
+    pointY: number,
+    radius: number,
+  ): number {
+    let count = 0;
+    enemyManager.forEachEnemyInRange(pointX, pointY, radius, (other) => {
+      if (other !== this) count++;
+    });
+    return count;
   }
 
   // The point every enemy is ultimately trying to reach: the base center. Used as
@@ -1004,8 +1135,6 @@ export class Enemy {
   // moveAngle).
   private resolveCollisions(enemyManager: EnemyManagerRef | null): void {
     if (!enemyManager) return;
-    const base = this.grid.getBase();
-    const baseCenter = this.grid.tileToWorld(base.x, base.y);
     for (let iter = 0; iter < COLLISION_ITERATIONS; iter++) {
       enemyManager.forEachEnemyInRange(this.centerX, this.centerY, this.grid.tileSize, (other) => {
         if (other === this) return;
@@ -1042,24 +1171,6 @@ export class Enemy {
         } else {
           normalX = perpAx;
           normalY = perpAy;
-        }
-        // For front-line pairs near the base, bias the separation axis outward from the base so
-        // the front line rides the keep-out edge instead of sliding tangentially. The bias is
-        // gated to pairs whose midpoint is within COLLISION_RADIAL_RANGE tiles of the base center
-        // so the deeper pile keeps its true lateral normal — preserving the multi-tile overflow
-        // and letting a back enemy advance into a freed edge slot. Path-following (non-attacking)
-        // pairs keep the true normal so lane separation is unaffected.
-        if (thisAttacks || otherAttacks) {
-          const midOutX = (ax + bx) / 2 - baseCenter.x;
-          const midOutY = (ay + by) / 2 - baseCenter.y;
-          const midLen = Math.hypot(midOutX, midOutY) || 1;
-          if (midLen <= COLLISION_RADIAL_RANGE * this.grid.tileSize) {
-            const bX = normalX + (midOutX / midLen) * COLLISION_RADIAL_BIAS;
-            const bY = normalY + (midOutY / midLen) * COLLISION_RADIAL_BIAS;
-            const bLen = Math.hypot(bX, bY) || 1;
-            normalX = bX / bLen;
-            normalY = bY / bLen;
-          }
         }
         let thisSign: number;
         let otherSign: number;

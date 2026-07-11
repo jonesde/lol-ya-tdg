@@ -12,6 +12,7 @@ function makeEnemyManager(enemy: Enemy) {
     forEachEnemyInRange: () => {},
     towerAt: () => null,
     baseDocks: () => [],
+    getBaseDocks: () => [],
     enemiesInTile: () => 0,
   };
 }

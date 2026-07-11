@@ -61,6 +61,7 @@ const themeStore = useMapThemeStore();
 const { staticDefsContent, mapDefsContent, gridContent } = useSvgStaticContent(
   computed(() => gameStore.map),
   themeStore.activeTheme,
+  computed(() => gameStore.grid),
 );
 
 const mouseWorldPos = ref<{ x: number; y: number } | null>(null);

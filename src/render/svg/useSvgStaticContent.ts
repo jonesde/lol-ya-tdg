@@ -1,5 +1,6 @@
 import { computed } from "vue";
 import type { MapThemeData } from "@/render/themes/index.js";
+import type { Grid } from "@/sim/grid/Grid.js";
 import { mulberry32 } from "@/sim/grid/Map.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 
@@ -272,6 +273,7 @@ function renderBaseStructure(base: { x: number; y: number }, regionBaseSvg: stri
 export function useSvgStaticContent(
   currentMap: { value: MapInfo | null },
   currentTheme?: { value: MapThemeData | null },
+  currentGrid?: { value: Grid | null },
 ) {
   const staticFiltersContent = computed(() => buildStaticFiltersContent());
   const staticSymbolsContent = computed(() => buildSymbolsFromConstants(currentTheme?.value));
@@ -347,6 +349,17 @@ export function useSvgStaticContent(
     // Base structure (port of drawBase from Shapes.ts)
     if (map.base) {
       svg += renderBaseStructure(map.base, region.base);
+    }
+
+    // Red target-edge overlay: one <line> per exposed base-edge segment whose
+    // outward tile is traversable (path/spawn). This mirrors `Grid.getBaseEdgeSegments`
+    // used by Enemy.ts for base-attacking target selection, so the drawn edge is
+    // exactly the edge enemies press toward — never a terrain-backed face.
+    const grid = currentGrid?.value;
+    if (map.base && grid) {
+      for (const segment of grid.getBaseEdgeSegments()) {
+        svg += `<line x1="${segment.x1}" y1="${segment.y1}" x2="${segment.x2}" y2="${segment.y2}" stroke="rgba(255,40,40,0.85)" stroke-width="2" filter="url(#glow)" />`;
+      }
     }
 
     return svg;

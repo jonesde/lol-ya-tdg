@@ -323,4 +323,77 @@ export class Grid {
     }
     return goalTiles;
   }
+
+  // Exposed base-edge segments in world coordinates: one 1-tile-wide axis-aligned
+  // segment per base perimeter tile whose outward-adjacent tile is traversable (in
+  // bounds and not terrain). Enemies can only reach the base across path/spawn tiles,
+  // so the targetable edge is exactly this subset. This is the single source of truth
+  // for both the red target-edge overlay and enemy attack-targeting (see Enemy.ts).
+  getBaseEdgeSegments(): Array<{ x1: number; y1: number; x2: number; y2: number }> {
+    const base = this.getBase();
+    const half = 1.5 * this.tileSize;
+    const baseCenter = this.tileToWorld(base.x, base.y);
+    const sides = [
+      { dx: 0, dy: -1 },
+      { dx: 0, dy: 1 },
+      { dx: 1, dy: 0 },
+      { dx: -1, dy: 0 },
+    ];
+    const offsets = [-1, 0, 1];
+    const segments: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+    for (const side of sides) {
+      for (const offset of offsets) {
+        const baseTile =
+          side.dx === 0
+            ? { x: base.x + offset, y: base.y + side.dy }
+            : { x: base.x + side.dx, y: base.y + offset };
+        const outwardX = baseTile.x + side.dx;
+        const outwardY = baseTile.y + side.dy;
+        if (!this.inBounds(outwardX, outwardY)) continue;
+        if (this.isTerrain(outwardX, outwardY)) continue;
+        if (side.dx !== 0) {
+          const edgeX = baseCenter.x + side.dx * half;
+          const y1 = baseTile.y * this.tileSize;
+          const y2 = (baseTile.y + 1) * this.tileSize;
+          segments.push({ x1: edgeX, y1, x2: edgeX, y2 });
+        } else {
+          const edgeY = baseCenter.y + side.dy * half;
+          const x1 = baseTile.x * this.tileSize;
+          const x2 = (baseTile.x + 1) * this.tileSize;
+          segments.push({ x1, y1: edgeY, x2, y2: edgeY });
+        }
+      }
+    }
+    return segments;
+  }
+
+  // Nearest point on the exposed (path-adjacent) base edge to (pointX, pointY).
+  // Replaces the full-perimeter projection so enemies only press toward reachable
+  // edge and never aim at a terrain-backed face. Falls back to the base center when
+  // no edge is exposed.
+  getBaseEdgeNearestPoint(pointX: number, pointY: number): { x: number; y: number } {
+    const segments = this.getBaseEdgeSegments();
+    if (segments.length === 0) {
+      const base = this.getBase();
+      return this.tileToWorld(base.x, base.y);
+    }
+    let bestX = segments[0]!.x1;
+    let bestY = segments[0]!.y1;
+    let bestDistance = Infinity;
+    for (const segment of segments) {
+      const minX = Math.min(segment.x1, segment.x2);
+      const maxX = Math.max(segment.x1, segment.x2);
+      const minY = Math.min(segment.y1, segment.y2);
+      const maxY = Math.max(segment.y1, segment.y2);
+      const clampedX = Math.max(minX, Math.min(maxX, pointX));
+      const clampedY = Math.max(minY, Math.min(maxY, pointY));
+      const distance = (clampedX - pointX) ** 2 + (clampedY - pointY) ** 2;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestX = clampedX;
+        bestY = clampedY;
+      }
+    }
+    return { x: bestX, y: bestY };
+  }
 }
