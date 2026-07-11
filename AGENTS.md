@@ -1,6 +1,19 @@
 # AGENTS.md
 
-Before doing any reqested task, if you have not already, always read `TECHNICAL.md` to understand the project, its structure, and how to work with it.
+## Project Orientation
+
+Before doing any requested task, if you have not already, always read `TECHNICAL.md` to understand the project, its structure, and how to work with it.
+
+## Plan Rules
+
+### Do The Research
+
+If you have a question that can be answered with the code, configuration, documentation, or other files under the working directory then look up the answer before writing the plan and include it in the plan. Specifically:
+- **Research first**: look up the answer before writing the plan.
+- **Include findings**: include the answer in the plan so it is self-contained.
+- **State the gap when blocked**: if you cannot find the answer, say so in the plan rather than leaving it open or inventing one.
+
+Do not leave open questions in plans that defer research to the user or a future AI that you can do now. Missing relevant information increases risk of errors and omissions. This is not just about the plan being complete, it is also about the plan being *correct*. Only apply this rule to questions answerable with files under the working directory.
 
 ## Code Rules
 
