@@ -823,37 +823,15 @@ export class Enemy {
         dt,
       );
     } else if (this.blockedByTower) {
-      // Blocked by a live tower: either the tower ahead on the path (forward case)
-      // or an adjacent tower the enemy is already touching (contact fallback). Steer
-      // toward the tower's contact line so the pile spreads around its exposed faces
-      // instead of stacking in one column. When the enemy is already in contact
-      // (attackTarget set), contactLineSteer holds/slides it along the perimeter and
-      // the attack tick below deals damage; otherwise it approaches the tower center.
       const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
-      if (attackTarget) {
-        this.contactLineSteer(
-          enemyManager,
-          towerCenter.x,
-          towerCenter.y,
-          this.grid.tileSize / 2,
-          this.grid.getTowerEdgeSegments(this.blockedByTower.tileX, this.blockedByTower.tileY, this.radius),
-          dt,
-        );
-      } else {
-        // Not yet in contact: approach the tower center normally.
-        const deltaToTowerX = towerCenter.x - this.centerX;
-        const deltaToTowerY = towerCenter.y - this.centerY;
-        const distToTower = Math.hypot(deltaToTowerX, deltaToTowerY);
-        const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
-        this.moveAngle = Math.atan2(deltaToTowerY, deltaToTowerX);
-        if (step < distToTower) {
-          this.centerX += (deltaToTowerX / distToTower) * step;
-          this.centerY += (deltaToTowerY / distToTower) * step;
-        } else {
-          this.centerX = towerCenter.x;
-          this.centerY = towerCenter.y;
-        }
-      }
+      this.contactLineSteer(
+        enemyManager,
+        towerCenter.x,
+        towerCenter.y,
+        this.grid.tileSize / 2,
+        this.grid.getTowerEdgeSegments(this.blockedByTower.tileX, this.blockedByTower.tileY, this.radius),
+        dt,
+      );
     }
 
     // Enemy-enemy collision: push overlapping neighbors apart via the world-space
