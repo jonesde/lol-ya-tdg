@@ -73,6 +73,12 @@ describe("Enemy perimeter surround routing", () => {
 
   it("Issue 2: enemies pile in the arrival tile and overflow into neighbouring base-adjacent tiles, all outside the square", () => {
     const { grid, enemyManager } = makeManager();
+    // A baseTarget must be set BEFORE spawn so enemies drive the hold branch (the
+    // real in-game path where baseTarget is always set), not the dead move branch.
+    // Without this the test validates code that never runs in-game and passes even
+    // when the hold-branch spread is broken.
+    const baseTarget = new StubBaseTarget();
+    enemyManager.baseTarget = baseTarget;
     const count = 12;
     const enemies: Enemy[] = [];
     for (let i = 0; i < count; i++) {

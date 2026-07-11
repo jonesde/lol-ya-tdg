@@ -1506,8 +1506,13 @@ export class Enemy {
           normalX = tx;
           normalY = ty;
         } else if (dist > 1e-6) {
-          normalX = deltaX / dist;
-          normalY = deltaY / dist;
+          // Inter-center normal, oriented from the other enemy toward this one so it
+          // matches the tangent branch's convention (which is already `other→this`).
+          // The previous `this→other` orientation made the pair converge (move into
+          // each other) instead of separating — a latent bug that also affected the
+          // path-following lane-offset spread.
+          normalX = -deltaX / dist;
+          normalY = -deltaY / dist;
         } else {
           normalX = perpAx;
           normalY = perpAy;
