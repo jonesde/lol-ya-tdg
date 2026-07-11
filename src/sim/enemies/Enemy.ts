@@ -73,6 +73,12 @@ const COLLISION_ITERATIONS = 1; // resolve the spatial-hash pairs this many time
 const PRIORITY_YIELD_MIN = 0.1; // min fraction the higher-priority enemy takes (never zero)
 const PRIORITY_YIELD_MAX = 0.9; // max fraction the lower-priority enemy takes (never 100%)
 
+// Contact-line lateral slide speed multiplier. A contact-line enemy's only job
+// is to slide along the face to an open spot; a larger per-frame step lets a
+// packed pile flow instead of deadlocking in a 1-D packed column. Tune via
+// PoliteMotion.md §6 if the pile deadlocks or zips.
+const LATERAL_SPEED_MULT = 3;
+
 interface SlowEntry {
   eff: number;
   remaining: number;
@@ -120,15 +126,6 @@ interface GridRef {
     start: { x: number; y: number },
     goal: { x: number; y: number },
   ): { x: number; y: number }[] | null;
-}
-
-// A perimeter dock assignment: the exposed base edge (dockIndex into the base's
-// exposed-edge list) plus how far outward (radial, in tiles) the enemy lines up,
-// and the resolved outside target tile it routes to.
-export interface BaseSlot {
-  dockIndex: number;
-  radial: number;
-  targetTile: { x: number; y: number };
 }
 
 interface EnemyManagerRef {
@@ -227,9 +224,6 @@ export class Enemy {
   targetingMode: string | null = null;
   // Version of the grid path this enemy is following; used to detect re-anchor needs.
   pathVersion: number = 0;
-  // Perimeter dock assignment (load-balanced). Null until the EnemyManager assigns
-  // one at spawn; non-null enemies route around the base to their dock target.
-  baseSlot: BaseSlot | null = null;
   markTargetMult!: number;
   markTargetTimer!: number;
   antiHealTimer!: number;
@@ -474,28 +468,11 @@ export class Enemy {
     this.routingMode = "default";
     this.arrived = false;
     let defaultPath = this.grid.getPathFor(this.spawnIndex);
-    // Prefer a base-avoiding route back to this enemy's assigned perimeter dock
-    // so a released (e.g. commander-routed) enemy still rings the base instead
-    // of cutting through the interior to the nearest ring/base tile.
-    if (this.baseSlot) {
-      const surround = this.grid.computeSurroundRoute(this.currentTile(), this.baseSlot.targetTile);
-      if (surround && surround.length > 0) defaultPath = surround;
-    }
     if (!defaultPath || defaultPath.length === 0) {
       this.path = null;
       return;
     }
     this.reanchorToPath(defaultPath);
-    this.pathVersion = this.grid.pathVersion;
-  }
-
-  // Assigns a perimeter dock and routes the enemy around the base to it. Snaps the
-  // path like reanchorToPath so a spawn-time enemy anchors at its current tile.
-  setSurroundPath(route: { x: number; y: number }[], slot: BaseSlot): void {
-    this.baseSlot = slot;
-    this.routingMode = "default";
-    this.arrived = false;
-    this.reanchorToPath(route);
     this.pathVersion = this.grid.pathVersion;
   }
 
@@ -507,8 +484,7 @@ export class Enemy {
     this.path = newPath;
     // The last path index is the base tile for the default grid path, and snapping
     // to it would place the enemy on the base and (next frame) trigger attackingBase
-    // prematurely — so it is never an eligible anchor. A perimeter surround route
-    // instead ends at the outside dock tile (not a base tile), which the enemy must
+    // prematurely — so it is never an eligible anchor.
     // be allowed to reach, so the last tile is only excluded when it is a base tile.
     const lastTile = newPath[newPath.length - 1]!;
     const lastTileIsBase = this.grid.isBase(lastTile.x, lastTile.y);
@@ -652,16 +628,11 @@ export class Enemy {
     // Re-anchor to the latest grid path when it has changed since last frame (a tower
     // was added/removed, ghosted, or restored). Gated to default-mode enemies: a
     // hold/route enemy's path is commander-owned and must not be clobbered on a
-    // tower build/sell. A dock-assigned enemy re-anchors onto its base-avoiding
-    // surround route so post-build reroutes still ring the base.
+    // tower build/sell.
     const gridVersion = this.grid.pathVersion;
     if (this.routingMode === "default" && this.pathVersion !== gridVersion) {
       this.pathVersion = gridVersion;
-      let newPath = this.grid.getPathFor(this.spawnIndex);
-      if (this.baseSlot) {
-        const surround = this.grid.computeSurroundRoute(this.currentTile(), this.baseSlot.targetTile);
-        if (surround && surround.length > 0) newPath = surround;
-      }
+      const newPath = this.grid.getPathFor(this.spawnIndex);
       if (newPath) {
         this.reanchorToPath(newPath);
       } else {
@@ -1320,8 +1291,7 @@ export class Enemy {
     // multiplier is high enough to cross the span in a few frames but not so high that
     // enemies visibly teleport; tune via the TUNING KNOBS in PoliteMotion.md if the
     // pile still deadlocks or zips.
-    const lateralMultiplier = 3;
-    const move = Math.min(step * lateralMultiplier, alongAbs);
+    const move = Math.min(step * LATERAL_SPEED_MULT, alongAbs);
     this.centerX += tangentX * sign * move;
     this.centerY += tangentY * sign * move;
   }
@@ -1631,16 +1601,16 @@ function baseSquareContact(
   const deltaY = pointY - baseCenterY;
   const closestX = baseCenterX + Math.max(-half, Math.min(half, deltaX));
   const closestY = baseCenterY + Math.max(-half, Math.min(half, deltaY));
-  let normalX = pointX - closestX;
-  let normalY = pointY - closestY;
-  const distance = Math.hypot(normalX, normalY);
+  let normalX: number;
+  let normalY: number;
+  const distance = Math.hypot(pointX - closestX, pointY - closestY);
   let contactX: number;
   let contactY: number;
   if (distance > 1e-6) {
     // Point is outside the square: normalize the outward normal and place the
     // center a full `radius` beyond the nearest edge.
-    normalX /= distance;
-    normalY /= distance;
+    normalX = (pointX - closestX) / distance;
+    normalY = (pointY - closestY) / distance;
     contactX = closestX + normalX * radius;
     contactY = closestY + normalY * radius;
   } else {
@@ -1655,23 +1625,15 @@ function baseSquareContact(
     if (minPen === penRight) {
       contactX = baseCenterX + half + radius;
       contactY = pointY;
-      normalX = 1;
-      normalY = 0;
     } else if (minPen === penLeft) {
       contactX = baseCenterX - half - radius;
       contactY = pointY;
-      normalX = -1;
-      normalY = 0;
     } else if (minPen === penDown) {
       contactX = pointX;
       contactY = baseCenterY + half + radius;
-      normalX = 0;
-      normalY = 1;
     } else {
       contactX = pointX;
       contactY = baseCenterY - half - radius;
-      normalX = 0;
-      normalY = -1;
     }
   }
   return { contactX, contactY, overlapping: distance < radius };
