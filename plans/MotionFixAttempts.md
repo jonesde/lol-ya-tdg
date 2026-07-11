@@ -1,12 +1,12 @@
-# Motion Fix Attempts — Issue 2 & Issue 3
+# Motion Fix Attempts — base pile-spread & forward-clearance
 
-Detailed record of the change attempts for Issue 2 (`resolveCollisions`) and
-Issue 3 (forward-clearance probe), and the regressions each produced.
+Detailed record of the change attempts for the base pile-spread (`resolveCollisions`) and
+back-row forward-clearance probe), and the regressions each produced.
 
-- **Issue 2** — enemies pile in a single arrival tile and should overflow into
+- **Base pile-spread** — enemies pile in a single arrival tile and should overflow into
   the neighbouring base-adjacent tiles (outside the base square), producing a
   multi-tile spread (asserted by `tests/unit/sim/enemy-perimeter.test.ts:74`).
-- **Issue 3** — back-row enemies (not yet on the contact line) slide into
+- **Back-row forward-clearance** — back-row enemies (not yet on the contact line) slide into
   partially-filled lateral corridors because the forward-clearance `probeRadius`
   misses blockers a couple of tiles up the same corridor
   (`src/sim/enemies/Enemy.ts:961`).
@@ -14,9 +14,12 @@ Issue 3 (forward-clearance probe), and the regressions each produced.
 **Investigation status:** All three attempted changes were reverted; the working
 tree is back at the green baseline (`npx tsc --noEmit` clean, **1058/1058 tests
 passing**). The regressions below were all observed against
-`tests/unit/sim/enemy-perimeter.test.ts:74` ("Issue 2: enemies pile in the
+`tests/unit/sim/enemy-perimeter.test.ts:74` ("enemies pile in the
 arrival tile and overflow into neighbouring base-adjacent tiles, all outside the
 square"), which asserts `expect(tiles.size).toBeGreaterThan(1)`.
+(That test was later renamed to "base pile spreads across the entry face instead
+of collapsing to a single column" and its assertion was changed to a within-face
+lateral-spread projection.)
 
 A consistent signature: every change collapsed that pile to a **single tile** —
 the scratch reproduction printed `SURVIVORS 12 attackingBase 12 TILES
@@ -25,7 +28,7 @@ into neighbours.
 
 ---
 
-## Change A — Issue 2: idempotent pair guard (remove double application)
+## Change A — base pile-spread: idempotent pair guard (remove double application)
 
 **Location:** `resolveCollisions`, entry of the `forEachEnemyInRange` callback
 that does the per-pair separation.
@@ -64,7 +67,7 @@ exact single-file behaviour the plan exists to eliminate.
 
 ---
 
-## Change B — Issue 2: inter-center normal orientation fix
+## Change B — base pile-spread: inter-center normal orientation fix
 
 **Location:** `resolveCollisions`, the `else if (dist > 1e-6)` branch that
 computes the inter-center separation axis (used for path-following pairs and
@@ -116,7 +119,7 @@ cannot be applied standalone without also updating that test.
 
 ---
 
-## Change C — Issue 3: forward-clearance probe radius widen
+## Change C — back-row forward-clearance: probe radius widen
 
 **Location:** `findLateralOpenSpot`, the `probeRadius` used by the spatial-hash
 query that evaluates each lateral candidate (both the on-line overlap check and

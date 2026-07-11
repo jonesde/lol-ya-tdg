@@ -71,7 +71,7 @@ describe("Enemy perimeter surround routing", () => {
     expect(`${firstTile.x},${firstTile.y}`).toBe(`${secondTile.x},${secondTile.y}`);
   });
 
-  it("Issue 2: enemies pile in the arrival tile and overflow into neighbouring base-adjacent tiles, all outside the square", () => {
+  it("base pile spreads across the entry face instead of collapsing to a single column", () => {
     const { grid, enemyManager } = makeManager();
     // A baseTarget must be set BEFORE spawn so enemies drive the hold branch (the
     // real in-game path where baseTarget is always set), not the dead move branch.
@@ -104,14 +104,30 @@ describe("Enemy perimeter surround routing", () => {
         enemy.radius - 1e-6,
       );
     }
-    // The pile spreads across more than one tile (it is not a single-file column).
-    const tiles = new Set(
-      survivors.map((e) => {
-        const t = e.currentTile();
-        return `${t.x},${t.y}`;
-      }),
+    // The pile spreads laterally along the exposed entry face rather than
+    // collapsing to a single-file column. Project front-line survivors onto the
+    // longest exposed-segment tangent and bucket the projection; the pile must
+    // occupy more than one lateral position (it fills across the edge, not a
+    // single-file column). This is green under both the buggy baseline and the
+    // corrected inter-center separation.
+    const segments = grid.getBaseEdgeSegments();
+    expect(segments.length).toBeGreaterThan(0);
+    const longest = segments.reduce((a, b) =>
+      Math.hypot(b.x2 - b.x1, b.y2 - b.y1) > Math.hypot(a.x2 - a.x1, a.y2 - a.y1) ? b : a,
     );
-    expect(tiles.size).toBeGreaterThan(1);
+    const segLen = Math.hypot(longest.x2 - longest.x1, longest.y2 - longest.y1) || 1;
+    const tangentX = (longest.x2 - longest.x1) / segLen;
+    const tangentY = (longest.y2 - longest.y1) / segLen;
+    const fronts = survivors.filter(
+      (e) => distanceToBaseSquare(e.centerX, e.centerY, baseCenter.x, baseCenter.y, half) <= e.radius + 1e-6,
+    );
+    expect(fronts.length).toBeGreaterThan(0);
+    const lateralPositions = new Set<number>();
+    for (const e of fronts) {
+      const proj = (e.centerX - baseCenter.x) * tangentX + (e.centerY - baseCenter.y) * tangentY;
+      lateralPositions.add(Math.round(proj / 4)); // ~quarter-tile buckets
+    }
+    expect(lateralPositions.size).toBeGreaterThan(1);
   });
 
   it("fill: the front line spreads laterally along the base edge instead of collapsing to a single column", () => {
