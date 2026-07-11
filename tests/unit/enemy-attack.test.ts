@@ -2,7 +2,7 @@
 /** @vitest-environment node */
 
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type AttackTarget, Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
@@ -528,10 +528,83 @@ describe("contact-line steering (polite motion)", () => {
     expect(anyMinionFurther).toBe(true);
   });
 
-  it("lateral redirect: a late arrival spreads to a different tile than the front enemy", () => {
-    const baseTarget = new StubBaseTarget();
-    enemyManager.baseTarget = baseTarget;
+  function makeCorridorMap() {
+    const width = 10;
+    const height = 3;
+    const tiles: { type: string; height: number }[][] = [];
+    for (let rowIndex = 0; rowIndex < height; rowIndex++) {
+      const row: { type: string; height: number }[] = [];
+      for (let colIndex = 0; colIndex < width; colIndex++) {
+        row.push({ type: "terrain", height: 1 });
+      }
+      tiles.push(row);
+    }
+    for (let colIndex = 0; colIndex < width; colIndex++) {
+      tiles[1][colIndex].type = "path";
+    }
+    return makeMapData({
+      width,
+      height,
+      spawns: [{ x: 0, y: 1 }],
+      base: { x: width - 1, y: 1 },
+      tiles,
+      regionId: 0,
+      level: 1,
+      style: "bastion",
+    });
+  }
 
+  it("in-contact tower attackers reach contactLineSteer (regression guard for the dead branch)", () => {
+    const corridorMap = makeCorridorMap();
+    const corridorGrid = new Grid(corridorMap);
+    const corridorTowers = new TowerManager(
+      corridorGrid,
+      makeParticleSystem(),
+      { spawn() {}, fireLightning() {}, spawnLightningFlash() {} },
+      makeSoundManager(),
+    );
+    const corridorEnemies = new EnemyManager(corridorGrid, makeParticleSystem(), 0);
+    corridorEnemies.setTowerManager(corridorTowers);
+
+    const path = corridorGrid.getPathFor(0)!;
+    const towerTile = path[5]!;
+    const tower = corridorTowers.build("basic", towerTile.x, towerTile.y, makeSave(), corridorGrid)!;
+    tower.health = 100000;
+    tower.maxHealth = 100000;
+
+    const count = 12;
+    const enemies: Enemy[] = [];
+    for (let i = 0; i < count; i++) {
+      const enemy = new Enemy("minion", 1, 0, corridorGrid, 1);
+      enemies.push(enemy);
+      corridorEnemies.enemies.push(enemy);
+    }
+    corridorEnemies.updateSpatialHash();
+
+    // getTowerEdgeSegments is only called from inside the in-contact tower
+    // steering branch (Enemy.ts:839). Spying on it isolates that path from the
+    // base steering branch, which would otherwise also call contactLineSteer.
+    const edgeSpy = vi.spyOn(corridorGrid, "getTowerEdgeSegments");
+
+    for (let step = 0; step < 8000; step++) {
+      corridorEnemies.update(1 / 60, null);
+    }
+
+    expect(edgeSpy).toHaveBeenCalled();
+    edgeSpy.mockRestore();
+
+    const occupiedTiles = new Set(
+      enemies
+        .filter((e) => !e.removed)
+        .map((e) => {
+          const tile = e.currentTile();
+          return `${tile.x},${tile.y}`;
+        }),
+    );
+    expect(occupiedTiles.size).toBeGreaterThan(1);
+  });
+
+  it("lateral redirect: a late arrival spreads to a different tile than the front enemy", () => {
     const count = 6;
     const enemies: Enemy[] = [];
     for (let i = 0; i < count; i++) {
