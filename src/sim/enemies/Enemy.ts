@@ -199,6 +199,11 @@ export class Enemy {
   }
   onPathBlocked!: boolean;
   moveAngle!: number;
+  // Face tangent (unit) for the contact line this enemy is currently steering along,
+  // set by contactLineSteer. Used by resolveCollisions to separate contact-line pairs
+  // ALONG the face (so they spread across the entry) instead of radially into the base.
+  contactTangentX: number = 0;
+  contactTangentY: number = 0;
   // Tower the enemy is currently attacking/blocked by (live, non-ghost), or null.
   blockedByTower: Tower | null = null;
   // True once the enemy has reached the base and is now attacking it (does not despawn).
@@ -909,16 +914,18 @@ export class Enemy {
 
   // Nearest point on a set of axis-aligned segments to (pointX, pointY). Mirrors
   // Grid.getBaseEdgeNearestPoint but works for arbitrary segment lists (tower edges).
-  // Falls back to (pointX, pointY) when the list is empty so the caller still has a
-  // valid anchor point.
+  // Returns the clamped point and the segment it lies on so the caller can derive the
+  // face-aligned tangent. Falls back to (pointX, pointY) with a null segment when the
+  // list is empty so the caller still has a valid anchor point.
   private nearestPointOnSegments(
     segments: Array<{ x1: number; y1: number; x2: number; y2: number }>,
     pointX: number,
     pointY: number,
-  ): { x: number; y: number } {
-    if (segments.length === 0) return { x: pointX, y: pointY };
+  ): { x: number; y: number; segment: { x1: number; y1: number; x2: number; y2: number } | null } {
+    if (segments.length === 0) return { x: pointX, y: pointY, segment: null };
     let bestX = segments[0]!.x1;
     let bestY = segments[0]!.y1;
+    let bestSegment = segments[0]!;
     let bestDistance = Infinity;
     for (const segment of segments) {
       const minX = Math.min(segment.x1, segment.x2);
@@ -932,9 +939,10 @@ export class Enemy {
         bestDistance = distance;
         bestX = clampedX;
         bestY = clampedY;
+        bestSegment = segment;
       }
     }
-    return { x: bestX, y: bestY };
+    return { x: bestX, y: bestY, segment: bestSegment };
   }
 
   // Continuous-space lateral open-spot search along a contact line. Probes left and
@@ -963,51 +971,68 @@ export class Enemy {
     checkForwardClearance: boolean,
   ): { x: number; y: number } | null {
     if (!enemyManager) return null;
+    if (!Number.isFinite(minT) || !Number.isFinite(maxT)) return null;
     const tileSize = this.grid.tileSize;
     const probeStep = this.radius * 1.5;
     const maxReach = tileSize * 3;
     const probeRadius = this.radius * 2 + tileSize;
-    // Check the current position first (offset 0), but only for on-line enemies — a
-    // back-row enemy searching because it's blocked should never accept its current spot.
-    if (!checkForwardClearance) {
-      const candidateX = originX;
-      const candidateY = originY;
+    // Pick the OPEN lateral spot that is farthest from the existing crowd (maximin),
+    // not merely the nearest open spot. The nearest-spot search biased every enemy to
+    // the same side of the face, so a pile cascaded to one corner and never filled the
+    // exposed width. Maximin fills the largest gap first, which spreads enemies evenly
+    // across the whole face. Tiny per-enemy position differences (from collision) break
+    // left/right symmetry deterministically so enemies at the same spot do not all pick
+    // the same extreme and oscillate.
+    let best: { x: number; y: number } | null = null;
+    let bestScore = -Infinity;
+    const considerOffset = (offsetT: number): void => {
+      const clampedT = Math.max(minT, Math.min(maxT, offsetT));
+      const candidateX = originX + tangentX * (clampedT - originT);
+      const candidateY = originY + tangentY * (clampedT - originT);
       let blocked = false;
+      let clearance = Infinity;
       enemyManager.forEachEnemyInRange(candidateX, candidateY, probeRadius, (other) => {
-        if (blocked || other === this || other.removed) return;
-        const otherDist = Math.hypot(other.centerX - candidateX, other.centerY - candidateY);
-        if (otherDist < this.radius + other.radius - 1e-3) blocked = true;
+        if (other === this || other.removed) return;
+        const otherDeltaX = other.centerX - candidateX;
+        const otherDeltaY = other.centerY - candidateY;
+        const otherDist = Math.hypot(otherDeltaX, otherDeltaY);
+        if (!checkForwardClearance) {
+          if (otherDist < this.radius + other.radius - 1e-3) blocked = true;
+          clearance = Math.min(clearance, otherDist);
+        } else {
+          const candidateToObjective = Math.hypot(objectiveX - candidateX, objectiveY - candidateY);
+          const otherToObjective = Math.hypot(objectiveX - other.centerX, objectiveY - other.centerY);
+          if (otherToObjective < candidateToObjective - 1e-3) {
+            const lateralDist = Math.abs(otherDeltaX * tangentX + otherDeltaY * tangentY);
+            if (lateralDist < this.radius + other.radius - 1e-3) blocked = true;
+            clearance = Math.min(clearance, lateralDist);
+          }
+        }
       });
-      if (!blocked) return { x: candidateX, y: candidateY };
-    }
-    // Single expanding sweep: alternate left/right, increasing distance each step so
-    // the nearest gap is found first without re-scanning smaller offsets.
+      if (!blocked) {
+        // Maximin fills the largest gap first. When several open spots are equally
+        // clear (e.g. both ends of a face from a centered clump), prefer the one
+        // FARTHEST from the enemy's current position so the clump migrates outward
+        // and fills both ends of the entry rather than cascading to one corner. The
+        // distance term is tiny vs clearance so it only breaks ties, never overrides
+        // a genuinely clearer spot.
+        const distanceFromCurrent = Math.hypot(candidateX - originX, candidateY - originY);
+        const score = clearance + distanceFromCurrent * 1e-3;
+        if (score > bestScore) {
+          bestScore = score;
+          best = { x: candidateX, y: candidateY };
+        }
+      }
+    };
+    // The enemy's own position is a valid target only for on-line enemies (a back-row
+    // enemy that is blocked should always try to relocate, never accept its spot).
+    if (!checkForwardClearance) considerOffset(originT);
     for (let lateralOffset = probeStep; lateralOffset <= maxReach + 1e-6; lateralOffset += probeStep) {
       for (const sign of [-1, 1]) {
-        const clampedT = Math.max(minT, Math.min(maxT, originT + sign * lateralOffset));
-        const candidateX = originX + tangentX * (clampedT - originT);
-        const candidateY = originY + tangentY * (clampedT - originT);
-        let blocked = false;
-        enemyManager.forEachEnemyInRange(candidateX, candidateY, probeRadius, (other) => {
-          if (blocked || other === this || other.removed) return;
-          const otherDeltaX = other.centerX - candidateX;
-          const otherDeltaY = other.centerY - candidateY;
-          const otherDist = Math.hypot(otherDeltaX, otherDeltaY);
-          if (!checkForwardClearance) {
-            if (otherDist < this.radius + other.radius - 1e-3) blocked = true;
-          } else {
-            const candidateToObjective = Math.hypot(objectiveX - candidateX, objectiveY - candidateY);
-            const otherToObjective = Math.hypot(objectiveX - other.centerX, objectiveY - other.centerY);
-            if (otherToObjective < candidateToObjective - 1e-3) {
-              const lateralDist = Math.abs(otherDeltaX * tangentX + otherDeltaY * tangentY);
-              if (lateralDist < this.radius + other.radius - 1e-3) blocked = true;
-            }
-          }
-        });
-        if (!blocked) return { x: candidateX, y: candidateY };
+        considerOffset(originT + sign * lateralOffset);
       }
     }
-    return null;
+    return best;
   }
 
   // Fallback for when findLateralOpenSpot returns null (line is fully packed). Samples
@@ -1079,15 +1104,21 @@ export class Enemy {
     let minT = Infinity;
     let maxT = -Infinity;
     for (const segment of segments) {
-      const segCx = (segment.x1 + segment.x2) / 2;
-      const segCy = (segment.y1 + segment.y2) / 2;
-      const segDx = segCx - centerX;
-      const segDy = segCy - centerY;
-      const onFace =
-        Math.abs(segDx) >= Math.abs(segDy)
-          ? normalX !== 0 && Math.sign(segDx) === normalX
-          : normalY !== 0 && Math.sign(segDy) === normalY;
-      if (!onFace) continue;
+      // Each segment's own outward normal is derived from its orientation and which
+      // side of the objective it sits on — independent of the (now face-aligned)
+      // enemy normal passed in. A segment belongs to the enemy's face only when its
+      // outward normal matches the enemy's outward normal. The old filter keyed off
+      // the radial vector (seg midpoint minus objective) and, once the tangent became
+      // face-aligned (pure horizontal/vertical normal), would have wrongly excluded
+      // the offset tiles of a multi-tile face and collapsed the span to one tile.
+      let segmentNormalX = 0;
+      let segmentNormalY = 0;
+      if (segment.y1 === segment.y2) {
+        segmentNormalY = segment.y1 >= centerY ? 1 : -1;
+      } else {
+        segmentNormalX = segment.x1 >= centerX ? 1 : -1;
+      }
+      if (Math.abs(segmentNormalX - normalX) > 1e-6 || Math.abs(segmentNormalY - normalY) > 1e-6) continue;
       const t1 = (segment.x1 - centerX) * tangentX + (segment.y1 - centerY) * tangentY;
       const t2 = (segment.x2 - centerX) * tangentX + (segment.y2 - centerY) * tangentY;
       minT = Math.min(minT, t1, t2);
@@ -1112,12 +1143,41 @@ export class Enemy {
     dt: number,
   ): void {
     const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
-    const contact = this.nearestPointOnSegments(segments, this.centerX, this.centerY);
-    const normalLen = Math.hypot(contact.x - objectiveX, contact.y - objectiveY) || 1;
-    const normalX = (contact.x - objectiveX) / normalLen;
-    const normalY = (contact.y - objectiveY) / normalLen;
-    const tangentX = -normalY;
-    const tangentY = normalX;
+    const contactResult = this.nearestPointOnSegments(segments, this.centerX, this.centerY);
+    const contact = { x: contactResult.x, y: contactResult.y };
+    // The lateral (tangent) axis is the segment's own orientation, NOT the radial
+    // vector from the contact point to the objective. For a multi-tile face (e.g. a
+    // 2-wide entryway) the exposed edge segments sit left/right of the base center,
+    // so a radial normal would be diagonal and the "lateral" move would spiral the
+    // enemy toward the base corner instead of spreading it cleanly across the face.
+    // Using the segment's axis keeps the tangent horizontal/vertical and the outward
+    // normal perpendicular to the face, so a spread enemy stays in contact (its
+    // distance to the square is preserved by the purely-tangential move).
+    let tangentX: number;
+    let tangentY: number;
+    let normalX: number;
+    let normalY: number;
+    const faceSegment = contactResult.segment;
+    if (faceSegment && faceSegment.y1 === faceSegment.y2) {
+      tangentX = 1;
+      tangentY = 0;
+      normalY = contact.y >= objectiveY ? 1 : -1; // outward normal perpendicular to a horizontal face
+      normalX = 0;
+    } else if (faceSegment) {
+      tangentX = 0;
+      tangentY = 1;
+      normalX = contact.x >= objectiveX ? 1 : -1; // outward normal perpendicular to a vertical face
+      normalY = 0;
+    } else {
+      // No exposed segment (degenerate): fall back to the radial normal.
+      const normalLen = Math.hypot(contact.x - objectiveX, contact.y - objectiveY) || 1;
+      normalX = (contact.x - objectiveX) / normalLen;
+      normalY = (contact.y - objectiveY) / normalLen;
+      tangentX = -normalY;
+      tangentY = normalX;
+    }
+    this.contactTangentX = tangentX;
+    this.contactTangentY = tangentY;
     const distToSquare = distanceToBaseSquare(this.centerX, this.centerY, objectiveX, objectiveY, half);
     const onLine = distToSquare <= this.radius + 1e-3;
     const blocked = this.isBlockedAhead(enemyManager, objectiveX, objectiveY);
@@ -1154,15 +1214,17 @@ export class Enemy {
       }
       if (!overlapping) return;
     }
-    // On the line (and overlapping someone) or blocked: search for an open lateral spot.
-    // For back-row enemies (not on line), probe at the enemy's own depth — its actual
-    // position along the normal — not at the contact line. The front row occupies the
-    // contact line, so probing there always finds it packed and the back enemy holds in
-    // a single column. Probing at the enemy's depth finds gaps between front-row enemies
-    // at the back enemy's level, so it slides sideways to align with a gap and then
-    // advances forward through it when the front line clears.
-    const probeX = onLine ? contact.x : this.centerX;
-    const probeY = onLine ? contact.y : this.centerY;
+    // Search for an open lateral spot. Probe from the enemy's own body position
+    // (centerX/centerY) so the overlap checks in findLateralOpenSpot compare
+    // candidate points against other enemies' bodies in the same depth frame. The
+    // previous code probed on-line enemies at the contact point on the square edge
+    // — a full `radius` closer to the base than their actual body — which
+    // systematically over-estimated separation by up to `radius` and let enemies
+    // move into spots that actually overlapped, then get shoved apart by collision
+    // every frame (jitter). Probing at the body keeps the frame consistent for both
+    // on-line and back-row enemies.
+    const probeX = this.centerX;
+    const probeY = this.centerY;
     const probeT = (probeX - objectiveX) * tangentX + (probeY - objectiveY) * tangentY;
     const span = this.computeExposedSpan(segments, objectiveX, objectiveY, tangentX, tangentY, normalX, normalY);
     // Clamp the span inward by the enemy's radius so the enemy center stays fully within
@@ -1188,9 +1250,11 @@ export class Enemy {
       // Line is fully packed: no lateral position has a clear forward path. Instead of
       // holding in a single column (which produces the T-formation), slide toward the
       // least-blocked lateral position — the tangent offset where the fewest enemies
-      // block the forward path. This aligns back-row enemies with gaps between front-
-      // row enemies, producing a staggered/hexagonal pile rather than a single column.
-      if (!onLine && enemyManager) {
+      // block the forward path. This aligns enemies with gaps between front-row enemies,
+      // producing a staggered/hexagonal pile rather than a single column. It applies to
+      // on-line enemies too: a packed front line should actively re-spread rather than
+      // just hold in overlap and rely on collision to separate them.
+      if (enemyManager) {
         const fallback = this.findLeastBlockedLateral(
           enemyManager,
           probeX,
@@ -1230,7 +1294,11 @@ export class Enemy {
     if (alongAbs < 1e-6) return; // Already at the open spot: hold.
     const sign = Math.sign(along);
     this.moveAngle = Math.atan2(tangentY * sign, tangentX * sign);
-    const move = Math.min(step, alongAbs);
+    // A contact-line enemy is already in contact, so its only job is to slide along
+    // the face to an open spot. Allow a larger per-frame lateral step than the forward
+    // walk speed so a pile can flow (the bottom edge of a clump slides into empty space
+    // and the clump shifts) instead of deadlocking in a 1-D packed column.
+    const move = Math.min(step * 6, alongAbs);
     this.centerX += tangentX * sign * move;
     this.centerY += tangentY * sign * move;
   }
@@ -1423,15 +1491,28 @@ export class Enemy {
         }
         const thisSeparation = overlap * thisFraction * COLLISION_STIFFNESS;
         const otherSeparation = overlap * otherFraction * COLLISION_STIFFNESS;
-        // Use the true inter-enemy contact normal as the separation axis. A base-attacking
-        // enemy's moveAngle points radially at the base and is recomputed every frame, so the
-        // per-enemy heading-perpendiculars diverge when clustered at the base and the pair is
-        // pushed along inconsistent, rotating axes (visible jitter). The shared normal keeps the
-        // cluster stable. Fall back to this enemy's perpendicular only when coincident (dist 0)
-        // so degenerate pairs still separate deterministically.
+        // Separation axis. For two enemies at a contact line (both attacking the base
+        // or both blocked by the same tower) that share a face, separate them ALONG the
+        // shared face tangent so they spread laterally across the exposed entry width
+        // instead of stacking in a single column. A pile's depth (rows behind the front
+        // line) is provided by the funnel/arrival geometry and the keep-out clamp, not by
+        // a radial collision push — a radial push just re-clumps enemies at one lateral
+        // spot. For pairs on different faces (or non-contact-line pairs) the inter-center
+        // normal is kept. The tangent is oriented from the other enemy toward this one.
         let normalX: number;
         let normalY: number;
-        if (dist > 1e-6) {
+        const tangentDot = this.contactTangentX * other.contactTangentX + this.contactTangentY * other.contactTangentY;
+        if (bothAtLine && tangentDot > 0.5 && dist > 1e-6) {
+          let tx = this.contactTangentX;
+          let ty = this.contactTangentY;
+          const toward = (this.centerX - other.centerX) * tx + (this.centerY - other.centerY) * ty;
+          if (toward < 0) {
+            tx = -tx;
+            ty = -ty;
+          }
+          normalX = tx;
+          normalY = ty;
+        } else if (dist > 1e-6) {
           normalX = deltaX / dist;
           normalY = deltaY / dist;
         } else {

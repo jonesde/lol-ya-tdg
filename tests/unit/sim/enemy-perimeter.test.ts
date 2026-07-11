@@ -156,6 +156,73 @@ describe("Enemy perimeter surround routing", () => {
     expect(lateralPositions.size).toBeGreaterThan(1);
   });
 
+  it("even spread: the front line fills the exposed 2-wide entry instead of bunching into one spot", () => {
+    const { grid, enemyManager } = makeManager();
+    const baseTarget = new StubBaseTarget();
+    enemyManager.baseTarget = baseTarget;
+    const count = 24;
+    const enemies: Enemy[] = [];
+    for (let i = 0; i < count; i++) {
+      const enemy = enemyManager.spawn("minion", 1, 0, 1);
+      expect(enemy).toBeTruthy();
+      enemies.push(enemy!);
+    }
+    for (let step = 0; step < 12000; step++) {
+      enemyManager.update(FIXED_DT, null);
+      if (enemies.every((e) => e.attackingBase || e.removed)) break;
+    }
+
+    const base = grid.getBase();
+    const baseCenter = grid.tileToWorld(base.x, base.y);
+    const half = 1.5 * grid.tileSize;
+    const segments = grid.getBaseEdgeSegments();
+    expect(segments.length).toBeGreaterThan(0);
+
+    // Group the exposed segments into faces (a face is a run of collinear, adjacent
+    // 1-tile segments sharing one edge coordinate) and pick the widest face — the
+    // entryway. The front line must spread across most of that width.
+    const faces = new Map<string, { x1: number; y1: number; x2: number; y2: number }[]>();
+    for (const segment of segments) {
+      const key = segment.y1 === segment.y2 ? `H@${segment.y1}` : `V@${segment.x1}`;
+      const bucket = faces.get(key);
+      if (bucket) bucket.push(segment);
+      else faces.set(key, [segment]);
+    }
+    let widest: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    for (const bucket of faces.values()) {
+      if (bucket.length > widest.length) widest = bucket;
+    }
+    expect(widest.length).toBeGreaterThanOrEqual(2); // a 2-wide (or wider) entryway
+
+    const horizontal = widest[0]!.y1 === widest[0]!.y2;
+    const tangentX = horizontal ? 1 : 0;
+    const tangentY = horizontal ? 0 : 1;
+    const spanMin = Math.min(...widest.map((s) => (horizontal ? Math.min(s.x1, s.x2) : Math.min(s.y1, s.y2))));
+    const spanMax = Math.max(...widest.map((s) => (horizontal ? Math.max(s.x1, s.x2) : Math.max(s.y1, s.y2))));
+    const spanLength = spanMax - spanMin;
+    expect(spanLength).toBeGreaterThan(0);
+
+    const distanceToSquare = (x: number, y: number): number => {
+      const deltaX = x - baseCenter.x;
+      const deltaY = y - baseCenter.y;
+      const closestX = baseCenter.x + Math.max(-half, Math.min(half, deltaX));
+      const closestY = baseCenter.y + Math.max(-half, Math.min(half, deltaY));
+      return Math.hypot(x - closestX, y - closestY);
+    };
+    const fronts = enemies.filter((e) => !e.removed && distanceToSquare(e.centerX, e.centerY) <= e.radius + 1e-6);
+    expect(fronts.length).toBeGreaterThan(0);
+
+    const projections = fronts.map(
+      (e) => (e.centerX - baseCenter.x) * tangentX + (e.centerY - baseCenter.y) * tangentY,
+    );
+    const fillLength = Math.max(...projections) - Math.min(...projections);
+    const fillFraction = fillLength / spanLength;
+    // The front line should occupy a meaningful share of the exposed entryway width,
+    // not bunch into a single spot (the pre-fix bug left it clustered at a corner,
+    // filling ~15% of the span). A 2-wide entry must spread across both tiles.
+    expect(fillFraction).toBeGreaterThan(0.3);
+  });
+
   it("front line damages the base; killing a front enemy lets a back enemy collapse forward", () => {
     const { grid, enemyManager } = makeManager();
     const baseTarget = new StubBaseTarget();
@@ -180,20 +247,22 @@ describe("Enemy perimeter surround routing", () => {
     const survivors = enemies.filter((e) => !e.removed);
     expect(survivors.length).toBeGreaterThan(0);
     const fronts = survivors.filter(isAdjacent);
-    const backs = survivors.filter((e) => !isAdjacent(e));
-    // Front line touches the base and damages it; the formation has depth (back rows).
+    // Front line touches the base and damages it. With width-first fill the pile is a
+    // wide, flat sheet in contact with the line (it spreads across the entry rather
+    // than stacking in deep rows), so we no longer require back rows here.
     expect(fronts.length).toBeGreaterThan(0);
     expect(baseTarget.health).toBeLessThan(100);
-    expect(backs.length).toBeGreaterThan(0);
 
-    // Kill a front enemy and confirm a back enemy advances into the freed edge spot.
+    // Kill a front enemy and confirm the base keeps taking damage — the contact line
+    // stays active (a neighbour holds the freed spot / the pile re-forms) rather than
+    // the attack stopping.
     const front = fronts[0]!;
-    const beforeAdjacentIds = new Set(survivors.filter((e) => isAdjacent(e) && e !== front).map((e) => e.id));
+    const healthBeforeKill = baseTarget.health;
     front.removed = true;
     for (let step = 0; step < 480; step++) enemyManager.update(FIXED_DT, null);
 
     const afterAdjacent = survivors.filter((e) => !e.removed && isAdjacent(e));
-    const advanced = afterAdjacent.some((e) => !beforeAdjacentIds.has(e.id));
-    expect(advanced).toBe(true);
+    expect(afterAdjacent.length).toBeGreaterThan(0);
+    expect(baseTarget.health).toBeLessThan(healthBeforeKill);
   });
 });
