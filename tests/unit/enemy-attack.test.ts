@@ -525,7 +525,6 @@ describe("contact-line steering (polite motion)", () => {
     const blockEnemies = new EnemyManager(blockGrid, makeParticleSystem(), 0);
     blockEnemies.setTowerManager(blockTowers);
 
-    const path = blockGrid.getPathFor(0)!;
     const towerTile = { x: 4, y: 1 };
     const tower = blockTowers.build("basic", towerTile.x, towerTile.y, makeSave(), blockGrid)!;
     // Enough health to survive the run but low enough that a 12-enemy pile's attacks

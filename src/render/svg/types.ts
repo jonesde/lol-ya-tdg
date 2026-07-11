@@ -15,6 +15,7 @@ export const TOWER_SCALED_SIZE = GRID_TILE_SIZE * 0.75;
 | UiOverlayManager | HP bars        | 100  | HP_BAR_POOL_SIZE      | Sequential break    | Only first N HP bars rendered         |
 | UiOverlayManager | Shield bars    | 100  | SHIELD_BAR_POOL_SIZE  | Sequential break    | Only first N shield bars rendered     |
 | UiOverlayManager | Boss text      | 10   | BOSS_TEXT_POOL_SIZE   | Sequential break    | Only first N boss texts rendered      |
+| UiOverlayManager | Tower HP bars  | 100  | TOWER_HP_BAR_POOL_SIZE| Sequential break    | Only first N tower HP bars rendered   |
  */
 
 export const ENEMY_POOL_SIZE = 100;
@@ -27,6 +28,7 @@ export const STUN_POOL_SIZE = 50;
 export const HP_BAR_POOL_SIZE = 100;
 export const SHIELD_BAR_POOL_SIZE = 100;
 export const BOSS_TEXT_POOL_SIZE = 10;
+export const TOWER_HP_BAR_POOL_SIZE = 100;
 
 export interface SpriteData {
   id: string;

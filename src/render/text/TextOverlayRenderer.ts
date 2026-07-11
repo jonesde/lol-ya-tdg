@@ -47,6 +47,25 @@ export class TextOverlayRenderer {
       ctx.lineTo(centerX - barWidth + barWidth * 2 * hpFraction, topY);
       ctx.stroke();
     }
+
+    for (const tower of snapshot.towers ?? []) {
+      const hpFraction = tower.maxHealth > 0 ? Math.max(0, Math.min(1, tower.health / tower.maxHealth)) : 0;
+      if (hpFraction >= 1) continue;
+      const centerX = tower.x * scale.scaleX;
+      const topY = tower.y * scale.scaleY - HP_BAR_OFFSET * scale.scaleY;
+      const barWidth = HP_BAR_HALF_WIDTH * scale.scaleX;
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(centerX - barWidth, topY);
+      ctx.lineTo(centerX + barWidth, topY);
+      ctx.stroke();
+      ctx.strokeStyle = hpFraction > 0.5 ? "#00ff00" : hpFraction > 0.25 ? "#ffff00" : "#ff0000";
+      ctx.beginPath();
+      ctx.moveTo(centerX - barWidth, topY);
+      ctx.lineTo(centerX - barWidth + barWidth * 2 * hpFraction, topY);
+      ctx.stroke();
+    }
   }
 
   private renderLightning(ctx: CanvasRenderingContext2D, snapshot: SimulationSnapshot, scale: TextRenderScale): void {

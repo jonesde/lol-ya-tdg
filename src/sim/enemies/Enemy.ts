@@ -987,7 +987,6 @@ export class Enemy {
     if (!Number.isFinite(minT) || !Number.isFinite(maxT)) return null;
     const tileSize = this.grid.tileSize;
     const probeStep = this.radius * 1.5;
-    const maxReach = tileSize * 3;
     const probeRadius = this.radius * 2 + tileSize;
     // Pick the OPEN lateral spot that is farthest from the existing crowd (maximin),
     // not merely the nearest open spot. The nearest-spot search biased every enemy to
@@ -1076,8 +1075,6 @@ export class Enemy {
     minT: number,
     maxT: number,
     originT: number,
-    objectiveX: number,
-    objectiveY: number,
   ): { x: number; y: number } | null {
     if (!enemyManager) return null;
     const probeStep = this.radius * 1.5;
@@ -1288,8 +1285,6 @@ export class Enemy {
           minT,
           maxT,
           probeT,
-          objectiveX,
-          objectiveY,
         );
         if (fallback) {
           const along = (fallback.x - this.centerX) * tangentX + (fallback.y - this.centerY) * tangentY;

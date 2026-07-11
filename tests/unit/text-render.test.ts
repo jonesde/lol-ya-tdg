@@ -110,6 +110,26 @@ describe("TextOverlayRenderer", () => {
     expect(mockCtx.lineTo).toHaveBeenCalled();
     expect(mockCtx.fillText).toHaveBeenCalledWith("*", 5, 5);
   });
+
+  it("draws HP bars for damaged towers but skips full-health towers", () => {
+    const ctx = makeCtx();
+    (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
+    (mockCtx.lineTo as ReturnType<typeof vi.fn>).mockClear();
+    const manager = new TextOverlayRenderer();
+    const snapshot = {
+      enemies: [],
+      projectiles: [],
+      lightningEffects: [],
+      stunEffects: [],
+      towers: [
+        { id: "t1", x: 40, y: 50, health: 5, maxHealth: 10 } as never,
+        { id: "t2", x: 70, y: 80, health: 20, maxHealth: 20 } as never,
+      ],
+    } as never;
+    manager.render(ctx, snapshot, scale);
+    // Two lines per bar (background + foreground) for the single damaged tower.
+    expect(mockCtx.lineTo).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("TextPathRenderer", () => {

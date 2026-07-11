@@ -5,7 +5,14 @@ import {
 } from "@/sim/Constants.js";
 import type { Grid } from "../../sim/grid/Grid.js";
 import type { EnemySnapshot, SpawnStateSnapshot, TowerSnapshot } from "../../sim/SimulationSnapshot.js";
-import { BOSS_TEXT_POOL_SIZE, HP_BAR_POOL_SIZE, SHIELD_BAR_POOL_SIZE, SVG_NS } from "./types.js";
+import {
+  BOSS_TEXT_POOL_SIZE,
+  GRID_TILE_SIZE,
+  HP_BAR_POOL_SIZE,
+  SHIELD_BAR_POOL_SIZE,
+  SVG_NS,
+  TOWER_HP_BAR_POOL_SIZE,
+} from "./types.js";
 
 export class UiOverlayManager {
   private hpBarPool: SVGRectElement[] = [];
@@ -27,6 +34,11 @@ export class UiOverlayManager {
   private baseHealthLastTransform: string = "";
   private baseHealthLastWidth: string = "";
   private baseHealthLastFill: string = "";
+  // Tower HP bars: shown only while a tower is damaged (health < maxHealth).
+  private towerHpBarPool: SVGRectElement[] = [];
+  private towerHpLastTransform: string[] = [];
+  private towerHpLastWidth: string[] = [];
+  private towerHpLastFill: string[] = [];
 
   init(layer: SVGGElement): void {
     for (let i = 0; i < HP_BAR_POOL_SIZE; i++) {
@@ -145,9 +157,44 @@ export class UiOverlayManager {
     layer.appendChild(baseFg);
 
     this.baseHealthBarPool = [baseBg, baseBorder, baseFg];
+
+    for (let i = 0; i < TOWER_HP_BAR_POOL_SIZE; i++) {
+      const bg = document.createElementNS(SVG_NS, "rect");
+      bg.style.visibility = "hidden";
+      bg.setAttribute("width", "24");
+      bg.setAttribute("height", "3");
+      bg.setAttribute("fill", "#000000");
+      bg.setAttribute("opacity", "0.6");
+      layer.appendChild(bg);
+
+      const border = document.createElementNS(SVG_NS, "rect");
+      border.style.visibility = "hidden";
+      border.setAttribute("width", "24");
+      border.setAttribute("height", "3");
+      border.setAttribute("fill", "none");
+      border.setAttribute("stroke", "#000000");
+      border.setAttribute("stroke-width", "0.5");
+      layer.appendChild(border);
+
+      const fg = document.createElementNS(SVG_NS, "rect");
+      fg.style.visibility = "hidden";
+      fg.setAttribute("width", "24");
+      fg.setAttribute("height", "3");
+      fg.setAttribute("fill", "#00ff00");
+      layer.appendChild(fg);
+
+      this.towerHpBarPool.push(bg, border, fg);
+      this.towerHpLastTransform.push("");
+      this.towerHpLastWidth.push("");
+      this.towerHpLastFill.push("");
+    }
   }
 
-  syncFromGameEngine(enemies: EnemySnapshot[], _selectedTower: TowerSnapshot | null): void {
+  syncFromGameEngine(
+    enemies: EnemySnapshot[],
+    _selectedTower: TowerSnapshot | null,
+    towers: TowerSnapshot[] = [],
+  ): void {
     let barIndex = 0;
     let shieldIndex = 0;
     let bossIndex = 0;
@@ -252,6 +299,49 @@ export class UiOverlayManager {
     }
     for (let i = bossGroup; i < this.bossTextPool.length; i++) {
       this.bossTextPool[i]!.style.visibility = "hidden";
+    }
+
+    let towerHpBarGroup = 0;
+    for (const tower of towers) {
+      if (tower.maxHealth <= 0 || tower.health >= tower.maxHealth) continue;
+      if (towerHpBarGroup * 3 + 2 >= this.towerHpBarPool.length) break;
+
+      const towerBg = this.towerHpBarPool[towerHpBarGroup * 3]!;
+      const towerBorder = this.towerHpBarPool[towerHpBarGroup * 3 + 1]!;
+      const towerFg = this.towerHpBarPool[towerHpBarGroup * 3 + 2]!;
+      towerHpBarGroup++;
+
+      const barX = tower.x - 12;
+      const barY = tower.y - GRID_TILE_SIZE / 2 + 2;
+      const towerBarTransform = `translate(${barX}, ${barY})`;
+      if (this.towerHpLastTransform[towerHpBarGroup - 1] !== towerBarTransform) {
+        towerBg.setAttribute("transform", towerBarTransform);
+        towerBorder.setAttribute("transform", towerBarTransform);
+        towerFg.setAttribute("transform", towerBarTransform);
+        this.towerHpLastTransform[towerHpBarGroup - 1] = towerBarTransform;
+      }
+      towerBg.style.visibility = "visible";
+      towerBorder.style.visibility = "visible";
+      towerFg.style.visibility = "visible";
+
+      const towerHpPercent = Math.max(0, tower.health / tower.maxHealth);
+      const towerHpWidth = `${24 * towerHpPercent}`;
+      const towerHpFill = towerHpPercent > 0.5 ? "#00ff00" : towerHpPercent > 0.25 ? "#ffff00" : "#ff0000";
+      if (this.towerHpLastWidth[towerHpBarGroup - 1] !== towerHpWidth) {
+        towerFg.setAttribute("width", towerHpWidth);
+        this.towerHpLastWidth[towerHpBarGroup - 1] = towerHpWidth;
+      }
+      if (this.towerHpLastFill[towerHpBarGroup - 1] !== towerHpFill) {
+        towerFg.setAttribute("fill", towerHpFill);
+        this.towerHpLastFill[towerHpBarGroup - 1] = towerHpFill;
+      }
+    }
+
+    for (let g = towerHpBarGroup; g < this.towerHpLastTransform.length; g++) {
+      if (g * 3 + 2 >= this.towerHpBarPool.length) break;
+      this.towerHpBarPool[g * 3]!.style.visibility = "hidden";
+      this.towerHpBarPool[g * 3 + 1]!.style.visibility = "hidden";
+      this.towerHpBarPool[g * 3 + 2]!.style.visibility = "hidden";
     }
   }
 
@@ -380,5 +470,14 @@ export class UiOverlayManager {
     this.baseHealthLastWidth = "";
     this.baseHealthLastFill = "";
     this.baseHealthBarPool = [];
+    for (const el of this.towerHpBarPool) {
+      if (el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
+    }
+    this.towerHpLastTransform = [];
+    this.towerHpLastWidth = [];
+    this.towerHpLastFill = [];
+    this.towerHpBarPool = [];
   }
 }
