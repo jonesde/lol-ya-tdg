@@ -358,16 +358,16 @@ export class Grid {
       if (this.isTerrain(outwardX, outwardY)) continue;
       const offset = half + radius;
       if (side.dx !== 0) {
-          const edgeX = tileCenter.x + side.dx * offset;
-          const y1 = tileY * this.tileSize;
-          const y2 = (tileY + 1) * this.tileSize;
-          segments.push({ x1: edgeX, y1, x2: edgeX, y2 });
-        } else {
-          const edgeY = tileCenter.y + side.dy * offset;
-          const x1 = tileX * this.tileSize;
-          const x2 = (tileX + 1) * this.tileSize;
-          segments.push({ x1, y1: edgeY, x2, y2: edgeY });
-        }
+        const edgeX = tileCenter.x + side.dx * offset;
+        const y1 = tileY * this.tileSize;
+        const y2 = (tileY + 1) * this.tileSize;
+        segments.push({ x1: edgeX, y1, x2: edgeX, y2 });
+      } else {
+        const edgeY = tileCenter.y + side.dy * offset;
+        const x1 = tileX * this.tileSize;
+        const x2 = (tileX + 1) * this.tileSize;
+        segments.push({ x1, y1: edgeY, x2, y2: edgeY });
+      }
     }
     return segments;
   }

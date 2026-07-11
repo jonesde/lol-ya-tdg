@@ -822,19 +822,21 @@ export class Enemy {
         this.grid.getBaseEdgeSegments(),
         dt,
       );
-    } else if (moveMode === "approach" && this.blockedByTower && nextTile) {
-      // Blocked by a live tower: steer toward the tower's contact line so the pile
-      // spreads around the tower's exposed faces instead of stacking in one column.
-      // When the enemy is already in contact (attackTarget set), the attack tick
-      // below handles damage and contactLineSteer holds/slides the enemy.
-      const towerCenter = this.grid.tileToWorld(nextTile.x, nextTile.y);
+    } else if (this.blockedByTower) {
+      // Blocked by a live tower: either the tower ahead on the path (forward case)
+      // or an adjacent tower the enemy is already touching (contact fallback). Steer
+      // toward the tower's contact line so the pile spreads around its exposed faces
+      // instead of stacking in one column. When the enemy is already in contact
+      // (attackTarget set), contactLineSteer holds/slides it along the perimeter and
+      // the attack tick below deals damage; otherwise it approaches the tower center.
+      const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
       if (attackTarget) {
         this.contactLineSteer(
           enemyManager,
           towerCenter.x,
           towerCenter.y,
           this.grid.tileSize / 2,
-          this.grid.getTowerEdgeSegments(nextTile.x, nextTile.y, this.radius),
+          this.grid.getTowerEdgeSegments(this.blockedByTower.tileX, this.blockedByTower.tileY, this.radius),
           dt,
         );
       } else {
@@ -1103,9 +1105,10 @@ export class Enemy {
       const segCy = (segment.y1 + segment.y2) / 2;
       const segDx = segCx - centerX;
       const segDy = segCy - centerY;
-      const onFace = Math.abs(segDx) >= Math.abs(segDy)
-        ? normalX !== 0 && Math.sign(segDx) === normalX
-        : normalY !== 0 && Math.sign(segDy) === normalY;
+      const onFace =
+        Math.abs(segDx) >= Math.abs(segDy)
+          ? normalX !== 0 && Math.sign(segDx) === normalX
+          : normalY !== 0 && Math.sign(segDy) === normalY;
       if (!onFace) continue;
       const t1 = (segment.x1 - centerX) * tangentX + (segment.y1 - centerY) * tangentY;
       const t2 = (segment.x2 - centerX) * tangentX + (segment.y2 - centerY) * tangentY;
@@ -1188,8 +1191,8 @@ export class Enemy {
     // the traversable tile — its body doesn't extend into terrain at the segment endpoints
     // (which sit at tile boundaries).
     const spanPad = this.radius;
-    const minT = isFinite(span.minT) ? span.minT + spanPad : probeT;
-    const maxT = isFinite(span.maxT) ? span.maxT - spanPad : probeT;
+    const minT = Number.isFinite(span.minT) ? span.minT + spanPad : probeT;
+    const maxT = Number.isFinite(span.maxT) ? span.maxT - spanPad : probeT;
     const open = this.findLateralOpenSpot(
       enemyManager,
       probeX,
@@ -1270,11 +1273,7 @@ export class Enemy {
   // lateral-seeking before it steps into the blocker, not after.
   // The objective defaults to the base center (the common path-following case) but is
   // passed explicitly so tower-blocked enemies check toward the tower instead.
-  private isBlockedAhead(
-    enemyManager: EnemyManagerRef | null,
-    objectiveX?: number,
-    objectiveY?: number,
-  ): boolean {
+  private isBlockedAhead(enemyManager: EnemyManagerRef | null, objectiveX?: number, objectiveY?: number): boolean {
     if (!enemyManager) return false;
     let objective: { x: number; y: number };
     if (objectiveX !== undefined && objectiveY !== undefined) {
