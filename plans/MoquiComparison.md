@@ -75,7 +75,7 @@ Moqui's `ExecutionContext`/facades are the single, well-defined way logic touche
 the game's `GameEngine` is similarly decoupled, reaching out only through `HostBindings` and
 receiving intent only through the `Command`/`CommandDispatcher` seam. Both keep the core
 logic free of framework and I/O pollution, which is exactly Jones's "isolate the core behind
-seams" instinct. (`src/sim/HostBindings.ts`, `src/sim/commandBus.ts`)
+seams" instinct. (`src/sim/HostBindings.ts`, `src/sim/commandBus.ts`) The single `applyCommand` switch (`src/sim/applyCommand.ts`) is the embryo of Moqui's Service Facade — all intent funnels through one dispatch point — but today it maps onto monolithic `GameEngine` methods rather than named, composable services (see proposal P1).
 
 ### 3.2 Plain, serializable data records — *Aligned*
 Moqui entities are `Map`-based `GenericValue` records; the game uses plain TypeScript
@@ -187,7 +187,9 @@ in the actual code.
 
 ### 5.2 Prioritized proposals
 
-**P1 — Declarative Command Validation/Authorization Seam** *(highest value; mirrors Moqui
+**P1 — Service Facade: decompose GameEngine into a named service library** *(mirrors Moqui Service Facade — the headline 3-tier logic layer)*. `GameEngine.ts` is a ~947-line monolith whose command-handling methods (`togglePause`, `upgradeSelected`, `sellSelected`, `specializeSelected`, `setTargeting`, `selectBuildType`, `handleClick`'s build path, `debug`, plus the `llm:*` enemy-route handlers inside `applyCommand.ts`) are imperative methods reached only through the single `applyCommand` switch (`src/sim/applyCommand.ts:15`). Moqui's central thesis is that business logic lives as a library of named, composable, validated **services** (verb#noun, e.g. `create#Example`), not as methods on a god-object. Refactor: create `src/sim/services/` with a `ServiceRegistry` and one service per intent, each a pure-ish function `(ctx: RunContext, params) => ServiceResult` (e.g. `game#togglePause`, `game#cycleSpeed`, `tower#place`, `tower#upgrade`, `tower#sell`, `tower#specialize`, `tower#setTargeting`, `tower#select`, `enemy#hold`, `enemy#route`, `enemy#setTargeting`, `economy#debug`). `applyCommand` collapses to a thin table mapping each `Command` → service name + param projection; the dispatcher builds a `RunContext` and runs the service. The fixed-timestep `engine.update(dt)` stays in the engine (the loop, not a service); only discrete intent logic moves out. Engine methods remain as defensive backstops. This is the most Moqui-distinctive change: it turns the implicit "command→method" switch into an explicit, named, testable, composable service library, and it is the precondition that makes P2's validation seam and P4's data-driven artifacts clean to author (services consume `RunContext`, not engine internals).
+
+**P2 — Declarative Command Validation/Authorization Seam** *(highest value; mirrors Moqui
 Service Facade authz + validation)*. Add a single `validateCommand(engine, command)` policy
 applied once, automatically, before `applyCommand` in `WorkerEntry`'s tick drain. It is the sole
 source of truth for "is this command allowed and what does it cost" (gold checks, build
@@ -198,12 +200,12 @@ policy instead of re-implementing the rules. Rejections flow through the existin
 the single biggest structural win — it pushes permission + validation to the facade, Jones's
 central thesis.
 
-**P2 — Unified `RunContext` object** *(mirrors Moqui `ExecutionContext`)*. Bundle `runState` +
+**P3 — Unified `RunContext` object** *(mirrors Moqui `ExecutionContext`)*. Bundle `runState` +
 `persistState` + `host` (HostBindings) + `themeBundle` into one `RunContext` passed to
 `GameEngine` and managers. The worker init protocol and `applyCommand` then carry one handle
 instead of four loose params, making the "seam to the world" explicit and singular.
 
-**P3 — Data-driven "artifacts" for towers / enemies / maps** *(mirrors Moqui's "entity/artifact
+**P4 — Data-driven "artifacts" for towers / enemies / maps** *(mirrors Moqui's "entity/artifact
 as data" + "tools not code")*. Extend the record-keyed `TOWER_*` tables into a fuller declarative
 artifact (behavior knobs: targeting modes, projectile shape, splash/chain/burn/knockback, status
 tuning) so a new tower/enemy is *mostly a data addition*, not new code in `Tower.ts` /
@@ -211,19 +213,19 @@ tuning) so a new tower/enemy is *mostly a data addition*, not new code in `Tower
 registry (prefigured by the theme `MAP_THEME_MANIFEST`) so new maps are data, not procedural code
 edits. The purest Jones move: build the generic resolver once, add content as data.
 
-**P4 — Declarative UI overlay/panel registry** *(mirrors Moqui Screen Facade sub-screen
+**P5 — Declarative UI overlay/panel registry** *(mirrors Moqui Screen Facade sub-screen
 composition)*. Replace hand-wired overlays in `GameScreen.vue`/`App.vue` with a data-driven
 registry: `{ id, component, storeFlag, zOrder, pausesGame, restoreKey }`. New overlays become
 registry entries, and the duplicated `wasPlaying` pause-restoration collapses into one policy
 keyed by `restoreKey`, removing the per-overlay flag sprawl in `uiStore`.
 
-**P5 — Elevate hand-rolled cross-cutting policies** *(mirrors Moqui's automatic tx/cache/authz)*.
+**P6 — Elevate hand-rolled cross-cutting policies** *(mirrors Moqui's automatic tx/cache/authz)*.
 Promote the inline `persistDirty` batching, ack-gate backpressure, and snapshot→`gameStore` mirror
 logic into small declarative policies (`PersistPolicy`, `BackpressurePolicy`, `MirrorPolicy`) with
 tunable thresholds, so they are configurable and unit-testable as first-class concerns — the
 "framework owns the how" move, applied locally.
 
-**P6 — Auto artifact-execution metrics** *(lowest priority; mirrors Moqui service metrics)*.
+**P7 — Auto artifact-execution metrics** *(lowest priority; mirrors Moqui service metrics)*.
 Generalize `WaveGraphTracker` into a thin declarative metric hook on command/snapshot execution
 (counts, durations, reject rate). Nice-to-have, not core.
 
@@ -238,12 +240,14 @@ Generalize `WaveGraphTracker` into a thin declarative metric hook on command/sna
   already covered by the theme manifest + (proposed) content-pack registry.
 
 ### 5.4 Recommended sequencing
-1. **P1** (validation seam) — biggest payoff; reuses existing `lastAppliedCommandId` plumbing and
-   removes the verified duplication.
-2. **P2** (RunContext) — small; unblocks cleaner signatures.
-3. **P4** (overlay registry) — removes the `wasPlaying` sprawl; low risk.
-4. **P3 / P5** — larger; do after the seams are settled.
-5. **P6** — optional.
+1. **P1** (Service Facade) — foundational; turns the monolith's command methods into a named
+   service library, reusing the existing Command seam. No behavior change on its own.
+2. **P3** (RunContext) — small; gives services one handle to operate on. Do with/right after P1.
+3. **P2** (validation seam) — biggest payoff; now validates *services* via the same facade and
+   reuses the existing `lastAppliedCommandId` plumbing to remove the verified duplication.
+4. **P5** (overlay registry) — removes the `wasPlaying` sprawl; low risk.
+5. **P4 / P6** — larger data-driven + cross-cutting work; do after the seams are settled.
+6. **P7** — optional metrics.
 
 The common thread: the game already isolates its core behind typed seams. These changes finish
 promoting the cross-cutting concerns (validation, context, content-as-data, overlay composition)
