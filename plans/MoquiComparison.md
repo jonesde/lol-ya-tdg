@@ -11,10 +11,14 @@ corpus knowledge of Moqui and the design philosophy of its author, David E. Jone
 
 (inserted after)
 ```
-Using your corpus knowledge of Moqui Framework and the philosophy of its author, read TECHNICAL.md and write a summary level report comparing the architecture of this hobby game to the architecture of Moqui Framework, and then offer recommendations on how this project can be improved using architectural and technical concepts from Moqui.
+Using your corpus knowledge of Moqui Framework and the technical philosophy of
+its author, read TECHNICAL.md and write a summary level report comparing the 
+architecture of this hobby game to the architecture of Moqui Framework, and 
+then offer recommendations on how this project can be improved using 
+architectural and technical concepts from Moqui.
 ```
 
-NOTE: this version of the report written by HY3 using two prompts that I merged into the one above (original did not request recommendations).
+NOTE: this version of the report written by HY3 using two prompts that I merged into the one above. The original did not request recommendations, wording wasn't quite the same, etc. This is a cleaned up version of the prompt so I have it for future reference and is not meant to be a source of truth for how this file was made.
 
 ---
 
