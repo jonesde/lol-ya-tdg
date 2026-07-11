@@ -467,7 +467,7 @@ export class Enemy {
   releaseToDefault(): void {
     this.routingMode = "default";
     this.arrived = false;
-    let defaultPath = this.grid.getPathFor(this.spawnIndex);
+    const defaultPath = this.grid.getPathFor(this.spawnIndex);
     if (!defaultPath || defaultPath.length === 0) {
       this.path = null;
       return;
