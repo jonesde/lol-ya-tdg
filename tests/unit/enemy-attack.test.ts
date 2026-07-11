@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { type AttackTarget, Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
+import { getMap } from "@/sim/grid/Map.js";
 import { TowerManager } from "@/sim/towers/TowerManager.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap, makeMapData } from "../helpers/mock-grid";
@@ -377,5 +378,179 @@ describe("base attack", () => {
         enemy.radius - 1e-6,
       );
     }
+  });
+});
+
+describe("contact-line steering (polite motion)", () => {
+  let grid: Grid;
+  let enemyManager: EnemyManager;
+  let towerManager: TowerManager;
+
+  class StubBaseTarget implements AttackTarget {
+    readonly isGhost = false;
+    health = 100;
+    takeDamage(amount: number): void {
+      this.health -= amount;
+    }
+  }
+
+  // A custom map with a 3-tile-wide approach to the tower, so enemies have room to
+  // spread laterally around the tower instead of being confined to a 1-tile corridor.
+  function makeWideApproachMap() {
+    const width = 8;
+    const height = 6;
+    const tiles: { type: string; height: number }[][] = [];
+    for (let rowIndex = 0; rowIndex < height; rowIndex++) {
+      const row: { type: string; height: number }[] = [];
+      for (let colIndex = 0; colIndex < width; colIndex++) {
+        row.push({ type: "terrain", height: 1 });
+      }
+      tiles.push(row);
+    }
+    for (let colIndex = 0; colIndex < width; colIndex++) {
+      tiles[1][colIndex].type = "path";
+      tiles[2][colIndex].type = "path";
+      tiles[3][colIndex].type = "path";
+    }
+    return makeMapData({
+      width,
+      height,
+      spawns: [{ x: 0, y: 2 }],
+      base: { x: width - 1, y: 2 },
+      tiles,
+      regionId: 0,
+      level: 1,
+      style: "bastion",
+    });
+  }
+
+  beforeEach(() => {
+    resetEnemyId();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const themeStore = useMapThemeStore();
+    themeStore.defaultTheme = mockDefaultTheme;
+    themeStore.activeTheme = mockDefaultTheme;
+    const map = getMap(0);
+    grid = new Grid(map);
+    const projectiles = { spawn() {}, fireLightning() {}, spawnLightningFlash() {} };
+    towerManager = new TowerManager(grid, makeParticleSystem(), projectiles, makeSoundManager());
+    enemyManager = new EnemyManager(grid, makeParticleSystem(), 0);
+    enemyManager.setTowerManager(towerManager);
+  });
+
+  function distanceToBaseSquare(x: number, y: number, baseCenterX: number, baseCenterY: number, half: number): number {
+    const deltaX = x - baseCenterX;
+    const deltaY = y - baseCenterY;
+    const closestX = baseCenterX + Math.max(-half, Math.min(half, deltaX));
+    const closestY = baseCenterY + Math.max(-half, Math.min(half, deltaY));
+    return Math.hypot(x - closestX, y - closestY);
+  }
+
+  it("enemies attacking a path-blocking tower spread across tiles instead of stacking in a single column", () => {
+    const wideMap = makeWideApproachMap();
+    const wideGrid = new Grid(wideMap);
+    const wideTowers = new TowerManager(
+      wideGrid,
+      makeParticleSystem(),
+      { spawn() {}, fireLightning() {}, spawnLightningFlash() {} },
+      makeSoundManager(),
+    );
+    const wideEnemies = new EnemyManager(wideGrid, makeParticleSystem(), 0);
+    wideEnemies.setTowerManager(wideTowers);
+
+    const path = wideGrid.getPathFor(0)!;
+    const towerTile = path[3]!;
+    const tower = wideTowers.build("basic", towerTile.x, towerTile.y, makeSave(), wideGrid)!;
+    tower.health = 100000;
+    tower.maxHealth = 100000;
+
+    const count = 12;
+    const enemies: Enemy[] = [];
+    for (let i = 0; i < count; i++) {
+      const enemy = new Enemy("minion", 1, 0, wideGrid, 1);
+      enemies.push(enemy);
+      wideEnemies.enemies.push(enemy);
+    }
+    wideEnemies.updateSpatialHash();
+
+    for (let step = 0; step < 8000; step++) {
+      wideEnemies.update(1 / 60, null);
+    }
+
+    const survivors = enemies.filter((e) => !e.removed);
+    expect(survivors.length).toBeGreaterThan(0);
+    const tiles = new Set(
+      survivors.map((e) => {
+        const tile = e.currentTile();
+        return `${tile.x},${tile.y}`;
+      }),
+    );
+    expect(tiles.size).toBeGreaterThan(1);
+  });
+
+  it("a boss pushes through a packed base line while minions slide aside (priority yielding)", () => {
+    const baseTarget = new StubBaseTarget();
+    enemyManager.baseTarget = baseTarget;
+    const base = grid.getBase();
+    const baseCenter = grid.tileToWorld(base.x, base.y);
+    const half = 1.5 * grid.tileSize;
+
+    const minions: Enemy[] = [];
+    for (let i = 0; i < 8; i++) {
+      const enemy = new Enemy("minion", 1, 0, grid, 1);
+      enemyManager.enemies.push(enemy);
+      minions.push(enemy);
+    }
+    enemyManager.updateSpatialHash();
+
+    for (let step = 0; step < 8000; step++) enemyManager.update(1 / 60, null);
+
+    const boss = new Enemy("boss", 1, 0, grid, 1);
+    enemyManager.enemies.push(boss);
+    enemyManager.updateSpatialHash();
+
+    for (let step = 0; step < 12000; step++) enemyManager.update(1 / 60, null);
+
+    expect(boss.removed).toBe(false);
+    expect(boss.attackingBase).toBe(true);
+    const bossDist = distanceToBaseSquare(boss.centerX, boss.centerY, baseCenter.x, baseCenter.y, half);
+    expect(bossDist).toBeLessThanOrEqual(boss.radius + 0.5);
+
+    const survivingMinions = minions.filter((e) => !e.removed && e.attackingBase);
+    if (survivingMinions.length === 0) return;
+    // The boss pushed through to the contact line; at least one minion should be
+    // further from the base center than the boss (it was pushed aside).
+    const anyMinionFurther = survivingMinions.some((e) => {
+      const minionDist = distanceToBaseSquare(e.centerX, e.centerY, baseCenter.x, baseCenter.y, half);
+      return minionDist > bossDist + 1e-3;
+    });
+    expect(anyMinionFurther).toBe(true);
+  });
+
+  it("lateral redirect: a late arrival spreads to a different tile than the front enemy", () => {
+    const baseTarget = new StubBaseTarget();
+    enemyManager.baseTarget = baseTarget;
+
+    const count = 6;
+    const enemies: Enemy[] = [];
+    for (let i = 0; i < count; i++) {
+      const enemy = new Enemy("minion", 1, 0, grid, 1);
+      enemies.push(enemy);
+      enemyManager.enemies.push(enemy);
+    }
+    enemyManager.updateSpatialHash();
+
+    for (let step = 0; step < 12000; step++) enemyManager.update(1 / 60, null);
+
+    const survivors = enemies.filter((e) => !e.removed && e.attackingBase);
+    expect(survivors.length).toBeGreaterThan(1);
+    const tiles = new Set(
+      survivors.map((e) => {
+        const tile = e.currentTile();
+        return `${tile.x},${tile.y}`;
+      }),
+    );
+    expect(tiles.size).toBeGreaterThan(1);
   });
 });

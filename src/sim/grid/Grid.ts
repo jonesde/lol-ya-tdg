@@ -330,9 +330,56 @@ export class Grid {
   // so the targetable edge is exactly this subset. This is the single source of truth
   // for both the red target-edge overlay and enemy attack-targeting (see Enemy.ts).
   getBaseEdgeSegments(): Array<{ x1: number; y1: number; x2: number; y2: number }> {
-    const base = this.getBase();
-    const half = 1.5 * this.tileSize;
-    const baseCenter = this.tileToWorld(base.x, base.y);
+    return this.getSquareEdgeSegments(this.base, 1.5 * this.tileSize);
+  }
+
+  // Exposed edge segments for a single tower tile, offset by the enemy radius (the
+  // contact line enemies press toward when attacking a tower in the path). Only sides
+  // whose outward-adjacent tile is traversable are included, mirroring
+  // getBaseEdgeSegments so enemies never aim at a terrain-backed face.
+  getTowerEdgeSegments(
+    tileX: number,
+    tileY: number,
+    radius: number,
+  ): Array<{ x1: number; y1: number; x2: number; y2: number }> {
+    const half = this.tileSize / 2;
+    const tileCenter = this.tileToWorld(tileX, tileY);
+    const sides = [
+      { dx: 0, dy: -1 },
+      { dx: 0, dy: 1 },
+      { dx: 1, dy: 0 },
+      { dx: -1, dy: 0 },
+    ];
+    const segments: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+    for (const side of sides) {
+      const outwardX = tileX + side.dx;
+      const outwardY = tileY + side.dy;
+      if (!this.inBounds(outwardX, outwardY)) continue;
+      if (this.isTerrain(outwardX, outwardY)) continue;
+      const offset = half + radius;
+      if (side.dx !== 0) {
+          const edgeX = tileCenter.x + side.dx * offset;
+          const y1 = tileY * this.tileSize;
+          const y2 = (tileY + 1) * this.tileSize;
+          segments.push({ x1: edgeX, y1, x2: edgeX, y2 });
+        } else {
+          const edgeY = tileCenter.y + side.dy * offset;
+          const x1 = tileX * this.tileSize;
+          const x2 = (tileX + 1) * this.tileSize;
+          segments.push({ x1, y1: edgeY, x2, y2: edgeY });
+        }
+    }
+    return segments;
+  }
+
+  // Shared implementation for getBaseEdgeSegments: computes axis-aligned 1-tile edge
+  // segments around a square centered at `centerTile` with the given half-extent,
+  // including only sides whose outward-adjacent tile is traversable.
+  private getSquareEdgeSegments(
+    centerTile: { x: number; y: number },
+    half: number,
+  ): Array<{ x1: number; y1: number; x2: number; y2: number }> {
+    const center = this.tileToWorld(centerTile.x, centerTile.y);
     const sides = [
       { dx: 0, dy: -1 },
       { dx: 0, dy: 1 },
@@ -343,23 +390,23 @@ export class Grid {
     const segments: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
     for (const side of sides) {
       for (const offset of offsets) {
-        const baseTile =
+        const tile =
           side.dx === 0
-            ? { x: base.x + offset, y: base.y + side.dy }
-            : { x: base.x + side.dx, y: base.y + offset };
-        const outwardX = baseTile.x + side.dx;
-        const outwardY = baseTile.y + side.dy;
+            ? { x: centerTile.x + offset, y: centerTile.y + side.dy }
+            : { x: centerTile.x + side.dx, y: centerTile.y + offset };
+        const outwardX = tile.x + side.dx;
+        const outwardY = tile.y + side.dy;
         if (!this.inBounds(outwardX, outwardY)) continue;
         if (this.isTerrain(outwardX, outwardY)) continue;
         if (side.dx !== 0) {
-          const edgeX = baseCenter.x + side.dx * half;
-          const y1 = baseTile.y * this.tileSize;
-          const y2 = (baseTile.y + 1) * this.tileSize;
+          const edgeX = center.x + side.dx * half;
+          const y1 = tile.y * this.tileSize;
+          const y2 = (tile.y + 1) * this.tileSize;
           segments.push({ x1: edgeX, y1, x2: edgeX, y2 });
         } else {
-          const edgeY = baseCenter.y + side.dy * half;
-          const x1 = baseTile.x * this.tileSize;
-          const x2 = (baseTile.x + 1) * this.tileSize;
+          const edgeY = center.y + side.dy * half;
+          const x1 = tile.x * this.tileSize;
+          const x2 = (tile.x + 1) * this.tileSize;
           segments.push({ x1, y1: edgeY, x2, y2: edgeY });
         }
       }

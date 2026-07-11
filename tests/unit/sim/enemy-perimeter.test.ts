@@ -110,6 +110,12 @@ describe("Enemy perimeter surround routing", () => {
 
   it("fill: the front line spreads laterally along the base edge instead of collapsing to a single column", () => {
     const { grid, enemyManager } = makeManager();
+    // A baseTarget must be set BEFORE spawn so enemies drive the hold branch (the real
+    // in-game path where baseTarget is always set), not the move branch (which only
+    // runs when baseTarget is null). Without this, the test validates the wrong code
+    // path and passes even when the hold branch is broken.
+    const baseTarget = new StubBaseTarget();
+    enemyManager.baseTarget = baseTarget;
     const count = 18;
     const enemies: Enemy[] = [];
     for (let i = 0; i < count; i++) {

@@ -447,3 +447,28 @@ If the fill still looks uneven after implementation:
 | Polite yielding | Not addressed | Not addressed | Priority-weighted collision |
 | Complexity | 5 tuning constants + sampling loop | Slot manager + reassignment | 3 tuning knobs + 1 search method |
 | Per-frame cost | O(n × candidates × neighbors) | O(n) + O(n) reassignment on death | O(n × probes) — most enemies find spot in 1st iteration |
+
+# ADDENDUM FOR CURRENT
+
+What matches the plan
+- Core design: line-target steering, contactLineSteer, lateral redirect, priority-weighted collision — all implemented as designed.
+- §3.1: getTowerEdgeSegments — done (plus the shared getSquareEdgeSegments refactor).
+- §3.2: isBlockedAhead generalized — done.
+- §3.5: Movement branches rewired — done (detour → walk → attackingBase → approach tower).
+- §3.6: Priority-weighted collision — done (with tower contact extension beyond the plan).
+- §3.7: Cleanup of baseEdgeFillTarget, countEnemiesNear, FILL_ constants — done.
+- §4.1-4.4: All four test changes — done (1049 passing).
+What diverged
+Area	Plan	Implementation	Why
+findLateralOpenSpot signature	8 params (contactX/Y, tangent, minT/maxT, objective, normal, half)	10 params — added objectiveX/Y and checkForwardClearance	Back-row enemies need a different "open" check (forward path clear, not overlap-free). Plan didn't anticipate this.
+isBlockedAhead blocking check	"within touching distance" (total distance)	Lateral distance check + priority exception	Plan's "within touching distance" meant total distance, which let back enemies walk into blockers before redirecting. Changed to lateral-only so the back enemy redirects before overlap. Added priority exception so bosses press through minions.
+findLeastBlockedLateral	Not in plan	Added as fallback when line is packed	Plan said "hold position (no movement)" when findLateralOpenSpot returns null. This caused the T-formation — back enemies held in a single column. Added least-blocked fallback so they align with gaps.
+On-line hold check	Not in plan	Added overlap check before lateral search for on-line enemies	Plan had on-line enemies search laterally every frame, causing oscillation/bunching. Added early-return if not overlapping anyone.
+Span clamping	clampToExposedSpan	computeExposedSpan with face-filtering (normal match) + spanPad	Plan didn't specify face filtering; without it enemies drifted onto terrain (5-wide on 1-tile corridor).
+Probe depth	"probe at contact point"	On-line probes at contact; back-row probes at enemy's own depth	Plan probed at the contact line for everyone. Back enemies found it packed (front row is there) and held in a column. Changed to probe at the enemy's actual depth.
+resolveCollisions centerline/laneOffset	thisAttacks for position space	thisUsesCenter = attackingBase || blockedByTower !== null	Plan only moved centerline for attackingBase. Tower attackers steered centerline but collided in laneOffset — jitter. Extended to tower contact.
+Walk branch guard	!attackingBase (plan §3.5 line 264)	Reverted to !attackTarget	Plan's !attackingBase broke route-mode enemies that set attackingBase but still need to walk after releaseToDefault().
+Priority formula	0.5 + 0.5 * (delta / maxDelta)	other.attackDamage / totalPriority clamped to [PRIORITY_YIELD_MIN, PRIORITY_YIELD_MAX]	Simpler and uses actual values rather than a normalized delta. Functionally equivalent.
+Tuning knobs	initialReach, maxReach as separate widening iterations	Single expanding sweep, no initialReach	Simplified; the 3-iteration reaches were redundant (re-scanned smaller offsets).
+Bottom line
+The architecture matches — contactLineSteer, findLateralOpenSpot, priority-weighted collision, unified base/tower steering. The divergences are all bug fixes from manual testing that the plan didn't anticipate: face-filtering for span clamping, probe-at-own-depth for back-row enemies, forward-clearance checks, least-blocked fallback, and the centerline/laneOffset unification for tower attackers. The core design is sound; the details needed iteration.
