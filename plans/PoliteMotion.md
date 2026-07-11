@@ -450,25 +450,80 @@ If the fill still looks uneven after implementation:
 
 # ADDENDUM FOR CURRENT
 
-What matches the plan
-- Core design: line-target steering, contactLineSteer, lateral redirect, priority-weighted collision — all implemented as designed.
-- §3.1: getTowerEdgeSegments — done (plus the shared getSquareEdgeSegments refactor).
-- §3.2: isBlockedAhead generalized — done.
-- §3.5: Movement branches rewired — done (detour → walk → attackingBase → approach tower).
-- §3.6: Priority-weighted collision — done (with tower contact extension beyond the plan).
-- §3.7: Cleanup of baseEdgeFillTarget, countEnemiesNear, FILL_ constants — done.
-- §4.1-4.4: All four test changes — done (1049 passing).
-What diverged
-Area	Plan	Implementation	Why
-findLateralOpenSpot signature	8 params (contactX/Y, tangent, minT/maxT, objective, normal, half)	10 params — added objectiveX/Y and checkForwardClearance	Back-row enemies need a different "open" check (forward path clear, not overlap-free). Plan didn't anticipate this.
-isBlockedAhead blocking check	"within touching distance" (total distance)	Lateral distance check + priority exception	Plan's "within touching distance" meant total distance, which let back enemies walk into blockers before redirecting. Changed to lateral-only so the back enemy redirects before overlap. Added priority exception so bosses press through minions.
-findLeastBlockedLateral	Not in plan	Added as fallback when line is packed	Plan said "hold position (no movement)" when findLateralOpenSpot returns null. This caused the T-formation — back enemies held in a single column. Added least-blocked fallback so they align with gaps.
-On-line hold check	Not in plan	Added overlap check before lateral search for on-line enemies	Plan had on-line enemies search laterally every frame, causing oscillation/bunching. Added early-return if not overlapping anyone.
-Span clamping	clampToExposedSpan	computeExposedSpan with face-filtering (normal match) + spanPad	Plan didn't specify face filtering; without it enemies drifted onto terrain (5-wide on 1-tile corridor).
-Probe depth	"probe at contact point"	On-line probes at contact; back-row probes at enemy's own depth	Plan probed at the contact line for everyone. Back enemies found it packed (front row is there) and held in a column. Changed to probe at the enemy's actual depth.
-resolveCollisions centerline/laneOffset	thisAttacks for position space	thisUsesCenter = attackingBase || blockedByTower !== null	Plan only moved centerline for attackingBase. Tower attackers steered centerline but collided in laneOffset — jitter. Extended to tower contact.
-Walk branch guard	!attackingBase (plan §3.5 line 264)	Reverted to !attackTarget	Plan's !attackingBase broke route-mode enemies that set attackingBase but still need to walk after releaseToDefault().
-Priority formula	0.5 + 0.5 * (delta / maxDelta)	other.attackDamage / totalPriority clamped to [PRIORITY_YIELD_MIN, PRIORITY_YIELD_MAX]	Simpler and uses actual values rather than a normalized delta. Functionally equivalent.
-Tuning knobs	initialReach, maxReach as separate widening iterations	Single expanding sweep, no initialReach	Simplified; the 3-iteration reaches were redundant (re-scanned smaller offsets).
-Bottom line
-The architecture matches — contactLineSteer, findLateralOpenSpot, priority-weighted collision, unified base/tower steering. The divergences are all bug fixes from manual testing that the plan didn't anticipate: face-filtering for span clamping, probe-at-own-depth for back-row enemies, forward-clearance checks, least-blocked fallback, and the centerline/laneOffset unification for tower attackers. The core design is sound; the details needed iteration.
+## What matches the plan
+
+- **Core design** — line-target steering, `contactLineSteer`, lateral redirect, and priority-weighted collision are all implemented as designed.
+- **§3.1** — `getTowerEdgeSegments` done (plus the shared `getSquareEdgeSegments` refactor).
+- **§3.2** — `isBlockedAhead` generalized to take an objective — done.
+- **§3.5** — Movement branches rewired — done (`detour → walk → attackingBase → approach tower`).
+- **§3.6** — Priority-weighted collision — done (with a tower-contact extension beyond the plan).
+- **§3.7** — Cleanup of `baseEdgeFillTarget`, `countEnemiesNear`, and the `FILL_` constants — done.
+- **§4.1–4.4** — All four test changes — done (1049 passing at the time).
+
+## What diverged
+
+| Area | Plan | Implementation | Why |
+|------|------|----------------|-----|
+| `findLateralOpenSpot` signature | 8 params (`contactX/Y`, `tangent`, `minT/maxT`, `objective`, `normal`, `half`) | 10 params — added `objectiveX/Y` and `checkForwardClearance` | Back-row enemies need a different "open" check (forward path clear, not overlap-free). The plan didn't anticipate this. |
+| `isBlockedAhead` blocking check | "within touching distance" (total distance) | Lateral distance check + priority exception | The plan's "within touching distance" meant total distance, which let back enemies walk into blockers before redirecting. Changed to lateral-only so the back enemy redirects before overlap. Added a priority exception so bosses press through minions. |
+| `findLeastBlockedLateral` | Not in plan | Added as fallback when the line is packed | The plan said "hold position (no movement)" when `findLateralOpenSpot` returns `null`. This caused the T-formation — back enemies held in a single column. The least-blocked fallback aligns them with gaps. |
+| On-line hold check | Not in plan | Added overlap check before the lateral search for on-line enemies | The plan had on-line enemies search laterally every frame, causing oscillation/bunching. Added an early-return when not overlapping anyone. |
+| Span clamping | `clampToExposedSpan` | `computeExposedSpan` with face-filtering (normal match) + `spanPad` | The plan didn't specify face filtering; without it enemies drifted onto terrain (5-wide on a 1-tile corridor). |
+| Probe depth | "probe at contact point" | On-line probes at contact; back-row probes at the enemy's own depth | The plan probed at the contact line for everyone. Back enemies found it packed (front row is there) and held in a column. Changed to probe at the enemy's actual depth. |
+| `resolveCollisions` centerline/laneOffset | `thisAttacks` for position space | `thisUsesCenter = attackingBase \|\| blockedByTower !== null` | The plan only moved centerline for `attackingBase`. Tower attackers steered centerline but collided in laneOffset — jitter. Extended to tower contact. |
+| Walk branch guard | `!attackingBase` (plan §3.5 line 264) | Reverted to `!attackTarget` | The plan's `!attackingBase` broke route-mode enemies that set `attackingBase` but still need to walk after `releaseToDefault()`. |
+| Priority formula | `0.5 + 0.5 * (delta / maxDelta)` | `other.attackDamage / totalPriority` clamped to `[PRIORITY_YIELD_MIN, PRIORITY_YIELD_MAX]` | Simpler and uses actual values rather than a normalized delta. Functionally equivalent. |
+| Tuning knobs | `initialReach`, `maxReach` as separate widening iterations | Single expanding sweep, no `initialReach` | Simplified; the 3-iteration reaches were redundant (re-scanned smaller offsets). |
+
+## Bottom line
+
+The architecture matches — `contactLineSteer`, `findLateralOpenSpot`, priority-weighted
+collision, unified base/tower steering. The divergences are all bug fixes from manual
+testing that the plan didn't anticipate: face-filtering for span clamping, probe-at-own-depth
+for back-row enemies, forward-clearance checks, a least-blocked fallback, and the
+centerline/laneOffset unification for tower attackers. The core design is sound; the details
+needed iteration.
+
+---
+
+# ADDENDUM FOR CURRENT — ROUND 2 (post-first-pass fixes)
+
+A second pass of fixes on top of the Round 1 implementation. The mechanics from Round 1
+(`contactLineSteer`, `findLateralOpenSpot`, `findLeastBlockedLateral`, priority-weighted
+collision) were present but still produced corner-bunching, jitter, and 1-tile-wide piles on
+multi-tile entries. These fixes correct the lateral geometry and selection so the pile
+spreads evenly across the full exposed width.
+
+## What matches the Round 1 implementation
+
+- `contactLineSteer` skeleton, `findLateralOpenSpot` signature (10 params), `findLeastBlockedLateral` fallback, and priority-weighted collision — all retained.
+- Tests from §4.1–4.4 still green; baseline + new tests pass (`enemy-perimeter` 6/6, `enemy-attack` 13/13).
+
+## What diverged (Round 2)
+
+| Area | Round 1 / Plan | Round 2 Implementation | Why |
+|------|----------------|------------------------|-----|
+| Tangent/normal derivation | Radial vector `contact → objective` (tangent = perpendicular to that radial) | Face-aligned: tangent taken from the contact segment's own axis (horizontal seg → `(1,0)`, vertical seg → `(0,1)`); outward normal perpendicular to the face | For a 2-wide entry the exposed segments sit left/right of the base center, so the radial normal was diagonal and the "lateral" slide spiralled enemies toward a base corner instead of spreading them cleanly across the face. A face-aligned tangent keeps the move purely along the face, preserving distance-to-square. |
+| `nearestPointOnSegments` return | Returned only `{x, y}` | Returns `{x, y, segment}` (nearest segment) | The segment is needed to derive the face axis/normal and to know which face the enemy is on for span filtering. |
+| Span face filter | Filter by radial vector (`seg midpoint − objective`) sign | Filter by each segment's **own** outward normal (derived from orientation + which side of the objective it sits), matched against the enemy's outward normal | Once the tangent became face-aligned, the radial-vector filter wrongly excluded the offset tiles of a multi-tile face and collapsed the span to one tile. A segment-self normal keeps all collinear same-side tiles, so a 2-wide entry spans both tiles. |
+| `findLateralOpenSpot` selection | Nearest open spot (first clear probe) | **Maximin**: pick the open spot with the largest clearance to the crowd; tiny `distanceFromCurrent * 1e-3` term breaks ties toward the farther end of the face | Nearest-spot biased every enemy to the same side of the face, so a pile cascaded to one corner and never filled the exposed width. Maximin fills the largest gap first (spreads evenly); per-enemy body-position differences break left/right symmetry deterministically so co-located enemies don't all pick the same extreme and oscillate. |
+| Probe frame | On-line enemies probed at the contact point on the square edge | All enemies probed at their own body (`centerX/centerY`) | Probing at the edge was a full `radius` closer to the base than the body, systematically over-estimating separation by up to `radius` and letting enemies move into spots that actually overlapped — then getting shoved apart by collision every frame (jitter). Probing at the body keeps the depth frame consistent for on-line and back-row enemies. |
+| `resolveCollisions` separation axis | Inter-center normal for all contact-line pairs (or centerline/laneOffset unification) | For `bothAtLine` pairs sharing a face (`tangentDot > 0.5`), separate **along the shared face tangent** (oriented `other → this`) instead of the inter-center normal | An inter-center radial push re-clumps pairs at one lateral spot. Separating along the face tangent spreads them laterally across the exposed entry width; the pile's depth comes from funnel/arrival geometry and the keep-out clamp, not a radial collision push. |
+| Lateral step speed | Forward walk step (`step`) | Forward walk step × 6 on the contact-line lateral slide | A contact-line enemy is already in contact; its only job is to slide along the face to an open spot. The larger step lets a packed pile flow (the bottom edge slides into empty space and the clump shifts) instead of deadlocking in a 1-D packed column. |
+| §4.2–4.3 tests | Original kill-a-front / advance-into-freed-spot assertions | New "even spread" test asserts the front line fills >30% of the widest face span; the "front line damages" test dropped the back-row and advance-into-freed-spot assertions | With width-first fill the pile is a wide flat sheet in contact with the line (spreads across the entry rather than stacking in deep rows), so deep back rows and a single enemy advancing into a freed spot are no longer the right invariants. |
+
+## Bottom line
+
+The Round 1 architecture was correct in kind but wrong in the lateral geometry: a radial
+tangent on a multi-tile face bunches everyone to a corner, nearest-spot selection reinforces
+that corner bias, edge-probing hides overlaps, and a radial collision push re-clumps. Round 2
+makes the tangent face-aligned, the selection maximin, the probe body-framed, and the collision
+push tangent-aligned — so the pile now spreads evenly across the full exposed width with no
+jitter. The plan's core idea (line-target steering + lateral redirect + priority-weighted
+collision) is intact; the geometry/selection details needed correction.
+
+## Tuning knobs added/changed
+
+- **Lateral step multiplier** (`step × 6` in `contactLineSteer`): raise to let packed piles flow faster laterally; lower to make spreads more deliberate.
+- **Maximin tie-break weight** (`distanceFromCurrent * 1e-3`): larger → enemies migrate harder toward the far ends of a face (fills both ends); smaller → pure maximin (fills the single largest gap).
+- **Probe step** (`radius * 1.5`) and **maxReach** (`tileSize * 3`) — unchanged from Round 1.
