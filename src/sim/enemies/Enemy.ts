@@ -664,7 +664,6 @@ export class Enemy {
     const liveForwardTower = forwardTower && !forwardTower.isGhost ? forwardTower : null;
 
     let attackTarget: Tower | AttackTarget | null = null;
-    let moveMode: "walk" | "approach" = "walk";
 
     if (liveForwardTower && nextTile) {
       const towerCenter = this.grid.tileToWorld(nextTile.x, nextTile.y);
@@ -686,8 +685,6 @@ export class Enemy {
       this.blockedByTower = liveForwardTower;
       if (towerContact <= this.radius + 1e-3) {
         attackTarget = liveForwardTower;
-      } else {
-        moveMode = "approach";
       }
     } else {
       const adjacentTower = this.findAdjacentLiveTowerInContact(enemyManager);
@@ -716,7 +713,7 @@ export class Enemy {
     }
 
     // Advance only the path centerline; x/y are derived after collision resolution.
-    if (hasNextTile && nextTile && moveMode === "walk" && !attackTarget) {
+    if (hasNextTile && nextTile && !this.blockedByTower && !this.attackingBase && !attackTarget) {
       // Walk the path (default or commander route) toward the next tile. This must
       // run before the base-perimeter pull so a "route" enemy keeps following its
       // route to the end (and reverts via releaseToDefault) instead of being held at
