@@ -88,17 +88,15 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
     // LLM / enemy-commander commands (Phase 1 commander seam). These mutate enemy
     // routing state and so return true (force-post the snapshot) except the
     // gridLayoutToggle config flip, which returns false (no visible state change).
-    case "llm:holdFormation": {
-      const enemies = engine.getEnemiesByIds(command.enemyIds);
-      for (const enemy of enemies) {
-        const route = engine.grid?.computeRoute(enemy.currentTile(), command.holdTile) ?? null;
-        enemy.applyRoute(route, "hold");
-      }
-      return true;
-    }
     case "llm:routeGroup": {
       const enemies = engine.getEnemiesByIds(command.enemyIds);
       for (const enemy of enemies) {
+        if (command.hold) {
+          const holdTile = command.holdTile ?? enemy.currentTile();
+          const holdRoute = engine.grid?.computeRoute(enemy.currentTile(), holdTile) ?? null;
+          enemy.applyRoute(holdRoute, "hold");
+          continue;
+        }
         if (!engine.grid || command.waypoints.length === 0) {
           enemy.releaseToDefault();
           continue;

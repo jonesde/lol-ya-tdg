@@ -47,8 +47,9 @@ describe("StubbyBrain", () => {
     );
     expect(commands).toHaveLength(2);
     for (const command of commands) {
-      expect(command.type).toBe("llm:holdFormation");
-      if (command.type === "llm:holdFormation") {
+      expect(command.type).toBe("llm:routeGroup");
+      if (command.type === "llm:routeGroup") {
+        expect(command.hold).toBe(true);
         expect(command.enemyIds).toHaveLength(1);
         const id = command.enemyIds[0]!;
         const expectedTile = id === 1 ? { x: 2, y: 3 } : { x: 4, y: 3 };
@@ -90,6 +91,7 @@ describe("StubbyBrain", () => {
     const command = rush[0]!;
     expect(command.type).toBe("llm:routeGroup");
     if (command.type === "llm:routeGroup") {
+      expect(command.hold).toBe(false);
       expect(command.waypoints).toEqual([]);
       expect(command.enemyIds).toEqual([1, 2]);
     }
@@ -106,7 +108,7 @@ describe("StubbyBrain", () => {
       observation({ currentWave: 1, remainingScheduledSpawns: 4, pendingEnemyCount: 0, enemies: [enemy(1, 2, 3)] }),
       memory,
     );
-    expect(commands.every((c) => c.type !== "llm:routeGroup")).toBe(true);
+    expect(commands.some((c) => c.type === "llm:routeGroup" && c.hold === false)).toBe(false);
   });
 
   it("rush captures only the current wave's seen ids across a wave boundary", () => {
@@ -130,6 +132,7 @@ describe("StubbyBrain", () => {
     const command = rush[0]!;
     expect(command.type).toBe("llm:routeGroup");
     if (command.type === "llm:routeGroup") {
+      expect(command.hold).toBe(false);
       expect(command.enemyIds).toEqual([3]);
     }
     // Wave 1's ids were never released — proven by their continued presence.
@@ -145,9 +148,9 @@ describe("StubbyBrain", () => {
       observation({ currentWave: 2, remainingScheduledSpawns: 3, enemies: [enemy(1, 2, 3)] }),
       memory,
     );
-    const holds = commands.filter((c) => c.type === "llm:holdFormation");
+    const holds = commands.filter((c) => c.type === "llm:routeGroup" && c.hold === true);
     expect(holds).toHaveLength(1);
-    if (holds[0]!.type === "llm:holdFormation") {
+    if (holds[0]!.type === "llm:routeGroup") {
       expect(holds[0]!.enemyIds).toEqual([1]);
     }
     expect(memory.seenByWave.get(2)).toEqual(new Set([1]));

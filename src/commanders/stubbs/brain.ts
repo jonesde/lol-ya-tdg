@@ -167,6 +167,7 @@ export function createStubbsBrain(): CommanderBrain {
                 commandId: 0,
                 type: "llm:routeGroup",
                 enemyIds: routableIds,
+                hold: false,
                 waypoints: [{ x: targetWaypoint.x, y: targetWaypoint.y }],
               });
             }

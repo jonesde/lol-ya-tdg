@@ -82,7 +82,7 @@ describe("Integration: real commander worker round-trip (stubby)", () => {
     const toggles = firstCommands.filter((c) => c.type === "llm:gridLayoutToggle");
     expect(toggles).toHaveLength(1);
     // Spawned enemies are held while spawning.
-    const holds = firstCommands.filter((c) => c.type === "llm:holdFormation");
+    const holds = firstCommands.filter((c) => c.type === "llm:routeGroup" && c.hold === true);
     expect(holds.length).toBeGreaterThan(0);
 
     // Apply the captured commands back through applyCommand.
@@ -104,7 +104,9 @@ describe("Integration: real commander worker round-trip (stubby)", () => {
       engine.update(FIXED_DT);
       if (tick % 10 === 0) {
         const commands = postObservation();
-        rushCommands = commands.filter((c) => c.type === "llm:routeGroup" && c.waypoints.length === 0);
+        rushCommands = commands.filter(
+          (c) => c.type === "llm:routeGroup" && c.hold === false && c.waypoints.length === 0,
+        );
         for (const command of commands) applyCommand(engine, command);
       }
     }

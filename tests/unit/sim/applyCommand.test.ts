@@ -31,15 +31,17 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     return enemy.id;
   }
 
-  it("llm:holdFormation sets routingMode to 'hold'", () => {
+  it("llm:routeGroup with hold: true sets routingMode to 'hold'", () => {
     const enemyId = firstEnemyId();
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;
     const tile = enemy.currentTile();
     const result = applyCommand(engine, {
       commandId: 0,
-      type: "llm:holdFormation",
+      type: "llm:routeGroup",
       enemyIds: [enemyId],
+      hold: true,
       holdTile: tile,
+      waypoints: [],
     });
     expect(result).toBe(true);
     expect(enemy.routingMode).toBe("hold");
@@ -50,7 +52,13 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;
     enemy.applyRoute(engine.grid!.computeRoute(enemy.currentTile(), engine.grid!.getPathFor(0)![3]!), "hold");
     expect(enemy.routingMode).toBe("hold");
-    const result = applyCommand(engine, { commandId: 0, type: "llm:routeGroup", enemyIds: [enemyId], waypoints: [] });
+    const result = applyCommand(engine, {
+      commandId: 0,
+      type: "llm:routeGroup",
+      enemyIds: [enemyId],
+      hold: false,
+      waypoints: [],
+    });
     expect(result).toBe(true);
     expect(enemy.routingMode).toBe("default");
   });
@@ -63,6 +71,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
       commandId: 0,
       type: "llm:routeGroup",
       enemyIds: [enemyId],
+      hold: false,
       waypoints: [waypoint],
     });
     expect(result).toBe(true);
@@ -128,6 +137,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
       commandId: 0,
       type: "llm:routeGroup",
       enemyIds: [enemyId],
+      hold: false,
       waypoints: [isolatedTile!],
     });
     expect(result).toBe(true);
@@ -166,6 +176,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
       commandId: 0,
       type: "llm:routeGroup",
       enemyIds: [enemyId],
+      hold: false,
       waypoints: [reachableWaypoint, isolatedTile!],
     });
     expect(result).toBe(true);

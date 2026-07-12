@@ -1098,9 +1098,8 @@ export type Command =
   | { commandId: number; type: "lifecycle:dispose" }
 
   // ---- Future LLM commands (stubs — implementations deferred to commander plane) ----
-  | { commandId: number; type: "llm:routeGroup"; groupId: string; waypoints: Array<{ x: number; y: number }> }
+  | { commandId: number; type: "llm:routeGroup"; groupId: string; waypoints: Array<{ x: number; y: number }>; hold?: boolean; holdTile?: { x: number; y: number } }
   | { commandId: number; type: "llm:setTargeting"; enemyIds: string[]; mode: string }
-  | { commandId: number; type: "llm:holdFormation"; groupId: string; chokepointId: string; untilWave: number }
 ```
 
 ### `SimulationSnapshot` schema

@@ -25,7 +25,7 @@ export function stopEnemyCommander(): void {
   if (snapshot) {
     const enemyIds = snapshot.enemies.map((enemy) => enemy.id);
     if (enemyIds.length > 0) {
-      dispatchCommand({ commandId: 0, type: "llm:routeGroup", enemyIds, waypoints: [] });
+      dispatchCommand({ commandId: 0, type: "llm:routeGroup", enemyIds, hold: false, waypoints: [] });
     }
   }
   stopRelay();

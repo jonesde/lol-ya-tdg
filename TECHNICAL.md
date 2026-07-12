@@ -297,9 +297,10 @@ cache supplied by the relay, not the whole thing.
 
 - **Sergeant Stubby** (`src/commanders/stubby/brain.ts`): Hold-then-rush. While a
   wave is still emerging (`remainingScheduledSpawns > 0` or `pendingEnemyCount > 0`),
-  holds each newly-seen enemy at its current tile via `llm:holdFormation`. Once the
-  wave finishes emerging, releases all held enemies of that wave in one
-  `llm:routeGroup(enemyIds, [])` rush to the base. State keyed by wave number so
+  holds each newly-seen enemy at its current tile via `llm:routeGroup(enemyIds,
+  hold: true, holdTile)`. Once the wave finishes emerging, releases all held enemies
+  of that wave in one `llm:routeGroup(enemyIds, hold: false, [])` rush to the base.
+  State keyed by wave number so
   spillover never dilutes a prior wave's rush.
 - **Commander Stubbs** (`src/commanders/stubbs/brain.ts`): Aggressive, never holds.
   Computes BFS distances from every base tile over path/spawn/base tiles. For each
@@ -310,8 +311,8 @@ cache supplied by the relay, not the whole thing.
 
 **Lifecycle** (`src/commanders/index.ts`): `setEnemyCommander(kind)` starts the relay
 (which spawns the worker and sends `start`); `"none"` stops it.
-`stopEnemyCommander()` dispatches `llm:routeGroup(enemyIds, [])` for every live enemy
-(reverts held enemies to default path) before stopping the relay.
+`stopEnemyCommander()` dispatches `llm:routeGroup(enemyIds, hold: false, [])` for every
+live enemy (reverts held enemies to default path) before stopping the relay.
 
 ### Router Navigation Guards
 

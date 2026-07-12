@@ -32,9 +32,11 @@ export function createStubbyBrain(): CommanderBrain {
           seenIds.add(enemy.id);
           commands.push({
             commandId: 0,
-            type: "llm:holdFormation",
+            type: "llm:routeGroup",
             enemyIds: [enemy.id],
+            hold: true,
             holdTile: { x: enemy.tileX, y: enemy.tileY },
+            waypoints: [],
           });
         }
         memory.phase = "holding";
@@ -42,7 +44,13 @@ export function createStubbyBrain(): CommanderBrain {
       }
 
       if (memory.phase !== "rushing" && seenIds.size > 0) {
-        commands.push({ commandId: 0, type: "llm:routeGroup", enemyIds: Array.from(seenIds), waypoints: [] });
+        commands.push({
+          commandId: 0,
+          type: "llm:routeGroup",
+          enemyIds: Array.from(seenIds),
+          hold: false,
+          waypoints: [],
+        });
         memory.lastRushWaveNumber = currentWave;
         memory.phase = "rushing";
         memory.seenByWave.delete(currentWave);
