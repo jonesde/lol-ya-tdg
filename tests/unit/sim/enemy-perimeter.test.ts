@@ -311,4 +311,40 @@ describe("Enemy perimeter surround routing", () => {
     expect(afterAdjacent.length).toBeGreaterThan(0);
     expect(baseTarget.health).toBeLessThan(healthBeforeKill);
   });
+
+  it("F3: a stunned base attacker is still ejected from the base square and stays frozen", () => {
+    const { grid, enemyManager } = makeManager();
+    const baseTarget = new StubBaseTarget();
+    enemyManager.baseTarget = baseTarget;
+    const enemy = enemyManager.spawn("minion", 1, 0, 1);
+    expect(enemy).toBeTruthy();
+
+    // Drive the enemy to the base so it is attacking the base (contact-line state).
+    let steps = 0;
+    while (!enemy!.attackingBase && steps < 6000) {
+      enemyManager.update(FIXED_DT, null);
+      steps++;
+    }
+    expect(enemy!.attackingBase).toBe(true);
+
+    // Force the enemy INTO the base square interior, then stun it for a long time.
+    const base = grid.getBase();
+    const baseCenter = grid.tileToWorld(base.x, base.y);
+    enemy!.centerX = baseCenter.x;
+    enemy!.centerY = baseCenter.y;
+    enemy!.x = baseCenter.x;
+    enemy!.y = baseCenter.y;
+    enemy!.applyStun(5);
+
+    // Step several frames. The stun early-return skips movement and attack, but the
+    // end-of-frame clamps must still run so the enemy is ejected from the base square.
+    for (let step = 0; step < 30; step++) enemyManager.update(FIXED_DT, null);
+
+    const half = 1.5 * grid.tileSize;
+    const distance = distanceToBaseSquare(enemy!.x, enemy!.y, baseCenter.x, baseCenter.y, half);
+    // Ejected: its rendered body sits outside the square, not frozen inside it.
+    expect(distance).toBeGreaterThanOrEqual(enemy!.radius - 1e-6);
+    // Frozen: still attacking the base, never advanced past it.
+    expect(enemy!.attackingBase).toBe(true);
+  });
 });

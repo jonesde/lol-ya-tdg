@@ -590,6 +590,8 @@ export class Enemy {
     }
 
     if (this.stunTimer > 0) {
+      const hasNextTile = this.path != null && this.pathIdx < this.path.length - 1;
+      this.applyEndOfFrameClamps(hasNextTile);
       return;
     }
     if (!this.path || this.pathIdx >= this.path.length - 1) {
@@ -783,6 +785,16 @@ export class Enemy {
       }
     }
 
+    this.applyEndOfFrameClamps(hasNextTile);
+  }
+
+  // End-of-frame clamp: derive the rendered position from the centerline plus the
+  // world-space lane offset (clamping the perpendicular component to the tile), keep
+  // the rendered position out of the base square, keep the centerline out of the base
+  // square, and clamp contact-line enemies to their face span. Runs every frame and
+  // also for a stunned enemy (which skips movement/attack) so a stunned enemy is still
+  // ejected from the base square and held on its face tile.
+  private applyEndOfFrameClamps(hasNextTile: boolean): void {
     // Derive the real engine position from the centerline plus the world-space
     // lane offset. The offset vector is turn-invariant (it is not derived from
     // moveAngle), so no lateral jump occurs when rounding a right-angle corner.
@@ -925,15 +937,15 @@ export class Enemy {
       let clearance = Infinity;
       enemyManager.forEachEnemyInRange(candidateX, candidateY, probeRadius, (other) => {
         if (other === this || other.removed) return;
-        const otherDeltaX = other.centerX - candidateX;
-        const otherDeltaY = other.centerY - candidateY;
+        const otherDeltaX = other.x - candidateX;
+        const otherDeltaY = other.y - candidateY;
         const otherDist = Math.hypot(otherDeltaX, otherDeltaY);
         if (!checkForwardClearance) {
           if (otherDist < this.radius + other.radius - 1e-3) blocked = true;
           clearance = Math.min(clearance, otherDist);
         } else {
           const candidateToObjective = Math.hypot(objectiveX - candidateX, objectiveY - candidateY);
-          const otherToObjective = Math.hypot(objectiveX - other.centerX, objectiveY - other.centerY);
+          const otherToObjective = Math.hypot(objectiveX - other.x, objectiveY - other.y);
           if (otherToObjective < candidateToObjective - 1e-3) {
             const lateralDist = Math.abs(otherDeltaX * tangentX + otherDeltaY * tangentY);
             if (lateralDist < this.radius + other.radius - 1e-3) blocked = true;
@@ -1012,8 +1024,8 @@ export class Enemy {
       let count = 0;
       enemyManager.forEachEnemyInRange(candidateX, candidateY, probeRadius, (other) => {
         if (other === this || other.removed) return;
-        const otherDeltaX = other.centerX - candidateX;
-        const otherDeltaY = other.centerY - candidateY;
+        const otherDeltaX = other.x - candidateX;
+        const otherDeltaY = other.y - candidateY;
         const lateralDist = Math.abs(otherDeltaX * tangentX + otherDeltaY * tangentY);
         if (lateralDist < this.radius + other.radius - 1e-3) count++;
       });
@@ -1152,6 +1164,45 @@ export class Enemy {
     this.y = rendered.y;
   }
 
+  // Derive the face tangent (unit) for this enemy when it is at a contact line
+  // (attacking the base, or blocked by a tower), from the objective's exposed edge
+  // geometry rather than the cached contactTangentX/Y. Used by resolveCollisions to
+  // separate a contact-line pair ALONG the shared face; deriving it here makes the
+  // separation independent of update order (the cached tangent may be a prior-frame
+  // value for an enemy whose own contactLineSteer has not run yet this frame).
+  private contactFaceTangent(): { x: number; y: number } | null {
+    let objectiveX: number;
+    let objectiveY: number;
+    let segments: Array<{ x1: number; y1: number; x2: number; y2: number }>;
+    if (this.attackingBase) {
+      const base = this.grid.getBase();
+      const baseCenter = this.grid.tileToWorld(base.x, base.y);
+      objectiveX = baseCenter.x;
+      objectiveY = baseCenter.y;
+      segments = this.grid.getBaseEdgeSegments();
+    } else if (this.blockedByTower) {
+      const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
+      objectiveX = towerCenter.x;
+      objectiveY = towerCenter.y;
+      segments = this.grid.getTowerEdgeSegments(this.blockedByTower.tileX, this.blockedByTower.tileY, this.radius);
+    } else {
+      return null;
+    }
+    if (segments.length === 0) return null;
+    const contact = this.nearestPointOnSegments(segments, this.centerX, this.centerY);
+    const faceSegment = contact.segment;
+    if (!faceSegment) {
+      const normalLen = Math.hypot(contact.x - objectiveX, contact.y - objectiveY) || 1;
+      const normalX = (contact.x - objectiveX) / normalLen;
+      const normalY = (contact.y - objectiveY) / normalLen;
+      return { x: -normalY, y: normalX };
+    }
+    // Mirror the tangent derivation in clampContactToSpan: a horizontal face yields a
+    // horizontal tangent, a vertical face a vertical tangent.
+    if (faceSegment.y1 === faceSegment.y2) return { x: 1, y: 0 };
+    return { x: 0, y: 1 };
+  }
+
   // Unified contact-line steering for base and tower attacks. The enemy wants to be
   // ON the contact line (the exposed perimeter offset by its radius), not at a point.
   // When not yet on the line and not blocked, it presses forward. When blocked ahead
@@ -1233,7 +1284,7 @@ export class Enemy {
       if (enemyManager) {
         enemyManager.forEachEnemyInRange(this.x, this.y, this.radius * 2 + 0.5, (other) => {
           if (overlapping || other === this || other.removed) return;
-          const otherDist = Math.hypot(other.centerX - this.centerX, other.centerY - this.centerY);
+          const otherDist = Math.hypot(other.x - this.x, other.y - this.y);
           if (otherDist < this.radius + other.radius - 1e-3) overlapping = true;
         });
       }
@@ -1367,8 +1418,8 @@ export class Enemy {
     let blocked = false;
     enemyManager.forEachEnemyInRange(this.x, this.y, searchRange, (other) => {
       if (blocked || other === this || other.removed) return;
-      const deltaX = other.centerX - this.centerX;
-      const deltaY = other.centerY - this.centerY;
+      const deltaX = other.x - this.x;
+      const deltaY = other.y - this.y;
       const dist = Math.hypot(deltaX, deltaY);
       if (dist < 1e-6) {
         blocked = true;
@@ -1473,10 +1524,13 @@ export class Enemy {
         // normal is kept. The tangent is oriented from the other enemy toward this one.
         let normalX: number;
         let normalY: number;
-        const tangentDot = this.contactTangentX * other.contactTangentX + this.contactTangentY * other.contactTangentY;
-        if (bothAtLine && tangentDot > 0.5 && dist > 1e-6) {
-          let tx = this.contactTangentX;
-          let ty = this.contactTangentY;
+        const thisTangent = this.contactFaceTangent();
+        const otherTangent = other.contactFaceTangent();
+        const tangentDot =
+          thisTangent && otherTangent ? thisTangent.x * otherTangent.x + thisTangent.y * otherTangent.y : 0;
+        if (bothAtLine && thisTangent && otherTangent && tangentDot > 0.5 && dist > 1e-6) {
+          let tx = thisTangent.x;
+          let ty = thisTangent.y;
           const toward = (this.centerX - other.centerX) * tx + (this.centerY - other.centerY) * ty;
           if (toward < 0) {
             tx = -tx;
@@ -1525,9 +1579,23 @@ export class Enemy {
           other.centerY += otherSeparation * otherSign * normalY;
           other.laneOffsetX = 0;
           other.laneOffsetY = 0;
+          // Re-project the other (already-updated) enemy onto its face span and snap
+          // its rendered position to the centerline immediately, so the spatial hash
+          // (keyed on other.x/other.y) and every actual-position query see the
+          // displacement this frame (not a frame later) and the rendered body stays on
+          // the path tile the enemy attacks from. Without this, a collision push leaves
+          // the neighbor off-tile until its own next update re-clamps it.
+          other.clampContactToSpan();
+          other.x = other.centerX;
+          other.y = other.centerY;
         } else {
           other.laneOffsetX += otherSeparation * otherSign * normalX;
           other.laneOffsetY += otherSeparation * otherSign * normalY;
+          // Re-derive the other enemy's rendered position from its centerline plus lane
+          // offset so the spatial hash and actual-position queries see the (visual) spread
+          // immediately. Path-followers are not span-clamped; their offset is in-tile.
+          other.x = other.centerX + other.laneOffsetX;
+          other.y = other.centerY + other.laneOffsetY;
         }
       });
     }
