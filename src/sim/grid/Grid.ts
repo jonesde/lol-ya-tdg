@@ -413,34 +413,4 @@ export class Grid {
     }
     return segments;
   }
-
-  // Nearest point on the exposed (path-adjacent) base edge to (pointX, pointY).
-  // Replaces the full-perimeter projection so enemies only press toward reachable
-  // edge and never aim at a terrain-backed face. Falls back to the base center when
-  // no edge is exposed.
-  getBaseEdgeNearestPoint(pointX: number, pointY: number): { x: number; y: number } {
-    const segments = this.getBaseEdgeSegments();
-    if (segments.length === 0) {
-      const base = this.getBase();
-      return this.tileToWorld(base.x, base.y);
-    }
-    let bestX = segments[0]!.x1;
-    let bestY = segments[0]!.y1;
-    let bestDistance = Infinity;
-    for (const segment of segments) {
-      const minX = Math.min(segment.x1, segment.x2);
-      const maxX = Math.max(segment.x1, segment.x2);
-      const minY = Math.min(segment.y1, segment.y2);
-      const maxY = Math.max(segment.y1, segment.y2);
-      const clampedX = Math.max(minX, Math.min(maxX, pointX));
-      const clampedY = Math.max(minY, Math.min(maxY, pointY));
-      const distance = (clampedX - pointX) ** 2 + (clampedY - pointY) ** 2;
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestX = clampedX;
-        bestY = clampedY;
-      }
-    }
-    return { x: bestX, y: bestY };
-  }
 }

@@ -110,7 +110,6 @@ interface GridRef {
     tileY: number,
     radius: number,
   ): Array<{ x1: number; y1: number; x2: number; y2: number }>;
-  getBaseEdgeNearestPoint(pointX: number, pointY: number): { x: number; y: number };
   blocked: Set<string>;
   pathVersion: number;
   computeSurroundRoute(
@@ -433,8 +432,14 @@ export class Enemy {
     }
     this.path = routePath;
     this.routingMode = mode;
-    this.pathIdx = snapPathIndex(routePath, this.currentTile());
+    this.pathIdx = snapPathIndex(routePath, this.currentTile(), 0, mode !== "hold");
+    if (this.pathIdx + 1 < routePath.length) {
+      const anchorWorld = this.grid.tileToWorld(routePath[this.pathIdx]!.x, routePath[this.pathIdx]!.y);
+      const nextWorld = this.grid.tileToWorld(routePath[this.pathIdx + 1]!.x, routePath[this.pathIdx + 1]!.y);
+      this.moveAngle = Math.atan2(nextWorld.y - anchorWorld.y, nextWorld.x - anchorWorld.x);
+    }
     this.arrived = false;
+    this.attackingBase = false;
   }
 
   // Reverts the enemy to its default grid path for its spawn and re-anchors onto
@@ -443,6 +448,7 @@ export class Enemy {
   releaseToDefault(): void {
     this.routingMode = "default";
     this.arrived = false;
+    this.attackingBase = false;
     const defaultPath = this.grid.getPathFor(this.spawnIndex);
     if (!defaultPath || defaultPath.length === 0) {
       this.path = null;
@@ -461,7 +467,6 @@ export class Enemy {
     // The last path index is the base tile for the default grid path, and snapping
     // to it would place the enemy on the base and (next frame) trigger attackingBase
     // prematurely — so it is never an eligible anchor.
-    // be allowed to reach, so the last tile is only excluded when it is a base tile.
     const lastTile = newPath[newPath.length - 1]!;
     const lastTileIsBase = this.grid.isBase(lastTile.x, lastTile.y);
     const lastPathIdx = lastTileIsBase ? newPath.length - 1 : newPath.length;
@@ -516,8 +521,10 @@ export class Enemy {
       }
     }
     // Final guard: never park on the base tile via a snap — always leave at least one
-    // waypoint ahead so the enemy reaches base via normal movement.
-    if (anchorIdx >= lastPathIdx) {
+    // waypoint ahead so the enemy reaches base via normal movement. Also covers the
+    // degenerate "every tile was excluded" case (e.g. a 1-tile path whose only tile is
+    // the base), where the anchor loops above never set anchorIdx and it stays -1.
+    if (anchorIdx < 0 || anchorIdx >= lastPathIdx) {
       anchorIdx = Math.max(0, lastPathIdx - 1);
     }
     this.pathIdx = anchorIdx;
@@ -529,6 +536,10 @@ export class Enemy {
     this.centerY = anchorWorld.y;
     this.laneOffsetX = 0;
     this.laneOffsetY = 0;
+    if (this.pathIdx + 1 < this.path.length) {
+      const nextWorld = this.grid.tileToWorld(this.path[this.pathIdx + 1]!.x, this.path[this.pathIdx + 1]!.y);
+      this.moveAngle = Math.atan2(nextWorld.y - anchorWorld.y, nextWorld.x - anchorWorld.x);
+    }
   }
 
   update(dt: number, enemyManager: EnemyManagerRef | null) {
@@ -575,7 +586,7 @@ export class Enemy {
 
     if (this.heal > 0 && this.antiHealTimer <= 0 && enemyManager) {
       this.healTickDt = dt;
-      enemyManager.forEachEnemyInRange(this.x, this.y, this.healRange, this.applyHealAura);
+      enemyManager.forEachEnemyInRange(this.centerX, this.centerY, this.healRange, this.applyHealAura);
     }
 
     if (this.stunTimer > 0) {
@@ -606,7 +617,7 @@ export class Enemy {
     // hold/route enemy's path is commander-owned and must not be clobbered on a
     // tower build/sell.
     const gridVersion = this.grid.pathVersion;
-    if (this.routingMode === "default" && this.pathVersion !== gridVersion) {
+    if (this.routingMode === "default" && !this.attackingBase && this.pathVersion !== gridVersion) {
       this.pathVersion = gridVersion;
       const newPath = this.grid.getPathFor(this.spawnIndex);
       if (newPath) {
@@ -623,7 +634,7 @@ export class Enemy {
     // clamps to the edge on this side instead of walking into the interior. Hold-mode
     // enemies are excluded so a commander hold tile inside the base footprint stays
     // reachable.
-    if (this.routingMode !== "hold" && !this.attackingBase) {
+    if (this.routingMode === "default" && !this.attackingBase) {
       const contactBaseTile = this.grid.getBase();
       const contactBaseCenter = this.grid.tileToWorld(contactBaseTile.x, contactBaseTile.y);
       const contact = baseSquareContact(
@@ -761,7 +772,8 @@ export class Enemy {
     this.resolveCollisions(enemyManager);
 
     // Attack tick. Stun already returned above, so this only runs while unstunned;
-    // the timer is paused (not reset) during stun and slowed while slowed.
+    // the timer is paused (not reset) during stun. It counts down in real time, and
+    // the inter-attack interval is extended while slowed (see reset below).
     if (attackTarget) {
       this.attackTimer -= dt;
       if (this.attackTimer <= 0) {
@@ -833,8 +845,8 @@ export class Enemy {
     }
   }
 
-  // Nearest point on a set of axis-aligned segments to (pointX, pointY). Mirrors
-  // Grid.getBaseEdgeNearestPoint but works for arbitrary segment lists (tower edges).
+  // Nearest point on a set of axis-aligned segments to (pointX, pointY). Works for
+  // arbitrary segment lists (tower edges as well as base edges).
   // Returns the clamped point and the segment it lies on so the caller can derive the
   // face-aligned tangent. Falls back to (pointX, pointY) with a null segment when the
   // list is empty so the caller still has a valid anchor point.
