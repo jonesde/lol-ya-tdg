@@ -68,6 +68,11 @@ const PRIORITY_YIELD_MAX = 0.9; // max fraction the lower-priority enemy takes (
 // is to slide along the face to an open spot; a larger per-frame step lets a
 // packed pile flow instead of deadlocking in a 1-D packed column. Tune via
 // PoliteMotion.md §6 if the pile deadlocks or zips.
+// Shared contact epsilon for the attack gate: an enemy damages a blocked tower or
+// the base once its centerline is within `radius + ATTACK_CONTACT_EPSILON` of the
+// objective square. Identical for towers and the base so the two attack paths cannot
+// drift apart.
+const ATTACK_CONTACT_EPSILON = 1e-6;
 const LATERAL_SPEED_MULT = 3;
 
 interface SlowEntry {
@@ -683,7 +688,7 @@ export class Enemy {
         this.grid.tileSize / 2,
       );
       this.blockedByTower = liveForwardTower;
-      if (towerContact <= this.radius + 1e-3) {
+      if (towerContact <= this.radius + ATTACK_CONTACT_EPSILON) {
         attackTarget = liveForwardTower;
       }
     } else {
@@ -709,7 +714,7 @@ export class Enemy {
         attackBaseCenter.y,
         1.5 * this.grid.tileSize,
       );
-      if (attackDistToSquare <= this.radius + 1e-6) attackTarget = this.baseTarget;
+      if (attackDistToSquare <= this.radius + ATTACK_CONTACT_EPSILON) attackTarget = this.baseTarget;
     }
 
     // Advance only the path centerline; x/y are derived after collision resolution.
@@ -1625,7 +1630,7 @@ export class Enemy {
         towerCenter.y,
         this.grid.tileSize / 2,
       );
-      if (squareContact > this.radius + 1e-3) continue;
+      if (squareContact > this.radius + ATTACK_CONTACT_EPSILON) continue;
       if (!lowestTower || tower.health < lowestTower.health) lowestTower = tower;
     }
     return lowestTower;
