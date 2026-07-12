@@ -586,7 +586,7 @@ export class Enemy {
 
     if (this.heal > 0 && this.antiHealTimer <= 0 && enemyManager) {
       this.healTickDt = dt;
-      enemyManager.forEachEnemyInRange(this.centerX, this.centerY, this.healRange, this.applyHealAura);
+      enemyManager.forEachEnemyInRange(this.x, this.y, this.healRange, this.applyHealAura);
     }
 
     if (this.stunTimer > 0) {
@@ -1231,7 +1231,7 @@ export class Enemy {
     if (onLine && !blocked) {
       let overlapping = false;
       if (enemyManager) {
-        enemyManager.forEachEnemyInRange(this.centerX, this.centerY, this.radius * 2 + 0.5, (other) => {
+        enemyManager.forEachEnemyInRange(this.x, this.y, this.radius * 2 + 0.5, (other) => {
           if (overlapping || other === this || other.removed) return;
           const otherDist = Math.hypot(other.centerX - this.centerX, other.centerY - this.centerY);
           if (otherDist < this.radius + other.radius - 1e-3) overlapping = true;
@@ -1240,16 +1240,17 @@ export class Enemy {
       if (!overlapping) return;
     }
     // Search for an open lateral spot. Probe from the enemy's own body position
-    // (centerX/centerY) so the overlap checks in findLateralOpenSpot compare
-    // candidate points against other enemies' bodies in the same depth frame. The
+    // (x/y, the derived value the spatial hash is keyed on) so the overlap checks in
+    // findLateralOpenSpot compare candidate points against other enemies' bodies in
+    // the same frame the hash was built from. The
     // previous code probed on-line enemies at the contact point on the square edge
     // — a full `radius` closer to the base than their actual body — which
     // systematically over-estimated separation by up to `radius` and let enemies
     // move into spots that actually overlapped, then get shoved apart by collision
     // every frame (jitter). Probing at the body keeps the frame consistent for both
     // on-line and back-row enemies.
-    const probeX = this.centerX;
-    const probeY = this.centerY;
+    const probeX = this.x;
+    const probeY = this.y;
     const probeT = (probeX - objectiveX) * tangentX + (probeY - objectiveY) * tangentY;
     const span = this.computeExposedSpan(segments, objectiveX, objectiveY, tangentX, tangentY, normalX, normalY);
     // Clamp the span inward by the enemy's radius so the enemy center stays fully within
@@ -1364,7 +1365,7 @@ export class Enemy {
     const hy = headingY / headingLen;
     const searchRange = this.grid.tileSize + this.radius * 2;
     let blocked = false;
-    enemyManager.forEachEnemyInRange(this.centerX, this.centerY, searchRange, (other) => {
+    enemyManager.forEachEnemyInRange(this.x, this.y, searchRange, (other) => {
       if (blocked || other === this || other.removed) return;
       const deltaX = other.centerX - this.centerX;
       const deltaY = other.centerY - this.centerY;
@@ -1404,7 +1405,7 @@ export class Enemy {
   private resolveCollisions(enemyManager: EnemyManagerRef | null): void {
     if (!enemyManager) return;
     for (let iter = 0; iter < COLLISION_ITERATIONS; iter++) {
-      enemyManager.forEachEnemyInRange(this.centerX, this.centerY, this.grid.tileSize, (other) => {
+      enemyManager.forEachEnemyInRange(this.x, this.y, this.grid.tileSize, (other) => {
         if (other === this) return;
         const perpAx = -Math.sin(this.moveAngle);
         const perpAy = Math.cos(this.moveAngle);
