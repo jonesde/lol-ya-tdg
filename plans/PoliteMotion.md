@@ -332,6 +332,18 @@ Keep:
 - `resolveCollisions` (`:1136`) — modified, not replaced.
 - The existing `COLLISION_STIFFNESS` and `COLLISION_ITERATIONS` constants (`:65-66`).
 
+> **Detour scoping — implemented decision (deviation from the original §3.7 scope).**
+> The detour is gated on `blockedByTower === null` only, which excludes **tower-blocked**
+> enemies (the Issue-2 regression: a tower-blocked enemy is already steered by
+> `contactLineSteer` and must not also accumulate a detour). It deliberately does NOT
+> exclude `attackingBase` enemies: excluding them broke two established base-pile
+> spreading tests (`lateral redirect`, `boss pushes through`), because the legacy detour
+> is what spreads a packed base pile across the exposed tiles / around the perimeter
+> (`chooseDetourTile`). The smooth `contactLineSteer` cross-face alternative was prototyped
+> but conflicted with the within-face `findLeastBlockedLateral` fallback (any early-return
+> cross-face overrode the established lateral spread those tests assert), so the legacy
+> detour remains the cross-face mechanism, scoped to non-tower-blocked enemies.
+
 ---
 
 ## 4. Test Changes

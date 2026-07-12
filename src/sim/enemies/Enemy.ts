@@ -731,14 +731,22 @@ export class Enemy {
     // base. This spreads a pile across a tile's width and overflows it into
     // neighbouring base-adjacent tiles instead of stacking one-deep or drifting out.
     // Only default-mode enemies pile and seek; held/route enemies keep their own logic.
-    this.updateBlockedState(dt, enemyManager);
+    // The legacy tile-detour is scoped to enemies that are NOT pinned against a tower:
+    // a tower-blocked enemy is already steered by contactLineSteer and must not also
+    // accumulate a detour (the Issue-2 regression). Base-attacking enemies remain in
+    // detour scope because the detour is what spreads a packed base pile across the
+    // exposed tiles / around the perimeter.
+    if (this.blockedByTower === null) {
+      this.updateBlockedState(dt, enemyManager);
+    }
     if (this.detourCooldown > 0) this.detourCooldown -= dt;
     if (
       this.routingMode === "default" &&
       this.blockedTimer > BLOCKED_TIME &&
       !this.detourTile &&
       this.detourCooldown <= 0 &&
-      (!attackTarget || this.attackingBase)
+      (!attackTarget || this.attackingBase) &&
+      this.blockedByTower === null
     ) {
       const detour = this.chooseDetourTile(enemyManager);
       if (detour) {
@@ -1327,14 +1335,17 @@ export class Enemy {
       objectiveY,
       !onLine,
     );
+    // Line is fully packed: no lateral position has a clear forward path. Instead of
+    // holding in a single column (which produces the T-formation), slide toward the
+    // least-blocked lateral position — the tangent offset where the fewest enemies
+    // block the forward path. This aligns enemies with gaps between front-row enemies,
+    // producing a staggered/hexagonal pile rather than a single column. It applies to
+    // on-line enemies too: a packed front line should actively re-spread rather than
+    // just hold in overlap and rely on collision to separate them. Cross-face perimeter
+    // spill (around a base corner onto an adjacent face) is handled by the legacy
+    // tile-detour, which is scoped to path-following enemies (PoliteMotion.md §3.7);
+    // contact-line enemies are steered here and spread within the current face.
     if (!open) {
-      // Line is fully packed: no lateral position has a clear forward path. Instead of
-      // holding in a single column (which produces the T-formation), slide toward the
-      // least-blocked lateral position — the tangent offset where the fewest enemies
-      // block the forward path. This aligns enemies with gaps between front-row enemies,
-      // producing a staggered/hexagonal pile rather than a single column. It applies to
-      // on-line enemies too: a packed front line should actively re-spread rather than
-      // just hold in overlap and rely on collision to separate them.
       if (enemyManager) {
         const fallback = this.findLeastBlockedLateral(
           enemyManager,
