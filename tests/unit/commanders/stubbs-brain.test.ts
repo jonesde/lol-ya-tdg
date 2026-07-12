@@ -64,7 +64,7 @@ describe("StubbsBrain", () => {
       observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100), tower(3, 3, 60)] }),
       memory,
     );
-    const hold = commands.find((c) => c.type === "llm:holdFormation");
+    const hold = commands.find((c) => c.type === "llm:routeGroup" && c.hold === true);
     expect(hold).toBeUndefined();
     const waypoint = routeGroupWaypoint(commands);
     expect(waypoint).not.toBeNull();

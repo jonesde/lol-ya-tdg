@@ -201,9 +201,8 @@ The schema is a discriminated union. Categories include:
   - `{type: "lifecycle:dispose"}` — clean shutdown
   - *(Note: `lifecycle:setTheme` is intentionally omitted — mid-run theme switching is out of scope per `README.md`. Add it if mid-run switching ever becomes in-scope.)*
 - **Future LLM commands** (same schema, same queue):
-  - `{type: "llm:routeGroup", groupId, waypoints}`
+  - `{type: "llm:routeGroup", enemyIds[], waypoints, hold?, holdTile?}` — `hold: true` routes enemies to `holdTile` and holds (replaces the old `llm:holdFormation`); `hold: false`/absent chains waypoints to the base
   - `{type: "llm:setTargeting", enemyIds[], mode}`
-  - `{type: "llm:holdFormation", groupId, chokepointId, untilWave}`
   - `{type: "llm:coordinateAssault", groupIds[], wave}`
 
 Treating human input and LLM commands as the same kind of thing is the architectural payoff of the spine. A scripted scenario or a replay is just another command producer. A second LLM (an evaluator, an adversary in testing) is just another command producer.

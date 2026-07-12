@@ -357,7 +357,6 @@ export function applyCommand(engine: GameEngine, command: Command): void {
     // LLM commands stub to no-op for now — implemented when the commander plane lands.
     case "llm:routeGroup":
     case "llm:setTargeting":
-    case "llm:holdFormation":
       // No-op until the commander plane is built (ArchitecturePlan.md §4.3).
       break;
     default:

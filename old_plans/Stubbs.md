@@ -67,8 +67,7 @@ applyCommand.ts:89-93) with the usable, enemy-id-addressed shape:
 
 ```ts
 // Enemies are addressed by id — EnemySnapshot.id is number (SimulationSnapshot.ts:97-98).
-| { commandId: number; type: "llm:holdFormation"; enemyIds: number[]; holdTile: { x: number; y: number } }
-| { commandId: number; type: "llm:routeGroup"; enemyIds: number[]; waypoints: Array<{ x: number; y: number }> }
+| { commandId: number; type: "llm:routeGroup"; enemyIds: number[]; hold?: boolean; holdTile?: { x: number; y: number }; waypoints: Array<{ x: number; y: number }> }
 | { commandId: number; type: "llm:setTargeting"; enemyIds: number[]; mode: string }
 | { commandId: number; type: "llm:gridLayoutToggle" }   // data-feed toggle (see §1.4)
 ```
@@ -79,8 +78,9 @@ Semantics under the target-tile model:
 - `llm:routeGroup` with **non-empty `waypoints`** = route through each waypoint to the base; the
   engine chains `Grid.computeRoute` per leg (§1.2). The command *completes* when the enemy reaches
   the last waypoint, after which it defaults back to the base — which is already the final leg.
-- `llm:holdFormation` = route to `holdTile` and **stay** (`routingMode = "hold"`); never
-  auto-completes. Release is a later `llm:routeGroup(enemyIds, [])`.
+- `llm:routeGroup` with `hold: true` = route to `holdTile` (defaults to the enemy's current tile)
+  and **stay** (`routingMode = "hold"`); never auto-completes. Release is a later
+  `llm:routeGroup(enemyIds, hold: false, [])`.
 - `llm:setTargeting` = store `enemy.targetingMode` (used only by future logic; harmless now).
 - `llm:gridLayoutToggle` = flip the `gridLayout` data feed (see §1.4). **Not** a per-enemy command.
 
@@ -110,10 +110,10 @@ eventual LLM, which will be told (via observation/prompt) to emit path-tile wayp
 - `applyCommand.ts`: implement the `llm:*` cases (return `true` so the worker force-posts the
   snapshot). Each needs to map `enemyIds` → `Enemy` instances — add
   `GameEngine.getEnemiesByIds(ids): Enemy[]` (filter `this.enemyManager.enemies` by `e.id`).
-  - `llm:holdFormation(enemyIds, holdTile)` → for each enemy, compute
+  - `llm:routeGroup(enemyIds, hold: true, holdTile)` → for each enemy, compute
     `route = engine.grid.computeRoute(enemy.currentTile(), holdTile)` and call
     `enemy.applyRoute(route, "hold")`.
-  - `llm:routeGroup(enemyIds, waypoints)`:
+  - `llm:routeGroup(enemyIds, hold: false, waypoints)`:
     - **empty** → `enemy.releaseToDefault()` for each (identical to the §1.3 stop-cleanup
       release, so held enemies unfreeze and rejoin the grid path).
     - **non-empty** → for each enemy, chain `computeRoute` for each leg
@@ -314,9 +314,10 @@ if (slice.gridLayout) memory.gridLayout = slice.gridLayout;
 - **Memory shape:** `phase: "idle" | "holding" | "rushing"`, `seenByWave: Map<number, Set<number>>`
   (enemy ids seen, keyed by wave number), `lastRushWaveNumber: number | null`, and `gridLayout`.
 - While spawning (`pendingEnemyCount > 0` or `remainingScheduledSpawns > 0`): issue
-  `llm:holdFormation` for **newly-seen** enemy ids in the *current* wave, holding each at its
-  **current tile** (≈ near spawn; the brain emits `holdTile = { x: enemy.tileX, y: enemy.tileY }`
-  from the observation), tracked in `seenByWave.get(currentWave)` to avoid re-dispatching.
+  `llm:routeGroup(enemyIds, hold: true, holdTile)` for **newly-seen** enemy ids in the *current*
+  wave, holding each at its **current tile** (≈ near spawn; the brain emits
+  `holdTile = { x: enemy.tileX, y: enemy.tileY }` from the observation), tracked in
+  `seenByWave.get(currentWave)` to avoid re-dispatching.
 - Once `remainingScheduledSpawns === 0` **and** the overflow pending count is `0` (all enemies have
   emerged and are active on the field): issue one `llm:routeGroup(enemyIds, [])` to release *only
   the current wave's* seen ids (`seenByWave.get(currentWave)`) to rush the base at once; set
@@ -368,8 +369,9 @@ snapshot, or protocol changes are needed** — Stubbs reuses the `llm:routeGroup
 `Grid.computeRoute` machinery (§1.2) already specified.
 
 ### Why he's a better test case
-Stubby only ever emits `llm:holdFormation` and `llm:routeGroup(enemyIds, [])` — the **empty-waypoint**
-("release to default path") form. He therefore never exercises the non-empty-`waypoints` routing
+Stubby only ever emits `llm:routeGroup(enemyIds, hold: true, holdTile)` and
+`llm:routeGroup(enemyIds, hold: false, [])` — the **empty-waypoint** ("release to default path")
+form. He therefore never exercises the non-empty-`waypoints` routing
 path: `applyCommanderRoute` → `Grid.computeRoute` (§1.2) → the `dijkstraWeakestPath` tower-crossing
 fallback. Commander Stubbs's whole strategy is built on non-empty waypoints, so adding him covers
 that engine seam end-to-end.
