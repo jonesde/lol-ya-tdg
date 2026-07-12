@@ -311,32 +311,4 @@ describe("Enemy perimeter surround routing", () => {
     expect(afterAdjacent.length).toBeGreaterThan(0);
     expect(baseTarget.health).toBeLessThan(healthBeforeKill);
   });
-
-  it("legacy tile-detour is never selected for a tower-blocked (contact-line) enemy", () => {
-    // Issue 2: the legacy tile-detour (updateBlockedState / chooseDetourTile) must not
-    // fire for an enemy already on a contact line — specifically one pinned against a
-    // tower (blockedByTower set), which is steered by contactLineSteer instead. We pin
-    // an enemy against a tower and confirm it never accumulates a detour (detourTile
-    // stays null and blockedTimer never advances), so the two steering paths cannot
-    // fight each other.
-    const { enemyManager } = makeManager();
-    const enemy = enemyManager.spawn("minion", 1, 0, 1);
-    expect(enemy).toBeTruthy();
-    enemyManager.baseTarget = new StubBaseTarget();
-    for (let step = 0; step < 6000 && !enemy!.attackingBase; step++) {
-      enemyManager.update(FIXED_DT, null);
-    }
-    expect(enemy!.attackingBase).toBe(true);
-
-    // Pin it against a tower (the Issue-2 contact-line case) and exercise the steer.
-    enemy!.attackingBase = false;
-    enemy!.blockedByTower = { isGhost: false, tileX: 5, tileY: 5 } as unknown as NonNullable<Enemy["blockedByTower"]>;
-    type DetourProbe = { detourTile: unknown; blockedTimer: number };
-    const probe = enemy as unknown as DetourProbe;
-    for (let step = 0; step < 2000; step++) {
-      enemyManager.update(FIXED_DT, null);
-      expect(probe.detourTile).toBeNull();
-    }
-    expect(probe.blockedTimer).toBe(0);
-  });
 });

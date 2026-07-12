@@ -46,15 +46,6 @@ function snapPathIndex(
   return bestIdx;
 }
 
-// Lateral-seeking tuning. An enemy is treated as "blocked" only after it makes
-// little forward progress toward the base for BLOCKED_TIME seconds while another
-// enemy sits directly ahead of it. Once blocked it picks an open adjacent tile
-// (one that gets it closer to the base, or — at the base — an open base-adjacent
-// tile) and steers there, then re-evaluates after DETOUR_COOLDOWN seconds.
-const BLOCKED_PROGRESS_FACTOR = 0.3;
-const BLOCKED_TIME = 0.15;
-const DETOUR_COOLDOWN = 0.4;
-
 // Pile-smoothing tuning. resolveCollisions applies a hard overlap/2 correction in a
 // single pass. A front enemy pinned on the base keep-out gets shoved laterally by the
 // press from behind and re-projected by the keep-out each frame, producing the "pushed
@@ -133,14 +124,6 @@ interface EnemyManagerRef {
   getEnemiesInRange(x: number, y: number, range: number): Enemy[];
   forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void;
   towerAt(x: number, y: number): Tower | null;
-  // Base-adjacent open tiles (the `baseTile` of every exposed dock), used by lateral
-  // seeking so a blocked enemy can slip into an open tile still touching the base.
-  baseDocks(): { x: number; y: number }[];
-  // Every exposed dock, with its base-adjacent `baseTile` and the `outwardNormal`
-  // pointing away from the base. Used to spread the front line across a base face.
-  getBaseDocks(): { baseTile: { x: number; y: number }; outwardNormal: { dx: number; dy: number } }[];
-  // Count of live enemies standing on a tile, used to pick the least-occupied detour.
-  enemiesInTile(tileX: number, tileY: number): number;
 }
 
 export class Enemy {
@@ -229,13 +212,6 @@ export class Enemy {
   antiHealTimer!: number;
   lastCellX!: number;
   lastCellY!: number;
-  // Lateral-seeking state: time spent stalled against another enemy, the previous
-  // frame's distance to the base (to measure forward progress), the tile currently
-  // being steered toward as a detour, and a cooldown between detour re-evaluations.
-  private blockedTimer: number = 0;
-  private lastObjectiveDist: number = 0;
-  private detourTile: { x: number; y: number } | null = null;
-  private detourCooldown: number = 0;
   private healTickDt: number = 0;
   private applyHealAura = (ally: Enemy): void => {
     if (ally === this) return;
@@ -726,60 +702,8 @@ export class Enemy {
       if (attackDistToSquare <= this.radius + 1e-6) attackTarget = this.baseTarget;
     }
 
-    // Lateral seeking: a blocked enemy (another enemy directly ahead, with little
-    // forward progress) steers into an open adjacent tile that gets it closer to the
-    // base. This spreads a pile across a tile's width and overflows it into
-    // neighbouring base-adjacent tiles instead of stacking one-deep or drifting out.
-    // Only default-mode enemies pile and seek; held/route enemies keep their own logic.
-    // The legacy tile-detour is scoped to enemies that are NOT pinned against a tower:
-    // a tower-blocked enemy is already steered by contactLineSteer and must not also
-    // accumulate a detour (the Issue-2 regression). Base-attacking enemies remain in
-    // detour scope because the detour is what spreads a packed base pile across the
-    // exposed tiles / around the perimeter.
-    if (this.blockedByTower === null) {
-      this.updateBlockedState(dt, enemyManager);
-    }
-    if (this.detourCooldown > 0) this.detourCooldown -= dt;
-    if (
-      this.routingMode === "default" &&
-      this.blockedTimer > BLOCKED_TIME &&
-      !this.detourTile &&
-      this.detourCooldown <= 0 &&
-      (!attackTarget || this.attackingBase) &&
-      this.blockedByTower === null
-    ) {
-      const detour = this.chooseDetourTile(enemyManager);
-      if (detour) {
-        this.detourTile = detour;
-        this.detourCooldown = DETOUR_COOLDOWN;
-      }
-    }
-
     // Advance only the path centerline; x/y are derived after collision resolution.
-    // A committed detour overrides the normal path/tower target so the enemy slips
-    // into the open tile it selected.
-    if (this.routingMode === "default" && (!attackTarget || this.attackingBase) && this.detourTile) {
-      const target = this.grid.tileToWorld(this.detourTile.x, this.detourTile.y);
-      const deltaX = target.x - this.centerX;
-      const deltaY = target.y - this.centerY;
-      const dist = Math.hypot(deltaX, deltaY);
-      const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
-      this.moveAngle = Math.atan2(deltaY, deltaX);
-      if (step >= dist) {
-        this.centerX = target.x;
-        this.centerY = target.y;
-      } else {
-        this.centerX += (deltaX / dist) * step;
-        this.centerY += (deltaY / dist) * step;
-      }
-      const tile = this.currentTile();
-      if (tile.x === this.detourTile.x && tile.y === this.detourTile.y) {
-        this.detourTile = null;
-        if (!this.attackingBase && this.path) {
-          this.pathIdx = snapPathIndex(this.path, tile, 0, false);
-        }
-      }
-    } else if (hasNextTile && nextTile && moveMode === "walk" && !attackTarget) {
+    if (hasNextTile && nextTile && moveMode === "walk" && !attackTarget) {
       // Walk the path (default or commander route) toward the next tile. This must
       // run before the base-perimeter pull so a "route" enemy keeps following its
       // route to the end (and reverts via releaseToDefault) instead of being held at
@@ -1134,7 +1058,7 @@ export class Enemy {
 
   // Re-project the enemy onto the objective's exposed face span AFTER collision
   // resolution. Collision separates contact-line pairs ALONG the shared face tangent
-  // (resolveCollisions:1487-1519) and applies that push straight to the centerline with
+  // (resolveCollisions (:1526)) and applies that push straight to the centerline with
   // no span re-clamp, so a pile pressed sideways can be shoved past the entry/corridor
   // span into the terrain tiles flanking it (enemies visibly drift off the path tile when
   // blocked by a tower in a 1-tile corridor or piled against the base). This clamps the
@@ -1455,64 +1379,6 @@ export class Enemy {
       }
     });
     return blocked;
-  }
-
-  // Tracks forward progress toward the base. An enemy counts as blocked only when it
-  // has made little progress for a sustained moment AND another enemy is directly
-  // ahead of it. Pure no-progress (e.g. arrived at the edge) does not. Sets
-  // `blockedTimer`, which the lateral-seeking branch reads. `detourCooldown` is
-  // decremented here so re-evaluation pauses briefly after a detour is chosen.
-  private updateBlockedState(dt: number, enemyManager: EnemyManagerRef | null): void {
-    const objective = this.objectiveCenter();
-    const dist = Math.hypot(this.centerX - objective.x, this.centerY - objective.y);
-    const stepDist = this.speed * this.slowFactor * this.grid.tileSize * dt;
-    const progress = this.lastObjectiveDist - dist;
-    this.lastObjectiveDist = dist;
-    const stalled = progress < stepDist * BLOCKED_PROGRESS_FACTOR;
-    const ahead = this.isBlockedAhead(enemyManager);
-    if (stalled && ahead) this.blockedTimer += dt;
-    else this.blockedTimer = 0;
-  }
-
-  // Picks an open adjacent tile for a blocked enemy to slip into. A candidate must
-  // be in bounds, not terrain, not tower-blocked, and not the base itself. It must
-  // either get the enemy closer to the base, or — once at the base — be another
-  // open base-adjacent tile (so the pile spreads around the perimeter). Among valid
-  // candidates the least-occupied tile wins, tie-broken by closeness to the base.
-  private chooseDetourTile(enemyManager: EnemyManagerRef | null): { x: number; y: number } | null {
-    if (!enemyManager) return null;
-    const current = this.currentTile();
-    const objective = this.objectiveCenter();
-    const tileSize = this.grid.tileSize;
-    const currentWorld = this.grid.tileToWorld(current.x, current.y);
-    const currentDist = Math.hypot(currentWorld.x - objective.x, currentWorld.y - objective.y);
-    const baseAdjacent = new Set(enemyManager.baseDocks().map((dock) => `${dock.x},${dock.y}`));
-    const neighbors = [
-      { x: current.x + 1, y: current.y },
-      { x: current.x - 1, y: current.y },
-      { x: current.x, y: current.y + 1 },
-      { x: current.x, y: current.y - 1 },
-    ];
-    let best: { x: number; y: number } | null = null;
-    let bestScore = Infinity;
-    for (const neighbor of neighbors) {
-      if (this.grid.isBase(neighbor.x, neighbor.y)) continue;
-      if (!this.grid.inBounds(neighbor.x, neighbor.y)) continue;
-      if (this.grid.isTerrain(neighbor.x, neighbor.y)) continue;
-      if (this.grid.blocked.has(`${neighbor.x},${neighbor.y}`)) continue;
-      const neighborWorld = this.grid.tileToWorld(neighbor.x, neighbor.y);
-      const neighborDist = Math.hypot(neighborWorld.x - objective.x, neighborWorld.y - objective.y);
-      const reducesDistance = neighborDist < currentDist - 1e-3;
-      const isBaseAdjacent = baseAdjacent.has(`${neighbor.x},${neighbor.y}`);
-      if (!reducesDistance && !(this.attackingBase && isBaseAdjacent)) continue;
-      const occupancy = enemyManager.enemiesInTile(neighbor.x, neighbor.y);
-      const score = neighborDist + occupancy * (tileSize * 2);
-      if (score < bestScore) {
-        bestScore = score;
-        best = neighbor;
-      }
-    }
-    return best;
   }
 
   // Lateral collision separation against nearby enemies using the spatial hash.

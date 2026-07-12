@@ -386,14 +386,6 @@ describe("contact-line steering (polite motion)", () => {
   let enemyManager: EnemyManager;
   let towerManager: TowerManager;
 
-  class StubBaseTarget implements AttackTarget {
-    readonly isGhost = false;
-    health = 100;
-    takeDamage(amount: number): void {
-      this.health -= amount;
-    }
-  }
-
   // A custom map with a 3-tile-wide approach to the tower, so enemies have room to
   // spread laterally around the tower instead of being confined to a 1-tile corridor.
   function makeWideApproachMap() {
@@ -438,14 +430,6 @@ describe("contact-line steering (polite motion)", () => {
     enemyManager = new EnemyManager(grid, makeParticleSystem(), 0);
     enemyManager.setTowerManager(towerManager);
   });
-
-  function distanceToBaseSquare(x: number, y: number, baseCenterX: number, baseCenterY: number, half: number): number {
-    const deltaX = x - baseCenterX;
-    const deltaY = y - baseCenterY;
-    const closestX = baseCenterX + Math.max(-half, Math.min(half, deltaX));
-    const closestY = baseCenterY + Math.max(-half, Math.min(half, deltaY));
-    return Math.hypot(x - closestX, y - closestY);
-  }
 
   it("enemies attacking a path-blocking tower spread across tiles instead of stacking in a single column", () => {
     const wideMap = makeWideApproachMap();
@@ -578,45 +562,6 @@ describe("contact-line steering (polite motion)", () => {
     }
   });
 
-  it("a boss pushes through a packed base line while minions slide aside (priority yielding)", () => {
-    const baseTarget = new StubBaseTarget();
-    enemyManager.baseTarget = baseTarget;
-    const base = grid.getBase();
-    const baseCenter = grid.tileToWorld(base.x, base.y);
-    const half = 1.5 * grid.tileSize;
-
-    const minions: Enemy[] = [];
-    for (let i = 0; i < 8; i++) {
-      const enemy = new Enemy("minion", 1, 0, grid, 1);
-      enemyManager.enemies.push(enemy);
-      minions.push(enemy);
-    }
-    enemyManager.updateSpatialHash();
-
-    for (let step = 0; step < 8000; step++) enemyManager.update(1 / 60, null);
-
-    const boss = new Enemy("boss", 1, 0, grid, 1);
-    enemyManager.enemies.push(boss);
-    enemyManager.updateSpatialHash();
-
-    for (let step = 0; step < 12000; step++) enemyManager.update(1 / 60, null);
-
-    expect(boss.removed).toBe(false);
-    expect(boss.attackingBase).toBe(true);
-    const bossDist = distanceToBaseSquare(boss.centerX, boss.centerY, baseCenter.x, baseCenter.y, half);
-    expect(bossDist).toBeLessThanOrEqual(boss.radius + 0.5);
-
-    const survivingMinions = minions.filter((e) => !e.removed && e.attackingBase);
-    if (survivingMinions.length === 0) return;
-    // The boss pushed through to the contact line; at least one minion should be
-    // further from the base center than the boss (it was pushed aside).
-    const anyMinionFurther = survivingMinions.some((e) => {
-      const minionDist = distanceToBaseSquare(e.centerX, e.centerY, baseCenter.x, baseCenter.y, half);
-      return minionDist > bossDist + 1e-3;
-    });
-    expect(anyMinionFurther).toBe(true);
-  });
-
   function makeCorridorMap() {
     const width = 10;
     const height = 3;
@@ -709,28 +654,5 @@ describe("contact-line steering (polite motion)", () => {
     for (const survivor of survivors) {
       expect(bodyOnPathTiles(survivor)).toBe(true);
     }
-  });
-
-  it("lateral redirect: a late arrival spreads to a different tile than the front enemy", () => {
-    const count = 6;
-    const enemies: Enemy[] = [];
-    for (let i = 0; i < count; i++) {
-      const enemy = new Enemy("minion", 1, 0, grid, 1);
-      enemies.push(enemy);
-      enemyManager.enemies.push(enemy);
-    }
-    enemyManager.updateSpatialHash();
-
-    for (let step = 0; step < 12000; step++) enemyManager.update(1 / 60, null);
-
-    const survivors = enemies.filter((e) => !e.removed && e.attackingBase);
-    expect(survivors.length).toBeGreaterThan(1);
-    const tiles = new Set(
-      survivors.map((e) => {
-        const tile = e.currentTile();
-        return `${tile.x},${tile.y}`;
-      }),
-    );
-    expect(tiles.size).toBeGreaterThan(1);
   });
 });

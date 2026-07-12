@@ -13,15 +13,6 @@ interface PendingEnemyEntry {
   wave: number;
 }
 
-// One exposed outer edge-segment of the 3x3 base. `baseTile` is the base tile
-// whose outer face is the dock; `outwardNormal` points away from the base center
-// to the traversable tile just outside it.
-interface BaseDock {
-  dockIndex: number;
-  baseTile: { x: number; y: number };
-  outwardNormal: { dx: number; dy: number };
-}
-
 const SpatialCellSize = 100;
 
 // Spatial-hash cell coordinates can be negative (enemies can briefly leave the
@@ -121,56 +112,6 @@ export class EnemyManager {
     if (this.enemies.length >= ENEMY_POOL_SIZE) return;
     const entry = queue.shift()!;
     this.spawn(entry.type, entry.level, spawnIndex, entry.wave);
-  }
-
-  // Returns the exposed outer edge-segments of the 3x3 base. A segment is exposed
-  // only when its outward-adjacent tile is in bounds and not terrain (i.e. not a
-  // terrain tile or the map edge), so enemies can stand on the tile just outside it.
-  // The 3x3 yields up to 12 segments (3 per cardinal side); corner base tiles
-  // contribute one segment per adjacent side, giving the formation room to spread to
-  // both sides as a side fills.
-  getBaseDocks(): BaseDock[] {
-    const base = this.grid.getBase();
-    const sides: { dx: number; dy: number }[] = [
-      { dx: 0, dy: -1 },
-      { dx: 0, dy: 1 },
-      { dx: 1, dy: 0 },
-      { dx: -1, dy: 0 },
-    ];
-    const offsets = [-1, 0, 1];
-    const docks: BaseDock[] = [];
-    for (const side of sides) {
-      for (const offset of offsets) {
-        const baseTile =
-          side.dx === 0 ? { x: base.x + offset, y: base.y + side.dy } : { x: base.x + side.dx, y: base.y + offset };
-        const outwardX = baseTile.x + side.dx;
-        const outwardY = baseTile.y + side.dy;
-        if (!this.grid.inBounds(outwardX, outwardY)) continue;
-        if (this.grid.isTerrain(outwardX, outwardY)) continue;
-        docks.push({ dockIndex: docks.length, baseTile, outwardNormal: side });
-      }
-    }
-    return docks;
-  }
-
-  // Returns the exposed base-adjacent tiles (the `baseTile` of every open dock) as
-  // plain tile coordinates. Used by enemy lateral-seeking so a blocked enemy can slip
-  // into an open tile that still touches the base, spreading the pile around the
-  // perimeter instead of stacking one-deep against a single edge.
-  baseDocks(): { x: number; y: number }[] {
-    return this.getBaseDocks().map((dock) => ({ x: dock.baseTile.x, y: dock.baseTile.y }));
-  }
-
-  // Count of live enemies currently standing on the given tile. Used by enemy
-  // lateral-seeking to pick the least-occupied adjacent tile when blocked.
-  enemiesInTile(tileX: number, tileY: number): number {
-    let count = 0;
-    for (const enemy of this.enemies) {
-      if (enemy.removed) continue;
-      const tile = enemy.currentTile();
-      if (tile.x === tileX && tile.y === tileY) count++;
-    }
-    return count;
   }
 
   removeDeadEnemy(i: number): void {
