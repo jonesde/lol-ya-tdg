@@ -212,6 +212,40 @@ describe("Enemy attack and collision (Phases 3 & 4)", () => {
     expect(enemy.attackingBase).toBe(false);
   });
 
+  it("re-anchors and advances when the blocking tower is sold mid-attack", () => {
+    // Regression: a sold/cancelled tower is removed from the grid WITHOUT its
+    // isGhost flag being set. If the sticky blockedByTower entry is only cleared
+    // on isGhost, an enemy mid-attack keeps steering at the (now gone) tower tile
+    // and never advances until some unrelated route recalc. Selling must release
+    // the contact so the enemy re-anchors onto the opened path and reaches the base.
+    const path = grid.getPathFor(0)!;
+    const towerTile = path[1]!;
+    const tower = towerManager.build("basic", towerTile.x, towerTile.y, makeSave(), grid)!;
+    tower.health = 100000;
+    tower.maxHealth = 100000;
+    const enemy = new Enemy("minion", 1, 0, grid, 1);
+
+    let attacked = false;
+    for (let i = 0; i < 3000 && !attacked; i++) {
+      enemy.update(0.05, enemyManager);
+      if (enemy.attackAnimTime > 0) attacked = true;
+    }
+    expect(attacked).toBe(true);
+    expect(enemy.attackingBase).toBe(false);
+
+    // Sell the tower while the enemy is still attacking it.
+    towerManager.sell(tower, makeSave());
+
+    // The enemy must now advance and reach the base; it must not stay pinned to
+    // the sold tower's tile.
+    let reachedBase = false;
+    for (let i = 0; i < 5000 && !reachedBase; i++) {
+      enemy.update(0.05, enemyManager);
+      if (enemy.attackingBase) reachedBase = true;
+    }
+    expect(reachedBase).toBe(true);
+  });
+
   it("separates a slower enemy to the right (+laneOffset) and a faster one to the left (-laneOffset)", () => {
     const slow = new Enemy("tank", 1, 0, grid, 1);
     const fast = new Enemy("runner", 1, 0, grid, 1);

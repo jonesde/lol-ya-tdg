@@ -688,11 +688,19 @@ export class Enemy {
       const candidate = liveForwardTower ?? this.findAdjacentLiveTowerInContact(enemyManager);
       if (candidate && !candidate.isGhost) this.blockedByTower = candidate;
     }
-    // Release the contact when the held tower is gone, so the enemy re-anchors
-    // onto the now-passable tile and continues (or attacks the next tower) rather
-    // than freezing on a dead tower.
-    if (this.blockedByTower?.isGhost) {
-      this.blockedByTower = null;
+    // Release the contact when the held tower can no longer block: it was
+    // destroyed (isGhost) or it was sold/cancelled and removed from the grid
+    // entirely. A sold tower keeps isGhost false and is also dropped from
+    // `blocked`, so `!this.grid.blocked.has(key)` catches the sold case that
+    // `isGhost` alone misses. Without this the enemy would keep steering at the
+    // (now gone) tower tile and never re-anchor onto the freshly opened path.
+    // The re-acquire block above then re-attaches to any live tower still in
+    // contact, so destroying a tower re-anchors onto the next one and selling
+    // one lets the enemy walk through.
+    if (this.blockedByTower) {
+      const towerKey = `${this.blockedByTower.tileX},${this.blockedByTower.tileY}`;
+      const towerGone = this.blockedByTower.isGhost || !this.grid.blocked.has(towerKey);
+      if (towerGone) this.blockedByTower = null;
     }
 
     if (this.blockedByTower && !this.blockedByTower.isGhost) {
