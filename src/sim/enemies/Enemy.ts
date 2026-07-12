@@ -894,6 +894,11 @@ export class Enemy {
         this.centerY = centerContact.contactY;
       }
     }
+    // Keep contact-line enemies (base or tower) on their face span so the tangential
+    // collision push cannot shove them sideways into terrain flanking the entry/corridor.
+    if (this.attackingBase || this.blockedByTower !== null) {
+      this.clampContactToSpan();
+    }
   }
 
   // Nearest point on a set of axis-aligned segments to (pointX, pointY). Mirrors
@@ -1117,6 +1122,90 @@ export class Enemy {
       maxT = Math.max(maxT, t1, t2);
     }
     return { minT, maxT };
+  }
+
+  // Re-project the enemy onto the objective's exposed face span AFTER collision
+  // resolution. Collision separates contact-line pairs ALONG the shared face tangent
+  // (resolveCollisions:1487-1519) and applies that push straight to the centerline with
+  // no span re-clamp, so a pile pressed sideways can be shoved past the entry/corridor
+  // span into the terrain tiles flanking it (enemies visibly drift off the path tile when
+  // blocked by a tower in a 1-tile corridor or piled against the base). This clamps the
+  // tangential coordinate to [span.minT + radius, span.maxT - radius] — mirroring the
+  // lateral-search spanPad in contactLineSteer — so the enemy's whole body stays on the
+  // path tile it is attacking from. The normal (distance-from-objective) component is
+  // preserved untouched, so forward advance and the keep-out projection are unaffected.
+  private clampContactToSpan(): void {
+    let objectiveX: number;
+    let objectiveY: number;
+    let segments: Array<{ x1: number; y1: number; x2: number; y2: number }>;
+    if (this.attackingBase) {
+      const base = this.grid.getBase();
+      const baseCenter = this.grid.tileToWorld(base.x, base.y);
+      objectiveX = baseCenter.x;
+      objectiveY = baseCenter.y;
+      segments = this.grid.getBaseEdgeSegments();
+    } else if (this.blockedByTower) {
+      const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
+      objectiveX = towerCenter.x;
+      objectiveY = towerCenter.y;
+      segments = this.grid.getTowerEdgeSegments(this.blockedByTower.tileX, this.blockedByTower.tileY, this.radius);
+    } else {
+      return;
+    }
+    if (segments.length === 0) return;
+    const contact = this.nearestPointOnSegments(segments, this.centerX, this.centerY);
+    const faceSegment = contact.segment;
+    // Face-aligned tangent/normal, identical to the derivation in contactLineSteer.
+    let tangentX: number;
+    let tangentY: number;
+    let normalX: number;
+    let normalY: number;
+    if (faceSegment && faceSegment.y1 === faceSegment.y2) {
+      tangentX = 1;
+      tangentY = 0;
+      normalY = contact.y >= objectiveY ? 1 : -1;
+      normalX = 0;
+    } else if (faceSegment) {
+      tangentX = 0;
+      tangentY = 1;
+      normalX = contact.x >= objectiveX ? 1 : -1;
+      normalY = 0;
+    } else {
+      const normalLen = Math.hypot(contact.x - objectiveX, contact.y - objectiveY) || 1;
+      normalX = (contact.x - objectiveX) / normalLen;
+      normalY = (contact.y - objectiveY) / normalLen;
+      tangentX = -normalY;
+      tangentY = normalX;
+    }
+    const span = this.computeExposedSpan(segments, objectiveX, objectiveY, tangentX, tangentY, normalX, normalY);
+    if (!Number.isFinite(span.minT) || !Number.isFinite(span.maxT)) return;
+    // Pad by the full radius plus a small epsilon so the body edge stays strictly
+    // inside the tile (a center clamped to `span.maxT - radius` would put the body
+    // edge exactly on the tile boundary, which floors into the flanking terrain tile).
+    const spanPad = this.radius + 1e-3;
+    const minT = span.minT + spanPad;
+    const maxT = span.maxT - spanPad;
+    // A fixed perpendicular to the tangent makes the decomposition/reconstruction exact
+    // regardless of which side of the objective the enemy sits on (sign is preserved).
+    const reconstructX = -tangentY;
+    const reconstructY = tangentX;
+    const clampPoint = (pointX: number, pointY: number): { x: number; y: number } => {
+      const deltaX = pointX - objectiveX;
+      const deltaY = pointY - objectiveY;
+      const tComp = deltaX * tangentX + deltaY * tangentY;
+      const nComp = deltaX * reconstructX + deltaY * reconstructY;
+      const clampedT = Math.max(minT, Math.min(maxT, tComp));
+      return {
+        x: objectiveX + tangentX * clampedT + reconstructX * nComp,
+        y: objectiveY + tangentY * clampedT + reconstructY * nComp,
+      };
+    };
+    const center = clampPoint(this.centerX, this.centerY);
+    this.centerX = center.x;
+    this.centerY = center.y;
+    const rendered = clampPoint(this.x, this.y);
+    this.x = rendered.x;
+    this.y = rendered.y;
   }
 
   // Unified contact-line steering for base and tower attacks. The enemy wants to be

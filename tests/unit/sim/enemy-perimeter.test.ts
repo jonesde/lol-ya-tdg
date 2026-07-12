@@ -21,6 +21,27 @@ function distanceToBaseSquare(x: number, y: number, baseCenterX: number, baseCen
   return Math.hypot(x - closestX, y - closestY);
 }
 
+// True when the entire enemy body (its circle of `radius` at x/y) stays on traversable
+// (non-terrain) tiles — i.e. the enemy never drifts sideways off the entry tile into the
+// terrain flanking the base. Treats out-of-bounds as terrain.
+function bodyOnPathTiles(enemy: Enemy, grid: Grid): boolean {
+  const r = enemy.radius;
+  const points = [
+    { x: enemy.x, y: enemy.y },
+    { x: enemy.x + r, y: enemy.y },
+    { x: enemy.x - r, y: enemy.y },
+    { x: enemy.x, y: enemy.y + r },
+    { x: enemy.x, y: enemy.y - r },
+  ];
+  for (const point of points) {
+    const tileX = Math.floor(point.x / grid.tileSize);
+    const tileY = Math.floor(point.y / grid.tileSize);
+    if (!grid.inBounds(tileX, tileY)) return false;
+    if (grid.isTerrain(tileX, tileY)) return false;
+  }
+  return true;
+}
+
 // A base-attack stand-in so we can observe damage gating and collapse.
 class StubBaseTarget {
   readonly isGhost = false;
@@ -103,6 +124,9 @@ describe("Enemy perimeter surround routing", () => {
       expect(distanceToBaseSquare(enemy.x, enemy.y, baseCenter.x, baseCenter.y, half)).toBeGreaterThanOrEqual(
         enemy.radius - 1e-6,
       );
+      // And every enemy keeps its whole body on traversable (non-terrain) tiles — it
+      // does not spill sideways off the entry into the terrain flanking the base.
+      expect(bodyOnPathTiles(enemy, grid)).toBe(true);
     }
     // The pile spreads laterally along the exposed entry face rather than
     // collapsing to a single-file column. Project front-line survivors onto the

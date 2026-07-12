@@ -549,6 +549,33 @@ describe("contact-line steering (polite motion)", () => {
     // tower face — so the tower took no damage. With square-distance contact, the pile
     // keeps attacking, so health must drop below max.
     expect(tower.health).toBeLessThan(tower.maxHealth);
+
+    // Regression for the sideways-into-terrain drift: the 1-tile choke is flanked by
+    // terrain (rows 0 and 2 are terrain). The tangential collision push used to shove
+    // piled enemies past the choke span onto those terrain tiles. Every surviving enemy
+    // must keep its whole body on traversable (non-terrain) tiles.
+    const bodyOnPathTiles = (enemy: Enemy): boolean => {
+      const r = enemy.radius;
+      const points = [
+        { x: enemy.x, y: enemy.y },
+        { x: enemy.x + r, y: enemy.y },
+        { x: enemy.x - r, y: enemy.y },
+        { x: enemy.x, y: enemy.y + r },
+        { x: enemy.x, y: enemy.y - r },
+      ];
+      for (const point of points) {
+        const tileX = Math.floor(point.x / blockGrid.tileSize);
+        const tileY = Math.floor(point.y / blockGrid.tileSize);
+        if (!blockGrid.inBounds(tileX, tileY)) return false;
+        if (blockGrid.isTerrain(tileX, tileY)) return false;
+      }
+      return true;
+    };
+    const survivors = enemies.filter((e) => !e.removed);
+    expect(survivors.length).toBeGreaterThan(0);
+    for (const survivor of survivors) {
+      expect(bodyOnPathTiles(survivor)).toBe(true);
+    }
   });
 
   it("a boss pushes through a packed base line while minions slide aside (priority yielding)", () => {
@@ -655,15 +682,33 @@ describe("contact-line steering (polite motion)", () => {
     expect(edgeSpy).toHaveBeenCalled();
     edgeSpy.mockRestore();
 
-    const occupiedTiles = new Set(
-      enemies
-        .filter((e) => !e.removed)
-        .map((e) => {
-          const tile = e.currentTile();
-          return `${tile.x},${tile.y}`;
-        }),
-    );
-    expect(occupiedTiles.size).toBeGreaterThan(1);
+    // The corridor is 1 tile tall (terrain above and below), so a pile against the
+    // tower can only stack in depth on the single corridor tile — there is nowhere to
+    // spread laterally without leaving the path. The regression guard here is that the
+    // in-contact tower steering ran (edgeSpy above) and that the pile stays on the
+    // path tile rather than being shoved sideways into the flanking terrain.
+    const bodyOnPathTiles = (enemy: Enemy): boolean => {
+      const r = enemy.radius;
+      const points = [
+        { x: enemy.x, y: enemy.y },
+        { x: enemy.x + r, y: enemy.y },
+        { x: enemy.x - r, y: enemy.y },
+        { x: enemy.x, y: enemy.y + r },
+        { x: enemy.x, y: enemy.y - r },
+      ];
+      for (const point of points) {
+        const tileX = Math.floor(point.x / corridorGrid.tileSize);
+        const tileY = Math.floor(point.y / corridorGrid.tileSize);
+        if (!corridorGrid.inBounds(tileX, tileY)) return false;
+        if (corridorGrid.isTerrain(tileX, tileY)) return false;
+      }
+      return true;
+    };
+    const survivors = enemies.filter((e) => !e.removed);
+    expect(survivors.length).toBeGreaterThan(0);
+    for (const survivor of survivors) {
+      expect(bodyOnPathTiles(survivor)).toBe(true);
+    }
   });
 
   it("lateral redirect: a late arrival spreads to a different tile than the front enemy", () => {

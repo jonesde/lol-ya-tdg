@@ -527,3 +527,66 @@ collision) is intact; the geometry/selection details needed correction.
 - **Lateral step multiplier** (`step × 6` in `contactLineSteer`): raise to let packed piles flow faster laterally; lower to make spreads more deliberate.
 - **Maximin tie-break weight** (`distanceFromCurrent * 1e-3`): larger → enemies migrate harder toward the far ends of a face (fills both ends); smaller → pure maximin (fills the single largest gap).
 - **Probe step** (`radius * 1.5`) and **maxReach** (`tileSize * 3`) — unchanged from Round 1.
+
+---
+
+# ADDENDUM FOR CURRENT — ROUND 3 (terrain-spill fix)
+
+A follow-up fix on top of Rounds 1–2. The pile spread and entry fill were correct, but
+a contact-line enemy's **whole body** could drift off the path tile into the terrain
+flanking the entry/corridor. Reported symptom: enemies blocked by a path-blocking tower
+(or the base) slide sideways into terrain tiles.
+
+## Root cause
+
+- Path-following enemies stay on their tile via the lane-offset clamp
+  (`Enemy.ts:848-858`), which bounds the perpendicular-to-heading component of the
+  world-space lane offset. But for contact-line enemies (`attackingBase` /
+  `blockedByTower`), `resolveCollisions` zeroes the lane offset and moves the
+  **centerline** instead, so that clamp is a no-op for them — there is no equivalent
+  "stay on the path tile" constraint on the centerline.
+- `contactLineSteer` bounds its lateral *search* to the exposed span, but
+  `resolveCollisions` separates contact-line pairs **along the shared face tangent**
+  (`Enemy.ts:1487-1519`) and applies that push straight to `centerX/centerY` with no
+  span re-clamp. So a pile pressed sideways is shoved past the entry/corridor span into
+  the terrain tiles flanking it. The base keep-out (`Enemy.ts:867-882`) only prevents
+  *entering the base square*; it does not limit lateral drift, so the tower case (no
+  keep-out at all) and the base case both leaked.
+
+## Fix
+
+- New `clampContactToSpan()` (in `Enemy.ts`): for `attackingBase` or `blockedByTower`
+  enemies, recompute the objective's exposed face span (same `computeExposedSpan` /
+  face-aligned tangent/normal already used in `contactLineSteer`), then clamp the
+  centerline's *tangential* coordinate to `[span.minT + radius, span.maxT - radius]`
+  (reusing the `spanPad = radius` convention) while preserving the normal
+  (distance-from-objective) component. It clamps both `centerX/centerY` and the rendered
+  `x/y` so the simulation state and the drawn body stay consistent. Called in `update()`
+  after the centerline keep-out (`Enemy.ts:897-901`), i.e. after collision resolution.
+- `spanPad` uses `radius + 1e-3`: a center clamped to `span.maxT - radius` puts the body
+  edge exactly on the tile boundary, which `Math.floor` rounds into the flanking terrain
+  tile. The epsilon keeps the whole body strictly inside the path tile.
+
+## Test changes
+
+- `enemy-attack.test.ts` (tower-choke test, ~line 492): added a `bodyOnPathTiles`
+  regression assertion — every surviving enemy keeps its whole body on non-terrain tiles
+  (the 1-tile choke is flanked by terrain, so the old sideways drift is now caught).
+- `enemy-attack.test.ts` ("in-contact tower attackers reach contactLineSteer" corridor
+  test): its old assertion `occupiedTiles.size > 1` was *encoding the bug* — enemies only
+  spread across >1 tile by spilling into the flanking terrain rows. Replaced with the
+  same `bodyOnPathTiles` guard (plus the existing `getTowerEdgeSegments` spy), which is
+  the correct regression guard for a 1-tile-wide corridor.
+- `enemy-perimeter.test.ts` ("base pile spreads" test): added a `bodyOnPathTiles`
+  assertion so base piles also stay on path tiles.
+
+## Verification
+
+- `npx tsc --noEmit` clean.
+- `npx vitest run tests/unit/sim/enemy-perimeter.test.ts tests/unit/enemy-attack.test.ts` — 20/20.
+- Full suite green (1058 passing).
+- Manual acceptance: a path-blocking tower in a 1-tile corridor and the base entry — the
+  pile stays on the path/corridor tile; circles no longer extend into the terrain tiles
+  on either side. (Note: a very large enemy — boss, r≈0.67 — on a 1-tile-wide entry is
+  geometrically unable to keep its whole radius on the tile; the clamp then centers it and
+  does the best it can. Mid/small enemies on normal entries stay fully on the path tile.)
