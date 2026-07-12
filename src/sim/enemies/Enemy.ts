@@ -75,6 +75,14 @@ const PRIORITY_YIELD_MAX = 0.9; // max fraction the lower-priority enemy takes (
 const ATTACK_CONTACT_EPSILON = 1e-6;
 const LATERAL_SPEED_MULT = 3;
 
+// Pile depth cap (standoff) for the contact-line steering regime, shared by both
+// tower and base attackers. An enemy in the steering regime only presses forward
+// when it is within STANDOFF_TILES of the objective square; beyond that it queues
+// at the standoff line instead of cramming forever down a 1-wide corridor. This
+// bounds the active pile depth so neither a tower nor the base over-stacks. Tune
+// with the other pile constants above.
+export const STANDOFF_TILES = 2;
+
 interface SlowEntry {
   eff: number;
   remaining: number;
@@ -655,11 +663,14 @@ export class Enemy {
       if (contact.overlapping) this.attackingBase = true;
     }
 
-    // Attack-target resolution: the forward path tile may hold a live (non-ghost)
-    // tower. Because the weakest-path route deliberately crosses tower tiles, the
-    // enemy must decide whether to walk through (ghost/none), approach (live, not
-    // yet in contact), or attack (live, in contact). A pile-up against an adjacent
-    // tower also resolves to an attack (Phase 4 fallback).
+    // Attack-target resolution for a blocking tower. This mirrors the base's
+    // STICKY "all-in" entry: once an enemy is funneling toward a live tower it
+    // stays in the steering regime (blockedByTower) for the rest of its life, so
+    // the whole pile lines up against the tower face instead of only the front enemy.
+    // Acquire when the tower is the next path tile OR the enemy is already in contact
+    // with the tower square (the proximity check mirrors the base's early edge-stop
+    // baseSquareContact.overlapping). Keep it sticky; clear only when the tower is
+    // gone (ghost/dead) so re-anchor + pass-through still apply.
     const hasNextTile = this.path != null && this.pathIdx < this.path.length - 1;
     const nextTile = hasNextTile ? this.path![this.pathIdx + 1]! : null;
     const forwardTower =
@@ -670,16 +681,26 @@ export class Enemy {
 
     let attackTarget: Tower | AttackTarget | null = null;
 
-    if (liveForwardTower && nextTile) {
-      const towerCenter = this.grid.tileToWorld(nextTile.x, nextTile.y);
+    // (Re)acquire a tower contact only when none is held or the held one is
+    // gone — once set, it stays (sticky), so a piled enemy that gets shoved
+    // around by collision does not drop back into walk mode.
+    if (this.blockedByTower === null || this.blockedByTower.isGhost) {
+      const candidate = liveForwardTower ?? this.findAdjacentLiveTowerInContact(enemyManager);
+      if (candidate && !candidate.isGhost) this.blockedByTower = candidate;
+    }
+    // Release the contact when the held tower is gone, so the enemy re-anchors
+    // onto the now-passable tile and continues (or attacks the next tower) rather
+    // than freezing on a dead tower.
+    if (this.blockedByTower?.isGhost) {
+      this.blockedByTower = null;
+    }
+
+    if (this.blockedByTower && !this.blockedByTower.isGhost) {
+      const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
       // Gate the attack on square distance to the tower tile (mirrors the base path
-      // below, which uses distanceToBaseSquare <= radius). The center-to-center test
-      // here was only true when dead-head-on a face center; contactLineSteer spreads
-      // enemies tangentially along the face, increasing the center distance past the
-      // contact threshold, so on the next frame attackTarget became null and the tower
-      // stopped taking damage even though the enemy stayed in contact. Square distance
-      // stays true for any position along the exposed perimeter, so the attack persists
-      // through lateral spread.
+      // below, which uses distanceToBaseSquare <= radius). Square distance stays true
+      // for any position along the exposed perimeter, so the attack persists through
+      // the lateral spread that contactLineSteer applies.
       const towerContact = distanceToBaseSquare(
         this.centerX,
         this.centerY,
@@ -687,17 +708,8 @@ export class Enemy {
         towerCenter.y,
         this.grid.tileSize / 2,
       );
-      this.blockedByTower = liveForwardTower;
       if (towerContact <= this.radius + ATTACK_CONTACT_EPSILON) {
-        attackTarget = liveForwardTower;
-      }
-    } else {
-      const adjacentTower = this.findAdjacentLiveTowerInContact(enemyManager);
-      if (adjacentTower) {
-        attackTarget = adjacentTower;
-        this.blockedByTower = adjacentTower;
-      } else {
-        this.blockedByTower = null;
+        attackTarget = this.blockedByTower;
       }
     }
 
@@ -1259,9 +1271,17 @@ export class Enemy {
     const distToSquare = distanceToBaseSquare(this.centerX, this.centerY, objectiveX, objectiveY, half);
     const onLine = distToSquare <= this.radius + 1e-3;
     const blocked = this.isBlockedAhead(enemyManager, objectiveX, objectiveY);
-    if (!onLine && !blocked) {
+    // Pile depth cap (standoff): an enemy in the steering regime only
+    // presses forward while it is still within STANDOFF_TILES of the objective
+    // square. Beyond that it queues at the standoff line instead of cramming
+    // forever down a 1-wide corridor. Shared by both tower and base
+    // attackers, so the active pile depth is bounded on both sides.
+    const standoff = STANDOFF_TILES * this.grid.tileSize;
+    const withinStandoff = distToSquare <= standoff;
+    if (!onLine && !blocked && withinStandoff) {
       // Press forward toward the contact point. This is the only case where the
-      // enemy moves inward: it has not reached the line yet and nothing is in the way.
+      // enemy moves inward: it has not reached the line yet, nothing is in the way,
+      // and it is still within the standoff depth.
       const deltaX = contact.x - this.centerX;
       const deltaY = contact.y - this.centerY;
       const dist = Math.hypot(deltaX, deltaY);
@@ -1273,6 +1293,12 @@ export class Enemy {
         this.centerX += (deltaX / dist) * step;
         this.centerY += (deltaY / dist) * step;
       }
+      return;
+    }
+    if (!onLine && !blocked && !withinStandoff) {
+      // Beyond the standoff depth: queue at the standoff line rather than
+      // pressing into the pile. No forward move, no lateral spread, so the
+      // column cannot extend forever down the corridor.
       return;
     }
     // If on the line and not blocked, hold position as long as the enemy's actual
