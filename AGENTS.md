@@ -15,6 +15,19 @@ If you have a question that can be answered with the code, configuration, docume
 
 Do not leave open questions in plans that defer research to the user or a future AI that you can do now. Missing relevant information increases risk of errors and omissions. This is not just about the plan being complete, it is also about the plan being *correct*. Only apply this rule to questions answerable with files under the working directory.
 
+## Communication Rules
+
+### Concrete over Metaphor Rule
+
+Name and describe code with the actual construct, not a metaphor borrowed from a methodology or school of thought. This applies both to describing existing code and to choosing names for new code artifacts.
+
+- When **describing** code (architecture, data flow), name the real construct in the codebase (e.g. `interface`, `proxy`, `message broker`, `module`, `function`, `class`) instead of metaphors like "seam", "spine", "layer", "pipe", "boundary", "contract" used as a vague behavioral promise. Such metaphors assume shared background knowledge and obscure what is actually there.
+- When **naming** new artifacts (functions, fields, variables, types, modules), prefer concrete names that reflect the actual responsibility/construct (e.g. `commandDispatcher`, `snapshotReconciler`) over metaphorical or school-of-thought labels (e.g. `commandSeam`, `snapshotSpine`).
+
+**WARNING**: This is a new rule for this project and not universally applied. Exceptions to this rule in current code, documentation, and other artifacts are violations, not examples of approved exceptions.
+
+Use an abstract or metaphorical term only when (a) it names a concrete construct already present in the code and treated as canonical, or (b) the user explicitly requests it. Legacy metaphor usage found in existing code or docs does not satisfy (a), it is a violation per the WARNING above. When an abstraction is genuinely needed, define it inline and immediately tie it to the concrete artifact(s) it denotes.
+
 ## Code Rules
 
 **Code Variable Name Rule**: Always use descriptive variable names with full words. Instead of 'ts' use a descriptive full-word form like 'tileSize' or 'timestamp' (both could be 'ts'). NEVER use a one letter variable name, instead use at least one full word.
