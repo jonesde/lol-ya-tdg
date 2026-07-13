@@ -1,18 +1,31 @@
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
+import { usePersistStore } from "@/stores/persist.js";
 import { startRelay, stopRelay } from "./relay.js";
 
-export type EnemyCommanderKind = "none" | "stubby" | "stubbs";
+export const BUILTIN_STUBBY = "stubby";
+export const BUILTIN_STUBBS = "stubbs";
 
-// Owns the commander worker + relay lifecycle. For "stubby"/"stubbs" it starts the
-// relay (which spawns the worker and sends `start` with the kind); "none" stops it.
-export function setEnemyCommander(kind: EnemyCommanderKind): void {
-  if (kind === "none") {
+// Owns the commander worker + relay lifecycle. For a built-in id it starts the
+// relay (which spawns the worker and sends `start` with the kind); for a non-builtin
+// id it looks up an LLM commander config and starts the relay with "llm" + config;
+// "none" stops it.
+export function setEnemyCommander(id: string | "none"): void {
+  if (id === "none") {
     stopEnemyCommander();
     return;
   }
   stopRelay();
-  startRelay(kind);
+  if (id === BUILTIN_STUBBY || id === BUILTIN_STUBBS) {
+    startRelay(id);
+    return;
+  }
+  const llmCommanderConfig = usePersistStore().llmCommanders.find((config) => config.id === id);
+  if (llmCommanderConfig) {
+    startRelay("llm", llmCommanderConfig);
+    return;
+  }
+  stopEnemyCommander();
 }
 
 // Stops the commander and releases any enemies it left in hold mode. Before

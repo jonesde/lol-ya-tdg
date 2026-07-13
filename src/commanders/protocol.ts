@@ -1,7 +1,8 @@
 import type { Command } from "@/sim/Command.js";
 import type { EnemySnapshot, SnapshotMeta, SpawnStateSnapshot, TowerSnapshot } from "@/sim/SimulationSnapshot.js";
+import type { LlmCommanderConfig } from "./llm/types.js";
 
-export type CommanderKind = "stubby" | "stubbs";
+export type CommanderKind = "stubby" | "stubbs" | "llm";
 
 // The worker's intentional input contract — a throttled, abstracted slice of the
 // full SimulationSnapshot, not "the whole snapshot". The relay owns the gridLayout
@@ -15,8 +16,13 @@ export interface CommanderSnapshotSlice {
 }
 
 export type MainToCommanderMessage =
-  | { type: "start"; kind: CommanderKind }
+  | { type: "start"; kind: CommanderKind; config?: LlmCommanderConfig }
   | { type: "stop" }
-  | { type: "observation"; slice: CommanderSnapshotSlice };
+  | { type: "observation"; slice: CommanderSnapshotSlice }
+  | { type: "chat"; text: string }
+  | { type: "updateInstructions"; text: string };
 
-export type CommanderToMainMessage = { type: "commands"; commands: Command[] };
+export type CommanderToMainMessage =
+  | { type: "commands"; commands: Command[] }
+  | { type: "notify"; message: string }
+  | { type: "chat"; text: string; from: "commander" };

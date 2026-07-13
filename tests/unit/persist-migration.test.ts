@@ -1,0 +1,78 @@
+// @ts-nocheck
+/** @vitest-environment node */
+import { describe, expect, it } from "vitest";
+import { migrateToCurrent } from "@/stores/persist.js";
+
+describe("PersistStore save migration v2 -> v3", () => {
+  function v2ShapedSave(): Record<string, unknown> {
+    return {
+      saveVersion: 2,
+      gems: 1234,
+      highestUnlockedMap: 5,
+      bestWaves: { best_3: 45 },
+      activeWaves: { 0: 12 },
+      difficulty: { multiplierTick: 4 },
+      firstTimeMilestones: { "5_20": true },
+      firstClears: { "7": true },
+      generalAddons: {
+        extraHealth: 10,
+        startingGold: null,
+        sellRefundUnlocked: false,
+        sellDiscountUnlocked: false,
+        sellActive: null,
+        upgradeCostReduction: null,
+        terrainHeightBonus: null,
+        terrainHeightRangeBonus: null,
+        damageMilestoneBonus: null,
+        slowHealing: null,
+      },
+      unlocked: {
+        basic: {
+          levels: [true, true, false, false, false, false, false],
+          variantA: [false, false, false],
+          variantB: [false, false, false],
+          addons: [false, false, false],
+        },
+      },
+      runHistory: [],
+      randomMapRegion: 1,
+      randomMapLevel: 1,
+      randomMapStyle: "open",
+      randomMapSeed: null,
+      randomMapWidth: 20,
+      randomMapHeight: 20,
+      lastSelectedThemeId: "default",
+    };
+  }
+
+  it("bumps saveVersion to 3", () => {
+    const result = migrateToCurrent(v2ShapedSave());
+    expect(result.saveVersion).toBe(3);
+  });
+
+  it("backfills llmCommanders as an empty array (no data loss of the new field)", () => {
+    const result = migrateToCurrent(v2ShapedSave());
+    expect(Array.isArray(result.llmCommanders)).toBe(true);
+    expect(result.llmCommanders).toEqual([]);
+  });
+
+  it("preserves top-level v2 fields through the deep merge", () => {
+    const result = migrateToCurrent(v2ShapedSave());
+    expect(result.gems).toBe(1234);
+    expect(result.highestUnlockedMap).toBe(5);
+    expect(result.bestWaves).toEqual({ best_3: 45 });
+    expect(result.activeWaves).toEqual({ 0: 12 });
+    expect(result.runHistory).toEqual([]);
+    expect(result.lastSelectedThemeId).toBe("default");
+  });
+
+  it("preserves nested v2 fields (difficulty, generalAddons, unlocked, milestones)", () => {
+    const result = migrateToCurrent(v2ShapedSave());
+    expect(result.difficulty.multiplierTick).toBe(4);
+    expect(result.generalAddons.extraHealth).toBe(10);
+    expect(result.firstTimeMilestones["5_20"]).toBe(true);
+    expect(result.firstClears["7"]).toBe(true);
+    expect(result.unlocked.basic.levels[0]).toBe(true);
+    expect(result.unlocked.basic.levels[2]).toBe(false);
+  });
+});

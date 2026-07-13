@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
+import { BUILTIN_STUBBS, BUILTIN_STUBBY } from "@/commanders/index.js";
 import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -46,7 +47,7 @@ function openSkillTree() {
 
 function handleCommanderChange(event: Event) {
   const target = event.target as HTMLSelectElement;
-  uiStore.setEnemyCommander(target.value as "none" | "stubby" | "stubbs");
+  uiStore.setEnemyCommander(target.value as string);
 }
 </script>
 
@@ -85,8 +86,15 @@ function handleCommanderChange(event: Event) {
         <div class="commander-header">Enemy Commander</div>
         <select class="commander-select" :value="uiStore.enemyCommander" @change="handleCommanderChange">
           <option value="none">No Commander</option>
-          <option value="stubby">Sergeant Stubby</option>
-          <option value="stubbs">Commander Stubbs</option>
+          <option :value="BUILTIN_STUBBY">Sergeant Stubby</option>
+          <option :value="BUILTIN_STUBBS">Commander Stubbs</option>
+          <option
+            v-for="commander in persistStore.llmCommanders"
+            :key="commander.id"
+            :value="commander.id"
+          >
+            {{ commander.name }}
+          </option>
         </select>
       </div>
 

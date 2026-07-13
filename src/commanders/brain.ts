@@ -1,5 +1,8 @@
 import type { Command } from "@/sim/Command.js";
+import { createLlmBrain } from "./llm/brain.js";
+import type { LlmCommanderConfig } from "./llm/types.js";
 import type { CommanderObservation } from "./observation.js";
+import type { CommanderKind } from "./protocol.js";
 import { createStubbsBrain } from "./stubbs/brain.js";
 import { createStubbyBrain } from "./stubby/brain.js";
 
@@ -13,18 +16,29 @@ export interface CommanderMemory {
   lastRushWaveNumber: number | null;
   lastRoutedTowerSignature: string;
   gridLayout: number[][] | undefined;
+  // LLM scratch state (used by the llm brain added in a later batch)
+  conversation: { role: "user" | "assistant" | "system"; content: string }[];
+  tokenCount: number;
+  lastObservation: import("./observation.js").CommanderObservation | null;
+  commanderInstructions: string;
+  pendingPlayerMessages: string[];
+  isCompressing: boolean;
 }
 
 export interface CommanderBrain {
-  decide(observation: CommanderObservation, memory: CommanderMemory): Command[];
+  decide(observation: CommanderObservation, memory: CommanderMemory): Command[] | Promise<Command[]>;
 }
 
-export function createBrain(kind: "stubby" | "stubbs"): CommanderBrain {
+export function createBrain(kind: CommanderKind, config?: LlmCommanderConfig): CommanderBrain {
   switch (kind) {
     case "stubby":
       return createStubbyBrain();
     case "stubbs":
       return createStubbsBrain();
+    case "llm": {
+      if (!config) throw new Error("llm commander requires config");
+      return createLlmBrain(config);
+    }
     default: {
       const unknown = kind as string;
       throw new Error(`Unknown commander kind: ${unknown}`);

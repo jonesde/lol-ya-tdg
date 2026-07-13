@@ -1,8 +1,10 @@
 import { defineStore } from "pinia";
-import { setEnemyCommander as startEnemyCommander } from "@/commanders/index.js";
+import { BUILTIN_STUBBS, BUILTIN_STUBBY, setEnemyCommander as startEnemyCommander } from "@/commanders/index.js";
 import { GameState } from "@/sim/Constants.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "./game";
+
+export type ChatLogEntry = { from: "player" | "commander"; text: string };
 
 export interface UiStoreLike {
   showPauseMenu: boolean;
@@ -17,8 +19,12 @@ export interface UiStoreLike {
   openPauseMenu: () => void;
   toggleMinimap: () => void;
   closeMinimap: () => void;
-  enemyCommander: "none" | "stubby" | "stubbs";
-  setEnemyCommander: (kind: "none" | "stubby" | "stubbs") => void;
+  enemyCommander: string | "none";
+  setEnemyCommander: (id: string | "none") => void;
+  chatLog: ChatLogEntry[];
+  appendChatLog: (entry: ChatLogEntry) => void;
+  clearChatLog: () => void;
+  activeCommanderIsLlm: boolean;
 }
 
 interface ConfirmDialogConfig {
@@ -56,7 +62,8 @@ interface UiStateShape {
   notification: NotificationState | null;
   debugPanelVisible: boolean;
   randomMapPanelVisible: boolean;
-  enemyCommander: "none" | "stubby" | "stubbs";
+  enemyCommander: string | "none";
+  chatLog: ChatLogEntry[];
   wasPlayingWhenPauseOpened: boolean;
   wasPlayingWhenSkillTreeOpened: boolean;
   wasPlayingWhenHelpOpened: boolean;
@@ -76,6 +83,7 @@ function defaultUiState(): UiStateShape {
     debugPanelVisible: false,
     randomMapPanelVisible: false,
     enemyCommander: "none",
+    chatLog: [],
     wasPlayingWhenPauseOpened: false,
     wasPlayingWhenSkillTreeOpened: false,
     wasPlayingWhenHelpOpened: false,
@@ -85,7 +93,13 @@ function defaultUiState(): UiStateShape {
 export const useUiStore = defineStore("ui", {
   state: (): UiStateShape => defaultUiState(),
 
-  getters: { hasActiveDialog: (state) => !!state.confirmDialog },
+  getters: {
+    hasActiveDialog: (state) => !!state.confirmDialog,
+    activeCommanderIsLlm: (state): boolean => {
+      const commanderId = state.enemyCommander;
+      return commanderId !== "none" && commanderId !== BUILTIN_STUBBY && commanderId !== BUILTIN_STUBBS;
+    },
+  },
 
   actions: {
     showConfirm(config: ConfirmDialogConfig) {
@@ -185,9 +199,21 @@ export const useUiStore = defineStore("ui", {
       this.showMinimap = false;
     },
 
-    setEnemyCommander(kind: "none" | "stubby" | "stubbs") {
-      this.enemyCommander = kind;
-      startEnemyCommander(kind);
+    setEnemyCommander(id: string | "none") {
+      this.clearChatLog();
+      this.enemyCommander = id;
+      startEnemyCommander(id);
+    },
+
+    appendChatLog(entry: ChatLogEntry) {
+      this.chatLog.push(entry);
+      if (this.chatLog.length > 20) {
+        this.chatLog.splice(0, this.chatLog.length - 20);
+      }
+    },
+
+    clearChatLog() {
+      this.chatLog = [];
     },
 
     closeHelpDialog() {
