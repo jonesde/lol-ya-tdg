@@ -8,7 +8,13 @@ factual errors found during codebase research (see §13).
 1. **Async brain interface.** `CommanderBrain.decide()` becomes
    `Promise<Command[]>`. Stub brains resolve synchronously; the LLM brain awaits
    `fetch`. `CommanderWorker` awaits `decide()` and owns the in-flight guard +
-   cadence throttle.
+   cadence throttle. **Signature/coupling change:** `createBrain(kind)` currently
+   takes only `kind: "stubby" | "stubbs"`. It must become
+   `createBrain(kind, config?)` and the protocol `CommanderKind` must gain
+   `"llm"`, so `start` can carry `config` for the `"llm"` kind. The worker's
+   `start` handler (`src/commanders/CommanderWorker.ts:49`) calls
+   `createBrain(message.kind)` today with **no** config — update it to pass
+   `message.config` when `kind === "llm"`.
 2. **Persisted registry keyed by id.** `uiStore.enemyCommander` becomes
    `string | "none"`. Built-in ids `"stubby"`/`"stubbs"` are reserved constants
    (not stored in the registry). User LLM commanders live in a persisted
@@ -30,10 +36,14 @@ factual errors found during codebase research (see §13).
   worker-internal `llm:gridLayoutToggle`. The LLM brain only ever emits
   `routeGroup` + `setTargeting`.
 - Growl notifications: `uiStore.showNotification` (`src/stores/ui.ts:102`) →
-  toast in `src/components/GameHud.vue:126`, reachable from a worker through
-  `HostBindings.notifyUi` (`src/sim/HostBindings.ts:14`,
-  `src/sim/WorkerHostBindings.ts:24`). This is the channel for connect / error /
-  disconnect messages.
+  toast in `src/components/GameHud.vue:126`. **Important channel correction:**
+  because the commander worker's relay runs on the **main thread**, the
+  `notify`/`chat` messages the worker posts are forwarded by the *relay* directly
+  to `uiStore.showNotification` — they do **not** travel through the sim's
+  `HostBindings.notifyUi` (`src/sim/HostBindings.ts:54`,
+  `src/sim/WorkerHostBindings.ts:24`, which is the *sim-worker* seam). The sim
+  `HostBindings` is unrelated to the commander transport. `notify` is the channel
+  for connect / error / disconnect messages.
 - Pause is observable: `SnapshotMeta.state` ships every tick
   (`src/sim/SimulationSnapshot.ts:73`); `GameState.PAUSED` is the sentinel to
   skip requests.
@@ -73,10 +83,16 @@ factual errors found during codebase research (see §13).
   - `contextLimit: number` (tokens; default 32768)
   - `commanderInstructions: string` (optional, blank default)
   - `systemPrompt: string` (required; defaulted from a const at create time)
-- Persist slice: add `llmCommanders: LlmCommanderConfig[]` to `PersistState`
-  (`src/sim/PersistState.ts`) and `persist.ts` (`load` / `save` / schema
-  migration, key `lol_ya_tdg_save_1`). Built-ins (`stubby`/`stubbs`) are NOT in
-  this array.
+- Persist slice: add `llmCommanders: LlmCommanderConfig[]` to **both** the
+  serialized shape in `persist.ts` (`PersistStateShape`, `src/stores/persist.ts:30`,
+  `load` / `save` / `migrateToCurrent`) **and** sim `PersistState`
+  (`src/sim/PersistState.ts`, `createDefaultPersistState` default `[]`) plus its
+  `createDefaultPersistState` default. Built-ins (`stubby`/`stubbs`) are NOT in
+  this array. `llmCommanders` is UI-only (the engine never reads it), so on sim
+  `PersistState` it is a harmless pass-through. **Schema migration:** bump
+  `CURRENT_SAVE_VERSION` from `2` to `3` in both `persist.ts` and
+  `PersistState.ts`, add a `migrateV2ToV3` that backfills `llmCommanders: []`,
+  and wire it into `migrateToCurrent`. Key remains `lol_ya_tdg_save_1`.
 - Built-in id constants: `BUILTIN_STUBBY = "stubby"`, `BUILTIN_STUBBS = "stubbs"`
   in `src/commanders/index.ts`.
 
@@ -208,7 +224,13 @@ factual errors found during codebase research (see §13).
     - context limit (tokens; default 32768).
     - Commander Instructions (large textarea, optional, blank default).
     - System Prompt (large textarea, required, defaulted from const).
-  - Persist on save via `persistStore` (§2).
+   - Persist on save via `persistStore` (§2).
+   - **In-game Commander select (§3/§9):** `src/components/PauseMenu.vue:47-90`
+     currently hardcodes a 3-option `<select>` (none/stubby/stubbs) and casts the
+     value to `"none" | "stubby" | "stubbs"`. Make it **dynamic**: render
+     `none` + the two built-ins + one `<option>` per `persistStore.llmCommanders`
+     id, and widen the cast (in `handleCommanderChange`) to `string` so LLM ids
+     flow through `uiStore.setEnemyCommander(id)`.
 
 ## 10. Pause handling + test (important)
 - In `src/commanders/CommanderWorker.ts`, before issuing `decide` for an LLM
@@ -232,11 +254,13 @@ factual errors found during codebase research (see §13).
     `llm:gridLayoutToggle` is worker-internal and must NOT be accepted from the
     LLM.
   - `routeGroup`: `{ enemyIds: number[]; hold?: boolean; holdTile?: {x,y};
-    waypoints: {x,y}[] }` — note waypoints are **tile** coords (the LLM works in
-    the tile space described in the system prompt); the worker converts tile →
-    world via `meta.tileSize` before emitting the `Command` (or emits tile coords
-    and `applyCommand` already expects world — keep consistent: emit tile coords
-    and convert in the brain using `meta.tileSize`).
+    waypoints: {x,y}[] }`. **Coordinate space (corrected):** waypoints and
+    `holdTile` are **tile** coords. The LLM works in the tile space described in
+    the system prompt, and the brain emits tile coords directly — there is **no**
+    tile→world conversion anywhere. `applyCommand.ts` passes `command.waypoints`
+    straight into `enemy.grid.computeRoute(...)` alongside `enemy.currentTile()`
+    (both tile coords; `Grid.computeRoute` takes tiles, `Enemy.currentTile()`
+    returns tiles). So emit tile coords from the brain and do not convert to world.
   - `setTargeting`: `{ enemyIds: number[]; mode: string }`.
 - Malformed/validated-rejected responses: the client layer logs + the brain
   returns no commands (retry handled by §1). The schema is also embedded in the
@@ -264,19 +288,24 @@ config screen help text.
 ## 15. Build order (keeps ~1000 existing tests green)
 1. Protocol types: `notify`, `chat`, `updateInstructions`, `start`-with-config
    (`src/commanders/protocol.ts`).
-2. `LlmCommanderConfig` + `llmCommanders` persist slice + migration
-   (`PersistState.ts`, `persist.ts`).
+   2. `LlmCommanderConfig` + `llmCommanders` persist slice (sim `PersistState`
+      `createDefaultPersistState`, `persist.ts` `PersistStateShape`) + v2→v3
+      migration (`CURRENT_SAVE_VERSION` 2→3 in both files, backfill `[]`).
 3. `setEnemyCommander(id)` resolution + `startRelay(kind, config?)` + built-in id
    constants (`index.ts`, `relay.ts`).
 4. `apiClient.ts` (injectable `fetch`) + timeout/retry/back-off/parse unit tests.
 5. `systemPrompt.ts` (runtime-filled template) + `schema.ts` (allowlist +
    validator).
-6. LLM brain (async `decide`) + `CommanderWorker` await + in-flight guard +
-   cadence + delta diff + compression; `CommanderMemory` extended.
+   6. LLM brain (async `decide`) + `CommanderWorker` await + in-flight guard +
+      cadence + delta diff + compression; `CommanderMemory` extended. Also flip
+      `createBrain(kind)` → `createBrain(kind, config?)` (`CommanderKind` gains
+      `"llm"`) and update the worker `start` handler (§1) to pass `message.config`
+      when `kind === "llm"`.
 7. Pause skip in worker + pause test (§10).
 8. `EnemyChat.vue` + `chatLog` slice + `notify`/chat relay wiring (§8, §11).
-9. `/commanders` route + `CommandersScreen.vue` + MainMenu button + dynamic
-   PauseMenu select (§3, §9).
+   9. `/commanders` route + `CommandersScreen.vue` + MainMenu button + dynamic
+      `PauseMenu` select (widen cast to `string`, render LLM ids from
+      `persistStore.llmCommanders`; §3, §9).
 10. Integration test: LLM brain round-trip with fake fetch (mirror
     `tests/integration/commander.test.ts`), pause test (§10), malformed-response
     test.
