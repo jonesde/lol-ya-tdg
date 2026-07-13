@@ -19,7 +19,12 @@ Do not leave open questions in plans that defer research to the user or a future
 
 ### Concrete over Metaphor Rule
 
-Name and describe code with the actual construct, not a metaphor borrowed from a methodology or school of thought. This applies both to describing existing code and to choosing names for new code artifacts.
+Name and describe code with the concrete construct, not a vague metaphor borrowed from a methodology or school of thought. This applies both to describing existing code and to choosing names for new code artifacts. A name or description is concrete when it denotes a construct with a precise, shared software engineering definition and a referent you can point to, either a code artifact (class, function, module) or a physical/infrastructure element (pipe, queue, layer). It is vague when it borrows a word from another domain to gesture at structure/behavior without defining what the thing actually is or does.
+
+**Concrete / Acceptable**:
+- class, struct, enum, function, method, module, package, interface, trait, proxy, adapter, dispatcher, reconciler, validator, serializer, queue, cache, buffer, stream, pipe, socket, file, layer, message broker
+**Vague / Avoid**:
+- spine, fabric, membrane, nexus, tapestry, harness, backbone, seam (only as a loose gesture, not Feathers' precise sense)
 
 - When **describing** code (architecture, data flow), name the real construct in the codebase (e.g. `interface`, `proxy`, `message broker`, `module`, `function`, `class`) instead of metaphors like "seam", "spine", "layer", "pipe", "boundary", "contract" used as a vague behavioral promise. Such metaphors assume shared background knowledge and obscure what is actually there.
 - When **naming** new artifacts (functions, fields, variables, types, modules), prefer concrete names that reflect the actual responsibility/construct (e.g. `commandDispatcher`, `snapshotReconciler`) over metaphorical or school-of-thought labels (e.g. `commandSeam`, `snapshotSpine`).
