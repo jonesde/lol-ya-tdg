@@ -1,118 +1,27 @@
-// @ts-nocheck
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, describe, expect, it } from "vitest";
 import { computed, nextTick } from "vue";
 import StatsPanel from "@/components/StatsPanel.vue";
-import type { SimulationSnapshot, TowerSnapshot } from "@/sim/SimulationSnapshot.js";
+import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import { getLatestSnapshot, SnapshotStore } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { useUiStore } from "@/stores/ui.js";
+import { buildTestTower, createTestEngine } from "../../helpers/engine-snapshot";
+import { mockDefaultTheme } from "../../helpers/mock-stores";
 
-function makeTower(id: string, totalDamageDealt: number): TowerSnapshot {
-  return {
-    id,
-    type: "basic",
-    x: 0,
-    y: 0,
-    tileX: 0,
-    tileY: 0,
-    level: 1,
-    variant: null,
-    angle: 0,
-    cooldown: 0,
-    targeting: "first",
-    totalInvested: 0,
-    waveDamage: 0,
-    totalDamageDealt,
-    fireAnimTime: 0,
-    fixedAimDir: null,
-    isGhost: false,
-    health: 0,
-    maxHealth: 0,
-    sellValue: 0,
-    color: "#fff",
-    animation: null,
-    canUpgrade: { ok: true, cost: 1, nextLevel: 2 },
-    upgradeCostAt5: 0,
-    levelCosts: [0, 1],
-    milestoneBonus: { damagePct: 0, speedPct: 0, tiers: 0 },
-    stats: { damage: 1, range: 1, fireRate: 1, splash: 0, chain: 0 },
-    base: { fixedAim: false },
-  };
-}
+let nextCommandId = 0;
 
-function makeEnemy(id: number, type: string): never {
-  return {
-    id,
-    type,
-    x: 0,
-    y: 0,
-    radius: 1,
-    hp: 50,
-    maxHp: 100,
-    shield: 0,
-    maxShield: 0,
-    angle: 0,
-    level: 1,
-    onPathBlocked: false,
-    removed: false,
-    slowFactor: 1,
-    slowTimer: 0,
-    burnTimer: 0,
-    hitFlash: 0,
-    gameSeconds: 0,
-    hitAnimTime: 0,
-    walkingFrameIndex: 0,
-    isBoss: false,
-    statusEffects: [],
-    walking: null,
-    hitReaction: null,
-  };
-}
-
-function makeSnapshot(frameId: number, towers: TowerSnapshot[], enemies: unknown[]): SimulationSnapshot {
-  return {
-    schemaVersion: 1,
-    frameId,
-    lastAppliedCommandId: 0,
-    meta: {
-      state: "playing",
-      mapIndex: 0,
-      baseHealth: 20,
-      maxBaseHealth: 100,
-      gold: 100,
-      currentWave: 1,
-      waveCountdown: null,
-      timeScale: 1,
-      selectedTowerId: null,
-      selectedTowerType: null,
-      hoverTile: null,
-      hoverUpgradeBtn: false,
-      upgradeBtnClickAnim: 0,
-      runGemsEarned: 0,
-      bossesKilledThisRun: 0,
-      bossesReachedBaseThisRun: 0,
-      lastScaledDt: 0,
-      endScreenData: null,
-      gemBreakdown: {
-        bossKills: { base: 0 },
-        milestones: { base: 0 },
-        waveCompletion: { base: 0 },
-        firstClearBonus: 0,
-      },
-      milestoneRewardsClaimed: {},
-    },
-    enemies: enemies as never,
-    towers,
-    projectiles: [],
-    particles: [],
-    spawnStates: [],
-    paths: [],
-    lightningEffects: [],
-    stunEffects: [],
-  } as SimulationSnapshot;
+// StatsPanel renders via <Teleport to="body">, so query the document, not the
+// wrapper subtree.
+function statCardValue(label: string): string | null {
+  for (const card of document.body.querySelectorAll(".stat-card")) {
+    if (card.querySelector(".stat-card-label")?.textContent === label) {
+      return card.querySelector(".stat-card-value")?.textContent ?? null;
+    }
+  }
+  return null;
 }
 
 describe("StatsPanel snapshot reactivity", () => {
@@ -126,26 +35,33 @@ describe("StatsPanel snapshot reactivity", () => {
     const gameStore = useGameStore();
     const uiStore = useUiStore();
     const themeStore = useMapThemeStore();
-    themeStore.defaultTheme = { id: "default", towers: {}, enemies: {}, regions: [] } as never;
-    themeStore.activeTheme = themeStore.defaultTheme;
+    themeStore.defaultTheme = mockDefaultTheme;
+    themeStore.activeTheme = mockDefaultTheme;
     uiStore.showStatsPanel = true;
 
+    const engine = createTestEngine();
+    const tower = buildTestTower(engine);
+    tower.totalDamageDealt = 100;
+
     const store = new SnapshotStore(gameStore as never);
-    store.apply(makeSnapshot(1, [makeTower("t1", 100)], []));
+    store.apply(buildSnapshot(engine, nextCommandId++));
 
     const wrapper = mount(StatsPanel, { global: { plugins: [pinia] }, attachTo: document.body });
     await nextTick();
 
-    // Damage Dealt reflects snapshot frame 1.
-    expect(document.body.textContent).toContain("100");
+    // Damage Dealt reflects the first snapshot.
+    expect(statCardValue("Damage Dealt")).toBe("100");
 
     // A new snapshot arrives (frameId advances) — the read-only module variable
     // changes, but StatsPanel must re-evaluate because it depends on frameId.
-    store.apply(makeSnapshot(2, [makeTower("t1", 250)], [makeEnemy(1, "minion")]));
+    tower.totalDamageDealt = 250;
+    engine.enemyManager!.spawn("minion", 1, 0, 1);
+    store.apply(buildSnapshot(engine, nextCommandId++));
     await nextTick();
 
-    expect(document.body.textContent).toContain("250");
+    expect(statCardValue("Damage Dealt")).toBe("250");
     expect(document.body.textContent).toContain("Active Enemies");
+    expect(document.body.querySelector(".enemy-count")?.textContent).toContain("1");
 
     wrapper.unmount();
   });
@@ -155,9 +71,12 @@ describe("StatsPanel snapshot reactivity", () => {
     setActivePinia(pinia);
     const gameStore = useGameStore();
     const store = new SnapshotStore(gameStore as never);
+    const engine = createTestEngine();
+
     expect(gameStore.frameId).toBe(0);
-    store.apply(makeSnapshot(7, [], []));
-    expect(gameStore.frameId).toBe(7);
+    const first = buildSnapshot(engine, nextCommandId++);
+    store.apply(first);
+    expect(gameStore.frameId).toBe(first.frameId);
 
     // The same pattern StatsPanel uses must re-evaluate on frameId change.
     let reads = 0;
@@ -166,11 +85,13 @@ describe("StatsPanel snapshot reactivity", () => {
       reads++;
       return getLatestSnapshot();
     });
-    expect(reactiveSnapshot.value?.frameId).toBe(7);
+    expect(reactiveSnapshot.value?.frameId).toBe(first.frameId);
     const before = reads;
-    store.apply(makeSnapshot(8, [], []));
-    expect(gameStore.frameId).toBe(8);
-    expect(reactiveSnapshot.value?.frameId).toBe(8);
+    const second = buildSnapshot(engine, nextCommandId++);
+    store.apply(second);
+    expect(second.frameId).toBeGreaterThan(first.frameId);
+    expect(gameStore.frameId).toBe(second.frameId);
+    expect(reactiveSnapshot.value?.frameId).toBe(second.frameId);
     expect(reads).toBeGreaterThan(before);
   });
 });

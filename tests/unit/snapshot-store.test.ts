@@ -7,86 +7,21 @@
  * Object.assign on the cached underlying object updated the values but did NOT
  * trigger reactivity, leaving the Upgrade button (canUpgrade cost/level) stale
  * after an upgrade.
+ *
+ * Snapshots are produced only through the sanctioned serializer (buildSnapshot)
+ * from a real GameEngine, never hand-built wire literals — engine/entity fields
+ * are set as input fixtures.
  */
 
 import { describe, expect, it } from "vitest";
 import { computed, nextTick, watch } from "vue";
-import type { SimulationSnapshot, TowerSnapshot } from "@/sim/SimulationSnapshot.js";
+import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
+import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
+import { buildTestTower, createTestEngine, selectTestTower } from "../helpers/engine-snapshot";
 import { createTestGameStore } from "../helpers/mock-stores";
 
-function makeTowerSnapshot(id: string, level: number, cost: number, nextLevel: number, waveDamage = 0): TowerSnapshot {
-  return {
-    id,
-    type: "basic",
-    x: 0,
-    y: 0,
-    tileX: 0,
-    tileY: 0,
-    level,
-    variant: null,
-    angle: 0,
-    cooldown: 0,
-    targeting: "first",
-    totalInvested: 0,
-    waveDamage,
-    totalDamageDealt: 0,
-    fireAnimTime: 0,
-    fixedAimDir: null,
-    isGhost: false,
-    health: 100,
-    maxHealth: 100,
-    sellValue: 10,
-    color: "#fff",
-    animation: null,
-    canUpgrade: { ok: true, cost, nextLevel },
-    upgradeCostAt5: 100,
-    levelCosts: [0, 1, 2, 3, 4],
-    milestoneBonus: { damagePct: 0, speedPct: 0, tiers: 0 },
-    stats: { damage: 10, range: 3, fireRate: 1, splash: 0, chain: 0 },
-    base: { fixedAim: false },
-    placedAt: 0,
-  };
-}
-
-function makeSnapshot(selectedTowerId: string | null, tower: TowerSnapshot | null): SimulationSnapshot {
-  return {
-    schemaVersion: 1,
-    frameId: 1,
-    lastAppliedCommandId: 0,
-    meta: {
-      state: "playing",
-      mapIndex: 0,
-      baseHealth: 20,
-      maxBaseHealth: 100,
-      gold: 100,
-      currentWave: 1,
-      waveCountdown: null,
-      timeScale: 1,
-      selectedTowerId,
-      selectedTowerType: null,
-      hoverTile: null,
-      hoverUpgradeBtn: false,
-      upgradeBtnClickAnim: 0,
-      runGemsEarned: 0,
-      bossesKilledThisRun: 0,
-      bossesReachedBaseThisRun: 0,
-      lastScaledDt: 0,
-      endScreenData: null,
-    },
-    enemies: [],
-    towers: tower ? [tower] : [],
-    projectiles: [],
-    particleSpawns: undefined,
-    spawnStates: [],
-    paths: [],
-    pathsVersion: 0,
-    waveGraphDots: [],
-    waveGraphDotsGeneration: 0,
-    lightningEffects: [],
-    stunEffects: [],
-  };
-}
+let nextCommandId = 0;
 
 describe("SnapshotStore selectedTower mirroring", () => {
   it("refreshes mutable fields through the reactive proxy after an upgrade", async () => {
@@ -94,13 +29,20 @@ describe("SnapshotStore selectedTower mirroring", () => {
     const store = new SnapshotStore(gameStore as never);
     const selected = () => gameStore.selectedTower as unknown as TowerSnapshot | null;
 
-    const towerId = "tower-1";
+    const engine = createTestEngine();
+    // Unlock upper levels so the tower can upgrade past the default max (2),
+    // keeping canUpgrade.cost/nextLevel defined before and after the upgrade.
+    engine.persistState.unlocked.basic!.levels[2] = true;
+    engine.persistState.unlocked.basic!.levels[3] = true;
+    const tower = buildTestTower(engine);
+    selectTestTower(engine, tower);
 
-    // First snapshot: level 1, upgrade costs 50 → Lv 2.
-    store.apply(makeSnapshot(towerId, makeTowerSnapshot(towerId, 1, 50, 2)));
-    expect(selected()?.level).toBe(1);
-    expect(selected()?.canUpgrade?.cost).toBe(50);
-    expect(selected()?.canUpgrade?.nextLevel).toBe(2);
+    // First snapshot: freshly-built level 1 tower.
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    const initialLevel = selected()?.level ?? 0;
+    const initialCost = selected()?.canUpgrade?.cost ?? null;
+    expect(initialLevel).toBe(1);
+    expect(initialCost).not.toBeNull();
 
     // Track whether a dependent computed re-evaluates after the upgrade.
     let upgradeCostEvaluations = 0;
@@ -109,29 +51,38 @@ describe("SnapshotStore selectedTower mirroring", () => {
       return selected()?.canUpgrade?.cost ?? null;
     });
     // Prime the computed + its reactive dependencies.
-    expect(trackedUpgradeCost.value).toBe(50);
+    expect(trackedUpgradeCost.value).toBe(initialCost);
     const initialEvaluations = upgradeCostEvaluations;
 
-    // Second snapshot (after upgrade): level 2, upgrade costs 80 → Lv 3.
-    store.apply(makeSnapshot(towerId, makeTowerSnapshot(towerId, 2, 80, 3)));
+    // Second snapshot after a real upgrade (same selected tower id → the
+    // SnapshotStore proxy-refresh branch under test runs).
+    engine.runState.gold = 1_000_000;
+    engine.upgradeSelected();
+    store.apply(buildSnapshot(engine, nextCommandId++));
     await nextTick();
 
     // Values must reflect the latest snapshot...
-    expect(selected()?.level).toBe(2);
-    expect(selected()?.canUpgrade?.cost).toBe(80);
-    expect(selected()?.canUpgrade?.nextLevel).toBe(3);
+    expect(selected()?.level).toBe(initialLevel + 1);
+    expect(selected()?.canUpgrade?.nextLevel).toBe(initialLevel + 2);
+    expect(selected()?.canUpgrade?.cost).not.toBe(initialCost);
     // ...and the dependent computed must have re-evaluated (reactivity fired),
-    // not return the stale cached cost of 50.
-    expect(trackedUpgradeCost.value).toBe(80);
+    // not return the stale cached cost.
+    expect(trackedUpgradeCost.value).toBe(selected()?.canUpgrade?.cost);
     expect(upgradeCostEvaluations).toBeGreaterThan(initialEvaluations);
   });
 
   it("notifies watchers on selected tower field changes", async () => {
     const gameStore = createTestGameStore();
     const store = new SnapshotStore(gameStore as never);
-    const towerId = "tower-2";
 
-    store.apply(makeSnapshot(towerId, makeTowerSnapshot(towerId, 1, 50, 2)));
+    const engine = createTestEngine();
+    engine.persistState.unlocked.basic!.levels[2] = true;
+    engine.persistState.unlocked.basic!.levels[3] = true;
+    const tower = buildTestTower(engine);
+    selectTestTower(engine, tower);
+
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    const initialLevel = (gameStore.selectedTower as unknown as TowerSnapshot | null)?.level ?? 0;
 
     let sawLevel: number | null = null;
     const stop = watch(
@@ -141,30 +92,38 @@ describe("SnapshotStore selectedTower mirroring", () => {
       },
     );
 
-    store.apply(makeSnapshot(towerId, makeTowerSnapshot(towerId, 3, 120, 4)));
+    engine.runState.gold = 1_000_000;
+    engine.upgradeSelected();
+    store.apply(buildSnapshot(engine, nextCommandId++));
     await nextTick();
 
-    expect(sawLevel).toBe(3);
+    expect(sawLevel).toBe(initialLevel + 1);
     stop();
   });
 
   it("persists previousWaveDamage across frames, not just the reset frame", () => {
     const gameStore = createTestGameStore();
     const store = new SnapshotStore(gameStore as never);
-    const towerId = "tower-3";
     const selected = () => gameStore.selectedTower as unknown as TowerSnapshot | null;
 
+    const engine = createTestEngine();
+    const tower = buildTestTower(engine);
+    selectTestTower(engine, tower);
+
     // Frame A: tower deals 50 damage this wave. No reset yet → no previous wave.
-    store.apply(makeSnapshot(towerId, makeTowerSnapshot(towerId, 1, 50, 2, 50)));
+    tower.waveDamage = 50;
+    store.apply(buildSnapshot(engine, nextCommandId++));
     expect(selected()?.previousWaveDamage).toBeUndefined();
 
     // Frame B: wave starts, engine resets waveDamage to 0. Transition captured.
-    store.apply(makeSnapshot(towerId, makeTowerSnapshot(towerId, 1, 50, 2, 0)));
+    tower.waveDamage = 0;
+    store.apply(buildSnapshot(engine, nextCommandId++));
     expect(selected()?.previousWaveDamage).toBe(50);
 
     // Frame C: mid next wave (waveDamage climbing again). The value must persist
     // (previously it flashed 50 only on frame B, then reverted to 0).
-    store.apply(makeSnapshot(towerId, makeTowerSnapshot(towerId, 1, 50, 2, 10)));
+    tower.waveDamage = 10;
+    store.apply(buildSnapshot(engine, nextCommandId++));
     expect(selected()?.previousWaveDamage).toBe(50);
   });
 });

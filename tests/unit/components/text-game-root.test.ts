@@ -1,93 +1,52 @@
-// @ts-nocheck
 import { mount } from "@vue/test-utils";
-import { createPinia, setActivePinia } from "pinia";
+import { createPinia, type Pinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import TextGameRoot from "@/components/TextGameRoot.vue";
-import type { Grid } from "@/sim/grid/Grid.js";
+import type { GameEngine } from "@/sim/GameEngine.js";
+import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
+import { buildTestTower, createTestEngine } from "../../helpers/engine-snapshot";
 import { mockCtx } from "../../setup";
 
-function makeFakeGrid(): Grid {
-  return {
-    width: 4,
-    height: 3,
-    isTerrain: () => false,
-    isPath: () => true,
-    isBase: () => false,
-    isSpawn: () => false,
-  } as unknown as Grid;
-}
-
-function makeSnapshot() {
-  return {
-    schemaVersion: 1,
-    frameId: 1,
-    lastAppliedCommandId: 0,
-    meta: {
-      state: "playing",
-      mapIndex: 0,
-      baseHealth: 20,
-      maxBaseHealth: 100,
-      gold: 100,
-      currentWave: 1,
-      waveCountdown: null,
-      timeScale: 1,
-      selectedTowerId: null,
-      selectedTowerType: null,
-      hoverTile: null,
-      hoverUpgradeBtn: false,
-      upgradeBtnClickAnim: 0,
-      runGemsEarned: 0,
-      bossesKilledThisRun: 0,
-      bossesReachedBaseThisRun: 0,
-      lastScaledDt: 1 / 60,
-      endScreenData: null,
-    },
-    enemies: [{ id: 1, type: "minion", x: 50, y: 60, hp: 10, maxHp: 10, radius: 8 }],
-    towers: [{ id: "t1", type: "basic", tileX: 1, tileY: 1 }],
-    projectiles: [{ id: 1, x: 30, y: 30, radius: 2, color: "#ff0" }],
-    particleSpawns: undefined,
-    spawnStates: [],
-    paths: undefined,
-    pathsVersion: 0,
-    waveGraphDots: [],
-    waveGraphDotsGeneration: 0,
-    lightningEffects: [],
-    stunEffects: [],
-  };
-}
+let nextCommandId = 0;
 
 describe("TextGameRoot", () => {
+  let pinia: Pinia;
   let gameStore: ReturnType<typeof useGameStore>;
+  let engine: GameEngine;
 
   beforeEach(() => {
-    const pinia = createPinia();
+    pinia = createPinia();
     setActivePinia(pinia);
     gameStore = useGameStore();
-    gameStore.grid = makeFakeGrid();
+
+    engine = createTestEngine();
+    buildTestTower(engine);
+    engine.enemyManager!.spawn("minion", 1, 0, 1);
+    gameStore.grid = engine.grid;
     gameStore.worker = { postMessage: vi.fn() } as unknown as Worker;
     // jsdom has no real 2D context; route getContext to the shared mock so the
     // render loop can drive the canvas. measureText returns 0 → fallback path.
-    HTMLCanvasElement.prototype.getContext = vi.fn(() => mockCtx);
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => mockCtx) as never;
     (mockCtx.fillText as ReturnType<typeof vi.fn>).mockClear();
   });
 
   it("drives a canvas redraw from the latest snapshot via rAF", () => {
-    const snapshotStore = new SnapshotStore(gameStore);
-    snapshotStore.apply(makeSnapshot());
+    const snapshotStore = new SnapshotStore(gameStore as never);
+    snapshotStore.apply(buildSnapshot(engine, nextCommandId++));
 
-    mount(TextGameRoot, { global: { plugins: [createPinia()] } });
+    mount(TextGameRoot, { global: { plugins: [pinia] } });
     globalThis.flushRaf();
 
     expect(mockCtx.fillText).toHaveBeenCalled();
   });
 
   it("never posts a snapshotAck (it is a passive second consumer)", () => {
-    const snapshotStore = new SnapshotStore(gameStore);
-    snapshotStore.apply(makeSnapshot());
+    const snapshotStore = new SnapshotStore(gameStore as never);
+    snapshotStore.apply(buildSnapshot(engine, nextCommandId++));
 
-    mount(TextGameRoot, { global: { plugins: [createPinia()] } });
+    mount(TextGameRoot, { global: { plugins: [pinia] } });
     globalThis.flushRaf();
 
     expect(gameStore.worker?.postMessage).not.toHaveBeenCalled();
