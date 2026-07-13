@@ -224,11 +224,8 @@ describe("ProjectileManager", () => {
         towerType: "arrow",
         towerLevel: 1,
         targetId: 1,
+        critChance: 0,
       });
-
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      proj.isCrit = false;
 
       manager.update(0.016);
 
@@ -276,11 +273,8 @@ describe("ProjectileManager", () => {
         towerType: "arrow",
         towerLevel: 1,
         targetId: 1,
+        critChance: 1,
       });
-
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      proj.isCrit = true;
 
       manager.update(0.016);
 
@@ -303,21 +297,21 @@ describe("ProjectileManager", () => {
         damage: 10,
         speed: 100,
         range: 50,
-        towerType: "arrow",
+        towerType: "railgun",
         towerLevel: 1,
         targetId: 1,
+        pierce: 1,
+        critChance: 0,
       });
 
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      proj.isCrit = false;
-      proj.maxHitCount = 2;
-
       manager.update(0.016);
-
       expect(takeDamage1).toHaveBeenCalledWith(10, false);
-      expect(proj.targetId).toBe(2);
-      expect(manager.getRenderData()).toHaveLength(1);
+
+      for (let step = 0; step < 20 && manager.getRenderData().length > 0; step++) {
+        manager.update(0.016);
+      }
+      expect(takeDamage2).toHaveBeenCalled();
+      expect(manager.getRenderData()).toHaveLength(0);
     });
 
     it("removes after piercing all targets", () => {
@@ -333,15 +327,12 @@ describe("ProjectileManager", () => {
         damage: 10,
         speed: 100,
         range: 5,
-        towerType: "arrow",
+        towerType: "railgun",
         towerLevel: 1,
         targetId: 1,
+        pierce: 0,
+        critChance: 0,
       });
-
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      proj.isCrit = false;
-      proj.maxHitCount = 1;
 
       manager.update(0.016);
 
@@ -743,7 +734,7 @@ describe("ProjectileManager", () => {
       manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
-        x: 100,
+        x: 104,
         y: 200,
         damage: 10,
         speed: 100,
@@ -751,13 +742,8 @@ describe("ProjectileManager", () => {
         towerType: "railgun",
         towerLevel: 1,
         targetId: 1,
+        critChance: 0,
       });
-
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      proj.isCrit = false;
-      proj.x = 104;
-      proj.y = 200;
 
       manager.update(0.016);
 
@@ -772,7 +758,7 @@ describe("ProjectileManager", () => {
       manager = new ProjectileManager(enemyManager, particles);
 
       manager.spawn({
-        x: 100,
+        x: 104,
         y: 200,
         damage: 32,
         speed: 100,
@@ -780,13 +766,8 @@ describe("ProjectileManager", () => {
         towerType: "sniper",
         towerLevel: 5,
         targetId: 1,
+        critChance: 0,
       });
-
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      proj.isCrit = false;
-      proj.x = 104;
-      proj.y = 200;
 
       manager.update(0.016);
 
@@ -1306,8 +1287,8 @@ describe("ProjectileManager", () => {
       enemy.x = x;
       enemy.y = y;
       enemy.takeDamage = vi.fn();
-      // biome-ignore lint/suspicious/noExplicitAny: tests reach the private rehash
-      (enemyManager as any).updateSpatialHash();
+      // Re-hash at the explicit position through the public update path.
+      enemyManager.updateSpatialHash();
       return enemy;
     }
 

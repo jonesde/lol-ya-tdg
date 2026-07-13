@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
+import { applyCommand } from "@/sim/applyCommand.js";
 import {
   FIXED_DT,
   GameState,
@@ -11,6 +12,7 @@ import {
 } from "@/sim/Constants.js";
 import { TOWER_META } from "@/sim/ConstantsTower.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import {
   createTestMapThemeStore,
   createTestPersistState,
@@ -30,6 +32,16 @@ function runTicks(engine: GameEngine, ticks: number): void {
   }
 }
 
+function buildTowerAt(engine: GameEngine, tileX: number, tileY: number): void {
+  const tileSize = engine.grid!.tileSize;
+  applyCommand(engine, { type: "action:selectBuildType", towerType: "basic" });
+  applyCommand(engine, {
+    type: "input:click",
+    worldX: tileX * tileSize + tileSize / 2,
+    worldY: tileY * tileSize + tileSize / 2,
+  });
+}
+
 describe("Integration: Single Wave Simulation", () => {
   let engine: GameEngine;
   let persistState: ReturnType<typeof createTestPersistState>;
@@ -44,13 +56,9 @@ describe("Integration: Single Wave Simulation", () => {
   });
 
   it("kills all enemies in wave 1 with adequate tower defense", () => {
-    const grid = engine.grid!;
-    engine.towerManager?.build("basic", 2, 2, persistState, grid);
-    engine.runState.gold -= TOWER_META.basic.cost;
-    engine.towerManager?.build("basic", 4, 2, persistState, grid);
-    engine.runState.gold -= TOWER_META.basic.cost;
-    engine.towerManager?.build("basic", 6, 2, persistState, grid);
-    engine.runState.gold -= TOWER_META.basic.cost;
+    buildTowerAt(engine, 2, 2);
+    buildTowerAt(engine, 4, 2);
+    buildTowerAt(engine, 6, 2);
 
     engine.waveManager?.startNextWave();
 
@@ -60,9 +68,7 @@ describe("Integration: Single Wave Simulation", () => {
   });
 
   it("towers deal damage during wave", () => {
-    const grid = engine.grid!;
-    engine.towerManager?.build("basic", 2, 2, persistState, grid);
-    engine.runState.gold -= TOWER_META.basic.cost;
+    buildTowerAt(engine, 2, 2);
 
     engine.waveManager?.startNextWave();
 
@@ -107,7 +113,8 @@ describe("Integration: Tower Placement Flow", () => {
 
   it("placing a tower does not block the path in non-critical positions", () => {
     const grid = engine.grid!;
-    const tower = engine.towerManager!.build("basic", 0, 0, persistState, grid);
+    buildTowerAt(engine, 0, 0);
+    const tower = engine.towerManager!.towerAt(0, 0);
     expect(tower).not.toBeNull();
 
     const path = grid.getPathFor(0);
@@ -125,29 +132,30 @@ describe("Integration: Tower Placement Flow", () => {
   });
 
   it("tower can be selected and upgraded", () => {
-    const grid = engine.grid!;
-    const tower = engine.towerManager!.build("basic", 0, 0, persistState, grid);
-    engine.runState.gold -= TOWER_META.basic.cost;
-    engine.runState.selectedTowerId = String(tower.id);
+    buildTowerAt(engine, 0, 0);
+    const tower = engine.towerManager!.towerAt(0, 0)!;
+    applyCommand(engine, { type: "action:selectTower", towerId: tower.id });
 
-    const cost = engine.getUpgradeCost(tower!);
-    engine.runState.gold -= cost;
-    engine.upgradeSelected();
-    expect(tower!.level).toBe(2);
-    expect(engine.runState.selectedTowerId).toBe(String(tower.id));
+    const cost = engine.getUpgradeCost(tower);
+    const goldBefore = buildSnapshot(engine).meta.gold;
+    applyCommand(engine, { type: "action:upgradeSelected" });
+
+    expect(tower.level).toBe(2);
+    expect(buildSnapshot(engine).meta.gold).toBe(goldBefore - cost);
+    expect(buildSnapshot(engine).meta.selectedTowerId).toBe(String(tower.id));
   });
 
   it("tower can be sold and gold refunded", () => {
-    const grid = engine.grid!;
-    const tower = engine.towerManager!.build("basic", 0, 0, persistState, grid);
-    engine.runState.gold -= TOWER_META.basic.cost;
-    const goldBefore = engine.runState.gold;
-    engine.runState.selectedTowerId = String(tower.id);
+    buildTowerAt(engine, 0, 0);
+    const tower = engine.towerManager!.towerAt(0, 0)!;
+    applyCommand(engine, { type: "action:selectTower", towerId: tower.id });
 
-    engine.executeSell();
-    const expectedRefund = Math.round(tower!.totalInvested * 0.6);
-    expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
-    expect(engine.runState.selectedTowerId).toBeNull();
+    const goldBefore = buildSnapshot(engine).meta.gold;
+    applyCommand(engine, { type: "action:executeSell", towerId: tower.id });
+
+    const expectedRefund = Math.round(tower.totalInvested * 0.6);
+    expect(buildSnapshot(engine).meta.gold).toBe(goldBefore + expectedRefund);
+    expect(buildSnapshot(engine).meta.selectedTowerId).toBeNull();
   });
 });
 
@@ -165,47 +173,39 @@ describe("Integration: Economy Flow", () => {
   });
 
   it("buying towers reduces gold correctly", () => {
-    const grid = engine.grid!;
-    const initialGold = engine.runState.gold;
+    const initialGold = buildSnapshot(engine).meta.gold;
 
-    engine.towerManager?.build("basic", 0, 0, persistState, grid);
-    engine.runState.gold -= TOWER_META.basic.cost;
+    buildTowerAt(engine, 0, 0);
+    buildTowerAt(engine, 2, 2);
 
-    engine.towerManager?.build("basic", 1, 0, persistState, grid);
-    engine.runState.gold -= TOWER_META.basic.cost;
-
-    expect(engine.runState.gold).toBe(initialGold - TOWER_META.basic.cost * 2);
+    expect(buildSnapshot(engine).meta.gold).toBe(initialGold - TOWER_META.basic.cost * 2);
   });
 
   it("upgrading a tower costs the correct amount", () => {
-    const grid = engine.grid!;
-    const tower = engine.towerManager!.build("basic", 0, 0, persistState, grid);
-    engine.runState.gold -= TOWER_META.basic.cost;
-    engine.runState.selectedTowerId = String(tower.id);
+    buildTowerAt(engine, 0, 0);
+    const tower = engine.towerManager!.towerAt(0, 0)!;
+    applyCommand(engine, { type: "action:selectTower", towerId: tower.id });
 
-    const cost = engine.getUpgradeCost(tower!);
-    const goldBefore = engine.runState.gold;
-    engine.upgradeSelected();
+    const cost = engine.getUpgradeCost(tower);
+    const goldBefore = buildSnapshot(engine).meta.gold;
+    applyCommand(engine, { type: "action:upgradeSelected" });
 
-    expect(tower!.level).toBe(2);
-    expect(engine.runState.gold).toBe(goldBefore - cost);
+    expect(tower.level).toBe(2);
+    expect(buildSnapshot(engine).meta.gold).toBe(goldBefore - cost);
   });
 
   it("sell returns 60% of total invested", () => {
-    const grid = engine.grid!;
-    const tower = engine.towerManager!.build("basic", 0, 0, persistState, grid);
-    engine.runState.gold -= TOWER_META.basic.cost;
-    engine.runState.selectedTowerId = String(tower.id);
+    buildTowerAt(engine, 0, 0);
+    const tower = engine.towerManager!.towerAt(0, 0)!;
+    applyCommand(engine, { type: "action:selectTower", towerId: tower.id });
 
-    const cost = engine.getUpgradeCost(tower!);
-    engine.runState.gold -= cost;
-    engine.upgradeSelected();
+    applyCommand(engine, { type: "action:upgradeSelected" });
 
-    const goldBefore = engine.runState.gold;
-    engine.executeSell();
+    const goldBefore = buildSnapshot(engine).meta.gold;
+    applyCommand(engine, { type: "action:executeSell", towerId: tower.id });
 
-    const expectedRefund = Math.round(tower!.totalInvested * 0.6);
-    expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
+    const expectedRefund = Math.round(tower.totalInvested * 0.6);
+    expect(buildSnapshot(engine).meta.gold).toBe(goldBefore + expectedRefund);
   });
 
   it("general addons affect starting resources", () => {

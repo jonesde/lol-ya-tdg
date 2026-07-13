@@ -259,11 +259,12 @@ describe("Enemy attack and collision (Phases 3 & 4)", () => {
       enemy.moveAngle = 0;
     }
     enemyManager.enemies.push(slow, fast);
+    // Freeze motion so the pair stays coincident (dist === 0) and resolveCollisions
+    // separates them along the heading-perp, which the assertion projects onto.
+    slow.speed = 0;
+    fast.speed = 0;
     enemyManager.updateSpatialHash();
-    // Drive collision resolution directly with a fixed heading so the synthetic
-    // frame is deterministic (the full update would also walk the enemies along
-    // their real path and re-resolve, washing out the lateral separation).
-    (slow as unknown as { resolveCollisions: (m: EnemyManager) => void }).resolveCollisions(enemyManager);
+    enemyManager.update(0.05);
     // The lane offset is a world-space vector; project it onto each enemy's own
     // (right) perpendicular to recover the intended signed separation.
     const slowPerp = { x: -Math.sin(slow.moveAngle), y: Math.cos(slow.moveAngle) };

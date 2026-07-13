@@ -88,14 +88,23 @@ describe("Integration: real commander worker round-trip (stubby)", () => {
     // Apply the captured commands back through applyCommand.
     for (const command of firstCommands) applyCommand(engine, command);
 
-    // Held enemies stay put (they do not advance toward the base).
-    const heldEnemy = engine.enemyManager!.enemies[0]!;
-    const heldStartX = heldEnemy.centerX;
-    const heldId = heldEnemy.id;
+    // Let collision separation settle, then capture the held baseline from the
+    // snapshot (consumer-visible state) rather than Enemy internals. A held enemy
+    // does not advance, so its distance to the base stays put (lane-offset jitter
+    // is tolerated; a real advance would close more than a tile per second).
+    for (let tick = 0; tick < 10; tick++) engine.update(FIXED_DT);
+    const heldId = (holds[0] as Extract<Command, { type: "llm:routeGroup" }>).enemyIds[0]!;
+    const tileSize = engine.grid!.tileSize;
+    const baseWorldX = engine.grid!.base.x * tileSize + tileSize / 2;
+    const baseWorldY = engine.grid!.base.y * tileSize + tileSize / 2;
+    const snapshotBefore = buildSnapshot(engine, 0);
+    const enemyBefore = snapshotBefore.enemies.find((e) => e.id === heldId)!;
     for (let tick = 0; tick < 60; tick++) engine.update(FIXED_DT);
-    const stillHeld = engine.getEnemiesByIds([heldId])[0]!;
-    expect(stillHeld.routingMode).toBe("hold");
-    expect(Math.abs(stillHeld.centerX - heldStartX)).toBeLessThan(1);
+    const snapshotAfter = buildSnapshot(engine, 0);
+    const enemyAfter = snapshotAfter.enemies.find((e) => e.id === heldId)!;
+    const distBefore = Math.hypot(enemyBefore.x - baseWorldX, enemyBefore.y - baseWorldY);
+    const distAfter = Math.hypot(enemyAfter.x - baseWorldX, enemyAfter.y - baseWorldY);
+    expect(Math.abs(distAfter - distBefore)).toBeLessThan(tileSize);
 
     // Keep ticking and feeding observations (holds are idempotent) until the wave
     // has fully emerged; the worker then emits the release rush.
@@ -114,9 +123,9 @@ describe("Integration: real commander worker round-trip (stubby)", () => {
 
     // After release, the enemies revert to default and advance to the base, where
     // they attack it (they are no longer culled as "reached base"). Lives must drop.
-    const livesBefore = engine.runState.baseHealth;
+    const livesBefore = buildSnapshot(engine, 0).meta.baseHealth;
     for (let tick = 0; tick < 2000; tick++) engine.update(FIXED_DT);
-    expect(engine.runState.baseHealth < livesBefore).toBe(true);
+    expect(buildSnapshot(engine, 0).meta.baseHealth < livesBefore).toBe(true);
 
     mockSelf.onmessage!({ data: { type: "stop" } });
   });

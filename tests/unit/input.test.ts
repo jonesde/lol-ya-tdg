@@ -7,10 +7,13 @@ import { TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
+import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
+import { SnapshotStore } from "@/sim/SnapshotStore.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
+import { buildTestTowers, createTestEngine } from "../helpers/engine-snapshot.js";
 
 const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -78,6 +81,22 @@ describe("useInput", () => {
   function lastSelectedTowerId(): string | null | undefined {
     const command = lastOfType("action:selectTower");
     return command ? command.towerId : undefined;
+  }
+
+  // Builds real towers into a fresh engine at the given buildable tiles and
+  // pushes the resulting snapshot into the SnapshotStore, so Input.ts tower
+  // navigation reads it through the public snapshot path (getLatestSnapshot)
+  // instead of an injected internal store field. Returns the engine and the
+  // snapshot towers (engine-assigned ids) so tests can bind role objects.
+  function applyTowerSnapshot(coords: Array<{ tileX: number; tileY: number }>): {
+    engine: ReturnType<typeof createTestEngine>;
+    towers: ReturnType<typeof buildSnapshot>["towers"];
+  } {
+    const engine = createTestEngine(0);
+    buildTestTowers(engine, coords);
+    const snapshot = buildSnapshot(engine, 0);
+    new SnapshotStore(gameStore).apply(snapshot);
+    return { engine, towers: snapshot.towers };
   }
 
   describe("returns early in non-play states", () => {
@@ -392,12 +411,12 @@ describe("useInput", () => {
 
     it("selects tower above when not in build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      const below = { tileX: 3, tileY: 4, id: "t-below" };
-      const above = { tileX: 3, tileY: 2, id: "t-above" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [below, above] };
+      const { towers } = applyTowerSnapshot([
+        { tileX: 3, tileY: 4 },
+        { tileX: 3, tileY: 2 },
+      ]);
+      const below = towers.find((t) => t.tileX === 3 && t.tileY === 4)!;
+      const above = towers.find((t) => t.tileX === 3 && t.tileY === 2)!;
       gameStore.selectedTower = below as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
@@ -406,12 +425,11 @@ describe("useInput", () => {
 
     it("selects topmost tower when no tower selected", () => {
       gameStore.setState(GameState.PLAYING);
-      const t1 = { tileX: 3, tileY: 4, id: "t1" };
-      const t2 = { tileX: 5, tileY: 1, id: "t2" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [t1, t2] };
+      const { towers } = applyTowerSnapshot([
+        { tileX: 3, tileY: 4 },
+        { tileX: 5, tileY: 1 },
+      ]);
+      const t2 = towers.find((t) => t.tileX === 5 && t.tileY === 1)!;
       gameStore.selectedTower = null;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
@@ -481,12 +499,12 @@ describe("useInput", () => {
 
     it("selects tower below when not in build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      const above = { tileX: 3, tileY: 2, id: "t-above" };
-      const below = { tileX: 3, tileY: 4, id: "t-below" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [above, below] };
+      const { towers } = applyTowerSnapshot([
+        { tileX: 3, tileY: 2 },
+        { tileX: 3, tileY: 4 },
+      ]);
+      const above = towers.find((t) => t.tileX === 3 && t.tileY === 2)!;
+      const below = towers.find((t) => t.tileX === 3 && t.tileY === 4)!;
       gameStore.selectedTower = above as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
@@ -495,12 +513,11 @@ describe("useInput", () => {
 
     it("selects bottommost tower when no tower selected", () => {
       gameStore.setState(GameState.PLAYING);
-      const t1 = { tileX: 3, tileY: 4, id: "t1" };
-      const t2 = { tileX: 5, tileY: 1, id: "t2" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [t1, t2] };
+      const { towers } = applyTowerSnapshot([
+        { tileX: 3, tileY: 4 },
+        { tileX: 5, tileY: 1 },
+      ]);
+      const t1 = towers.find((t) => t.tileX === 3 && t.tileY === 4)!;
       gameStore.selectedTower = null;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
@@ -556,12 +573,12 @@ describe("useInput", () => {
 
     it("selects tower to the right when not in build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      const left = { tileX: 2, tileY: 3, id: "t-left" };
-      const right = { tileX: 4, tileY: 3, id: "t-right" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [left, right] };
+      const { towers } = applyTowerSnapshot([
+        { tileX: 2, tileY: 3 },
+        { tileX: 4, tileY: 3 },
+      ]);
+      const left = towers.find((t) => t.tileX === 2 && t.tileY === 3)!;
+      const right = towers.find((t) => t.tileX === 4 && t.tileY === 3)!;
       gameStore.selectedTower = left as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
@@ -570,12 +587,11 @@ describe("useInput", () => {
 
     it("selects rightmost tower when no tower selected", () => {
       gameStore.setState(GameState.PLAYING);
-      const t1 = { tileX: 2, tileY: 3, id: "t1" };
-      const t2 = { tileX: 5, tileY: 1, id: "t2" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [t1, t2] };
+      const { towers } = applyTowerSnapshot([
+        { tileX: 2, tileY: 3 },
+        { tileX: 5, tileY: 1 },
+      ]);
+      const t2 = towers.find((t) => t.tileX === 5 && t.tileY === 1)!;
       gameStore.selectedTower = null;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
@@ -584,13 +600,13 @@ describe("useInput", () => {
 
     it("prefers same row over diagonal when moving right", () => {
       gameStore.setState(GameState.PLAYING);
-      const center = { tileX: 3, tileY: 3, id: "center" };
-      const diagonal = { tileX: 4, tileY: 2, id: "diag" };
-      const sameRow = { tileX: 5, tileY: 3, id: "sameRow" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [center, diagonal, sameRow] };
+      const { towers } = applyTowerSnapshot([
+        { tileX: 3, tileY: 3 },
+        { tileX: 4, tileY: 2 },
+        { tileX: 5, tileY: 3 },
+      ]);
+      const center = towers.find((t) => t.tileX === 3 && t.tileY === 3)!;
+      const sameRow = towers.find((t) => t.tileX === 5 && t.tileY === 3)!;
       gameStore.selectedTower = center as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
@@ -631,12 +647,12 @@ describe("useInput", () => {
 
     it("selects tower to the left when not in build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      const left = { tileX: 2, tileY: 3, id: "t-left" };
-      const right = { tileX: 4, tileY: 3, id: "t-right" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [left, right] };
+      const { towers } = applyTowerSnapshot([
+        { tileX: 2, tileY: 3 },
+        { tileX: 4, tileY: 3 },
+      ]);
+      const left = towers.find((t) => t.tileX === 2 && t.tileY === 3)!;
+      const right = towers.find((t) => t.tileX === 4 && t.tileY === 3)!;
       gameStore.selectedTower = right as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
@@ -645,12 +661,11 @@ describe("useInput", () => {
 
     it("selects leftmost tower when no tower selected", () => {
       gameStore.setState(GameState.PLAYING);
-      const t1 = { tileX: 2, tileY: 3, id: "t1" };
-      const t2 = { tileX: 5, tileY: 1, id: "t2" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [t1, t2] };
+      const { towers } = applyTowerSnapshot([
+        { tileX: 2, tileY: 3 },
+        { tileX: 5, tileY: 1 },
+      ]);
+      const t1 = towers.find((t) => t.tileX === 2 && t.tileY === 3)!;
       gameStore.selectedTower = null;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
@@ -661,18 +676,13 @@ describe("useInput", () => {
   describe("Arrow key wrap-around (tower selection)", () => {
     it("wraps right from rightmost tower to leftmost tower on same row", () => {
       gameStore.setState(GameState.PLAYING);
-      const grid = {
-        width: 20,
-        height: 15,
-        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
-      };
-      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
-      const rightmost = { tileX: 18, tileY: 5, id: "t-right" };
-      const leftmost = { tileX: 2, tileY: 5, id: "t-left" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [rightmost, leftmost] };
+      const { engine, towers } = applyTowerSnapshot([
+        { tileX: 14, tileY: 5 },
+        { tileX: 2, tileY: 5 },
+      ]);
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
+      const rightmost = towers.find((t) => t.tileX === 14 && t.tileY === 5)!;
+      const leftmost = towers.find((t) => t.tileX === 2 && t.tileY === 5)!;
       gameStore.selectedTower = rightmost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
@@ -681,18 +691,13 @@ describe("useInput", () => {
 
     it("wraps left from leftmost tower to rightmost tower on same row", () => {
       gameStore.setState(GameState.PLAYING);
-      const grid = {
-        width: 20,
-        height: 15,
-        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
-      };
-      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
-      const rightmost = { tileX: 18, tileY: 5, id: "t-right" };
-      const leftmost = { tileX: 2, tileY: 5, id: "t-left" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [rightmost, leftmost] };
+      const { engine, towers } = applyTowerSnapshot([
+        { tileX: 2, tileY: 5 },
+        { tileX: 14, tileY: 5 },
+      ]);
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
+      const leftmost = towers.find((t) => t.tileX === 2 && t.tileY === 5)!;
+      const rightmost = towers.find((t) => t.tileX === 14 && t.tileY === 5)!;
       gameStore.selectedTower = leftmost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
@@ -701,18 +706,13 @@ describe("useInput", () => {
 
     it("wraps up from topmost tower to bottommost tower on same column", () => {
       gameStore.setState(GameState.PLAYING);
-      const grid = {
-        width: 20,
-        height: 15,
-        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
-      };
-      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
-      const topmost = { tileX: 5, tileY: 1, id: "t-top" };
-      const bottommost = { tileX: 5, tileY: 13, id: "t-bottom" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [topmost, bottommost] };
+      const { engine, towers } = applyTowerSnapshot([
+        { tileX: 5, tileY: 1 },
+        { tileX: 5, tileY: 13 },
+      ]);
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
+      const topmost = towers.find((t) => t.tileX === 5 && t.tileY === 1)!;
+      const bottommost = towers.find((t) => t.tileX === 5 && t.tileY === 13)!;
       gameStore.selectedTower = topmost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
@@ -721,18 +721,13 @@ describe("useInput", () => {
 
     it("wraps down from bottommost tower to topmost tower on same column", () => {
       gameStore.setState(GameState.PLAYING);
-      const grid = {
-        width: 20,
-        height: 15,
-        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
-      };
-      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
-      const topmost = { tileX: 5, tileY: 1, id: "t-top" };
-      const bottommost = { tileX: 5, tileY: 13, id: "t-bottom" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [topmost, bottommost] };
+      const { engine, towers } = applyTowerSnapshot([
+        { tileX: 5, tileY: 1 },
+        { tileX: 5, tileY: 13 },
+      ]);
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
+      const topmost = towers.find((t) => t.tileX === 5 && t.tileY === 1)!;
+      const bottommost = towers.find((t) => t.tileX === 5 && t.tileY === 13)!;
       gameStore.selectedTower = bottommost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
@@ -741,18 +736,13 @@ describe("useInput", () => {
 
     it("finds tower at x+1,y-2 when pressing down from (x,y)", () => {
       gameStore.setState(GameState.PLAYING);
-      const grid = {
-        width: 20,
-        height: 15,
-        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
-      };
-      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
-      const origin = { tileX: 5, tileY: 5, id: "t-origin" };
-      const offAxis = { tileX: 6, tileY: 3, id: "t-offaxis" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [origin, offAxis] };
+      const { engine, towers } = applyTowerSnapshot([
+        { tileX: 5, tileY: 5 },
+        { tileX: 6, tileY: 3 },
+      ]);
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
+      const origin = towers.find((t) => t.tileX === 5 && t.tileY === 5)!;
+      const offAxis = towers.find((t) => t.tileX === 6 && t.tileY === 3)!;
       gameStore.selectedTower = origin as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
@@ -761,18 +751,13 @@ describe("useInput", () => {
 
     it("finds tower at x-2,y+1 when pressing left from (x,y)", () => {
       gameStore.setState(GameState.PLAYING);
-      const grid = {
-        width: 20,
-        height: 15,
-        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
-      };
-      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
-      const origin = { tileX: 10, tileY: 7, id: "t-origin" };
-      const offAxis = { tileX: 8, tileY: 8, id: "t-offaxis" };
-      const storeRecord = gameStore as unknown as {
-        towerManager: { towers: Array<{ tileX: number; tileY: number; id: string }> };
-      };
-      storeRecord.towerManager = { towers: [origin, offAxis] };
+      const { engine, towers } = applyTowerSnapshot([
+        { tileX: 10, tileY: 7 },
+        { tileX: 8, tileY: 8 },
+      ]);
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
+      const origin = towers.find((t) => t.tileX === 10 && t.tileY === 7)!;
+      const offAxis = towers.find((t) => t.tileX === 8 && t.tileY === 8)!;
       gameStore.selectedTower = origin as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");

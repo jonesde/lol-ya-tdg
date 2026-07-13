@@ -35,3 +35,20 @@ export function buildTestTower(engine: GameEngine, type = "basic"): Tower {
 export function selectTestTower(engine: GameEngine, tower: Tower): void {
   engine.selectTowerById(String(tower.id));
 }
+
+// Builds real towers into a live engine at the given tile coordinates so tests
+// can drive tower navigation through the public snapshot path (Input.ts reads
+// getLatestSnapshot().towers) instead of injecting an internal store field.
+// Throws if a coordinate is not buildable, so callers must use real buildable
+// tiles (the test map grid is 15x15).
+export function buildTestTowers(
+  engine: GameEngine,
+  specs: Array<{ type?: string; tileX: number; tileY: number }>,
+): void {
+  const grid = engine.grid;
+  if (!grid) throw new Error("engine has no grid; call loadMap first");
+  for (const spec of specs) {
+    const tower = engine.towerManager!.build(spec.type ?? "basic", spec.tileX, spec.tileY, engine.persistState, grid);
+    if (!tower) throw new Error(`could not build tower at ${spec.tileX},${spec.tileY}`);
+  }
+}
