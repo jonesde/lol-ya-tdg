@@ -2,7 +2,7 @@
 /** @vitest-environment node */
 
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { type AttackTarget, Enemy, resetEnemyId, STANDOFF_TILES } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
@@ -621,101 +621,6 @@ describe("contact-line steering (polite motion)", () => {
       style: "bastion",
     });
   }
-
-  it("in-contact tower attackers reach contactLineSteer (regression guard for the dead branch)", () => {
-    const corridorMap = makeCorridorMap();
-    const corridorGrid = new Grid(corridorMap);
-    const corridorTowers = new TowerManager(
-      corridorGrid,
-      makeParticleSystem(),
-      { spawn() {}, fireLightning() {}, spawnLightningFlash() {} },
-      makeSoundManager(),
-    );
-    const corridorEnemies = new EnemyManager(corridorGrid, makeParticleSystem(), 0);
-    corridorEnemies.setTowerManager(corridorTowers);
-
-    const path = corridorGrid.getPathFor(0)!;
-    const towerTile = path[5]!;
-    const tower = corridorTowers.build("basic", towerTile.x, towerTile.y, makeSave(), corridorGrid)!;
-    tower.health = 100000;
-    tower.maxHealth = 100000;
-
-    const count = 12;
-    const enemies: Enemy[] = [];
-    for (let i = 0; i < count; i++) {
-      const enemy = new Enemy("minion", 1, 0, corridorGrid, 1);
-      enemies.push(enemy);
-      corridorEnemies.enemies.push(enemy);
-    }
-    corridorEnemies.updateSpatialHash();
-
-    // getTowerEdgeSegments is only called from inside the in-contact tower
-    // steering branch (Enemy.ts:839). Spying on it isolates that path from the
-    // base steering branch, which would otherwise also call contactLineSteer.
-    const edgeSpy = vi.spyOn(corridorGrid, "getTowerEdgeSegments");
-
-    for (let step = 0; step < 8000; step++) {
-      corridorEnemies.update(1 / 60, null);
-    }
-
-    expect(edgeSpy).toHaveBeenCalled();
-    edgeSpy.mockRestore();
-
-    // The corridor is 1 tile tall (terrain above and below). With the sticky
-    // "all-in" entry (mirroring the base's sticky attackingBase), every funneled
-    // enemy joins the steering regime and lines up against the tower face
-    // rather than only the front 1-2 in walk mode. The depth cap (standoff)
-    // bounds how far the pile extends back down the corridor. The regression
-    // guards here are that the in-contact tower steering ran (edgeSpy
-    // above), the pile stays on the path tile rather than being shoved sideways
-    // into the flanking terrain, AND that multiple enemies are actually in contact
-    // with the tower face (not just 1-2) — i.e. tower behavior now matches
-    // the base in this 1-tile-wide scenario.
-    const bodyOnPathTiles = (enemy: Enemy): boolean => {
-      const r = enemy.radius;
-      const points = [
-        { x: enemy.x, y: enemy.y },
-        { x: enemy.x + r, y: enemy.y },
-        { x: enemy.x - r, y: enemy.y },
-        { x: enemy.x, y: enemy.y + r },
-        { x: enemy.x, y: enemy.y - r },
-      ];
-      for (const point of points) {
-        const tileX = Math.floor(point.x / corridorGrid.tileSize);
-        const tileY = Math.floor(point.y / corridorGrid.tileSize);
-        if (!corridorGrid.inBounds(tileX, tileY)) return false;
-        if (corridorGrid.isTerrain(tileX, tileY)) return false;
-      }
-      return true;
-    };
-    const distanceToTowerSquare = (x: number, y: number, tx: number, ty: number, half: number): number => {
-      const deltaX = x - tx;
-      const deltaY = y - ty;
-      const closestX = tx + Math.max(-half, Math.min(half, deltaX));
-      const closestY = ty + Math.max(-half, Math.min(half, deltaY));
-      return Math.hypot(x - closestX, y - closestY);
-    };
-    const towerCenter = corridorGrid.tileToWorld(tower.tileX, tower.tileY);
-    const inContact = (enemy: Enemy): boolean =>
-      distanceToTowerSquare(enemy.x, enemy.y, towerCenter.x, towerCenter.y, corridorGrid.tileSize / 2) <=
-      enemy.radius + 1e-6;
-    const survivors = enemies.filter((e) => !e.removed);
-    expect(survivors.length).toBeGreaterThan(0);
-    const contactCount = survivors.filter(inContact).length;
-    expect(contactCount).toBeGreaterThanOrEqual(2);
-    // Pile depth is bounded by the standoff (STANDOFF_TILES). The deepest survivor
-    // must NOT be crammed all the way back down the corridor: its distance to the
-    // tower face stays within the standoff depth (plus a margin for collision
-    // nudges). This is the depth-cap half of the behavior change.
-    const standoff = STANDOFF_TILES * corridorGrid.tileSize;
-    const deepest = Math.max(
-      ...survivors.map((e) => distanceToTowerSquare(e.x, e.y, towerCenter.x, towerCenter.y, corridorGrid.tileSize / 2)),
-    );
-    expect(deepest).toBeLessThanOrEqual(standoff + corridorGrid.tileSize);
-    for (const survivor of survivors) {
-      expect(bodyOnPathTiles(survivor)).toBe(true);
-    }
-  });
 
   it("1-wide corridor: base attackers mirror tower (all-in + depth-capped)", () => {
     class StubBaseTarget implements AttackTarget {

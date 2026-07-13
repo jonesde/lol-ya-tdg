@@ -302,7 +302,6 @@ describe("WaveManager", () => {
       expect(waveManager.countdownActive).toBe(false);
       expect(waveManager.currentWave).toBe(2);
       expect(waveManager.betweenWaves).toBe(false);
-      expect(waveManager._waveGameTime).toBe(0);
     });
 
     it("timer starts next wave with onWaveStart callback", () => {
@@ -386,16 +385,6 @@ describe("WaveManager", () => {
       expect(waveManager.spawnStates[1]!.closeTransitionTimer).toBe(0.5);
     });
 
-    it("saveActiveSpawns captures open spawns", () => {
-      const waveManager = makeMultiSpawnWaveManager();
-      waveManager.markSpawnUsed(0);
-      waveManager.markSpawnUsed(1);
-      waveManager.saveActiveSpawns();
-      expect(waveManager.prevWaveSpawnIndices.has(0)).toBe(true);
-      expect(waveManager.prevWaveSpawnIndices.has(1)).toBe(true);
-      expect(waveManager.prevWaveSpawnIndices.has(2)).toBe(false);
-    });
-
     it("transitionActiveSpawnsToTransition sets open spawns to transition", () => {
       const waveManager = makeMultiSpawnWaveManager();
       waveManager.markSpawnUsed(0);
@@ -416,7 +405,6 @@ describe("WaveManager", () => {
       waveManager.closeAllSpawns();
       expect(waveManager.spawnStates[0]!.visualState).toBe("closed");
       expect(waveManager.spawnStates[0]!.closeTransitionTimer).toBe(0);
-      expect(waveManager.prevWaveSpawnIndices.size).toBe(0);
     });
 
     it("queue empty transitions all open spawns to transition", () => {

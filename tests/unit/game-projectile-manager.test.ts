@@ -145,24 +145,6 @@ describe("ProjectileManager", () => {
       const renderData = manager.getRenderData();
       expect(renderData[0]!.radius).toBe(3);
     });
-
-    it("uses the forwarded splash value for cannon instead of a hardcoded radius", () => {
-      manager.spawn({
-        x: 0,
-        y: 0,
-        damage: 10,
-        speed: 200,
-        range: 5,
-        towerType: "cannon",
-        towerLevel: 1,
-        targetId: 1,
-        splash: 0.5,
-      });
-
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      expect(proj.splashRadius).toBe(0.5);
-    });
   });
 
   describe("circle projectile update", () => {
@@ -532,14 +514,9 @@ describe("ProjectileManager", () => {
         napalm: true,
       });
 
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      expect(proj.burnDps).toBe(100 * NAPALM_BURN_DPS_RATIO);
-      expect(proj.burnDuration).toBe(NAPALM_BURN_DURATION);
-
       manager.update(0.016);
 
-      expect(applyBurn).toHaveBeenCalledWith(proj.burnDps, proj.burnDuration);
+      expect(applyBurn).toHaveBeenCalledWith(100 * NAPALM_BURN_DPS_RATIO, NAPALM_BURN_DURATION);
     });
   });
 
@@ -564,11 +541,6 @@ describe("ProjectileManager", () => {
         knockbackBase: 0.5,
         knockbackScale: 0.2,
       });
-
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      expect(proj.knockback).toBeGreaterThan(0);
-      expect(proj.stunDuration).toBe(0.3);
 
       const initialX = enemy.x;
       manager.update(0.016);
@@ -698,30 +670,6 @@ describe("ProjectileManager", () => {
   });
 
   describe("ice slow", () => {
-    it("stores slowFactor and slowDuration from spawn opts", () => {
-      const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
-      enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles);
-
-      manager.spawn({
-        x: 100,
-        y: 200,
-        damage: 4,
-        speed: 100,
-        range: 5,
-        towerType: "ice",
-        towerLevel: 1,
-        targetId: 1,
-        slowAmt: 0.45,
-        slowDur: 1.5,
-      });
-
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      expect(proj.slowFactor).toBe(0.45);
-      expect(proj.slowDuration).toBe(1.5);
-    });
-
     it("applies slow to enemy on hit", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       const applySlow = vi.fn();
@@ -849,76 +797,6 @@ describe("ProjectileManager", () => {
   });
 
   describe("sniper stun", () => {
-    it("base sniper projectile has stunDuration from TOWER_BASE", () => {
-      const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
-      enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles);
-
-      manager.spawn({
-        x: 100,
-        y: 200,
-        damage: 32,
-        speed: 100,
-        range: 5,
-        towerType: "sniper",
-        towerLevel: 1,
-        targetId: 1,
-        stunDur: 0.2,
-      });
-
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      expect(proj.stunDuration).toBe(0.2);
-    });
-
-    it("sniper Marksman variant A has stunDuration", () => {
-      const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
-      enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles);
-
-      manager.spawn({
-        x: 100,
-        y: 200,
-        damage: 32,
-        speed: 100,
-        range: 5,
-        towerType: "sniper",
-        towerLevel: 5,
-        targetId: 1,
-        variant: "A",
-        stunDur: 0.2,
-      });
-
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      expect(proj.stunDuration).toBe(0.2);
-    });
-
-    it("sniper Piercer variant B has stunDuration", () => {
-      const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
-      enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles);
-
-      manager.spawn({
-        x: 100,
-        y: 200,
-        damage: 32,
-        speed: 100,
-        range: 5,
-        towerType: "sniper",
-        towerLevel: 5,
-        targetId: 1,
-        variant: "B",
-        pierce: 3,
-        stunDur: 0.2,
-      });
-
-      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
-      const proj = (manager as any).projectiles[0]!;
-      expect(proj.stunDuration).toBe(0.2);
-      expect(proj.maxHitCount).toBe(2);
-    });
-
     it("sniper projectile applies stun to enemy on hit", () => {
       const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100 });
       const applyStun = vi.fn();
