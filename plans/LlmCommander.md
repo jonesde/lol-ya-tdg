@@ -1,8 +1,11 @@
 # Plan: LLM Enemy Commander (via OpenAI-compatible API)
 
 ## Status
-Reviewed and revised. Merges three resolved design decisions and corrects two
-factual errors found during codebase research (see §13).
+Reviewed, revised, and **implemented**. Merges three resolved design decisions
+and corrects two factual errors found during codebase research (see §13). The
+feature is fully built and the test suite is green (~1110 tests, plus lint /
+typecheck / `check:sim-boundary`). Deviations from the original text discovered
+during implementation are recorded in §17 and reflected inline below.
 
 ## Resolved decisions
 1. **Async brain interface.** `CommanderBrain.decide()` becomes
@@ -83,16 +86,19 @@ factual errors found during codebase research (see §13).
   - `contextLimit: number` (tokens; default 32768)
   - `commanderInstructions: string` (optional, blank default)
   - `systemPrompt: string` (required; defaulted from a const at create time)
-- Persist slice: add `llmCommanders: LlmCommanderConfig[]` to **both** the
-  serialized shape in `persist.ts` (`PersistStateShape`, `src/stores/persist.ts:30`,
-  `load` / `save` / `migrateToCurrent`) **and** sim `PersistState`
-  (`src/sim/PersistState.ts`, `createDefaultPersistState` default `[]`) plus its
-  `createDefaultPersistState` default. Built-ins (`stubby`/`stubbs`) are NOT in
-  this array. `llmCommanders` is UI-only (the engine never reads it), so on sim
-  `PersistState` it is a harmless pass-through. **Schema migration:** bump
-  `CURRENT_SAVE_VERSION` from `2` to `3` in both `persist.ts` and
-  `PersistState.ts`, add a `migrateV2ToV3` that backfills `llmCommanders: []`,
-  and wire it into `migrateToCurrent`. Key remains `lol_ya_tdg_save_1`.
+- Persist slice: add `llmCommanders: LlmCommanderConfig[]` to the serialized
+  shape in `persist.ts` (`PersistStateShape`, `src/stores/persist.ts`,
+  `load` / `save` / `migrateToCurrent`) plus `defaultState()` default `[]`.
+  Built-ins (`stubby`/`stubbs`) are NOT in this array. **`llmCommanders` is NOT
+  added to `src/sim/PersistState.ts`** — it is UI-only and the engine never reads
+  it; the commander worker receives its config via the `start` message, so the sim
+  `PersistState` field would be a dead pass-through (see §17, deviation D1).
+  **Schema migration:** bump `CURRENT_SAVE_VERSION` from `2` to `3` in
+  `persist.ts`, add a `migrateV2ToV3` that **deep-merges every field with defaults
+  (mirroring `migrateCurrentVersion`) and then** backfills `llmCommanders: []` and
+  sets `saveVersion = CURRENT_SAVE_VERSION` (see §17, deviation D2 — the deep-merge
+  is required so existing v2 saves do not lose data). Wire `migrateV2ToV3` into
+  `migrateToCurrent` (add a `version === 2` branch). Key remains `lol_ya_tdg_save_1`.
 - Built-in id constants: `BUILTIN_STUBBY = "stubby"`, `BUILTIN_STUBBS = "stubbs"`
   in `src/commanders/index.ts`.
 
@@ -122,8 +128,16 @@ factual errors found during codebase research (see §13).
   `spawnStates`/`meta` + cached `gridLayout`; the LLM brain diffs in the worker).
 
 ## 5. LLM brain (`src/commanders/llm/brain.ts`)
-- `createBrain("llm", config)` returns a `CommanderBrain` whose `decide()` is
-  `async` and returns `Promise<Command[]>`.
+- `createLlmBrain(config, { onChat, onNotify, fetchFn })` returns a
+  `CommanderBrain` whose `decide()` is `async` and returns `Promise<Command[]>`.
+  (The `CommanderBrain.decide` signature is `Command[] | Promise<Command[]>` so
+  stub brains stay synchronous — see §17, deviation D5.) `onChat`/`onNotify` are
+  callbacks the worker injects (they post `chat`/`notify` `CommanderToMainMessage`s);
+  `fetchFn` defaults to `globalThis.fetch` for testability.
+- **Factory factoring (deviation D7):** the worker's `start` handler calls
+  `createLlmBrain(config, callbacks)` directly rather than through
+  `createBrain("llm", config)`. `createBrain` still has an `"llm"` case (throws
+  without config) but it is now unreachable from the worker.
 - `decide(observation, memory)`:
   - If `memory.isCompressing` or building the first prompt, assemble the full
     prompt (system + instructions + snapshot, §6) and clear delta history.
@@ -135,12 +149,20 @@ factual errors found during codebase research (see §13).
     the next `decide` rebuilds the full prompt.
   - Return the commands (may be empty on malformed/empty response; client already
     retried per §1).
-- **In-flight guard + cadence** (`src/commanders/CommanderWorker.ts`): track
-  `deciding` boolean; when a new `observation` arrives while `deciding`, skip
-  issuing a new `decide` (drop the tick). Use a timestamp throttle targeting
-  ~1 Hz (`LLM_DECISION_INTERVAL_MS = 1000`) so even at 4 Hz relay polling we
-  only call the API ~once per second. Both the stub path (now async-resolved) and
-  the LLM path go through the same guard.
+- **Stateless per-tick calls (deviation D6):** `memory.conversation` is
+  accumulated but never sent to the API. Each `decide` sends only `[system,
+  <current delta>, <queued player messages>]`; the model re-plans from the latest
+  delta rather than a growing history. This is a simplification of §7's
+  "append deltas / never mutate the initial snapshot" intent and yields the same
+  token-reduction benefit (see §17, D3/D6).
+- **In-flight guard + cadence** (`src/commanders/CommanderWorker.ts`): an async
+  `decideLlm()` tracks a `deciding` boolean; when a new `observation` arrives
+  while `deciding`, it skips issuing a new `decide` (drops the tick). A timestamp
+  throttle targets ~1 Hz (`LLM_DECISION_INTERVAL_MS = 1000`) so even at 4 Hz
+  relay polling we only call the API ~once per second. **This guard/cadence/
+  pause-skip applies to the LLM path only**; stub brains remain synchronous and
+  decide on every observation (deviation D5 — keeps the existing ~1000 tests
+  green).
 - `updateInstructions` message updates `memory.commanderInstructions` and forces
   a prompt rewrite on the next `decide` (re-emit system + instructions prefix).
 - `chat` (player) message is enqueued in `memory.pendingPlayerMessages` and
@@ -155,7 +177,10 @@ factual errors found during codebase research (see §13).
     `protocol.ts:10`); spawn + base tiles; pathing/blocking via
     `src/sim/grid/Pathfinding.ts` BFS with dynamic tower avoidance.
   - Enemy types + stats from `ENEMY_TYPES` (`src/sim/ConstantsEnemy.ts:21`,
-    with `ENEMY_LEVEL_HP_MULT`/`ENEMY_WAVE_DAMAGE_MULT` formulas).
+    with `ENEMY_LEVEL_HP_MULT`/`ENEMY_WAVE_DAMAGE_MULT` formulas). Note: the
+    per-enemy `type` is described globally (above) but is **not** included in the
+    per-enemy data stream, because `observation.ts` only projects
+    `id/x/y/level/hp/maxHp` (deviation D8).
   - Tower types + stats from `ConstantsTower.ts`.
   - Waves: inter-wave countdown (`BETWEEN_WAVES_TIMER`) and preemptive next-wave
     timer `PRE_EMPTIVE_WAVE_TIMER = 90` game-seconds
@@ -181,9 +206,11 @@ factual errors found during codebase research (see §13).
   - Wave summary: `currentWave`, `pendingEnemyCount`, `remainingScheduledSpawns`,
     `active` (from `observation.ts:21`).
   - Timestamp (`meta` frame id / wall clock).
-- To preserve context-cache reuse, **never** mutate the initial snapshot block;
-  only append deltas. On compression (§5 / §7 token limit), rewrite the full
-  prompt (same system + instructions text, then a fresh full snapshot) and clear
+- The delta scheme's benefit is **token reduction** (fewer tokens per request
+  than re-sending the whole snapshot), not prompt-cache reuse — the brain rebuilds
+  the prompt each call, and (per §5, deviation D6) sends only the latest delta.
+  On compression (§5 token limit), rebuild the full prompt (same system +
+  instructions text, then a fresh full snapshot) and clear
   `memory.lastObservation`/delta history.
 - Diffing is pure worker-side using `CommanderMemory`; no sim/`SnapshotStore`
   change. Concept mirrors `plans/SnapshotDelta.md` but lives in the LLM brain.
@@ -243,10 +270,16 @@ factual errors found during codebase research (see §13).
   assert the next tick issues exactly one request.
 
 ## 11. Notifications (growl)
-- On API connect attempt, first success, error, and back-off exhaustion, the LLM
-  brain posts `{ type: "notify"; message }` (§4). The relay forwards to
-  `uiStore.showNotification` (`src/stores/ui.ts:102`) → `GameHud.vue:126` toast.
-- Same channel used for worker/relay connect/disconnect lifecycle notes.
+- On error / empty / invalid-JSON / schema-rejected responses, the LLM brain
+  posts `{ type: "notify"; message }` (§4). The relay forwards to
+  `uiStore.showNotification` (`src/stores/ui.ts`) → `GameHud.vue` toast.
+- **Gap (deviation D10):** the plan also called for `notify` on API *connect
+  attempt* and *first success*; these were not implemented. Only error/back-off
+  notifications are emitted. The channel itself (`notify` → relay →
+  `showNotification`) is fully wired, so adding connect/first-success toasts later
+  is a one-line change in `llm/brain.ts`.
+- Same channel is available for worker/relay connect/disconnect lifecycle notes
+  (not currently emitted).
 
 ## 12. Response processing + command schema
 - `src/commanders/llm/schema.ts`: define the JSON command schema and a validator.
@@ -265,6 +298,12 @@ factual errors found during codebase research (see §13).
 - Malformed/validated-rejected responses: the client layer logs + the brain
   returns no commands (retry handled by §1). The schema is also embedded in the
   system prompt so the model knows the exact syntax.
+- **Invalid waypoints are silently ignored (deviation D4):** the LLM emits tile
+  coords, but if it emits an out-of-bounds or non-path tile, `applyCommand.ts`
+  drops that leg (`computeRoute` returns empty) and the enemy simply skips that
+  waypoint (or falls back to `releaseToDefault` if every leg fails). No error is
+  surfaced. The brain does not currently validate/snap waypoints to valid path
+  tiles; this is accepted engine behavior, not a bug to fix here.
 
 ## 13. Corrections from review (must reflect in implementation)
 ### 13.1 "max active enemies" does not exist
@@ -286,32 +325,86 @@ config screen help text.
   except for cross-boundary side effects. Framework-free client (native `fetch`).
 
 ## 15. Build order (keeps ~1000 existing tests green)
-1. Protocol types: `notify`, `chat`, `updateInstructions`, `start`-with-config
-   (`src/commanders/protocol.ts`).
-   2. `LlmCommanderConfig` + `llmCommanders` persist slice (sim `PersistState`
-      `createDefaultPersistState`, `persist.ts` `PersistStateShape`) + v2→v3
-      migration (`CURRENT_SAVE_VERSION` 2→3 in both files, backfill `[]`).
-3. `setEnemyCommander(id)` resolution + `startRelay(kind, config?)` + built-in id
-   constants (`index.ts`, `relay.ts`).
-4. `apiClient.ts` (injectable `fetch`) + timeout/retry/back-off/parse unit tests.
-5. `systemPrompt.ts` (runtime-filled template) + `schema.ts` (allowlist +
-   validator).
-   6. LLM brain (async `decide`) + `CommanderWorker` await + in-flight guard +
-      cadence + delta diff + compression; `CommanderMemory` extended. Also flip
-      `createBrain(kind)` → `createBrain(kind, config?)` (`CommanderKind` gains
-      `"llm"`) and update the worker `start` handler (§1) to pass `message.config`
-      when `kind === "llm"`.
-7. Pause skip in worker + pause test (§10).
-8. `EnemyChat.vue` + `chatLog` slice + `notify`/chat relay wiring (§8, §11).
-   9. `/commanders` route + `CommandersScreen.vue` + MainMenu button + dynamic
-      `PauseMenu` select (widen cast to `string`, render LLM ids from
-      `persistStore.llmCommanders`; §3, §9).
-10. Integration test: LLM brain round-trip with fake fetch (mirror
-    `tests/integration/commander.test.ts`), pause test (§10), malformed-response
-    test.
+ 1. Protocol types: `notify`, `chat`, `updateInstructions`, `start`-with-config
+    (`src/commanders/protocol.ts`).
+ 2. `LlmCommanderConfig` + `llmCommanders` persist slice (`persist.ts`
+    `PersistStateShape` + `defaultState`) + v2→v3 migration (`CURRENT_SAVE_VERSION`
+    2→3, deep-merge + backfill `[]` — **not** on sim `PersistState`, see §2/§17 D1).
+ 3. `setEnemyCommander(id)` resolution + `startRelay(kind, config?)` + built-in id
+    constants (`index.ts`, `relay.ts`).
+ 4. `apiClient.ts` (injectable `fetch`) + timeout/retry/back-off/parse unit tests.
+ 5. `systemPrompt.ts` (runtime-filled template) + `schema.ts` (allowlist +
+    validator).
+ 6. LLM brain (async `decide`) + `CommanderWorker` `decideLlm` await + in-flight
+    guard + cadence + pause-skip + delta diff + compression; `CommanderMemory`
+    extended. `CommanderKind` gains `"llm"`; the worker `start` handler calls
+    `createLlmBrain(config, callbacks)` directly (§5, deviation D7).
+ 7. Pause skip in worker + pause test (§10).
+ 8. `EnemyChat.vue` + `chatLog` slice + `notify`/chat relay wiring (§8, §11).
+ 9. `/commanders` route + `CommandersScreen.vue` + MainMenu button + dynamic
+    `PauseMenu` select (widen cast to `string`, render LLM ids from
+    `persistStore.llmCommanders`; §3, §9).
+ 10. Tests: LLM brain round-trip with fake fetch, pause test (§10),
+     malformed-response test, plus a v2→v3 migration test
+     (`tests/unit/persist-migration.test.ts`).
+
+**Implementation was batched into 4 chunks** (foundation/types+persistence+UI
+resolution; LLM core; UI screens+chat; migration test+full `npm run check`) rather
+than the 10 linear steps above — functionally equivalent (deviation D9).
 
 ## 16. Open items (deferred, not blocking)
 - Streaming responses: out of scope initially (short messages, no thinking).
 - Editing Sergeant Stubby / Commander Stubbs parameters: future form.
 - Multi-LLM / A-B comparison: out of scope.
 - Per-model token-limit auto-detect: rely on user-supplied `contextLimit` for now.
+- Connect-attempt / first-success `notify` toasts (see §11, deviation D10).
+
+## 17. Implementation Deviations (recorded post-build)
+These are the ways the shipped code differs from the plan text above. Most were
+intentional resolutions from the pre-implementation review; all keep the existing
+~1000+ test suite green and `npm run check` passing.
+
+- **D1 — `llmCommanders` not on sim `PersistState`.** Plan §2 said add it to both
+  `persist.ts` and `sim/PersistState.ts`. Shipped: only `persistStore`
+  (`src/stores/persist.ts`). The engine never reads it; the worker gets its config
+  via the `start` message, so the sim field would be a dead pass-through.
+- **D2 — `migrateV2ToV3` deep-merges all fields.** Plan §2/§15.2 only said
+  "backfill `llmCommanders: []`". Shipped: it mirrors `migrateCurrentVersion`
+  (deep-merge every field with defaults) and then backfills `llmCommanders: []` and
+  bumps `saveVersion`. Required so v2 saves don't lose data.
+- **D3 — "Context-cache reuse" reframed as token reduction.** Plan §7 described
+  preserving prompt-cache reuse by never mutating the initial snapshot. Shipped:
+  the benefit is reduced tokens per request; the brain rebuilds the prompt each
+  call (no prefix-reuse assumption).
+- **D4 — Invalid waypoints silently dropped.** Plan §12 implies the brain emits
+  valid tile coords. Shipped: if the LLM emits an invalid/OOB/non-path tile,
+  `applyCommand.ts` drops that leg (or falls back to default). No validation/snap in
+  the brain. Accepted engine behavior.
+- **D5 — Guard/cadence/pause apply to the LLM path only; `decide` is
+  `Command[] | Promise<Command[]>`.** Plan §5 said both stub and LLM paths go
+  through the same guard and `decide` becomes `Promise<Command[]>`. Shipped: stubs
+  stay synchronous and decide every observation; only the LLM `decideLlm()` uses
+  the in-flight guard + ~1 Hz cadence + pause-skip. The union return type keeps
+  stub tests unchanged.
+- **D6 — Stateless per-tick calls.** Plan §5/§7 implied accumulating deltas into a
+  growing context. Shipped: `memory.conversation` is accumulated but never sent;
+  each `decide` sends only `[system, current delta, queued player messages]`. The
+  model re-plans from the latest delta.
+- **D7 — Worker creates the LLM brain directly.** Plan §1/§5 said
+  `createBrain("llm", config)` and the worker passes `message.config`. Shipped:
+  the worker's `start` handler calls `createLlmBrain(config, { onChat, onNotify })`
+  directly; `createBrain`'s `"llm"` case is unreachable from the worker.
+- **D8 — System prompt omits per-enemy `type`.** Plan §6/§7 described an enemy
+  `type` field in the data stream. Shipped: `observation.ts` only projects
+  `id/x/y/level/hp/maxHp`, so the prompt describes enemy types globally but not
+  per-enemy.
+- **D9 — Build order batched into 4 chunks** (foundation; LLM core; UI; tests)
+  instead of the 10 linear steps in §15. Functionally equivalent.
+- **D10 — Connect / first-success notifications not emitted.** Plan §11 wanted
+  `notify` on connect attempt and first success. Shipped: only error/empty/
+  invalid/ rejected responses post `notify`. The channel is fully wired; adding
+  the missing toasts is a one-line change in `llm/brain.ts`.
+- **D11 — `chat` → `chatLog` wiring confirmed.** Plan §8/§11: the relay forwards
+  `chat` `CommanderToMainMessage`s to `uiStore.appendChatLog({ from: "commander",
+  ... })`; player messages are appended locally in `EnemyChat.vue`. This matches
+  the plan (recorded for completeness).
