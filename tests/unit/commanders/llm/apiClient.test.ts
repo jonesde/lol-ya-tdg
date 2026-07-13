@@ -1,0 +1,117 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createApiClient, normalizeEndpointUrl } from "@/commanders/llm/apiClient.js";
+import type { LlmCommanderConfig } from "@/commanders/llm/types.js";
+
+function makeConfig(overrides: Partial<LlmCommanderConfig> = {}): LlmCommanderConfig {
+  return {
+    id: "test",
+    name: "Test",
+    endpointUrl: "http://localhost:1234/v1",
+    token: "",
+    modelName: "",
+    contextLimit: 32768,
+    commanderInstructions: "",
+    systemPrompt: "system",
+    ...overrides,
+  };
+}
+
+function okResponse(body: unknown): Response {
+  return { ok: true, status: 200, text: async () => JSON.stringify(body) } as unknown as Response;
+}
+
+function statusResponse(status: number): Response {
+  return { ok: false, status, text: async () => "" } as unknown as Response;
+}
+
+describe("normalizeEndpointUrl", () => {
+  it("uses http(s) verbatim", () => {
+    expect(normalizeEndpointUrl("https://example.com")).toBe("https://example.com");
+    expect(normalizeEndpointUrl("http://localhost:8080")).toBe("http://localhost:8080");
+  });
+  it("treats bare host:port as http://host/v1", () => {
+    expect(normalizeEndpointUrl("localhost:1234")).toBe("http://localhost:1234/v1");
+    expect(normalizeEndpointUrl("ollama")).toBe("http://ollama/v1");
+  });
+});
+
+describe("createApiClient.complete", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("returns content + prompt tokens on success", async () => {
+    let capturedInit: RequestInit | undefined;
+    const fetchFn = vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedInit = init;
+      return okResponse({ choices: [{ message: { content: "hi" } }], usage: { prompt_tokens: 42 } });
+    });
+    const client = createApiClient(fetchFn as unknown as typeof fetch);
+    const result = await client.complete("sys", [{ role: "user", content: "hi" }], makeConfig());
+    expect(result).toEqual({ content: "hi", promptTokens: 42 });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(capturedInit!.body as string);
+    expect(body.model).toBeUndefined();
+    expect(body.temperature).toBe(0.7);
+  });
+
+  it("omits model when empty and sends Bearer token when set", async () => {
+    let capturedInit: RequestInit | undefined;
+    const fetchFn = vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedInit = init;
+      return okResponse({ choices: [{ message: { content: "x" } }] });
+    });
+    const client = createApiClient(fetchFn as unknown as typeof fetch);
+    await client.complete("sys", [], makeConfig({ modelName: "llama3", token: "sekret" }));
+    const body = JSON.parse(capturedInit!.body as string);
+    expect(body.model).toBe("llama3");
+    expect((capturedInit!.headers as Record<string, string>).Authorization).toBe("Bearer sekret");
+  });
+
+  it("returns {empty} on empty body", async () => {
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, text: async () => "" }) as unknown as Response);
+    const client = createApiClient(fetchFn);
+    expect(await client.complete("sys", [], makeConfig())).toEqual({ empty: true });
+  });
+
+  it("returns {error} on non-2xx", async () => {
+    const fetchFn = vi.fn(async () => statusResponse(500));
+    const client = createApiClient(fetchFn);
+    expect(await client.complete("sys", [], makeConfig())).toEqual({ error: "status 500" });
+  });
+
+  it("returns {error} on invalid json", async () => {
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, text: async () => "not json" }) as unknown as Response);
+    const client = createApiClient(fetchFn);
+    expect(await client.complete("sys", [], makeConfig())).toEqual({ error: "invalid json" });
+  });
+
+  it("returns {error: 'timeout'} on abort", async () => {
+    const fetchFn = vi.fn(async () => {
+      throw new DOMException("aborted", "AbortError");
+    });
+    const client = createApiClient(fetchFn);
+    expect(await client.complete("sys", [], makeConfig())).toEqual({ error: "timeout" });
+  });
+
+  it("escalates back-off on failure and resets on success", async () => {
+    vi.useFakeTimers();
+    let callCount = 0;
+    const fetchFn = vi.fn(async () => {
+      callCount += 1;
+      if (callCount < 3) return statusResponse(500);
+      return okResponse({ choices: [{ message: { content: "ok" } }] });
+    });
+    const client = createApiClient(fetchFn);
+    await client.complete("sys", [], makeConfig());
+    expect(client.getBackoffMs()).toBe(3000);
+
+    const pending2 = client.complete("sys", [], makeConfig());
+    await vi.advanceTimersByTimeAsync(3000);
+    await pending2;
+    expect(client.getBackoffMs()).toBe(6000);
+
+    const pending3 = client.complete("sys", [], makeConfig());
+    await vi.advanceTimersByTimeAsync(6000);
+    await pending3;
+    expect(client.getBackoffMs()).toBe(0);
+  });
+});

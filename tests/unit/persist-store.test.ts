@@ -253,16 +253,16 @@ describe("PersistStore", () => {
 
   describe("schema migration on load", () => {
     it("includes saveVersion in default state", () => {
-      expect(store.saveVersion).toBe(2);
+      expect(store.saveVersion).toBe(3);
     });
 
-    it("migrates v1 data (no saveVersion) to v2", () => {
+    it("migrates v1 data (no saveVersion) to current (v3)", () => {
       const oldData = { gems: 100, highestUnlockedMap: 5 };
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(oldData)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(2);
+      expect(store.saveVersion).toBe(3);
       expect(store.gems).toBe(100);
       expect(store.highestUnlockedMap).toBe(5);
       expect(store.difficulty.multiplierTick).toBe(0);
@@ -275,12 +275,12 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(2);
+      expect(store.saveVersion).toBe(3);
       expect(store.gems).toBe(200);
       expect(store.bestWaves.best_3).toBe(45);
     });
 
-    it("loads v2 data without re-migration", () => {
+    it("loads v2 data and migrates forward to current (v3)", () => {
       const v2Data = {
         saveVersion: 2,
         gems: 300,
@@ -301,7 +301,7 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(v2Data)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(2);
+      expect(store.saveVersion).toBe(3);
       expect(store.gems).toBe(300);
       expect(store.difficulty.multiplierTick).toBe(4);
       expect(store.generalAddons.extraHealth).toBe(10);
@@ -617,6 +617,63 @@ describe("PersistStore", () => {
         expect(store.unlocked[towerId].variantB.length).toBe(3);
         expect(store.unlocked[towerId].addons.length).toBe(3);
       }
+    });
+  });
+
+  describe("llmCommanders CRUD", () => {
+    function sampleConfig(overrides: Record<string, unknown> = {}) {
+      return {
+        id: "l_1",
+        name: "Test LLM",
+        endpointUrl: "http://localhost:11434/v1",
+        token: "",
+        modelName: "",
+        contextLimit: 32768,
+        commanderInstructions: "",
+        systemPrompt: "sys",
+        ...overrides,
+      };
+    }
+
+    it("starts with an empty llmCommanders list", () => {
+      expect(store.llmCommanders).toEqual([]);
+    });
+
+    it("addLlmCommander appends and persists", () => {
+      store.addLlmCommander(sampleConfig());
+      expect(store.llmCommanders.length).toBe(1);
+      expect((localStorage.setItem as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0);
+    });
+
+    it("updateLlmCommander replaces the matching entry and persists", () => {
+      store.addLlmCommander(sampleConfig({ name: "Original" }));
+      store.updateLlmCommander(sampleConfig({ name: "Updated" }));
+      expect(store.llmCommanders.length).toBe(1);
+      expect(store.llmCommanders[0].name).toBe("Updated");
+    });
+
+    it("updateLlmCommander is a no-op when id is unknown", () => {
+      store.updateLlmCommander(sampleConfig());
+      expect(store.llmCommanders.length).toBe(0);
+    });
+
+    it("deleteLlmCommander removes the matching entry and persists", () => {
+      store.addLlmCommander(sampleConfig({ id: "l_1" }));
+      store.addLlmCommander(sampleConfig({ id: "l_2" }));
+      store.deleteLlmCommander("l_1");
+      expect(store.llmCommanders.map((entry) => entry.id)).toEqual(["l_2"]);
+    });
+
+    it("persists llmCommanders through save/load round-trip", () => {
+      store.addLlmCommander(sampleConfig());
+      const saved = { gems: 5, llmCommanders: store.llmCommanders };
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null)
+        .mockReturnValueOnce(JSON.stringify(saved));
+      const fresh = createTestPersistStore();
+      fresh.load();
+      expect(fresh.llmCommanders.length).toBe(1);
+      expect(fresh.llmCommanders[0].id).toBe("l_1");
     });
   });
 });

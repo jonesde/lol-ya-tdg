@@ -1,9 +1,17 @@
 import type { Command } from "@/sim/Command.js";
+import { GameState } from "@/sim/Constants.js";
 import type { CommanderBrain, CommanderMemory } from "./brain.js";
 import { createBrain } from "./brain.js";
+import { createLlmBrain } from "./llm/brain.js";
+import type { LlmCommanderConfig } from "./llm/types.js";
 import type { CommanderObservation } from "./observation.js";
 import { buildObservation } from "./observation.js";
-import type { CommanderSnapshotSlice, CommanderToMainMessage, MainToCommanderMessage } from "./protocol.js";
+import type {
+  CommanderKind,
+  CommanderSnapshotSlice,
+  CommanderToMainMessage,
+  MainToCommanderMessage,
+} from "./protocol.js";
 
 // Inside the worker, `self` is the global DedicatedWorkerGlobalScope. Declared
 // minimally to avoid pulling in the WebWorker lib (which conflicts with the DOM lib).
@@ -14,18 +22,33 @@ interface WorkerGlobalScope {
 declare const self: WorkerGlobalScope;
 
 let brain: CommanderBrain | null = null;
+let brainKind: CommanderKind = "stubby";
 const memory: CommanderMemory = {
   phase: "idle",
   seenByWave: new Map<number, Set<number>>(),
   lastRushWaveNumber: null,
   lastRoutedTowerSignature: "",
   gridLayout: undefined,
+  conversation: [],
+  tokenCount: 0,
+  lastObservation: null,
+  commanderInstructions: "",
+  pendingPlayerMessages: [],
+  isCompressing: false,
 };
 let gridLayoutToggleSent = false;
 // The run the cached layout belongs to (GameEngine.runId). On a run restart the
 // previous layout is stale and the one-shot feed-off toggle must re-arm, so the
 // engine's freshly re-enabled feed is turned back off after the new map is cached.
 let lastRunId: number | null = null;
+
+// LLM-brain cadence + in-flight guard. The relay polls at ~4 Hz but we only call
+// the API about once per second; an in-flight decide is skipped (its tick dropped).
+let deciding = false;
+let lastDecisionTimeMs = 0;
+const LLM_DECISION_INTERVAL_MS = 1000;
+let pausedForBrain = false;
+let latestObservation: CommanderObservation | null = null;
 
 function postToMain(message: CommanderToMainMessage): void {
   self.postMessage(message);
@@ -37,24 +60,72 @@ function resetMemory(): void {
   memory.lastRushWaveNumber = null;
   memory.lastRoutedTowerSignature = "";
   memory.gridLayout = undefined;
+  memory.conversation = [];
+  memory.tokenCount = 0;
+  memory.lastObservation = null;
+  memory.commanderInstructions = "";
+  memory.pendingPlayerMessages = [];
+  memory.isCompressing = false;
   gridLayoutToggleSent = false;
   lastRunId = null;
+  deciding = false;
+  lastDecisionTimeMs = 0;
+  pausedForBrain = false;
+  latestObservation = null;
 }
 
-self.onmessage = (event: MessageEvent<MainToCommanderMessage>) => {
+// Issues an async decide for the LLM brain with an in-flight guard + ~1 Hz
+// cadence throttle + pause skip. Errors are swallowed so one bad tick can't kill
+// the worker; the apiClient's back-off handles retry pacing.
+async function decideLlm(): Promise<void> {
+  if (!brain || deciding || pausedForBrain) return;
+  const now = Date.now();
+  if (now - lastDecisionTimeMs < LLM_DECISION_INTERVAL_MS) return;
+  deciding = true;
+  lastDecisionTimeMs = now;
+  try {
+    const observation = latestObservation;
+    if (!observation) return;
+    const commands = await brain.decide(observation, memory);
+    postToMain({ type: "commands", commands });
+  } catch {
+    // log + rely on apiClient back-off for retry; do not crash the worker
+  } finally {
+    deciding = false;
+  }
+}
+
+self.onmessage = async (event: MessageEvent<MainToCommanderMessage>) => {
   const message = event.data;
   switch (message.type) {
     case "start": {
-      try {
+      brainKind = message.kind;
+      if (brainKind === "llm") {
+        const llmConfig: LlmCommanderConfig | undefined = message.config;
+        brain = llmConfig
+          ? createLlmBrain(llmConfig, {
+              onChat: (text) => postToMain({ type: "chat", text, from: "commander" }),
+              onNotify: (messageText) => postToMain({ type: "notify", message: messageText }),
+              fetchFn: globalThis.fetch,
+            })
+          : null;
+      } else {
         brain = createBrain(message.kind);
-      } catch {
-        brain = null;
       }
       resetMemory();
       break;
     }
     case "stop": {
       brain = null;
+      break;
+    }
+    case "chat": {
+      memory.pendingPlayerMessages.push(message.text);
+      break;
+    }
+    case "updateInstructions": {
+      memory.commanderInstructions = message.text;
+      memory.isCompressing = true;
       break;
     }
     case "observation": {
@@ -75,6 +146,12 @@ self.onmessage = (event: MessageEvent<MainToCommanderMessage>) => {
         memory.seenByWave = new Map<number, Set<number>>();
         memory.lastRushWaveNumber = null;
         memory.lastRoutedTowerSignature = "";
+        memory.conversation = [];
+        memory.tokenCount = 0;
+        memory.lastObservation = null;
+        memory.commanderInstructions = "";
+        memory.pendingPlayerMessages = [];
+        memory.isCompressing = false;
       }
       if (slice.gridLayout) {
         memory.gridLayout = slice.gridLayout;
@@ -89,11 +166,20 @@ self.onmessage = (event: MessageEvent<MainToCommanderMessage>) => {
         ...slice,
         gridLayout: memory.gridLayout ?? slice.gridLayout,
       });
-      const brainCommands = brain.decide(observation, memory);
-      for (const command of brainCommands) {
-        commands.push(command);
+      // The one-shot gridLayoutToggle is posted on its own message so both the
+      // stub and LLM paths share it, then each path posts its own command batch.
+      if (commands.length > 0) {
+        postToMain({ type: "commands", commands });
       }
-      postToMain({ type: "commands", commands });
+      if (brainKind === "llm") {
+        latestObservation = observation;
+        pausedForBrain = slice.meta.state === GameState.PAUSED;
+        void decideLlm();
+      } else {
+        const decision = brain.decide(observation, memory);
+        const brainCommands = decision instanceof Promise ? await decision : decision;
+        postToMain({ type: "commands", commands: brainCommands });
+      }
       break;
     }
   }

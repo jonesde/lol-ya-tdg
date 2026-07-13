@@ -1,6 +1,13 @@
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
-import type { CommanderSnapshotSlice, CommanderToMainMessage, MainToCommanderMessage } from "./protocol.js";
+import { useUiStore } from "@/stores/ui.js";
+import type { LlmCommanderConfig } from "./llm/types.js";
+import type {
+  CommanderKind,
+  CommanderSnapshotSlice,
+  CommanderToMainMessage,
+  MainToCommanderMessage,
+} from "./protocol.js";
 
 // The main-thread half of the commander transport. It is a passive reader of the
 // snapshot store (never posts snapshotAck — the single-ack backpressure gate is
@@ -20,7 +27,7 @@ let cachedGridLayout: number[][] | undefined;
 // never forwarded to the worker for the new run.
 let cachedRunId: number | null = null;
 
-export function startRelay(kind: "stubby" | "stubbs"): void {
+export function startRelay(kind: CommanderKind, config?: LlmCommanderConfig): void {
   if (commanderWorker) return;
   commanderWorker = new Worker(new URL("./CommanderWorker.ts", import.meta.url), { type: "module" });
   commanderWorker.onmessage = (event: MessageEvent<CommanderToMainMessage>) => {
@@ -29,9 +36,15 @@ export function startRelay(kind: "stubby" | "stubbs"): void {
       for (const command of message.commands) {
         dispatchCommand(command);
       }
+    } else if (message.type === "notify") {
+      useUiStore().showNotification(message.message);
+    } else if (message.type === "chat") {
+      useUiStore().appendChatLog({ from: "commander", text: message.text });
     }
   };
-  commanderWorker.postMessage({ type: "start", kind } satisfies MainToCommanderMessage);
+  const startMessage: MainToCommanderMessage =
+    config === undefined ? { type: "start", kind } : { type: "start", kind, config };
+  commanderWorker.postMessage(startMessage);
   relayIntervalId = setInterval(postObservation, RELAY_INTERVAL_MS);
 }
 
@@ -60,6 +73,18 @@ function postObservation(): void {
     meta: snapshot.meta,
   };
   commanderWorker.postMessage({ type: "observation", slice } satisfies MainToCommanderMessage);
+}
+
+export function postChatToCommander(text: string): void {
+  if (commanderWorker) {
+    commanderWorker.postMessage({ type: "chat", text } satisfies MainToCommanderMessage);
+  }
+}
+
+export function postUpdateInstructions(text: string): void {
+  if (commanderWorker) {
+    commanderWorker.postMessage({ type: "updateInstructions", text } satisfies MainToCommanderMessage);
+  }
 }
 
 export function stopRelay(): void {

@@ -3,6 +3,9 @@ import type { CommanderMemory } from "@/commanders/brain.js";
 import type { CommanderObservation, ObservationEnemy, ObservationTower } from "@/commanders/observation.js";
 import { createStubbsBrain } from "@/commanders/stubbs/brain.js";
 import type { Command } from "@/sim/Command.js";
+
+type SyncBrain = { decide(observation: CommanderObservation, memory: CommanderMemory): Command[] };
+
 import { makeBastionMap } from "../../helpers/mock-grid.js";
 
 // Build a commander gridLayout (0=terrain,1=path,2=base,3=spawn) from the bastion
@@ -20,6 +23,12 @@ function freshMemory(): CommanderMemory {
     lastRushWaveNumber: null,
     lastRoutedTowerSignature: "",
     gridLayout: undefined,
+    conversation: [],
+    tokenCount: 0,
+    lastObservation: null,
+    commanderInstructions: "",
+    pendingPlayerMessages: [],
+    isCompressing: false,
   };
 }
 
@@ -58,7 +67,7 @@ function routeGroupWaypoint(commands: Command[]) {
 
 describe("StubbsBrain", () => {
   it("routes newly-seen enemies immediately (no hold) toward the highest-hp ahead tower", () => {
-    const brain = createStubbsBrain();
+    const brain = createStubbsBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     const commands = brain.decide(
       observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100), tower(3, 3, 60)] }),
@@ -73,7 +82,7 @@ describe("StubbsBrain", () => {
   });
 
   it("excludes towers behind the group and keeps the behind tower untargeted", () => {
-    const brain = createStubbsBrain();
+    const brain = createStubbsBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     const commands = brain.decide(
       observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100), tower(0, 3, 200)] }),
@@ -84,7 +93,7 @@ describe("StubbsBrain", () => {
   });
 
   it("emits no command when no live towers are ahead (default pathing)", () => {
-    const brain = createStubbsBrain();
+    const brain = createStubbsBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     // Only a tower behind the enemy (closer to spawn than the group).
     const commands = brain.decide(observation({ enemies: [enemy(1, 2, 3)], towers: [tower(0, 3, 200)] }), memory);
@@ -92,7 +101,7 @@ describe("StubbsBrain", () => {
   });
 
   it("does NOT re-route when only a tower's hp changes (stable signature)", () => {
-    const brain = createStubbsBrain();
+    const brain = createStubbsBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     brain.decide(observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100), tower(3, 3, 60)] }), memory);
     // The highest-hp ahead tower (5,3) drops to 30 — signature uses level, not hp, so it is stable.
@@ -104,7 +113,7 @@ describe("StubbsBrain", () => {
   });
 
   it("re-routes when a tower is upgraded (level change shifts the signature)", () => {
-    const brain = createStubbsBrain();
+    const brain = createStubbsBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     brain.decide(
       observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100, 100, 1), tower(3, 3, 60, 60, 1)] }),
@@ -122,7 +131,7 @@ describe("StubbsBrain", () => {
   });
 
   it("is idempotent per wave: a second identical observation emits nothing", () => {
-    const brain = createStubbsBrain();
+    const brain = createStubbsBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     brain.decide(observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100)] }), memory);
     const second = brain.decide(observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100)] }), memory);
@@ -130,7 +139,7 @@ describe("StubbsBrain", () => {
   });
 
   it("resets across waves: a new wave's unseen enemy is routed", () => {
-    const brain = createStubbsBrain();
+    const brain = createStubbsBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     brain.decide(observation({ currentWave: 1, enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100)] }), memory);
     const next = brain.decide(

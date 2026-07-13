@@ -1,6 +1,9 @@
 import type { CommanderMemory } from "@/commanders/brain.js";
 import type { CommanderObservation, ObservationEnemy } from "@/commanders/observation.js";
 import { createStubbyBrain } from "@/commanders/stubby/brain.js";
+import type { Command } from "@/sim/Command.js";
+
+type SyncBrain = { decide(observation: CommanderObservation, memory: CommanderMemory): Command[] };
 
 function freshMemory(): CommanderMemory {
   return {
@@ -9,6 +12,12 @@ function freshMemory(): CommanderMemory {
     lastRushWaveNumber: null,
     lastRoutedTowerSignature: "",
     gridLayout: undefined,
+    conversation: [],
+    tokenCount: 0,
+    lastObservation: null,
+    commanderInstructions: "",
+    pendingPlayerMessages: [],
+    isCompressing: false,
   };
 }
 
@@ -39,7 +48,7 @@ function observation(opts: {
 
 describe("StubbyBrain", () => {
   it("holds newly-seen enemies at their current tile while spawning", () => {
-    const brain = createStubbyBrain();
+    const brain = createStubbyBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     const commands = brain.decide(
       observation({ currentWave: 1, remainingScheduledSpawns: 3, enemies: [enemy(1, 2, 3), enemy(2, 4, 3)] }),
@@ -60,7 +69,7 @@ describe("StubbyBrain", () => {
   });
 
   it("does not re-dispatch holds for already-seen enemies (idempotent)", () => {
-    const brain = createStubbyBrain();
+    const brain = createStubbyBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     brain.decide(observation({ currentWave: 1, remainingScheduledSpawns: 3, enemies: [enemy(1, 2, 3)] }), memory);
     const second = brain.decide(
@@ -72,7 +81,7 @@ describe("StubbyBrain", () => {
   });
 
   it("emits exactly one empty-waypoint rush when the wave has fully emerged", () => {
-    const brain = createStubbyBrain();
+    const brain = createStubbyBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     brain.decide(
       observation({ currentWave: 1, remainingScheduledSpawns: 1, enemies: [enemy(1, 2, 3), enemy(2, 4, 3)] }),
@@ -100,7 +109,7 @@ describe("StubbyBrain", () => {
   });
 
   it("does NOT rush while remainingScheduledSpawns > 0", () => {
-    const brain = createStubbyBrain();
+    const brain = createStubbyBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     brain.decide(observation({ currentWave: 1, remainingScheduledSpawns: 5, enemies: [enemy(1, 2, 3)] }), memory);
     // Overflow pending cleared but wave still has scheduled spawns → no rush.
@@ -112,7 +121,7 @@ describe("StubbyBrain", () => {
   });
 
   it("rush captures only the current wave's seen ids across a wave boundary", () => {
-    const brain = createStubbyBrain();
+    const brain = createStubbyBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     // Wave 1 holds enemies 1 and 2.
     brain.decide(
@@ -140,7 +149,7 @@ describe("StubbyBrain", () => {
   });
 
   it("resets per wave: a fresh wave's enemies are not treated as already-seen", () => {
-    const brain = createStubbyBrain();
+    const brain = createStubbyBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     brain.decide(observation({ currentWave: 1, remainingScheduledSpawns: 3, enemies: [enemy(1, 2, 3)] }), memory);
     // New wave with a previously-seen id reused — it must be held again for the new wave.

@@ -41,6 +41,9 @@ function openSkillTree() {
         <button class="menu-btn" @click="openSkillTree()">
           Upgrades!
         </button>
+        <button class="menu-btn" @click="router.push('/commanders')">
+          Commanders
+        </button>
         <button class="menu-btn" @click="router.push('/history')">
           Run History
         </button>

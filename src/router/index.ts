@@ -24,6 +24,7 @@ const routes: RouteRecordRaw[] = [
   },
   { path: "/victory", name: "victory", component: () => import("@/components/EndScreen.vue"), props: { won: true } },
   { path: "/history", name: "history", component: () => import("@/components/HistoryScreen.vue") },
+  { path: "/commanders", name: "commanders", component: () => import("@/components/CommandersScreen.vue") },
 ];
 
 const router = createRouter({ history: createWebHistory(), routes });

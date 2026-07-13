@@ -1,9 +1,10 @@
 import { defineStore } from "pinia";
+import type { LlmCommanderConfig } from "@/commanders/llm/types.js";
 import { useUiStore } from "@/stores/ui.js";
 
 const OLD_STORAGE_KEY = "gempath_save_v1";
 export const STORAGE_KEY = "lol_ya_tdg_save_1";
-const CURRENT_SAVE_VERSION = 2;
+const CURRENT_SAVE_VERSION = 3;
 
 export interface TowerUnlocks {
   levels: boolean[];
@@ -45,6 +46,7 @@ interface PersistStateShape {
   randomMapWidth: number;
   randomMapHeight: number;
   lastSelectedThemeId: string;
+  llmCommanders: LlmCommanderConfig[];
 }
 
 function blankTower(): TowerUnlocks {
@@ -118,6 +120,7 @@ function defaultState(): PersistStateShape {
     randomMapWidth: 20,
     randomMapHeight: 20,
     lastSelectedThemeId: "default",
+    llmCommanders: [],
   };
 }
 
@@ -126,6 +129,13 @@ function mergeWithDefaults<T>(defaults: T, parsed: unknown): T {
     return { ...defaults, ...(parsed as Record<string, unknown>) } as T;
   }
   return defaults;
+}
+
+function generateCommanderId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `l_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
 function migrateV1ToV2(parsed: Record<string, unknown>): PersistStateShape {
@@ -164,13 +174,36 @@ function migrateCurrentVersion(parsed: Record<string, unknown>): PersistStateSha
   return result;
 }
 
-function migrateToCurrent(parsed: Record<string, unknown>): PersistStateShape {
+function migrateV2ToV3(parsed: Record<string, unknown>): PersistStateShape {
+  const defaults = defaultState();
+  const result: PersistStateShape = { ...defaults, ...parsed };
+  result.difficulty = mergeWithDefaults(defaults.difficulty, parsed.difficulty);
+  result.generalAddons = mergeWithDefaults(defaults.generalAddons, parsed.generalAddons);
+  result.bestWaves = mergeWithDefaults(defaults.bestWaves, parsed.bestWaves);
+  result.firstTimeMilestones = mergeWithDefaults(defaults.firstTimeMilestones, parsed.firstTimeMilestones);
+  result.firstClears = mergeWithDefaults(defaults.firstClears, parsed.firstClears);
+  result.runHistory = Array.isArray(parsed.runHistory) ? parsed.runHistory : defaults.runHistory;
+  result.unlocked = mergeWithDefaults(defaults.unlocked, parsed.unlocked) as Record<string, TowerUnlocks>;
+  for (const towerId of Object.keys(defaults.unlocked)) {
+    if (result.unlocked[towerId]) {
+      result.unlocked[towerId] = mergeTowerUnlocks(result.unlocked[towerId]);
+    }
+  }
+  result.llmCommanders = [];
+  result.saveVersion = CURRENT_SAVE_VERSION;
+  return result;
+}
+
+export function migrateToCurrent(parsed: Record<string, unknown>): PersistStateShape {
   const version = parsed.saveVersion;
   if (version === undefined || version === null) {
     return migrateV1ToV2(parsed);
   }
   if (version === 1) {
     return migrateV1ToV2(parsed);
+  }
+  if (version === 2) {
+    return migrateV2ToV3(parsed);
   }
   if (version === CURRENT_SAVE_VERSION) {
     return migrateCurrentVersion(parsed);
@@ -308,6 +341,28 @@ export const usePersistStore = defineStore("persist", {
     hasCleared(mapIndex: number): boolean {
       const key = String(mapIndex);
       return !!this.firstClears[key];
+    },
+
+    addLlmCommander(config: LlmCommanderConfig): void {
+      this.llmCommanders.push(config);
+      this.save();
+    },
+
+    updateLlmCommander(config: LlmCommanderConfig): void {
+      const index = this.llmCommanders.findIndex((entry) => entry.id === config.id);
+      if (index !== -1) {
+        this.llmCommanders.splice(index, 1, config);
+        this.save();
+      }
+    },
+
+    deleteLlmCommander(id: string): void {
+      this.llmCommanders = this.llmCommanders.filter((entry) => entry.id !== id);
+      this.save();
+    },
+
+    generateCommanderId(): string {
+      return generateCommanderId();
     },
   },
 });
