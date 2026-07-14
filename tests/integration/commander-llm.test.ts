@@ -16,11 +16,6 @@ import {
 
 const FIXED_DT = 1 / 60;
 
-interface CommanderWorkerScope {
-  postMessage(message: CommanderToMainMessage): void;
-  onmessage: ((event: { data: unknown }) => void) | null;
-}
-
 function makeConfig(): LlmCommanderConfig {
   return {
     id: "llm1",
@@ -63,14 +58,27 @@ function makeMemory(): CommanderMemory {
 }
 
 describe("Integration: LLM commander worker pause + relay", () => {
-  const gw = globalThis as unknown as { self: CommanderWorkerScope | undefined; fetch: unknown };
-  const originalSelf = gw.self;
-  const originalFetch = gw.fetch;
-  const posted: CommanderToMainMessage[] = [];
-  const mockSelf: CommanderWorkerScope = {
-    postMessage: (msg: CommanderToMainMessage) => posted.push(msg),
-    onmessage: null,
+  // Augment the real jsdom `self` rather than replace it: this test steps the
+  // game engine (Rapier physics), whose `world.step()` needs Web APIs on `self`.
+  // Replacing `self` with a bare mock strips those and makes stepping panic. We
+  // override only `postMessage`/`onmessage` (the commander worker's touchpoints).
+  const workerScope = globalThis.self as unknown as {
+    postMessage: (message: CommanderToMainMessage) => void;
+    onmessage: ((event: { data: unknown }) => void) | null;
   };
+  const gw = globalThis as unknown as {
+    self:
+      | {
+          postMessage: (message: CommanderToMainMessage) => void;
+          onmessage: ((event: { data: unknown }) => void) | null;
+        }
+      | undefined;
+    fetch: unknown;
+  };
+  const originalFetch = gw.fetch;
+  const originalPostMessage = workerScope.postMessage;
+  const posted: CommanderToMainMessage[] = [];
+  const mockSelf = workerScope;
   let engine: GameEngine;
   let persistState: ReturnType<typeof createTestPersistState>;
   let mockHost: MockHostBindings;
@@ -81,8 +89,11 @@ describe("Integration: LLM commander worker pause + relay", () => {
     return snapshot;
   }
 
+  beforeEach(() => {
+    workerScope.postMessage = (msg: CommanderToMainMessage) => posted.push(msg);
+  });
   afterEach(() => {
-    gw.self = originalSelf;
+    workerScope.postMessage = originalPostMessage;
     gw.fetch = originalFetch;
     vi.useRealTimers();
     posted.length = 0;

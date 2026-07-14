@@ -3,11 +3,11 @@
 // instead we construct the PhysicsWorld directly (which requires initPhysics() to
 // have resolved) and drive enemies as bare Rapier bodies.
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { initPhysics } from "@/sim/physics/rapierContext.js";
-import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
-import { Enemy } from "@/sim/enemies/Enemy.js";
+import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { initPhysics } from "@/sim/physics/rapierContext.js";
 
 const FIXED_DT = 1 / 60;
 
@@ -34,8 +34,8 @@ function nearestPathCenter(grid, x, y) {
 }
 
 describe("PhysicsWorld — lifecycle & containment (flag OFF, direct construction)", () => {
-  let grid;
-  let physicsWorld;
+  let grid: Grid;
+  let physicsWorld: PhysicsWorld;
 
   beforeAll(async () => {
     await initPhysics();

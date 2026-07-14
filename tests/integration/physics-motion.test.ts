@@ -3,11 +3,11 @@
 // We wire a real PhysicsWorld into a real EnemyManager and drive the full
 // preStep -> step -> postStep pipeline so enemies move under physics.
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { initPhysics } from "@/sim/physics/rapierContext.js";
-import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
-import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { initPhysics } from "@/sim/physics/rapierContext.js";
 import { makeParticleSystem } from "../helpers/mock-managers.js";
 
 const FIXED_DT = 1 / 60;
@@ -22,9 +22,9 @@ function baseCenterOf(grid) {
 }
 
 describe("Physics motion integration (flag OFF, direct construction)", () => {
-  let grid;
-  let physicsWorld;
-  let enemyManager;
+  let grid: Grid;
+  let physicsWorld: PhysicsWorld;
+  let enemyManager: EnemyManager;
 
   beforeAll(async () => {
     await initPhysics();

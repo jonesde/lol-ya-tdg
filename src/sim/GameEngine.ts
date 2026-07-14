@@ -3,6 +3,7 @@ import type { DebugKind } from "@/sim/Command.js";
 import type { AttackTarget, Enemy } from "@/sim/enemies/Enemy.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { RAPIER_PHYSICS } from "@/sim/featureFlags.js";
 import type { GameRunState } from "@/sim/GameRunState.js";
 import {
   addGold,
@@ -17,9 +18,7 @@ import {
   togglePauseState,
   triggerEnd,
 } from "@/sim/GameRunState.js";
-import { RAPIER_PHYSICS } from "@/sim/featureFlags.js";
 import { Grid } from "@/sim/grid/Grid.js";
-import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
@@ -39,6 +38,7 @@ import {
   updateBestWave as persistUpdateBestWave,
 } from "@/sim/PersistState.js";
 import { ProjectileManager } from "@/sim/ProjectileManager.js";
+import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { TowerManager } from "@/sim/towers/TowerManager.js";
 import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";

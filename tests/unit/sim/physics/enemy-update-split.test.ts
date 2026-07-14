@@ -7,12 +7,7 @@ import { getMap } from "@/sim/grid/Map.js";
 // Minimal EnemyManagerRef satisfying what Enemy.update touches (no towers, no
 // other enemies) so the split can be driven deterministically in isolation.
 function makeEnemyManager(enemy: Enemy) {
-  return {
-    enemies: [enemy],
-    getEnemiesInRange: () => [],
-    forEachEnemyInRange: () => {},
-    towerAt: () => null,
-  };
+  return { enemies: [enemy], getEnemiesInRange: () => [], forEachEnemyInRange: () => {}, towerAt: () => null };
 }
 
 const FIXED_DT = 1 / 60;

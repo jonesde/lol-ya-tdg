@@ -1,7 +1,7 @@
 import type RAPIER from "@dimforge/rapier2d-compat";
 import { FIXED_DT } from "@/sim/Constants.js";
-import type { Grid } from "@/sim/grid/Grid.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
+import type { Grid } from "@/sim/grid/Grid.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import { getRapier } from "./rapierContext.js";
 
@@ -14,9 +14,11 @@ import { getRapier } from "./rapierContext.js";
 export class PhysicsWorld {
   private grid: Grid;
   private world: RAPIER.World;
-  private baseCollider: RAPIER.Collider | null = null;
-  private towerColliders: RAPIER.Collider[] = [];
-  private corridorColliders: RAPIER.Collider[] = [];
+  // Static geometry is tracked by its rigid body; removing the body also removes
+  // its attached collider, which avoids Rapier's panicking `removeCollider`.
+  private baseBody: RAPIER.RigidBody | null = null;
+  private towerBodies: RAPIER.RigidBody[] = [];
+  private corridorBodies: RAPIER.RigidBody[] = [];
 
   constructor(grid: Grid) {
     const RAPIER = getRapier();
@@ -33,30 +35,15 @@ export class PhysicsWorld {
     return this.grid.isPath(x, y) || this.grid.isBase(x, y) || this.grid.isSpawn(x, y);
   }
 
-  private dropBaseCollider(): void {
-    if (this.baseCollider) {
-      this.world.removeCollider(this.baseCollider, false);
-      this.baseCollider = null;
-    }
-  }
-
-  private dropColliders(list: RAPIER.Collider[]): void {
-    for (const collider of list) {
-      this.world.removeCollider(collider, false);
-    }
-    list.length = 0;
-  }
-
   // One fixed cuboid covering the 3x3 base, so enemies pile against it instead
   // of passing through.
   buildBase(): void {
     const RAPIER = getRapier();
-    this.dropBaseCollider();
+    this.dropBase();
     const baseCenter = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
     const half = 1.5 * this.grid.tileSize;
-    const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(baseCenter.x, baseCenter.y));
-    const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(half, half), body);
-    this.baseCollider = collider;
+    this.baseBody = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(baseCenter.x, baseCenter.y));
+    this.world.createCollider(RAPIER.ColliderDesc.cuboid(half, half), this.baseBody);
   }
 
   // Rebuild fixed tower colliders from the current TowerManager. Ghost towers
@@ -64,15 +51,15 @@ export class PhysicsWorld {
   // off grid.pathVersion bumps by the caller.
   rebuildTowers(towerManager: TowerManager): void {
     const RAPIER = getRapier();
-    this.dropColliders(this.towerColliders);
+    this.dropBodies(this.towerBodies);
     for (const tower of towerManager.towers) {
       if (tower.isGhost) continue;
       const centerX = tower.x ?? this.grid.tileToWorld(tower.tileX, tower.tileY).x;
       const centerY = tower.y ?? this.grid.tileToWorld(tower.tileX, tower.tileY).y;
       const half = this.grid.tileSize / 2;
       const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY));
-      const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(half, half), body);
-      this.towerColliders.push(collider);
+      this.world.createCollider(RAPIER.ColliderDesc.cuboid(half, half), body);
+      this.towerBodies.push(body);
     }
   }
 
@@ -82,22 +69,29 @@ export class PhysicsWorld {
   // bodies on the corridor instead of drifting into terrain.
   rebuildCorridor(): void {
     const RAPIER = getRapier();
-    this.dropColliders(this.corridorColliders);
+    this.dropBodies(this.corridorBodies);
     const tileSize = this.grid.tileSize;
     const halfThickness = tileSize * 0.05;
     const halfLength = tileSize / 2;
 
     const walkableTiles: { x: number; y: number }[] = [];
+    const seenWalkable = new Set<string>();
+    const addWalkable = (x: number, y: number): void => {
+      const key = `${x},${y}`;
+      if (seenWalkable.has(key)) return;
+      seenWalkable.add(key);
+      walkableTiles.push({ x, y });
+    };
     for (const path of this.grid.paths) {
       if (path) {
         for (const tile of path) {
-          walkableTiles.push({ x: tile.x, y: tile.y });
+          addWalkable(tile.x, tile.y);
         }
       }
     }
-    walkableTiles.push({ x: this.grid.base.x, y: this.grid.base.y });
+    addWalkable(this.grid.base.x, this.grid.base.y);
     for (const spawn of this.grid.spawns) {
-      walkableTiles.push({ x: spawn.x, y: spawn.y });
+      addWalkable(spawn.x, spawn.y);
     }
 
     const neighbors = [
@@ -123,11 +117,9 @@ export class PhysicsWorld {
         const halfX = neighbor.dx !== 0 ? halfThickness : halfLength;
         const halfY = neighbor.dx !== 0 ? halfLength : halfThickness;
 
-        const body = this.world.createRigidBody(
-          RAPIER.RigidBodyDesc.fixed().setTranslation(edgeCenterX, edgeCenterY),
-        );
-        const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(halfX, halfY), body);
-        this.corridorColliders.push(collider);
+        const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(edgeCenterX, edgeCenterY));
+        this.world.createCollider(RAPIER.ColliderDesc.cuboid(halfX, halfY), body);
+        this.corridorBodies.push(body);
       }
     }
   }
@@ -165,11 +157,31 @@ export class PhysicsWorld {
     this.world.step();
   }
 
+  // Remove a set of rigid bodies (and their attached colliders) from the world.
+  private dropBodies(bodies: RAPIER.RigidBody[]): void {
+    for (const body of bodies) {
+      this.world.removeRigidBody(body);
+    }
+    bodies.length = 0;
+  }
+
+  private dropBase(): void {
+    if (this.baseBody) {
+      this.world.removeRigidBody(this.baseBody);
+      this.baseBody = null;
+    }
+  }
+
+  // Free the entire world in one call. Rapier's `removeCollider`/`removeRigidBody`
+  // can panic on already-detached handles, so we rely on `world.free()` to reclaim
+  // everything and just drop our references. Guarded so dispose is idempotent.
   dispose(): void {
-    this.dropBaseCollider();
-    this.dropColliders(this.towerColliders);
-    this.dropColliders(this.corridorColliders);
-    this.world.free();
-    this.world = null as unknown as RAPIER.World;
+    this.baseBody = null;
+    this.towerBodies = [];
+    this.corridorBodies = [];
+    if (this.world) {
+      this.world.free();
+      this.world = null as unknown as RAPIER.World;
+    }
   }
 }

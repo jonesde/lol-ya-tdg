@@ -771,6 +771,9 @@ describe("GameEngine", () => {
       // Freeze the enemy at the tower so it stays within range during the tick
       // (a spawned enemy otherwise walks its path away from the tower), and
       // register it in the spatial hash so getEnemiesInRange can find it.
+      // Under the Rapier physics flag the enemy's rigid body is authoritative,
+      // so we move the body too; otherwise computeIntentOn reseeds the logical
+      // position from the (untouched) spawn body and the tower never sees it.
       enemy.speed = 0;
       enemy.laneOffsetX = 0;
       enemy.laneOffsetY = 0;
@@ -778,6 +781,7 @@ describe("GameEngine", () => {
       enemy.centerY = tower.y;
       enemy.x = tower.x;
       enemy.y = tower.y;
+      enemy.body?.setTranslation({ x: tower.x, y: tower.y }, true);
       engine.enemyManager!.rebuildSpatialHash();
       return enemy;
     }

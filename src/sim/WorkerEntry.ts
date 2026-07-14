@@ -1,7 +1,7 @@
 import { FIXED_DT, GameState, MAX_ACCUM, MAX_STEPS_PER_FRAME } from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
-import { initPhysics } from "@/sim/physics/rapierContext.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
+import { initPhysics } from "@/sim/physics/rapierContext.js";
 import { applyCommand } from "./applyCommand.js";
 import type { Command } from "./Command.js";
 import type { PersistStateSlice } from "./HostBindings.js";

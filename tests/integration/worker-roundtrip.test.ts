@@ -2,31 +2,24 @@
  * Worker round-trip smoke test (Phase 7).
  *
  * A real `import GameWorker from "@/sim/WorkerEntry.ts?worker"` does not run
- * under Vitest's jsdom/forks pool reliably, so we exercise the worker's actual
- * message-handler logic directly: we install a mock `self` (the DedicatedWorker
- * global), import the worker entry module (which binds its `onmessage` to our
- * mock), drive an `init` message + a `command`, let the setTimeout-driven loop
- * tick, and assert that `snapshot` messages are produced with the expected
- * meta. This covers the same code path the real worker uses.
+ * under Vitest's jsdom pool reliably, so we exercise the worker's actual
+ * message-handler logic directly. The worker module binds its `onmessage` and
+ * reads `self.postMessage` at runtime, so we install a `self` interceptor that
+ * captures `postMessage` output while preserving the rest of the jsdom global
+ * scope. This matters under the Rapier physics flag: `world.step()` reaches
+ * into Web APIs (TextEncoder, etc.) on `self`, so replacing `self` wholesale
+ * with a bare mock would break stepping. We therefore override only the two
+ * members the worker touches (`postMessage`, `onmessage`) and restore them
+ * afterwards.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Command } from "@/sim/Command.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "@/sim/WorkerProtocol.js";
 import { createTestPersistState, createTestThemeBundle } from "../helpers/mock-stores";
 
-// Minimal DedicatedWorkerGlobalScope shape — mirrors the declaration in
-// src/sim/WorkerEntry.ts so we can type the mock `self` without pulling in the
-// WebWorker lib (which conflicts with the DOM lib used for the main thread).
-interface WorkerGlobalScope {
-  postMessage(message: WorkerToMainMessage): void;
-  onmessage: ((event: { data: MainToWorkerMessage }) => void) | null;
-}
-
-interface WorkerGlobalThis {
-  self: WorkerGlobalScope | undefined;
-}
+type WorkerMessageHandler = ((event: { data: MainToWorkerMessage }) => void) | null;
 
 type SnapshotMessage = Extract<WorkerToMainMessage, { type: "snapshot" }>;
 
@@ -35,16 +28,36 @@ function snapshotMessages(messages: WorkerToMainMessage[]): SnapshotMessage[] {
 }
 
 describe("worker round-trip", () => {
-  const gw = globalThis as WorkerGlobalThis;
-  const originalSelf = gw.self;
+  // `self` is the jsdom global; we keep it intact (Rapier needs its Web APIs)
+  // and only swap `postMessage` so we can capture the worker's output. The
+  // worker binds its `onmessage` handler once at module import (module
+  // caching), so we leave that binding in place across tests and only manage
+  // `postMessage` (re-installed per test, restored after).
+  const workerScope = globalThis.self as unknown as {
+    postMessage: (message: WorkerToMainMessage) => void;
+    onmessage: WorkerMessageHandler;
+  };
+  const gw = globalThis as unknown as {
+    self: { postMessage: (message: WorkerToMainMessage) => void; onmessage: WorkerMessageHandler } | undefined;
+  };
+  const originalPostMessage = workerScope.postMessage;
   const posted: WorkerToMainMessage[] = [];
-  const mockSelf: WorkerGlobalScope = { postMessage: (msg: WorkerToMainMessage) => posted.push(msg), onmessage: null };
+  // `mockSelf` aliases the live worker scope so the test can invoke the handler
+  // the worker registered via `self.onmessage = ...`.
+  const mockSelf = workerScope;
 
-  afterEach(() => {
-    gw.self = originalSelf;
-    ackReceived = 0;
+  // Re-install the capture interceptor before each test (afterEach restores it,
+  // so the next test must re-apply it).
+  beforeEach(() => {
+    workerScope.postMessage = (msg: WorkerToMainMessage) => {
+      posted.push(msg);
+    };
   });
 
+  afterEach(() => {
+    workerScope.postMessage = originalPostMessage;
+    ackReceived = 0;
+  });
   function sendInit(): void {
     mockSelf.onmessage!({
       data: { type: "init", persistState: createTestPersistState(), themeBundle: createTestThemeBundle(), mapIndex: 0 },

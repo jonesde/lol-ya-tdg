@@ -1,3 +1,4 @@
+import type RAPIER from "@dimforge/rapier2d-compat";
 import type { EnemyVisualMeta, MapThemeAnimation, MapThemeData } from "@/render/themes/index.js";
 import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
@@ -7,7 +8,6 @@ import {
   ENEMY_WAVE_DAMAGE_MULT,
   MIN_SLOW_FACTOR,
 } from "@/sim/ConstantsEnemy.js";
-import type RAPIER from "@dimforge/rapier2d-compat";
 import type { Tower } from "@/sim/towers/Tower.js";
 
 let nextId = 1;
@@ -662,7 +662,6 @@ export class Enemy {
   // to postPhysics). Status timers already ran in computeIntent; the stun early
   // return here skips movement/attack but NOT the clamp (postPhysics applies it).
   private computeIntentOff(dt: number, enemyManager: EnemyManagerRef | null): void {
-
     const hasNextTile = this.path != null && this.pathIdx < this.path.length - 1;
     if (this.stunTimer > 0) {
       this._intentHasNextTile = hasNextTile;

@@ -15,10 +15,6 @@ const FIXED_DT = 1 / 60;
 
 // Minimal DedicatedWorkerGlobalScope shape for the commander worker (mirrors the
 // mock used in tests/integration/worker-roundtrip.test.ts for the sim worker).
-interface CommanderWorkerScope {
-  postMessage(message: CommanderToMainMessage): void;
-  onmessage: ((event: { data: unknown }) => void) | null;
-}
 
 function extractCommands(messages: CommanderToMainMessage[]): Command[] {
   const commands: Command[] = [];
@@ -32,16 +28,32 @@ describe("Integration: real commander worker round-trip (stubby)", () => {
   let engine: GameEngine;
   let persistState: ReturnType<typeof createTestPersistState>;
   let mockHost: MockHostBindings;
-  const gw = globalThis as unknown as { self: CommanderWorkerScope | undefined };
-  const originalSelf = gw.self;
-  const posted: CommanderToMainMessage[] = [];
-  const mockSelf: CommanderWorkerScope = {
-    postMessage: (msg: CommanderToMainMessage) => posted.push(msg),
-    onmessage: null,
+  // Augment the real jsdom `self` rather than replace it: the game engine stepped
+  // here runs the Rapier physics world, whose `world.step()` reaches into Web APIs
+  // (TextEncoder, etc.) on `self`. Replacing `self` with a bare mock strips those
+  // and makes stepping panic. We override only `postMessage`/`onmessage` (the two
+  // members the commander worker touches) and restore after.
+  const workerScope = globalThis.self as unknown as {
+    postMessage: (message: CommanderToMainMessage) => void;
+    onmessage: ((event: { data: unknown }) => void) | null;
   };
+  const gw = globalThis as unknown as {
+    self:
+      | {
+          postMessage: (message: CommanderToMainMessage) => void;
+          onmessage: ((event: { data: unknown }) => void) | null;
+        }
+      | undefined;
+  };
+  const originalPostMessage = workerScope.postMessage;
+  const posted: CommanderToMainMessage[] = [];
+  const mockSelf = workerScope;
 
+  beforeEach(() => {
+    workerScope.postMessage = (msg: CommanderToMainMessage) => posted.push(msg);
+  });
   afterEach(() => {
-    gw.self = originalSelf;
+    workerScope.postMessage = originalPostMessage;
     posted.length = 0;
   });
 

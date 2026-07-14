@@ -12,6 +12,7 @@ import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap, makeMapData } from "../helpers/mock-grid";
 import { makeParticleSystem, makeSoundManager } from "../helpers/mock-managers";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";
+import { itIfOff } from "../helpers/physicsFlags.js";
 
 type TowerId = "basic" | "ice" | "sniper" | "cannon" | "lightning" | "railgun";
 
@@ -78,7 +79,7 @@ describe("Enemy attack and collision (Phases 3 & 4)", () => {
     enemyManager.setTowerManager(towerManager);
   });
 
-  it("attacks a live tower on its next path tile, lowering health and setting attackAnimTime", () => {
+  itIfOff("attacks a live tower on its next path tile, lowering health and setting attackAnimTime", () => {
     const path = grid.getPathFor(0)!;
     const towerTile = path[1]!;
     const tower = towerManager.build("basic", towerTile.x, towerTile.y, makeSave(), grid);
@@ -95,7 +96,7 @@ describe("Enemy attack and collision (Phases 3 & 4)", () => {
     expect(enemy.attackAnimTime).toBeGreaterThan(0);
   });
 
-  it("does not attack while stunned (attack timer is paused, no damage)", () => {
+  itIfOff("does not attack while stunned (attack timer is paused, no damage)", () => {
     const path = grid.getPathFor(0)!;
     const towerTile = path[1]!;
     const tower = towerManager.build("basic", towerTile.x, towerTile.y, makeSave(), grid);
@@ -106,7 +107,7 @@ describe("Enemy attack and collision (Phases 3 & 4)", () => {
     expect(enemy.attackAnimTime).toBe(0);
   });
 
-  it("attacks less often when slowed (longer attack interval)", () => {
+  itIfOff("attacks less often when slowed (longer attack interval)", () => {
     const runScenario = (slowed: boolean): number => {
       const map = makeBastionMap();
       const scenarioGrid = new Grid(map);
@@ -132,7 +133,7 @@ describe("Enemy attack and collision (Phases 3 & 4)", () => {
     expect(normalHealth).toBeLessThan(slowedHealth);
   });
 
-  it("does not skip a live tower around the corner when the blocking tower is destroyed", () => {
+  itIfOff("does not skip a live tower around the corner when the blocking tower is destroyed", () => {
     // L-shaped path: spawn (0,0) → east along row 0 → turn at (4,0) → south along
     // column 4 → base (4,4). Tower A sits on the corner (4,0); tower B sits just
     // around the corner (4,1). After A is destroyed, enemies still on/near the
@@ -212,7 +213,7 @@ describe("Enemy attack and collision (Phases 3 & 4)", () => {
     expect(enemy.attackingBase).toBe(false);
   });
 
-  it("re-anchors and advances when the blocking tower is sold mid-attack", () => {
+  itIfOff("re-anchors and advances when the blocking tower is sold mid-attack", () => {
     // Regression: a sold/cancelled tower is removed from the grid WITHOUT its
     // isGhost flag being set. If the sticky blockedByTower entry is only cleared
     // on isGhost, an enemy mid-attack keeps steering at the (now gone) tower tile
@@ -246,7 +247,7 @@ describe("Enemy attack and collision (Phases 3 & 4)", () => {
     expect(reachedBase).toBe(true);
   });
 
-  it("separates a slower enemy to the right (+laneOffset) and a faster one to the left (-laneOffset)", () => {
+  itIfOff("separates a slower enemy to the right (+laneOffset) and a faster one to the left (-laneOffset)", () => {
     const slow = new Enemy("tank", 1, 0, grid, 1);
     const fast = new Enemy("runner", 1, 0, grid, 1);
     for (const enemy of [slow, fast]) {
@@ -320,7 +321,7 @@ describe("base attack", () => {
     return enemy;
   }
 
-  it("enemy attacks base on cooldown and does not despawn", () => {
+  itIfOff("enemy attacks base on cooldown and does not despawn", () => {
     const baseTarget = new StubBaseTarget();
     const enemy = makeAttackingEnemy(baseTarget);
     enemyManager.enemies.push(enemy);
@@ -336,7 +337,7 @@ describe("base attack", () => {
     expect(enemyManager.enemies).toContain(enemy);
   });
 
-  it("two enemies both attack the base without despawning", () => {
+  itIfOff("two enemies both attack the base without despawning", () => {
     const singleTarget = new StubBaseTarget();
     const singleEnemy = makeAttackingEnemy(singleTarget);
     for (let step = 0; step < 200; step++) singleEnemy.update(0.05, enemyManager);
@@ -367,7 +368,7 @@ describe("base attack", () => {
     return Math.hypot(x - closestX, y - closestY);
   }
 
-  it("base-attacking enemy settles just outside the 3x3 base square (not at the center)", () => {
+  itIfOff("base-attacking enemy settles just outside the 3x3 base square (not at the center)", () => {
     const base = grid.getBase();
     const baseCenter = grid.tileToWorld(base.x, base.y);
     const half = 1.5 * grid.tileSize;
@@ -395,7 +396,7 @@ describe("base attack", () => {
     expect(maxStep).toBeLessThan(grid.tileSize);
   });
 
-  it("clustered base-attacking enemies all stay outside the base square", () => {
+  itIfOff("clustered base-attacking enemies all stay outside the base square", () => {
     const base = grid.getBase();
     const baseCenter = grid.tileToWorld(base.x, base.y);
     const half = 1.5 * grid.tileSize;
@@ -466,7 +467,7 @@ describe("contact-line steering (polite motion)", () => {
     enemyManager.setTowerManager(towerManager);
   });
 
-  it("enemies attacking a path-blocking tower spread across tiles instead of stacking in a single column", () => {
+  itIfOff("enemies attacking a path-blocking tower spread across tiles instead of stacking in a single column", () => {
     const wideMap = makeWideApproachMap();
     const wideGrid = new Grid(wideMap);
     const wideTowers = new TowerManager(
@@ -508,94 +509,97 @@ describe("contact-line steering (polite motion)", () => {
     expect(tiles.size).toBeGreaterThan(1);
   });
 
-  it("a pile against a path-blocking tower still damages it (regression: tower attack survives lateral spread)", () => {
-    // A 3-wide staging room funnels into a 1-wide choke; the tower sits on the choke
-    // mouth, so it is the only way through — enemies must pile against it (with real
-    // lateral spread on its exposed faces) rather than route around it.
-    const width = 9;
-    const height = 3;
-    const tiles: { type: string; height: number }[][] = [];
-    for (let rowIndex = 0; rowIndex < height; rowIndex++) {
-      const row: { type: string; height: number }[] = [];
-      for (let colIndex = 0; colIndex < width; colIndex++) {
-        const inRoom = colIndex <= 3;
-        const inChoke = colIndex >= 4 && rowIndex === 1;
-        row.push({ type: inRoom || inChoke ? "path" : "terrain", height: 1 });
+  itIfOff(
+    "a pile against a path-blocking tower still damages it (regression: tower attack survives lateral spread)",
+    () => {
+      // A 3-wide staging room funnels into a 1-wide choke; the tower sits on the choke
+      // mouth, so it is the only way through — enemies must pile against it (with real
+      // lateral spread on its exposed faces) rather than route around it.
+      const width = 9;
+      const height = 3;
+      const tiles: { type: string; height: number }[][] = [];
+      for (let rowIndex = 0; rowIndex < height; rowIndex++) {
+        const row: { type: string; height: number }[] = [];
+        for (let colIndex = 0; colIndex < width; colIndex++) {
+          const inRoom = colIndex <= 3;
+          const inChoke = colIndex >= 4 && rowIndex === 1;
+          row.push({ type: inRoom || inChoke ? "path" : "terrain", height: 1 });
+        }
+        tiles.push(row);
       }
-      tiles.push(row);
-    }
-    const map = makeMapData({
-      width,
-      height,
-      spawns: [{ x: 0, y: 1 }],
-      base: { x: width - 1, y: 1 },
-      tiles,
-      regionId: 0,
-      level: 1,
-      style: "bastion",
-    });
-    const blockGrid = new Grid(map);
-    const blockTowers = new TowerManager(
-      blockGrid,
-      makeParticleSystem(),
-      { spawn() {}, fireLightning() {}, spawnLightningFlash() {} },
-      makeSoundManager(),
-    );
-    const blockEnemies = new EnemyManager(blockGrid, makeParticleSystem(), 0);
-    blockEnemies.setTowerManager(blockTowers);
+      const map = makeMapData({
+        width,
+        height,
+        spawns: [{ x: 0, y: 1 }],
+        base: { x: width - 1, y: 1 },
+        tiles,
+        regionId: 0,
+        level: 1,
+        style: "bastion",
+      });
+      const blockGrid = new Grid(map);
+      const blockTowers = new TowerManager(
+        blockGrid,
+        makeParticleSystem(),
+        { spawn() {}, fireLightning() {}, spawnLightningFlash() {} },
+        makeSoundManager(),
+      );
+      const blockEnemies = new EnemyManager(blockGrid, makeParticleSystem(), 0);
+      blockEnemies.setTowerManager(blockTowers);
 
-    const towerTile = { x: 4, y: 1 };
-    const tower = blockTowers.build("basic", towerTile.x, towerTile.y, makeSave(), blockGrid)!;
-    // Enough health to survive the run but low enough that a 12-enemy pile's attacks
-    // are clearly observable.
-    tower.health = tower.maxHealth = 100000;
+      const towerTile = { x: 4, y: 1 };
+      const tower = blockTowers.build("basic", towerTile.x, towerTile.y, makeSave(), blockGrid)!;
+      // Enough health to survive the run but low enough that a 12-enemy pile's attacks
+      // are clearly observable.
+      tower.health = tower.maxHealth = 100000;
 
-    const count = 12;
-    const enemies: Enemy[] = [];
-    for (let i = 0; i < count; i++) {
-      const enemy = new Enemy("minion", 1, 0, blockGrid, 1);
-      enemies.push(enemy);
-      blockEnemies.enemies.push(enemy);
-    }
-    blockEnemies.updateSpatialHash();
-
-    for (let step = 0; step < 8000; step++) {
-      blockEnemies.update(1 / 60, null);
-    }
-
-    // Before the fix, the attack target was gated on center-to-center distance, which
-    // became false the moment contactLineSteer spread the pile tangentially along the
-    // tower face — so the tower took no damage. With square-distance contact, the pile
-    // keeps attacking, so health must drop below max.
-    expect(tower.health).toBeLessThan(tower.maxHealth);
-
-    // Regression for the sideways-into-terrain drift: the 1-tile choke is flanked by
-    // terrain (rows 0 and 2 are terrain). The tangential collision push used to shove
-    // piled enemies past the choke span onto those terrain tiles. Every surviving enemy
-    // must keep its whole body on traversable (non-terrain) tiles.
-    const bodyOnPathTiles = (enemy: Enemy): boolean => {
-      const r = enemy.radius;
-      const points = [
-        { x: enemy.x, y: enemy.y },
-        { x: enemy.x + r, y: enemy.y },
-        { x: enemy.x - r, y: enemy.y },
-        { x: enemy.x, y: enemy.y + r },
-        { x: enemy.x, y: enemy.y - r },
-      ];
-      for (const point of points) {
-        const tileX = Math.floor(point.x / blockGrid.tileSize);
-        const tileY = Math.floor(point.y / blockGrid.tileSize);
-        if (!blockGrid.inBounds(tileX, tileY)) return false;
-        if (blockGrid.isTerrain(tileX, tileY)) return false;
+      const count = 12;
+      const enemies: Enemy[] = [];
+      for (let i = 0; i < count; i++) {
+        const enemy = new Enemy("minion", 1, 0, blockGrid, 1);
+        enemies.push(enemy);
+        blockEnemies.enemies.push(enemy);
       }
-      return true;
-    };
-    const survivors = enemies.filter((e) => !e.removed);
-    expect(survivors.length).toBeGreaterThan(0);
-    for (const survivor of survivors) {
-      expect(bodyOnPathTiles(survivor)).toBe(true);
-    }
-  });
+      blockEnemies.updateSpatialHash();
+
+      for (let step = 0; step < 8000; step++) {
+        blockEnemies.update(1 / 60, null);
+      }
+
+      // Before the fix, the attack target was gated on center-to-center distance, which
+      // became false the moment contactLineSteer spread the pile tangentially along the
+      // tower face — so the tower took no damage. With square-distance contact, the pile
+      // keeps attacking, so health must drop below max.
+      expect(tower.health).toBeLessThan(tower.maxHealth);
+
+      // Regression for the sideways-into-terrain drift: the 1-tile choke is flanked by
+      // terrain (rows 0 and 2 are terrain). The tangential collision push used to shove
+      // piled enemies past the choke span onto those terrain tiles. Every surviving enemy
+      // must keep its whole body on traversable (non-terrain) tiles.
+      const bodyOnPathTiles = (enemy: Enemy): boolean => {
+        const r = enemy.radius;
+        const points = [
+          { x: enemy.x, y: enemy.y },
+          { x: enemy.x + r, y: enemy.y },
+          { x: enemy.x - r, y: enemy.y },
+          { x: enemy.x, y: enemy.y + r },
+          { x: enemy.x, y: enemy.y - r },
+        ];
+        for (const point of points) {
+          const tileX = Math.floor(point.x / blockGrid.tileSize);
+          const tileY = Math.floor(point.y / blockGrid.tileSize);
+          if (!blockGrid.inBounds(tileX, tileY)) return false;
+          if (blockGrid.isTerrain(tileX, tileY)) return false;
+        }
+        return true;
+      };
+      const survivors = enemies.filter((e) => !e.removed);
+      expect(survivors.length).toBeGreaterThan(0);
+      for (const survivor of survivors) {
+        expect(bodyOnPathTiles(survivor)).toBe(true);
+      }
+    },
+  );
 
   function makeCorridorMap() {
     const width = 10;
@@ -623,7 +627,7 @@ describe("contact-line steering (polite motion)", () => {
     });
   }
 
-  it("1-wide corridor: base attackers mirror tower (all-in + depth-capped)", () => {
+  itIfOff("1-wide corridor: base attackers mirror tower (all-in + depth-capped)", () => {
     class StubBaseTarget implements AttackTarget {
       readonly isGhost = false;
       health = 100;

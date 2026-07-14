@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
+import { itIfOff } from "../../helpers/physicsFlags.js";
 
 // Minimal EnemyManagerRef satisfying what Enemy.update touches (no towers, no
 // other enemies) so we can drive routing in isolation.
@@ -24,7 +25,7 @@ function runUntil(
 }
 
 describe("Enemy routing (target-tile model)", () => {
-  it("applyRoute('hold') parks the enemy at the target tile and does not advance past it", () => {
+  itIfOff("applyRoute('hold') parks the enemy at the target tile and does not advance past it", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     const manager = makeEnemyManager(enemy);
@@ -45,7 +46,7 @@ describe("Enemy routing (target-tile model)", () => {
     expect(Math.floor(enemy.centerY / grid.tileSize)).toBe(holdTile.y);
   });
 
-  it("applyRoute('route') follows the route then reverts to default pathing on completion", () => {
+  itIfOff("applyRoute('route') follows the route then reverts to default pathing on completion", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     const manager = makeEnemyManager(enemy);
@@ -57,7 +58,7 @@ describe("Enemy routing (target-tile model)", () => {
     expect(enemy.path).toBe(defaultPath);
   });
 
-  it("releaseToDefault reverts routingMode to default and re-anchors to the grid path", () => {
+  itIfOff("releaseToDefault reverts routingMode to default and re-anchors to the grid path", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     const route = grid.computeRoute(enemy.currentTile(), grid.getPathFor(0)![3]!);
@@ -66,7 +67,7 @@ describe("Enemy routing (target-tile model)", () => {
     expect(enemy.path).toBe(grid.getPathFor(0));
   });
 
-  it("the pathVersion re-anchor is NOT applied while routingMode !== default", () => {
+  itIfOff("the pathVersion re-anchor is NOT applied while routingMode !== default", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     const route = grid.computeRoute(enemy.currentTile(), grid.getPathFor(0)![3]!);
@@ -79,7 +80,7 @@ describe("Enemy routing (target-tile model)", () => {
     expect(enemy.path).not.toBe(grid.getPathFor(0));
   });
 
-  it("applyRoute(null, 'hold') falls back to releaseToDefault", () => {
+  itIfOff("applyRoute(null, 'hold') falls back to releaseToDefault", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     enemy.applyRoute(null, "hold");
@@ -87,7 +88,7 @@ describe("Enemy routing (target-tile model)", () => {
     expect(enemy.path).toBe(grid.getPathFor(0));
   });
 
-  it("applyRoute(null, 'route') falls back to releaseToDefault", () => {
+  itIfOff("applyRoute(null, 'route') falls back to releaseToDefault", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     enemy.applyRoute(null, "route");
@@ -95,7 +96,7 @@ describe("Enemy routing (target-tile model)", () => {
     expect(enemy.path).toBe(grid.getPathFor(0));
   });
 
-  it("computeRoute returns null for an unreachable terrain goal", () => {
+  itIfOff("computeRoute returns null for an unreachable terrain goal", () => {
     const grid = new Grid(getMap(0));
     // A terrain tile away from any path/spawn/base tile is unreachable.
     let terrainTile: { x: number; y: number } | null = null;

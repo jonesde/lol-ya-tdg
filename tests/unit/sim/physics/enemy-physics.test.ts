@@ -3,11 +3,11 @@
 // We construct a PhysicsWorld, addEnemy so enemy.body is non-null, then drive the
 // enemy via computeIntent / step / postPhysics ourselves.
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { initPhysics } from "@/sim/physics/rapierContext.js";
-import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
-import { Enemy } from "@/sim/enemies/Enemy.js";
+import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { initPhysics } from "@/sim/physics/rapierContext.js";
 
 const FIXED_DT = 1 / 60;
 
@@ -21,9 +21,9 @@ function baseCenterOf(grid) {
 }
 
 describe("Enemy ON branches (body set) driven manually", () => {
-  let grid;
-  let physicsWorld;
-  let enemy;
+  let grid: Grid;
+  let physicsWorld: PhysicsWorld;
+  let enemy: Enemy;
 
   beforeAll(async () => {
     await initPhysics();
