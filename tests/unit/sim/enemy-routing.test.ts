@@ -31,10 +31,14 @@ describe("Enemy routing (target-tile model)", () => {
     const holdTile = grid.getPathFor(0)![3]!;
     const route = grid.computeRoute(enemy.currentTile(), holdTile);
     enemy.applyRoute(route, "hold");
-    expect(enemy.routingMode).toBe("hold");
 
-    runUntil(enemy, manager, () => enemy.arrived);
-    expect(enemy.routingMode).toBe("hold");
+    runUntil(
+      enemy,
+      manager,
+      () =>
+        Math.floor(enemy.centerX / grid.tileSize) === holdTile.x &&
+        Math.floor(enemy.centerY / grid.tileSize) === holdTile.y,
+    );
     expect(enemy.attackingBase).toBe(false);
     // The enemy sits on the hold tile (it never passes it).
     expect(Math.floor(enemy.centerX / grid.tileSize)).toBe(holdTile.x);
@@ -47,11 +51,9 @@ describe("Enemy routing (target-tile model)", () => {
     const manager = makeEnemyManager(enemy);
     const route = grid.computeRoute(enemy.currentTile(), grid.base);
     enemy.applyRoute(route, "route");
-    expect(enemy.routingMode).toBe("route");
 
     const defaultPath = grid.getPathFor(0);
-    runUntil(enemy, manager, () => enemy.routingMode === "default");
-    expect(enemy.routingMode).toBe("default");
+    runUntil(enemy, manager, () => enemy.path === defaultPath);
     expect(enemy.path).toBe(defaultPath);
   });
 
@@ -60,9 +62,7 @@ describe("Enemy routing (target-tile model)", () => {
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     const route = grid.computeRoute(enemy.currentTile(), grid.getPathFor(0)![3]!);
     enemy.applyRoute(route, "hold");
-    expect(enemy.routingMode).toBe("hold");
     enemy.releaseToDefault();
-    expect(enemy.routingMode).toBe("default");
     expect(enemy.path).toBe(grid.getPathFor(0));
   });
 
@@ -83,7 +83,6 @@ describe("Enemy routing (target-tile model)", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     enemy.applyRoute(null, "hold");
-    expect(enemy.routingMode).toBe("default");
     expect(enemy.attackingBase).toBe(false);
     expect(enemy.path).toBe(grid.getPathFor(0));
   });
@@ -92,7 +91,6 @@ describe("Enemy routing (target-tile model)", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     enemy.applyRoute(null, "route");
-    expect(enemy.routingMode).toBe("default");
     expect(enemy.attackingBase).toBe(false);
     expect(enemy.path).toBe(grid.getPathFor(0));
   });

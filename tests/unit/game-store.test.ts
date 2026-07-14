@@ -14,6 +14,15 @@ interface GemBreakdown {
   firstClearBonus: number;
 }
 
+function nonZeroGemBreakdown(): GemBreakdown {
+  return {
+    bossKills: { base: 10, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
+    milestones: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
+    waveCompletion: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
+    firstClearBonus: 0,
+  };
+}
+
 describe("GameStore", () => {
   let store: ReturnType<typeof createTestGameStore>;
 
@@ -283,7 +292,7 @@ describe("GameStore", () => {
       store.selectedTower = {} as never;
       store.selectedTowerType = "basic";
       store.hoverTile = { tileX: 0, tileY: 0 };
-      store.upgradeBtnClickAnim = 0.5;
+      store.triggerUpgradeClickAnim();
       store.initMap(0, { regionId: 0 } as unknown as GeneratedMap, null);
       expect(store.selectedTower).toBeNull();
       expect(store.selectedTowerType).toBeNull();
@@ -298,7 +307,7 @@ describe("GameStore", () => {
     });
 
     it("resets gemBreakdown", () => {
-      store.gemBreakdown.bossKills.base = 10;
+      store.setGemBreakdown(nonZeroGemBreakdown());
       store.initMap(0, { regionId: 0 } as unknown as GeneratedMap, null);
       expect(store.gemBreakdown.bossKills.base).toBe(0);
     });
@@ -340,7 +349,7 @@ describe("GameStore", () => {
       store.selectedTower = {} as never;
       store.selectedTowerType = "basic";
       store.hoverTile = { tileX: 0, tileY: 0 };
-      store.upgradeBtnClickAnim = 0.5;
+      store.triggerUpgradeClickAnim();
       store.triggerEnd(true, { wave: 0, gems: 0, gemBreakdown: {} as unknown as GemBreakdown });
       expect(store.selectedTower).toBeNull();
       expect(store.selectedTowerType).toBeNull();
@@ -370,7 +379,7 @@ describe("GameStore", () => {
       store.selectedTower = {} as unknown as Tower;
       store.selectedTowerType = "basic";
       store.hoverTile = { tileX: 0, tileY: 0 };
-      store.upgradeBtnClickAnim = 0.5;
+      store.triggerUpgradeClickAnim();
       store.resetToMenu();
       expect(store.selectedTower).toBeNull();
       expect(store.selectedTowerType).toBeNull();
@@ -395,7 +404,7 @@ describe("GameStore", () => {
       store.bossesKilledThisRun = 10;
       store.bossesReachedBaseThisRun = 4;
       store.claimMilestone(15);
-      store.gemBreakdown.bossKills.base = 10;
+      store.setGemBreakdown(nonZeroGemBreakdown());
       store.setHoverUpgradeBtn(true);
       store.resetToMenu();
       expect(store.baseHealth).toBe(STARTING_BASE_HEALTH);

@@ -276,6 +276,14 @@ export const useGameStore = defineStore("game", {
       this.state = victoryFlag ? GameState.VICTORY : GameState.GAME_OVER;
     },
 
+    triggerUpgradeClickAnim() {
+      this.upgradeBtnClickAnim = 0.4;
+    },
+
+    setGemBreakdown(breakdown: GemBreakdown) {
+      this.gemBreakdown = breakdown;
+    },
+
     resetToMenu() {
       this.state = GameState.MENU;
       this.mapIndex = -1;

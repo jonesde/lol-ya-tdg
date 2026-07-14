@@ -766,22 +766,52 @@ describe("GameEngine", () => {
       return tower;
     }
 
-    it("clears cachedTargetId when the targeting mode changes", () => {
+    function placeEnemyInTowerRange(tower: Tower): Enemy {
+      const enemy = engine.enemyManager!.spawn("minion", 1, 0, 1)!;
+      // Freeze the enemy at the tower so it stays within range during the tick
+      // (a spawned enemy otherwise walks its path away from the tower), and
+      // register it in the spatial hash so getEnemiesInRange can find it.
+      enemy.speed = 0;
+      enemy.laneOffsetX = 0;
+      enemy.laneOffsetY = 0;
+      enemy.centerX = tower.x;
+      enemy.centerY = tower.y;
+      enemy.x = tower.x;
+      enemy.y = tower.y;
+      engine.enemyManager!.rebuildSpatialHash();
+      return enemy;
+    }
+
+    it("clears cachedTargetId when the targeting mode changes and re-acquires a target", () => {
       const persistState = createTestPersistState();
       initEngine(0, persistState);
       const tower = buildAndSelectTower();
+      const enemy = placeEnemyInTowerRange(tower);
       tower.cachedTargetId = 42;
       engine.setTargeting("closest");
       expect(tower.cachedTargetId).toBeNull();
+      engine.update(1 / 60);
+      expect(tower.cachedTargetId).not.toBeNull();
+      const reacquired = engine.enemyManager!.getEnemyById(tower.cachedTargetId!);
+      expect(reacquired).toBeDefined();
+      expect(reacquired!.removed).toBe(false);
+      expect(reacquired!.id).toBe(enemy.id);
     });
 
-    it("clears cachedTargetId when the fixed-aim direction changes", () => {
+    it("clears cachedTargetId when the fixed-aim direction changes and re-acquires a target", () => {
       const persistState = createTestPersistState();
       initEngine(0, persistState);
       const tower = buildAndSelectTower();
+      const enemy = placeEnemyInTowerRange(tower);
       tower.cachedTargetId = 42;
       engine.setFixedAimDir("N");
       expect(tower.cachedTargetId).toBeNull();
+      engine.update(1 / 60);
+      expect(tower.cachedTargetId).not.toBeNull();
+      const reacquired = engine.enemyManager!.getEnemyById(tower.cachedTargetId!);
+      expect(reacquired).toBeDefined();
+      expect(reacquired!.removed).toBe(false);
+      expect(reacquired!.id).toBe(enemy.id);
     });
   });
 });

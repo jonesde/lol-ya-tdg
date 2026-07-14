@@ -116,7 +116,7 @@ function handleTargetingChange(event: Event) {
 }
 
 function handleUpgrade() {
-  gameStore.upgradeBtnClickAnim = 0.4;
+  gameStore.triggerUpgradeClickAnim();
   dispatchCommand({ commandId: 0, type: "action:upgradeSelected" });
 }
 

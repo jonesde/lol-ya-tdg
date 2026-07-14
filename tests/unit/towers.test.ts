@@ -226,57 +226,45 @@ describe("Tower", () => {
 
     it("Variant A (Marksman) sets marksman flag", () => {
       const tower = new Tower("sniper", 0, 0, makeSave(), makeMockGrid());
-      tower.level = 5;
-      tower.variant = "A";
-      tower._statsCache = null; // Invalidate cache after manual changes
+      tower.level = 4;
+      expect(tower.specialize("A", makeSave())).toBe(true);
       expect(tower.stats.marksman).toBe(true);
     });
 
     it("Variant B (Piercer) sets pierce to 3", () => {
       const tower = new Tower("sniper", 0, 0, makeSave(), makeMockGrid());
-      tower.level = 5;
-      tower.variant = "B";
-      tower._statsCache = null;
+      tower.level = 4;
+      expect(tower.specialize("B", makeSave())).toBe(true);
       expect(tower.stats.pierce).toBe(3);
     });
 
     it("Variant A (Permafrost) multiplies the level-scaled splash by [1, 1.25, 1.5] per tier", () => {
       const tower = new Tower("ice", 0, 0, makeSave(), makeMockGrid());
       const baseSplash = TOWER_BASE.ice.splash!;
-      tower.level = 5;
-      tower.variant = "A";
-      tower._statsCache = null;
+      tower.level = 4;
+      expect(tower.specialize("A", makeSave())).toBe(true);
       expect(tower.stats.splash).toBeCloseTo(baseSplash * TOWER_LEVEL_SPLASH_MULT ** 4 * 1, 6);
-      tower.level = 6;
-      tower.variant = "A";
-      tower._statsCache = null;
+      expect(tower.doUpgrade(makeSave()).ok).toBe(true);
       expect(tower.stats.splash).toBeCloseTo(baseSplash * TOWER_LEVEL_SPLASH_MULT ** 5 * 1.25, 6);
-      tower.level = 7;
-      tower.variant = "A";
-      tower._statsCache = null;
+      expect(tower.doUpgrade(makeSave()).ok).toBe(true);
       expect(tower.stats.splash).toBeCloseTo(baseSplash * TOWER_LEVEL_SPLASH_MULT ** 6 * 1.5, 6);
     });
 
     it("Variant A (Fragment) multiplies the level-scaled splash by CANNON_FRAGMENT_SPLASH_TIERS per tier", () => {
       const tower = new Tower("cannon", 0, 0, makeSave(), makeMockGrid());
       const baseSplash = TOWER_BASE.cannon.splash!;
-      tower.level = 5;
-      tower.variant = "A";
-      tower._statsCache = null;
+      tower.level = 4;
+      expect(tower.specialize("A", makeSave())).toBe(true);
       expect(tower.stats.splash).toBeCloseTo(
         baseSplash * TOWER_LEVEL_SPLASH_MULT ** 4 * CANNON_FRAGMENT_SPLASH_TIERS[0]!,
         6,
       );
-      tower.level = 6;
-      tower.variant = "A";
-      tower._statsCache = null;
+      expect(tower.doUpgrade(makeSave()).ok).toBe(true);
       expect(tower.stats.splash).toBeCloseTo(
         baseSplash * TOWER_LEVEL_SPLASH_MULT ** 5 * CANNON_FRAGMENT_SPLASH_TIERS[1]!,
         6,
       );
-      tower.level = 7;
-      tower.variant = "A";
-      tower._statsCache = null;
+      expect(tower.doUpgrade(makeSave()).ok).toBe(true);
       expect(tower.stats.splash).toBeCloseTo(
         baseSplash * TOWER_LEVEL_SPLASH_MULT ** 6 * CANNON_FRAGMENT_SPLASH_TIERS[2]!,
         6,
@@ -285,9 +273,10 @@ describe("Tower", () => {
 
     it("Variant A (Overload) increases chain by 2*t and damage by 1.2^t per tier", () => {
       const tower = new Tower("lightning", 0, 0, makeSave(), makeMockGrid());
-      tower.level = 7;
-      tower.variant = "A";
-      tower._statsCache = null;
+      tower.level = 4;
+      expect(tower.specialize("A", makeSave())).toBe(true);
+      expect(tower.doUpgrade(makeSave()).ok).toBe(true);
+      expect(tower.doUpgrade(makeSave()).ok).toBe(true);
       const tierIndex = tower.level - 5;
       const baseChain = TOWER_BASE.lightning.chain;
       const baseDamage = TOWER_BASE.lightning.damage * TOWER_LEVEL_DMG_MULT ** (tower.level - 1);

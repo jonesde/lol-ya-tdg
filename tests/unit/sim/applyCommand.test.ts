@@ -34,17 +34,30 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
   it("llm:routeGroup with hold: true sets routingMode to 'hold'", () => {
     const enemyId = firstEnemyId();
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;
-    const tile = enemy.currentTile();
+    const holdTile = engine.grid!.getPathFor(0)![3]!;
     const result = applyCommand(engine, {
       commandId: 0,
       type: "llm:routeGroup",
       enemyIds: [enemyId],
       hold: true,
-      holdTile: tile,
+      holdTile,
       waypoints: [],
     });
     expect(result).toBe(true);
     expect(enemy.routingMode).toBe("hold");
+    // Consumer-visible: the held enemy advances to and parks at the hold tile,
+    // and does NOT advance past it toward the base.
+    for (let tick = 0; tick < 3000; tick++) {
+      engine.update(FIXED_DT);
+      if (
+        Math.floor(enemy.centerX / engine.grid!.tileSize) === holdTile.x &&
+        Math.floor(enemy.centerY / engine.grid!.tileSize) === holdTile.y
+      )
+        break;
+    }
+    expect(Math.floor(enemy.centerX / engine.grid!.tileSize)).toBe(holdTile.x);
+    expect(Math.floor(enemy.centerY / engine.grid!.tileSize)).toBe(holdTile.y);
+    expect(enemy.attackingBase).toBe(false);
   });
 
   it("llm:routeGroup with empty waypoints releases to default pathing", () => {
@@ -66,7 +79,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
   it("llm:routeGroup with a waypoint sets routingMode to 'route' with a non-null path", () => {
     const enemyId = firstEnemyId();
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;
-    const waypoint = enemy.currentTile();
+    const waypoint = engine.grid!.getPathFor(0)![3]!;
     const result = applyCommand(engine, {
       commandId: 0,
       type: "llm:routeGroup",
@@ -77,6 +90,13 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     expect(result).toBe(true);
     expect(enemy.routingMode).toBe("route");
     expect(enemy.path).not.toBeNull();
+    // Consumer-visible: after routing, the enemy continues toward the base.
+    const base = engine.grid!.getBase();
+    const baseCenter = engine.grid!.tileToWorld(base.x, base.y);
+    const distanceToBase = (e: typeof enemy) => Math.hypot(e.centerX - baseCenter.x, e.centerY - baseCenter.y);
+    const startDistance = distanceToBase(enemy);
+    for (let tick = 0; tick < 200; tick++) engine.update(FIXED_DT);
+    expect(distanceToBase(enemy)).toBeLessThan(startDistance);
   });
 
   it("llm:setTargeting stores the targeting mode on the enemy", () => {
