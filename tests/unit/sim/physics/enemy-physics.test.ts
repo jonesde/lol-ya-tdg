@@ -11,10 +11,6 @@ import { initPhysics } from "@/sim/physics/rapierContext.js";
 
 const FIXED_DT = 1 / 60;
 
-function dist(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
 function baseCenterOf(grid) {
   const base = grid.getBase();
   return grid.tileToWorld(base.x, base.y);

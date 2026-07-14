@@ -2,7 +2,7 @@
 /** @vitest-environment node */
 
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect } from "vitest";
 import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
   BOSS_STUN_REDUCTION,

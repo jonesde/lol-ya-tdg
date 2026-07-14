@@ -9,8 +9,6 @@ import { getMap } from "@/sim/grid/Map.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { initPhysics } from "@/sim/physics/rapierContext.js";
 
-const FIXED_DT = 1 / 60;
-
 function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }

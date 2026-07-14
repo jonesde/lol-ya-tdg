@@ -1030,7 +1030,7 @@ export class Enemy {
     }
   }
 
-  private postPhysicsOff(dt: number, enemyManager: EnemyManagerRef | null): void {
+  private postPhysicsOff(_dt: number, _enemyManager: EnemyManagerRef | null): void {
     this.applyEndOfFrameClamps(this._intentHasNextTile);
   }
 
@@ -1038,7 +1038,7 @@ export class Enemy {
   // safety clamp (corridor containment is owned by static colliders), re-run the
   // attack acquisition on the post-step center, run the attack tick, and guard
   // moveAngle against low-speed flicker.
-  private postPhysicsOn(dt: number, enemyManager: EnemyManagerRef | null): void {
+  private postPhysicsOn(_dt: number, enemyManager: EnemyManagerRef | null): void {
     const pos = this.body!.translation();
     this.centerX = pos.x;
     this.centerY = pos.y;
