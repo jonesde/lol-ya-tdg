@@ -4,6 +4,7 @@ import type { Grid } from "@/sim/grid/Grid.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
+import type { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import type { AttackTarget } from "./Enemy.js";
 import { Enemy, resetEnemyId } from "./Enemy.js";
 
@@ -34,6 +35,7 @@ export class EnemyManager {
   defaultEnemyVisuals: Record<string, EnemyVisualMeta>;
   towerManager: TowerManager | null = null;
   baseTarget: AttackTarget | null = null;
+  physicsWorld: PhysicsWorld | null = null;
   private spatialHash: Map<number, Enemy[]>;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
@@ -60,6 +62,12 @@ export class EnemyManager {
   // Engine wires the live TowerManager here after both managers are constructed.
   setTowerManager(towerManager: TowerManager | null): void {
     this.towerManager = towerManager;
+  }
+
+  // Wires the Rapier physics world (when RAPIER_PHYSICS is on). Enemies spawned
+  // after this point get a backing rigid body; null clears the link.
+  setPhysicsWorld(physicsWorld: PhysicsWorld | null): void {
+    this.physicsWorld = physicsWorld;
   }
 
   towerAt(tileX: number, tileY: number): Tower | null {
@@ -92,6 +100,7 @@ export class EnemyManager {
     this.enemies.push(enemy);
     this.idToEnemy.set(enemy.id, enemy);
     this.addToSpatialHash(enemy);
+    this.physicsWorld?.addEnemy(enemy);
     return enemy;
   }
 
@@ -116,6 +125,7 @@ export class EnemyManager {
 
   removeDeadEnemy(i: number): void {
     const enemy = this.enemies[i]!;
+    this.physicsWorld?.removeEnemy(enemy);
     this.particles.spawn(enemy.x, enemy.y, enemy.color, 12, { speed: 80, life: 0.5 });
     this.removeFromSpatialHash(enemy);
     this.idToEnemy.delete(enemy.id);
@@ -166,6 +176,55 @@ export class EnemyManager {
       }
       const wasAttackingBase = enemy.attackingBase;
       enemy.update(dt, this);
+      if (enemy.removed) {
+        if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
+          onEnemyKill(enemy);
+          handledEnemyIds.add(enemy.id);
+        }
+        this.removeDeadEnemy(i);
+        continue;
+      }
+      if (!wasAttackingBase && enemy.attackingBase) {
+        onEnemyBeginAttackBase?.(enemy);
+      }
+    }
+    this.updateSpatialHash();
+  }
+
+  // Pre-step intent pass (physics ON): mirrors the per-enemy loop body of `update`
+  // but only runs computeIntent, capturing the pre-step attackingBase so postStep
+  // can detect the attackingBase transition. Iterates the same reverse order.
+  preStep(dt: number): void {
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const enemy = this.enemies[i];
+      if (!enemy) continue;
+      enemy.preStepAttackingBase = enemy.attackingBase;
+      enemy.computeIntent(dt, this);
+    }
+  }
+
+  // Post-step pass (physics ON): mirrors the remainder of `update`'s loop after the
+  // physics step — reads back positions via postPhysics, handles removal (kill
+  // callback + cull), the attackingBase transition, and rebuilds the spatial hash.
+  postStep(
+    dt: number,
+    onEnemyKill: ((enemy: Enemy) => void) | null,
+    onEnemyBeginAttackBase?: ((enemy: Enemy) => void) | null,
+  ): void {
+    const handledEnemyIds = new Set<number>();
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const enemy = this.enemies[i];
+      if (!enemy) continue;
+      if (enemy.removed) {
+        if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
+          onEnemyKill(enemy);
+          handledEnemyIds.add(enemy.id);
+        }
+        this.removeDeadEnemy(i);
+        continue;
+      }
+      const wasAttackingBase = enemy.preStepAttackingBase;
+      enemy.postPhysics(dt, this);
       if (enemy.removed) {
         if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
           onEnemyKill(enemy);

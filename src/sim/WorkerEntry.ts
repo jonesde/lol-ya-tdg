@@ -1,5 +1,6 @@
 import { FIXED_DT, GameState, MAX_ACCUM, MAX_STEPS_PER_FRAME } from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { initPhysics } from "@/sim/physics/rapierContext.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
 import { applyCommand } from "./applyCommand.js";
 import type { Command } from "./Command.js";
@@ -235,10 +236,13 @@ function buildPersistSlice(engineRef: GameEngine): PersistStateSlice {
 
 // Message handler — runs synchronously between ticks. Commands queue;
 // lifecycle messages act immediately.
-self.onmessage = (event: MessageEvent<MainToWorkerMessage>) => {
+self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
   const msg = event.data;
   switch (msg.type) {
     case "init": {
+      // Cached async init of the Rapier WASM module (plans/rapier2d.md Phase 0).
+      // No-op cost when RAPIER_PHYSICS is off; required before any getRapier().
+      await initPhysics();
       // Harden re-entry: a terminal run may leave the loop stopped while a new
       // `init` arrives on the same worker. stopLoop() first guarantees a clean
       // loop state (clears any pending timeout) before we build the new engine

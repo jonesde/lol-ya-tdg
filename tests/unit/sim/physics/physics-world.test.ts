@@ -1,0 +1,191 @@
+// @ts-nocheck
+// Direct PhysicsWorld tests (Phase 5, flag OFF). We never flip RAPIER_PHYSICS;
+// instead we construct the PhysicsWorld directly (which requires initPhysics() to
+// have resolved) and drive enemies as bare Rapier bodies.
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { initPhysics } from "@/sim/physics/rapierContext.js";
+import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import { getMap } from "@/sim/grid/Map.js";
+import { Enemy } from "@/sim/enemies/Enemy.js";
+
+const FIXED_DT = 1 / 60;
+
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+// Nearest path-tile world-center to a given point, plus that center.
+function nearestPathCenter(grid, x, y) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const path of grid.paths) {
+    if (!path) continue;
+    for (const tile of path) {
+      const c = grid.tileToWorld(tile.x, tile.y);
+      const d = Math.hypot(c.x - x, c.y - y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = c;
+      }
+    }
+  }
+  return { center: best, distance: bestDist };
+}
+
+describe("PhysicsWorld — lifecycle & containment (flag OFF, direct construction)", () => {
+  let grid;
+  let physicsWorld;
+
+  beforeAll(async () => {
+    await initPhysics();
+  });
+
+  beforeEach(() => {
+    grid = new Grid(getMap(0));
+    physicsWorld = new PhysicsWorld(grid);
+  });
+
+  it("keeps two overlapping enemies separated (no enemy-enemy overlap)", () => {
+    const tile = grid.paths[0][5];
+    const p = grid.tileToWorld(tile.x, tile.y);
+    const e1 = new Enemy("minion", 1, 0, grid, 1);
+    const e2 = new Enemy("minion", 1, 0, grid, 1);
+    for (const e of [e1, e2]) {
+      e.x = p.x;
+      e.y = p.y;
+      e.centerX = p.x;
+      e.centerY = p.y;
+    }
+    physicsWorld.addEnemy(e1);
+    physicsWorld.addEnemy(e2);
+
+    for (let i = 0; i < 120; i++) physicsWorld.step();
+
+    const d = dist(physicsWorld.getEnemyPosition(e1), physicsWorld.getEnemyPosition(e2));
+    expect(d).toBeGreaterThanOrEqual(2 * e1.radius - 1e-2);
+  });
+
+  it("prevents base penetration even under a large driving velocity", () => {
+    const baseTile = grid.getBase();
+    const baseCenter = grid.tileToWorld(baseTile.x, baseTile.y);
+    // Start at a path tile near the base and drive straight at the base center.
+    const startTile = grid.paths[0][Math.floor(grid.paths[0].length / 2)];
+    const start = grid.tileToWorld(startTile.x, startTile.y);
+    const enemy = new Enemy("minion", 1, 0, grid, 1);
+    enemy.x = start.x;
+    enemy.y = start.y;
+    enemy.centerX = start.x;
+    enemy.centerY = start.y;
+    physicsWorld.addEnemy(enemy);
+
+    const SPEED = 400;
+    for (let i = 0; i < 120; i++) {
+      const pos = physicsWorld.getEnemyPosition(enemy);
+      const dx = baseCenter.x - pos.x;
+      const dy = baseCenter.y - pos.y;
+      const len = Math.hypot(dx, dy) || 1;
+      physicsWorld.setEnemyVelocity(enemy, (dx / len) * SPEED, (dy / len) * SPEED);
+      physicsWorld.step();
+    }
+
+    const pos = physicsWorld.getEnemyPosition(enemy);
+    const d = Math.hypot(pos.x - baseCenter.x, pos.y - baseCenter.y);
+    expect(d).toBeGreaterThanOrEqual(1.5 * grid.tileSize - enemy.radius - 1e-2);
+  });
+
+  it("blocks enemies with a tower collider (no tower penetration)", () => {
+    // Minimal tower-manager-like object: rebuildTowers only reads `.towers`,
+    // each entry's tileX/tileY/isGhost/x/y.
+    const towerTile = grid.paths[0][5];
+    const towerCenter = grid.tileToWorld(towerTile.x, towerTile.y);
+    const fakeTowerManager = {
+      towers: [{ tileX: towerTile.x, tileY: towerTile.y, isGhost: false, x: towerCenter.x, y: towerCenter.y }],
+    };
+    physicsWorld.rebuildTowers(fakeTowerManager);
+
+    const enemyStartTile = grid.paths[0][10];
+    const start = grid.tileToWorld(enemyStartTile.x, enemyStartTile.y);
+    const enemy = new Enemy("minion", 1, 0, grid, 1);
+    enemy.x = start.x;
+    enemy.y = start.y;
+    enemy.centerX = start.x;
+    enemy.centerY = start.y;
+    physicsWorld.addEnemy(enemy);
+
+    const SPEED = 300;
+    for (let i = 0; i < 200; i++) {
+      const pos = physicsWorld.getEnemyPosition(enemy);
+      const dx = towerCenter.x - pos.x;
+      const dy = towerCenter.y - pos.y;
+      const len = Math.hypot(dx, dy) || 1;
+      physicsWorld.setEnemyVelocity(enemy, (dx / len) * SPEED, (dy / len) * SPEED);
+      physicsWorld.step();
+    }
+
+    const pos = physicsWorld.getEnemyPosition(enemy);
+    const d = Math.hypot(pos.x - towerCenter.x, pos.y - towerCenter.y);
+    expect(d).toBeGreaterThanOrEqual(grid.tileSize / 2 - enemy.radius - 1e-2);
+  });
+
+  it("contains an enemy inside the corridor under lateral escape velocity", () => {
+    const tile = grid.paths[0][5];
+    const center = grid.tileToWorld(tile.x, tile.y);
+    const enemy = new Enemy("minion", 1, 0, grid, 1);
+    enemy.x = center.x;
+    enemy.y = center.y;
+    enemy.centerX = center.x;
+    enemy.centerY = center.y;
+    physicsWorld.addEnemy(enemy);
+
+    // Push perpendicular to the local path tangent (away from the corridor).
+    const nextTile = grid.paths[0][6];
+    const next = grid.tileToWorld(nextTile.x, nextTile.y);
+    let tangentX = next.x - center.x;
+    let tangentY = next.y - center.y;
+    const tlen = Math.hypot(tangentX, tangentY) || 1;
+    tangentX /= tlen;
+    tangentY /= tlen;
+    const pushX = -tangentY;
+    const pushY = tangentX;
+
+    const SPEED = 200;
+    for (let i = 0; i < 120; i++) {
+      physicsWorld.setEnemyVelocity(enemy, pushX * SPEED, pushY * SPEED);
+      physicsWorld.step();
+      // If the enemy somehow drifted onto the corridor centerline, nudge it back out.
+      const pos = physicsWorld.getEnemyPosition(enemy);
+      const cur = grid.tileToWorld(tile.x, tile.y);
+      const dx = pos.x - cur.x;
+      const dy = pos.y - cur.y;
+      if (Math.hypot(dx, dy) < 1e-3) {
+        physicsWorld.setEnemyVelocity(enemy, pushX * SPEED, pushY * SPEED);
+      }
+    }
+
+    const pos = physicsWorld.getEnemyPosition(enemy);
+    const nearest = nearestPathCenter(grid, pos.x, pos.y);
+    expect(nearest.distance).toBeLessThanOrEqual(grid.tileSize);
+  });
+
+  it("dispose does not throw and invalidates the backing bodies", () => {
+    const enemy = new Enemy("minion", 1, 0, grid, 1);
+    enemy.x = enemy.centerX;
+    enemy.y = enemy.centerY;
+    physicsWorld.addEnemy(enemy);
+    expect(physicsWorld.getEnemyPosition(enemy)).not.toBeNull();
+
+    expect(() => physicsWorld.dispose()).not.toThrow();
+
+    // Freeing the world invalidates the backing rigid body; getEnemyPosition must
+    // not resolve to a live position (it either throws or returns null).
+    let after = null;
+    let threw = false;
+    try {
+      after = physicsWorld.getEnemyPosition(enemy);
+    } catch {
+      threw = true;
+    }
+    expect(threw || after === null).toBe(true);
+  });
+});

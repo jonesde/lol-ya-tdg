@@ -1,0 +1,130 @@
+// @ts-nocheck
+// Enemy ON-branch tests (body set) driven manually, without flipping RAPIER_PHYSICS.
+// We construct a PhysicsWorld, addEnemy so enemy.body is non-null, then drive the
+// enemy via computeIntent / step / postPhysics ourselves.
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { initPhysics } from "@/sim/physics/rapierContext.js";
+import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import { getMap } from "@/sim/grid/Map.js";
+import { Enemy } from "@/sim/enemies/Enemy.js";
+
+const FIXED_DT = 1 / 60;
+
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function baseCenterOf(grid) {
+  const base = grid.getBase();
+  return grid.tileToWorld(base.x, base.y);
+}
+
+describe("Enemy ON branches (body set) driven manually", () => {
+  let grid;
+  let physicsWorld;
+  let enemy;
+
+  beforeAll(async () => {
+    await initPhysics();
+  });
+
+  beforeEach(() => {
+    grid = new Grid(getMap(0));
+    physicsWorld = new PhysicsWorld(grid);
+    enemy = new Enemy("minion", 1, 0, grid, 1);
+    physicsWorld.addEnemy(enemy);
+  });
+
+  it("advances toward the base, stays in sync with its body, and reaches the base", () => {
+    const baseCenter = baseCenterOf(grid);
+    const startDist = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
+
+    for (let i = 0; i < 300; i++) {
+      enemy.computeIntent(FIXED_DT, null);
+      physicsWorld.step();
+      enemy.postPhysics(FIXED_DT, null);
+    }
+
+    const endDist = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
+    expect(enemy.pathIdx).toBeGreaterThan(0);
+    expect(endDist).toBeLessThan(startDist);
+
+    const bodyPos = physicsWorld.getEnemyPosition(enemy);
+    expect(Math.abs(enemy.x - bodyPos.x)).toBeLessThan(1e-6);
+    expect(Math.abs(enemy.y - bodyPos.y)).toBeLessThan(1e-6);
+
+    // Continue until it reaches the base (generous budget; loop breaks early).
+    let reached = enemy.attackingBase;
+    for (let i = 0; i < 12000 && !reached; i++) {
+      enemy.computeIntent(FIXED_DT, null);
+      physicsWorld.step();
+      enemy.postPhysics(FIXED_DT, null);
+      reached = enemy.attackingBase;
+    }
+    expect(reached).toBe(true);
+  });
+
+  it("knockback pushes the body backward and zeroes its velocity", () => {
+    // Advance a bit so pathIdx > 0, then record distance to base.
+    for (let i = 0; i < 200; i++) {
+      enemy.computeIntent(FIXED_DT, null);
+      physicsWorld.step();
+      enemy.postPhysics(FIXED_DT, null);
+    }
+    expect(enemy.pathIdx).toBeGreaterThan(0);
+
+    const baseCenter = baseCenterOf(grid);
+    const before = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
+
+    enemy.applyKnockback(2 * grid.tileSize);
+    physicsWorld.step();
+    enemy.postPhysics(FIXED_DT, null);
+
+    const after = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
+    expect(after).toBeGreaterThan(before);
+
+    const linvel = enemy.body.linvel();
+    expect(Math.hypot(linvel.x, linvel.y)).toBeLessThan(1e-3);
+  });
+
+  it("preserves moveAngle at low speed (no garbage overwrite)", () => {
+    // Drive to the base and pin there so the body's linvel is near zero.
+    let reached = false;
+    for (let i = 0; i < 12000 && !reached; i++) {
+      enemy.computeIntent(FIXED_DT, null);
+      physicsWorld.step();
+      enemy.postPhysics(FIXED_DT, null);
+      reached = enemy.attackingBase;
+    }
+    expect(reached).toBe(true);
+
+    const beforeAngle = enemy.moveAngle;
+    enemy.computeIntent(FIXED_DT, null);
+    physicsWorld.step();
+    enemy.postPhysics(FIXED_DT, null);
+
+    expect(Number.isFinite(enemy.moveAngle)).toBe(true);
+    expect(Math.abs(enemy.moveAngle - beforeAngle)).toBeLessThan(0.05);
+  });
+
+  it("stun zeroes velocity and barely moves the body", () => {
+    for (let i = 0; i < 50; i++) {
+      enemy.computeIntent(FIXED_DT, null);
+      physicsWorld.step();
+      enemy.postPhysics(FIXED_DT, null);
+    }
+    const beforeX = enemy.centerX;
+    const beforeY = enemy.centerY;
+
+    enemy.applyStun(1.0);
+    enemy.computeIntent(FIXED_DT, null);
+    physicsWorld.step();
+    enemy.postPhysics(FIXED_DT, null);
+
+    const linvel = enemy.body.linvel();
+    expect(Math.hypot(linvel.x, linvel.y)).toBeLessThan(1e-3);
+    expect(Math.abs(enemy.centerX - beforeX)).toBeLessThan(1e-2);
+    expect(Math.abs(enemy.centerY - beforeY)).toBeLessThan(1e-2);
+  });
+});

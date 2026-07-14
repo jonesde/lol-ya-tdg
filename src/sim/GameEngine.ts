@@ -17,7 +17,9 @@ import {
   togglePauseState,
   triggerEnd,
 } from "@/sim/GameRunState.js";
+import { RAPIER_PHYSICS } from "@/sim/featureFlags.js";
 import { Grid } from "@/sim/grid/Grid.js";
+import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
@@ -87,6 +89,10 @@ export class GameEngine {
   grid: Grid | null;
   enemyManager: EnemyManager | null;
   towerManager: TowerManager | null;
+  physicsWorld: PhysicsWorld | null = null;
+  // Last grid.pathVersion we rebuilt tower/corridor colliders for; bumped by the
+  // ON orchestration in update() so colliders track builds/sells/reroutes.
+  private lastPathVersion = -1;
   waveManager: WaveManagerRef | null;
   projectileManager: ProjectileManager | null;
   particleSpawner: ParticleSpawner;
@@ -235,6 +241,12 @@ export class GameEngine {
     );
     this.projectileManager.setTowerLookup((towerId) => this.towerManager?.getTowerById(towerId) ?? null);
     this.enemyManager.setTowerManager(this.towerManager);
+    if (RAPIER_PHYSICS) {
+      this.physicsWorld?.dispose();
+      this.physicsWorld = new PhysicsWorld(this.grid);
+      this.enemyManager.setPhysicsWorld(this.physicsWorld);
+      this.physicsWorld.rebuildTowers(this.towerManager);
+    }
     this.enemyManager.baseTarget = new BaseTarget(this);
     this.grid.towerLookup = {
       towerAt: (tileX: number, tileY: number) => this.towerManager?.towerAt(tileX, tileY) ?? null,
@@ -301,6 +313,12 @@ export class GameEngine {
     this.host.playSound("boss_die");
   }
 
+  // True only when physics is both gated on AND a world was constructed (so the
+  // synchronous OFF path stays exactly the original code when the flag is false).
+  private get physicsEnabled(): boolean {
+    return RAPIER_PHYSICS && this.physicsWorld !== null;
+  }
+
   update(dt: number): void {
     if (!this.waveManager || !this.enemyManager || !this.towerManager) return;
     if (this.runState.state === GameState.VICTORY || this.runState.state === GameState.GAME_OVER) return;
@@ -324,29 +342,62 @@ export class GameEngine {
 
     this.projectileManager?.update(dt);
 
-    this.enemyManager.update(
-      dt,
-      (enemy) => {
-        if (enemy.removed) {
+    if (this.physicsEnabled) {
+      if (this.grid!.pathVersion !== this.lastPathVersion) {
+        this.physicsWorld!.rebuildTowers(this.towerManager!);
+        this.physicsWorld!.rebuildCorridor();
+        this.lastPathVersion = this.grid!.pathVersion;
+      }
+      this.enemyManager.preStep(dt);
+      this.physicsWorld!.step();
+      this.enemyManager.postStep(
+        dt,
+        (enemy) => {
+          if (enemy.removed) {
+            if (enemy.type === "boss") {
+              this.onBossKilled();
+            }
+            if (enemy.onPathBlocked) {
+              const bounty = Math.ceil((ENEMY_TYPES[enemy.type]?.bounty || 1) * BOUNTY_BLOCKED_RATIO);
+              this.waveGraphTracker?.onGoldBounty(bounty);
+              this.earnGold(bounty);
+            } else {
+              this.onEnemyKill(enemy);
+            }
+          }
+        },
+        (enemy) => {
+          this.waveManager!.baseReached = true;
           if (enemy.type === "boss") {
-            this.onBossKilled();
+            this.runState.bossesReachedBaseThisRun++;
           }
-          if (enemy.onPathBlocked) {
-            const bounty = Math.ceil((ENEMY_TYPES[enemy.type]?.bounty || 1) * BOUNTY_BLOCKED_RATIO);
-            this.waveGraphTracker?.onGoldBounty(bounty);
-            this.earnGold(bounty);
-          } else {
-            this.onEnemyKill(enemy);
+        },
+      );
+    } else {
+      this.enemyManager.update(
+        dt,
+        (enemy) => {
+          if (enemy.removed) {
+            if (enemy.type === "boss") {
+              this.onBossKilled();
+            }
+            if (enemy.onPathBlocked) {
+              const bounty = Math.ceil((ENEMY_TYPES[enemy.type]?.bounty || 1) * BOUNTY_BLOCKED_RATIO);
+              this.waveGraphTracker?.onGoldBounty(bounty);
+              this.earnGold(bounty);
+            } else {
+              this.onEnemyKill(enemy);
+            }
           }
-        }
-      },
-      (enemy) => {
-        this.waveManager!.baseReached = true;
-        if (enemy.type === "boss") {
-          this.runState.bossesReachedBaseThisRun++;
-        }
-      },
-    );
+        },
+        (enemy) => {
+          this.waveManager!.baseReached = true;
+          if (enemy.type === "boss") {
+            this.runState.bossesReachedBaseThisRun++;
+          }
+        },
+      );
+    }
 
     this.towerManager.update(dt, this.enemyManager);
 
@@ -913,6 +964,10 @@ export class GameEngine {
 
   dispose(): void {
     this.stop();
+    if (this.physicsWorld) {
+      this.physicsWorld.dispose();
+      this.physicsWorld = null;
+    }
     this.waveGraphTracker?.dispose();
   }
 

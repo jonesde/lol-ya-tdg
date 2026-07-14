@@ -7,6 +7,7 @@ import {
   ENEMY_WAVE_DAMAGE_MULT,
   MIN_SLOW_FACTOR,
 } from "@/sim/ConstantsEnemy.js";
+import type RAPIER from "@dimforge/rapier2d-compat";
 import type { Tower } from "@/sim/towers/Tower.js";
 
 let nextId = 1;
@@ -111,6 +112,8 @@ interface EnemyMetaRef {
 
 interface GridRef {
   tileSize: number;
+  width: number;
+  height: number;
   getPathFor(spawnIndex: number): { x: number; y: number }[] | null;
   tileToWorld(tx: number, ty: number): { x: number; y: number };
   getBase(): { x: number; y: number };
@@ -149,6 +152,10 @@ export class Enemy {
   bounty: number;
   color: string;
   radius: number;
+  // Rapier rigid body backing this enemy when RAPIER_PHYSICS is on; null otherwise.
+  // Assigned by PhysicsWorld.addEnemy / cleared by removeEnemy; never read when the
+  // flag is off.
+  body: RAPIER.RigidBody | null = null;
   shape: unknown;
   walking: MapThemeAnimation | null;
   hitReaction: MapThemeAnimation | null;
@@ -214,6 +221,10 @@ export class Enemy {
   routingMode: "default" | "hold" | "route" = "default";
   // True once a `hold` enemy has reached its hold tile (used only for hold mode).
   arrived: boolean = false;
+  // Captured at preStep (before computeIntent) so postStep can detect the
+  // attackingBase transition that may occur during the split without re-running
+  // the whole frame comparison inside the EnemyManager loop.
+  preStepAttackingBase: boolean = false;
   // Commander-assigned targeting preference (e.g. "first"/"strongest"); stored for
   // future logic and currently harmless.
   targetingMode: string | null = null;
@@ -225,6 +236,10 @@ export class Enemy {
   lastCellX!: number;
   lastCellY!: number;
   private healTickDt: number = 0;
+  // Stashes the `hasNextTile` value computed at the start of computeIntentOff so
+  // postPhysicsOff can apply the identical end-of-frame clamp the original update
+  // applied (the original computed it once and reused it past the movement step).
+  private _intentHasNextTile: boolean = false;
   private applyHealAura = (ally: Enemy): void => {
     if (ally === this) return;
     if (ally.antiHealTimer > 0) return;
@@ -244,6 +259,7 @@ export class Enemy {
   ) {
     const meta = ENEMY_TYPES[type] as unknown as EnemyMetaRef;
     this.id = nextId++;
+    this.body = null;
     this.type = type;
     this.level = level;
     this.meta = meta;
@@ -368,8 +384,18 @@ export class Enemy {
         }
       }
     }
-    this.x = this.centerX + this.laneOffsetX;
-    this.y = this.centerY + this.laneOffsetY;
+    if (this.body === null) {
+      this.x = this.centerX + this.laneOffsetX;
+      this.y = this.centerY + this.laneOffsetY;
+    } else {
+      // ON: teleport the body to the path-clamped centerline with zero velocity so
+      // the knockback is deterministic and stays on the corridor (lane offset is
+      // unused in ON). postPhysics will read the body back into x/y/centerX/centerY.
+      this.x = this.centerX;
+      this.y = this.centerY;
+      this.body.setTranslation({ x: this.centerX, y: this.centerY }, true);
+      this.body.setLinvel({ x: 0, y: 0 }, true);
+    }
   }
 
   applyMarkTarget(mult: number, duration: number) {
@@ -555,9 +581,23 @@ export class Enemy {
     }
   }
 
-  update(dt: number, enemyManager: EnemyManagerRef | null) {
+  // Thin wrapper that splits the per-frame update into intent (decision + motion
+  // integration) and post-physics (position read-back, clamp, attack, cull). The
+  // OFF path (body === null) reproduces the original monolithic update exactly:
+  // computeIntentOff runs the full status timers + motion integration (minus the
+  // final clamp), and postPhysicsOff applies the end-of-frame clamp. The ON path
+  // (body set) seeds motion from the rigid body and converts the same integration
+  // into a velocity for Rapier to step; see computeIntentOn / postPhysicsOn.
+  update(dt: number, enemyManager: EnemyManagerRef | null): void {
     if (this.removed) return;
+    this.computeIntent(dt, enemyManager);
+    this.postPhysics(dt, enemyManager);
+  }
 
+  // Status timers shared by both OFF and ON modes: slow/burn/mark/anti-heal
+  // bookkeeping plus the heal aura. Runs unconditionally at the very start of
+  // computeIntent so both branches share one timer source.
+  private updateStatusTimers(dt: number, enemyManager: EnemyManagerRef | null): void {
     this._gameSeconds += dt;
 
     for (let i = this.slowStack.length - 1; i >= 0; i--) {
@@ -601,10 +641,31 @@ export class Enemy {
       this.healTickDt = dt;
       enemyManager.forEachEnemyInRange(this.x, this.y, this.healRange, this.applyHealAura);
     }
+  }
 
+  // Decision + motion integration. Branches on whether a Rapier body backs this
+  // enemy (ON) or not (OFF). Both branches run the identical steering/movement
+  // code; the difference is purely how the resulting centerline is applied (OFF
+  // keeps it for the manual clamp, ON converts it to a body velocity).
+  computeIntent(dt: number, enemyManager: EnemyManagerRef | null): void {
+    if (this.removed) return;
+    this.updateStatusTimers(dt, enemyManager);
+    if (this.removed) return;
+    if (this.body === null) {
+      this.computeIntentOff(dt, enemyManager);
+    } else {
+      this.computeIntentOn(dt, enemyManager);
+    }
+  }
+
+  // OFF intent: the original monolithic update minus the final clamp (which moves
+  // to postPhysics). Status timers already ran in computeIntent; the stun early
+  // return here skips movement/attack but NOT the clamp (postPhysics applies it).
+  private computeIntentOff(dt: number, enemyManager: EnemyManagerRef | null): void {
+
+    const hasNextTile = this.path != null && this.pathIdx < this.path.length - 1;
     if (this.stunTimer > 0) {
-      const hasNextTile = this.path != null && this.pathIdx < this.path.length - 1;
-      this.applyEndOfFrameClamps(hasNextTile);
+      this._intentHasNextTile = hasNextTile;
       return;
     }
     if (!this.path || this.pathIdx >= this.path.length - 1) {
@@ -671,7 +732,6 @@ export class Enemy {
     // with the tower square (the proximity check mirrors the base's early edge-stop
     // baseSquareContact.overlapping). Keep it sticky; clear only when the tower is
     // gone (ghost/dead) so re-anchor + pass-through still apply.
-    const hasNextTile = this.path != null && this.pathIdx < this.path.length - 1;
     const nextTile = hasNextTile ? this.path![this.pathIdx + 1]! : null;
     const forwardTower =
       enemyManager && nextTile && this.grid.blocked.has(`${nextTile.x},${nextTile.y}`)
@@ -807,7 +867,251 @@ export class Enemy {
       }
     }
 
-    this.applyEndOfFrameClamps(hasNextTile);
+    this._intentHasNextTile = hasNextTile;
+  }
+
+  // ON intent: seed the centerline from the rigid body, run the identical steering
+  // /movement integration (writing centerX/centerY exactly as OFF would), then push
+  // the intended displacement to the body as a velocity. Rapier owns separation and
+  // containment; the manual resolveCollisions and attack tick are omitted here (the
+  // latter runs in postPhysics after the step).
+  private computeIntentOn(dt: number, enemyManager: EnemyManagerRef | null): void {
+    const pos = this.body!.translation();
+    this.centerX = pos.x;
+    this.centerY = pos.y;
+    if (this.stunTimer > 0) {
+      this.stunTimer -= dt;
+      this.body!.setLinvel({ x: 0, y: 0 }, true);
+      return;
+    }
+    if (!this.path || this.pathIdx >= this.path.length - 1) {
+      if (this.routingMode === "default") {
+        this.attackingBase = true;
+      }
+      if (this.routingMode === "hold") {
+        this.arrived = true;
+      } else if (this.routingMode === "route") {
+        this.releaseToDefault();
+        if (!this.path || this.pathIdx >= this.path.length - 1) {
+          this.attackingBase = true;
+        }
+      }
+    }
+
+    const gridVersion = this.grid.pathVersion;
+    if (this.routingMode === "default" && !this.attackingBase && this.pathVersion !== gridVersion) {
+      this.pathVersion = gridVersion;
+      const newPath = this.grid.getPathFor(this.spawnIndex);
+      if (newPath) {
+        this.reanchorToPath(newPath);
+      } else {
+        this.onPathBlocked = true;
+        this.removed = true;
+        return;
+      }
+    }
+
+    if (this.routingMode === "default" && !this.attackingBase) {
+      const contactBaseTile = this.grid.getBase();
+      const contactBaseCenter = this.grid.tileToWorld(contactBaseTile.x, contactBaseTile.y);
+      const contact = baseSquareContact(
+        contactBaseCenter.x,
+        contactBaseCenter.y,
+        1.5 * this.grid.tileSize,
+        this.centerX,
+        this.centerY,
+        this.radius,
+      );
+      if (contact.overlapping) this.attackingBase = true;
+    }
+
+    const hasNextTile = this.path != null && this.pathIdx < this.path.length - 1;
+    const nextTile = hasNextTile ? this.path![this.pathIdx + 1]! : null;
+    const forwardTower =
+      enemyManager && nextTile && this.grid.blocked.has(`${nextTile.x},${nextTile.y}`)
+        ? enemyManager.towerAt(nextTile.x, nextTile.y)
+        : null;
+    const liveForwardTower = forwardTower && !forwardTower.isGhost ? forwardTower : null;
+
+    let attackTarget: Tower | AttackTarget | null = null;
+
+    if (this.blockedByTower === null || this.blockedByTower.isGhost) {
+      const candidate = liveForwardTower ?? this.findAdjacentLiveTowerInContact(enemyManager);
+      if (candidate && !candidate.isGhost) this.blockedByTower = candidate;
+    }
+    if (this.blockedByTower) {
+      const towerKey = `${this.blockedByTower.tileX},${this.blockedByTower.tileY}`;
+      const towerGone = this.blockedByTower.isGhost || !this.grid.blocked.has(towerKey);
+      if (towerGone) this.blockedByTower = null;
+    }
+
+    if (this.blockedByTower && !this.blockedByTower.isGhost) {
+      const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
+      const towerContact = distanceToBaseSquare(
+        this.centerX,
+        this.centerY,
+        towerCenter.x,
+        towerCenter.y,
+        this.grid.tileSize / 2,
+      );
+      if (towerContact <= this.radius + ATTACK_CONTACT_EPSILON) {
+        attackTarget = this.blockedByTower;
+      }
+    }
+
+    if (this.attackingBase && this.baseTarget) {
+      const attackBaseTile = this.grid.getBase();
+      const attackBaseCenter = this.grid.tileToWorld(attackBaseTile.x, attackBaseTile.y);
+      const attackDistToSquare = distanceToBaseSquare(
+        this.centerX,
+        this.centerY,
+        attackBaseCenter.x,
+        attackBaseCenter.y,
+        1.5 * this.grid.tileSize,
+      );
+      if (attackDistToSquare <= this.radius + ATTACK_CONTACT_EPSILON) attackTarget = this.baseTarget;
+    }
+
+    if (hasNextTile && nextTile && !this.blockedByTower && !this.attackingBase && !attackTarget) {
+      const target = this.grid.tileToWorld(nextTile.x, nextTile.y);
+      const deltaX = target.x - this.centerX;
+      const deltaY = target.y - this.centerY;
+      const dist = Math.hypot(deltaX, deltaY);
+      const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
+      this.moveAngle = Math.atan2(deltaY, deltaX);
+      if (step >= dist) {
+        this.centerX = target.x;
+        this.centerY = target.y;
+        this.pathIdx++;
+        if (this.path && this.pathIdx < this.path.length - 1) {
+          const nextWaypoint = this.grid.tileToWorld(this.path[this.pathIdx + 1]!.x, this.path[this.pathIdx + 1]!.y);
+          this.moveAngle = Math.atan2(nextWaypoint.y - this.centerY, nextWaypoint.x - this.centerX);
+        }
+      } else {
+        this.centerX += (deltaX / dist) * step;
+        this.centerY += (deltaY / dist) * step;
+      }
+    } else if (this.attackingBase) {
+      const baseTile = this.grid.getBase();
+      const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
+      this.contactLineSteer(
+        enemyManager,
+        baseCenter.x,
+        baseCenter.y,
+        1.5 * this.grid.tileSize,
+        this.grid.getBaseEdgeSegments(),
+        dt,
+      );
+    } else if (this.blockedByTower) {
+      const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
+      this.contactLineSteer(
+        enemyManager,
+        towerCenter.x,
+        towerCenter.y,
+        this.grid.tileSize / 2,
+        this.grid.getTowerEdgeSegments(this.blockedByTower.tileX, this.blockedByTower.tileY, this.radius),
+        dt,
+      );
+    }
+
+    const velocityX = (this.centerX - pos.x) / dt;
+    const velocityY = (this.centerY - pos.y) / dt;
+    this.body!.setLinvel({ x: velocityX, y: velocityY }, true);
+  }
+
+  // Reads back the post-physics position and applies the mode-specific finishing
+  // (clamps, acquisition, attack, cull-trigger). Branches on body to mirror the
+  // intent split so the OFF path remains byte-identical to the original clamp.
+  postPhysics(dt: number, enemyManager: EnemyManagerRef | null): void {
+    if (this.removed) return;
+    if (this.body === null) {
+      this.postPhysicsOff(dt, enemyManager);
+    } else {
+      this.postPhysicsOn(dt, enemyManager);
+    }
+  }
+
+  private postPhysicsOff(dt: number, enemyManager: EnemyManagerRef | null): void {
+    this.applyEndOfFrameClamps(this._intentHasNextTile);
+  }
+
+  // ON finishing: read the stepped body position, apply an out-of-bounds-only
+  // safety clamp (corridor containment is owned by static colliders), re-run the
+  // attack acquisition on the post-step center, run the attack tick, and guard
+  // moveAngle against low-speed flicker.
+  private postPhysicsOn(dt: number, enemyManager: EnemyManagerRef | null): void {
+    const pos = this.body!.translation();
+    this.centerX = pos.x;
+    this.centerY = pos.y;
+    this.x = pos.x;
+    this.y = pos.y;
+
+    const worldWidth = this.grid.width * this.grid.tileSize;
+    const worldHeight = this.grid.height * this.grid.tileSize;
+    if (this.x < 0 || this.y < 0 || this.x > worldWidth || this.y > worldHeight) {
+      this.x = Math.max(0, Math.min(worldWidth, this.x));
+      this.y = Math.max(0, Math.min(worldHeight, this.y));
+      this.centerX = this.x;
+      this.centerY = this.y;
+    }
+
+    // TODO(rapier): narrow via world.contactPairsWith — for now reuse the
+    // distance-based acquisition on the post-step center (more correct than the
+    // pre-step acquisition done in computeIntentOn).
+    const hasNextTile = this.path != null && this.pathIdx < this.path.length - 1;
+    const nextTile = hasNextTile ? this.path![this.pathIdx + 1]! : null;
+    const forwardTower =
+      enemyManager && nextTile && this.grid.blocked.has(`${nextTile.x},${nextTile.y}`)
+        ? enemyManager.towerAt(nextTile.x, nextTile.y)
+        : null;
+    const liveForwardTower = forwardTower && !forwardTower.isGhost ? forwardTower : null;
+
+    let attackTarget: Tower | AttackTarget | null = null;
+
+    if (this.blockedByTower === null || this.blockedByTower.isGhost) {
+      const candidate = liveForwardTower ?? this.findAdjacentLiveTowerInContact(enemyManager);
+      if (candidate && !candidate.isGhost) this.blockedByTower = candidate;
+    }
+    if (this.blockedByTower) {
+      const towerKey = `${this.blockedByTower.tileX},${this.blockedByTower.tileY}`;
+      const towerGone = this.blockedByTower.isGhost || !this.grid.blocked.has(towerKey);
+      if (towerGone) this.blockedByTower = null;
+    }
+
+    if (this.blockedByTower && !this.blockedByTower.isGhost) {
+      const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
+      const towerContact = distanceToBaseSquare(
+        this.centerX,
+        this.centerY,
+        towerCenter.x,
+        towerCenter.y,
+        this.grid.tileSize / 2,
+      );
+      if (towerContact <= this.radius + ATTACK_CONTACT_EPSILON) {
+        attackTarget = this.blockedByTower;
+      }
+    }
+
+    if (this.attackingBase && this.baseTarget) {
+      const attackBaseTile = this.grid.getBase();
+      const attackBaseCenter = this.grid.tileToWorld(attackBaseTile.x, attackBaseTile.y);
+      const attackDistToSquare = distanceToBaseSquare(
+        this.centerX,
+        this.centerY,
+        attackBaseCenter.x,
+        attackBaseCenter.y,
+        1.5 * this.grid.tileSize,
+      );
+      if (attackDistToSquare <= this.radius + ATTACK_CONTACT_EPSILON) attackTarget = this.baseTarget;
+    }
+
+    if (attackTarget && this.stunTimer <= 0) attackTarget.takeDamage(this.attackDamage, this);
+
+    const linvel = this.body!.linvel();
+    const moveSpeedEpsilon = 1e-4;
+    if (Math.hypot(linvel.x, linvel.y) >= moveSpeedEpsilon) {
+      this.moveAngle = Math.atan2(linvel.y, linvel.x);
+    }
   }
 
   // End-of-frame clamp: derive the rendered position from the centerline plus the
