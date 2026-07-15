@@ -130,12 +130,17 @@ as `TileCache` obstacles (Phase 3) with no full rebuild.
 
 - Input geometry: for each walkable tile (same predicate as `PhysicsWorld.isWalkable`),
   emit two triangles on the z=0 plane (4 verts, 2 tris) in world space
-  (`tileToWorld`). Build with `generateTileCache(positions, indices, config)` imported
-  from **`recast-navigation/generators`** (the top-level `recast-navigation` does
-  **not** re-export the generators). It returns `{ tileCache, navMesh }` in one call
-  (verified in v0.43.1 types: `TileCache` exposes `addObstacle`/`removeObstacle`).
-  The `positions`/`indices` are flat arrays; `config` is `TileCacheGeneratorConfig`
-  (`cs`/`ch` cell size, `walkableRadius` agent clearance, `maxObstacles`, `bounds`, …).
+   (`tileToWorld`). Build with `generateTileCache(positions, indices, config)` imported
+   from **`recast-navigation/generators`** (the top-level `recast-navigation` does
+   **not** re-export the generators). It returns `{ tileCache, navMesh, success,
+   intermediates }` in one call. **Check `success` before use** — the union's failure
+   branch returns `tileCache: undefined`/`navMesh: undefined`, so TS requires the guard.
+   (Verified in v0.43.1 types: `TileCache` exposes `addCylinderObstacle`/`addBoxObstacle`/
+   `removeObstacle` + `update(navMesh)`; there is **no** `addObstacle` method — see Phase 3.)
+   The `positions`/`indices` are flat arrays; `config` is `TileCacheGeneratorConfig` —
+   a **required** `expectedLayersPerTile` (use `1` for a flat 2D map) plus `cs`/`ch` cell
+   size, `walkableRadius` agent clearance, `maxObstacles`, `bounds`, …. All input/output
+   positions are `Vector3` with `z = 0` (the game is 2D on the z=0 plane).
 - Config tuning (the riskiest tuning, esp. for 1-wide corridors): `cellSize` /
   `cellHeight` relative to `tileSize`; **`walkableRadius` set to the smallest enemy
   radius** (runner `0.05*tileSize`) so a 1-wide corridor stays navigable; larger
@@ -146,23 +151,33 @@ as `TileCache` obstacles (Phase 3) with no full rebuild.
   special casing; this is where the "more options" payoff lands (enemies take
   organic paths and avoid each other).
 - Expose `navMesh`, `tileCache`, and a `findPath(startWorld, goalWorld): Vec2[]` helper
-  (Detour polyline of corridor points) for snapshot path-highlight + commander viz.
+   (Detour polyline of corridor points) for snapshot path-highlight + commander viz.
+   `findPath` is **not** a single call: it must `navMeshQuery.findNearestPoly(start)` →
+   `findNearestPoly(goal)` to get poly refs, then `navMeshQuery.findPath(startRef,
+   endRef, startPos, endPos)`, then extract the corridor via `agentCorners`/`getPath`. A
+   `NavMeshQuery` is available as `crowd.navMeshQuery` (or construct one). All args are
+   `Vector3` (`z = 0`).
 - Build once in `GameEngine` ctor (when `RECAST_NAV`), rebuild only on new map. The
-  `Crowd` (Phase 2) is constructed from this `navMesh`; the `tileCache` is what
-  `Phase 3` mutates for towers (the `NavMesh` it holds is updated in place by
-  `tileCache.addObstacle`/`removeObstacle`).
+   `Crowd` (Phase 2) is constructed from this `navMesh`; the `tileCache` is what
+   `Phase 3` mutates for towers (the `NavMesh` it holds is rebuilt in place by
+   `tileCache.addCylinderObstacle`/`removeObstacle` + `tileCache.update(navMesh)`).
 
 ## Phase 2 — `CrowdManager` + enemy movement split (`src/sim/navmesh/CrowdManager.ts`)
 
 Wraps one `Crowd` derived from the `NavMesh`.
-- **Spawn:** `EnemyManager.spawn` calls `crowd.addAgent(worldPos, { radius: enemy.radius,
-  maxSpeed: enemy.speed * tileSize, ... })`, stores the agent handle on
-  `enemy.agent` (null-safe when flag OFF). `removeDeadEnemy` removes it.
-- **Default target:** on spawn, `crowd.agentRequestMoveTarget(agent, baseWorld)`.
-- **Loop (in `GameEngine.update`):** `crowd.update(FIXED_DT)` → for each live enemy
-  set Rapier `setLinvel(agent.velocity)` (zero velocity when `stunTimer>0` or
-  `attackingBase`/held) → `physicsWorld.step()` → read `body.translation()` into
-  `enemy.x/y/centerX/centerY`; `moveAngle = atan2(linvel)` with low-speed guard.
+- **Spawn:** `EnemyManager.spawn` calls `const agent = crowd.addAgent(worldPos, { radius:
+  enemy.radius, maxSpeed: enemy.speed * tileSize, ... })` — `addAgent` **returns** a
+  `CrowdAgent` object (not an index), store it on `enemy.agent` (null-safe when flag
+  OFF). `removeDeadEnemy` calls `crowd.removeAgent(enemy.agent)`. All agent/move-target
+  positions are `Vector3` (`z = 0`).
+- **Default target:** on spawn, `enemy.agent.requestMoveTarget(baseWorld)` (instance
+  method on the `CrowdAgent`, returns `boolean` — not `crowd.agentRequestMoveTarget`).
+- **Loop (in `GameEngine.update`):** `crowd.update(FIXED_DT)` → for each live enemy read
+  the agent's desired velocity via `enemy.agent.velocity()` (a **method**, returns
+  `Vector3`) and set Rapier `body.setLinvel(velocity, true)` (zero velocity when
+  `stunTimer>0` or `attackingBase`/held) → `physicsWorld.step()` → read
+  `body.translation()` into `enemy.x/y/centerX/centerY`; `moveAngle = atan2(linvel)`
+  with low-speed guard.
 - **Split `Enemy.update`** into `computeIntent` + `postPhysics` (as the Rapier plan
   did), branching on `RECAST_NAV`:
   - **OFF:** current tile-following + lane-offset + `contactLineSteer` (byte-identical
@@ -174,22 +189,30 @@ Wraps one `Crowd` derived from the `NavMesh`.
     near, Rapier/walls stop it). The manual `resolveCollisions`, `laneOffset`,
     `findLateralOpenSpot`, `findLeastBlockedLateral`, `contactLineSteer` geometry, and
     `reanchorToPath` become dead under ON.
-- **Slow/stun/knockback/hold/route** re-expressed: `slowFactor` → scale agent
-  `maxSpeed`; stun → `setLinvel(0)` + park agent; `applyKnockback` →
-  `crowd.agentTeleport`/`reset` + Rapier `setTranslation` (path-clamped, deterministic);
-  hold → request move to hold tile then zero speed; route → `agentRequestMoveTarget`
-  to waypoint(s).
+- **Slow/stun/knockback/hold/route** re-expressed (all via the `enemy.agent`
+  `CrowdAgent` instance): `slowFactor` → `agent.updateParameters({ maxSpeed })`; stun →
+  `setLinvel(0)` + `agent.resetMoveTarget()` to park (or `agent.requestMoveTarget` to its
+  current `agent.position()`); `applyKnockback` → `agent.teleport(targetWorld)` +
+  Rapier `body.setTranslation` (path-clamped, deterministic) so the body and agent stay
+  aligned; hold → `agent.requestMoveTarget(holdWorld)` then zero speed; route →
+  `agent.requestMoveTarget(waypointWorld)` per waypoint (Detour paths between waypoints
+  automatically, avoiding tower obstacles); release → `agent.requestMoveTarget(baseWorld)`.
 
 ## Phase 3 — Towers baked into the navmesh + reachability
 
 - **Towers are `TileCache` obstacles (the maze tactic), not navmesh rebuilds.** The
-  navmesh is **tiled** from Phase 1, so `tileCache.addObstacle(obstacle)` /
-  `tileCache.removeObstacle(ref)` add/remove a tower cylinder and re-bake only the
-  affected tiles in place — the `NavMesh` the `Crowd` holds is updated in place, so
-  agents re-path automatically with no full-navmesh rebuild. (This supersedes the earlier
-  solo-navmesh-rebuild fallback now that tiled+TileCache is confirmed available.)
-  `PhysicsWorld.rebuildTowers` still adds the Rapier collider; both run on the same
-  `navVersion` bump.
+  navmesh is **tiled** from Phase 1, so `tileCache.addCylinderObstacle(position,
+  radius, height)` (or `addBoxObstacle`) adds a tower cylinder and
+  `tileCache.removeObstacle(ref)` removes it. **Critical:** adding/removing an obstacle
+  only *queues* a request — you must call `tileCache.update(navMesh)` to actually
+  rebuild the affected tiles in place. `tileCache.update` processes up to 64 tiles per
+  call and returns `{ success, status, upToDate }`; **loop `update(navMesh)` until
+  `upToDate` is true** (otherwise a burst of tower placements silently stops being
+  applied). The `NavMesh` the `Crowd` holds is then rebuilt in place, so agents re-path
+  automatically with no full-navmesh rebuild. (This supersedes the earlier
+  solo-navmesh-rebuild fallback now that tiled+TileCache is confirmed available — see the
+  corrected Risks note below.) `PhysicsWorld.rebuildTowers` still adds the Rapier
+  collider; both run on the same `navVersion` bump.
 - **Alternative library evaluated — `navcat` (v0.4.1, pure TS):** investigated
   2026-07-15. It is a pure-TS reimplementation of Recast/Detour (same crowd /
   obstacle-avoidance internals) and needs **no WASM init**. However its `NavMesh`
@@ -199,8 +222,14 @@ Wraps one `Crowd` derived from the `NavMesh`.
   WASM dependency, which is minor given Rapier already WASM-gates. **Not adopted**;
   recast-navigation (tiled navmesh + TileCache) remains the choice.
 - Replace `canPlaceWithoutBlocking` with a Detour reachability check: before committing
-  the rebuild, confirm a `NavMeshQuery.findPath` spawn→base still exists on the proposed
-  geometry; if not, reject placement (maze can never fully wall off the base).
+  the placement, confirm a `NavMeshQuery.findPath` spawn→base still exists on the proposed
+  geometry; if not, reject placement (maze can never fully wall off the base). **Do not
+  mutate the live navmesh to test this** — adding the obstacle then `tileCache.update` would
+  commit it. Instead either (a) test on a temporary cloned `NavMesh`/`TileCache`, or
+  (b) add the cylinder → `tileCache.update(navMesh)` → `findPath`; if unreachable,
+  `removeObstacle(ref)` → `tileCache.update(navMesh)` to roll back, then reject. The
+  `findPath` helper from Phase 1 already wraps the `findNearestPoly`→`findPath`→corner
+  extraction, so reuse it here.
 - Bump `pathVersion`/`navVersion` on obstacle change to gate the Rapier tower-collider
   rebuild + snapshot highlight refresh (reuse existing `GameEngine` handling).
 
@@ -220,12 +249,12 @@ Wraps one `Crowd` derived from the `NavMesh`.
 ## Phase 5 — Commander routing (`llm:routeGroup`)
 
 - `applyRoute` / `releaseToDefault` / `reanchorToPath` / `computeSurroundRoute` are
-  deleted. `applyCommand` `llm:routeGroup` → `crowd.agentRequestMoveTarget(agent,
-  waypointWorld)` for each routed enemy (waypoints = the commander-supplied tiles,
-  converted to world space; Detour paths between them automatically, avoiding tower
-  obstacles). `hold` → request move to `holdTile` then park; `releaseToDefault` →
-  request move to base. Routing mode flags (`hold`/`route`/`default`) stay as the
-  gameplay state the commanders toggle.
+  deleted. `applyCommand` `llm:routeGroup` → `enemy.agent.requestMoveTarget(waypointWorld)`
+  for each routed enemy (waypoints = the commander-supplied tiles, converted to world
+  `Vector3` with `z = 0`; Detour paths between them automatically, avoiding tower
+  obstacles). `hold` → `enemy.agent.requestMoveTarget(holdWorld)` then zero speed (park);
+  `releaseToDefault` → `enemy.agent.requestMoveTarget(baseWorld)`. Routing mode flags
+  (`hold`/`route`/`default`) stay as the gameplay state the commanders toggle.
 - Brains (stubby/stubbs/llm) keep producing **target tiles**; they no longer need to
   compute full routes around towers — Detour does that. `computeSurroundRoute` is
   removed; any brain helper that used it is simplified to "pick a target tile."
@@ -319,13 +348,18 @@ tower-obstacle maze tactics without us hand-writing any of it — exactly the
 
 ## Risks / open questions (verify early)
 
-- **`recast-navigation` v0.43 API — VERIFIED in Phase 0** (renamed from
-  `recast-navigation-js`). `init()` is a top-level async export; `NavMesh`/`Crowd`/
-  `Recast`/`Detour`/`NavMeshQuery` are top-level named exports; `generateSoloNavMesh`
-  comes from the `recast-navigation/generators` subpath; the WASM loads under jsdom
-  with no Vite wasm plugin (compat build). **Open:** the `NavMesh` wrapper has no
-  `addObstacle`/`removeObstacle`, so towers are handled by rebuilding the solo navmesh
-  on tower change (Phase 3), not Detour dynamic obstacles.
+- **`recast-navigation` v0.43 API — VERIFIED** (renamed from `recast-navigation-js`;
+  already installed at `^0.43.1`). `init()` is a top-level async export; `NavMesh`/`Crowd`/
+  `Recast`/`Detour`/`NavMeshQuery` are top-level named exports (re-exported from
+  `@recast-navigation/core`); `generateSoloNavMesh`/`generateTileCache` come from the
+  `recast-navigation/generators` subpath; the WASM loads under jsdom with no Vite wasm
+  plugin (compat build). **Dynamic obstacles ARE available** via the tiled `TileCache`:
+  `addCylinderObstacle`/`addBoxObstacle`/`removeObstacle` + a required `tileCache.update(navMesh)`
+  call (loop until `upToDate`). The `NavMesh` wrapper itself has no `addObstacle`/
+  `removeObstacle` — that is exactly why Phase 1 builds a **tiled** navmesh + `TileCache`
+  rather than a solo navmesh (which would force a full rebuild per tower change). The
+  earlier "rebuild the solo navmesh" fallback is therefore superseded; `navcat` (evaluated
+  in Phase 3) also lacks navmesh carving and is **not** adopted.
 - **1-wide corridor navmesh tuning:** `agentRadius`/`cellSize` must keep a 1-tile
   corridor navigable; validate in `navmesh-build.test.ts` before broad integration.
 - **Two-solver conflict:** mitigating enemy-enemy via collision groups (Crowd owns
