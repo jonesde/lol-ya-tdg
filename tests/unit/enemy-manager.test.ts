@@ -7,15 +7,18 @@ import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
+import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
 import { makeParticleSystem } from "../helpers/mock-managers";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";
+import { stepPhysics } from "../helpers/physicsTestDriver.js";
 
 describe("EnemyManager", () => {
   let manager: EnemyManager;
   let grid: Grid;
   let particles: ReturnType<typeof makeParticleSystem>;
+  let physicsWorld: PhysicsWorld;
 
   beforeEach(() => {
     const pinia = createPinia();
@@ -29,6 +32,10 @@ describe("EnemyManager", () => {
     grid = new Grid(map);
     particles = makeParticleSystem();
     manager = new EnemyManager(grid, particles, 0);
+    // Enemies now back their motion with a Rapier body, so spawn gives each one a
+    // rigid body. Without this, computeIntent dereferences a null body and crashes.
+    physicsWorld = new PhysicsWorld(grid);
+    manager.setPhysicsWorld(physicsWorld);
   });
 
   it("starts with no enemies", () => {
@@ -95,7 +102,9 @@ describe("EnemyManager", () => {
       const enemy = manager.spawn("runner", 1, 0, 1);
       const startX = enemy.x;
       const startY = enemy.y;
-      manager.update(1.0, () => {});
+      // Motion is physics-driven: step the world rather than calling the legacy
+      // single-call manager.update (which no longer advances bodies).
+      for (let i = 0; i < 120; i++) stepPhysics(manager, physicsWorld, 1 / 60);
       const _expectedDist = ENEMY_TYPES.runner.speed * grid.tileSize;
       const _actualDist = Math.hypot(enemy.x - startX, enemy.y - startY);
       expect(enemy.x).not.toBe(startX);

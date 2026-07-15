@@ -8,9 +8,9 @@ import { getRapier } from "./rapierContext.js";
 // Wraps one Rapier2d world that owns enemy motion (dynamic circle bodies driven
 // by velocity) plus the static containment/world geometry: a base collider, fixed
 // tower colliders, and a closed boundary of thin wall segments around the
-// walkable corridor (path ∪ base ∪ spawn tiles). Constructed only when the
-// RAPIER_PHYSICS flag is on, so building it (and loading the Rapier WASM) is
-// gated behind getRapier() resolving — see rapierContext.ts.
+// walkable corridor (path ∪ base ∪ spawn tiles). Physics is always on, so building
+// it (and loading the Rapier WASM) is gated behind getRapier() resolving — see
+// rapierContext.ts.
 export class PhysicsWorld {
   private grid: Grid;
   private world: RAPIER.World;

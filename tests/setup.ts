@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { vi } from "vitest";
-import { RAPIER_PHYSICS } from "@/sim/featureFlags.js";
+import { initPhysics } from "@/sim/physics/rapierContext.js";
 
 const noop = (): void => {};
 
@@ -162,12 +162,8 @@ class MockResizeObserver {
 
 globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 
-// Physics init safety net (plans/rapier2d.md Phase 0). Only initializes Rapier
-// when the feature flag is on, so the OFF-path test suite incurs no wasm cost.
-// At flip, every direct-construct test becomes safe without per-file changes.
-if (RAPIER_PHYSICS) {
-  const { initPhysics } = await import("@/sim/physics/rapierContext.js");
-  await initPhysics();
-}
+// Physics init safety net (plans/rapier2d.md Phase 0). Every direct-construct test
+// path is safe at start-up without per-file init calls.
+await initPhysics();
 
 export { mockCanvas, mockCtx };

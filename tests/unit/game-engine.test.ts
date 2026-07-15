@@ -239,19 +239,25 @@ describe("GameEngine", () => {
       const enemy = new Enemy("boss", 1, 0, engine.grid, 1);
       enemy.baseTarget = engine.enemyManager.baseTarget;
       enemy.pathIdx = enemy.path.length - 1;
-      // Park the boss against the base edge so it qualifies as in contact with
-      // the square (the proximity gate in Enemy.update only lets an attacking
-      // enemy damage the base when it is actually adjacent to it).
-      const baseTile = engine.grid.getBase();
-      const baseCenter = engine.grid.tileToWorld(baseTile.x, baseTile.y);
-      enemy.centerX = baseCenter.x + 1.5 * engine.grid.tileSize + enemy.radius + 1;
-      enemy.centerY = baseCenter.y;
-      enemy.x = enemy.centerX;
-      enemy.y = enemy.centerY;
+      // Motion is now physics-backed, so the boss needs a rigid body. Place it on
+      // the last walkable path tile (inside the corridor containment walls) and let
+      // the step carry it to the base — a body parked just outside the base square
+      // edge would be ejected by the corridor wall and never reach contact.
+      const path = enemy.path!;
+      const lastWalkable = path[path.length - 2]!;
+      const spawnPos = engine.grid.tileToWorld(lastWalkable.x, lastWalkable.y);
+      enemy.centerX = spawnPos.x;
+      enemy.centerY = spawnPos.y;
+      enemy.x = spawnPos.x;
+      enemy.y = spawnPos.y;
+      engine.enemyManager.physicsWorld?.addEnemy(enemy);
+      enemy.body?.setTranslation({ x: spawnPos.x, y: spawnPos.y }, true);
       engine.enemyManager.enemies.push(enemy);
 
-      // The first tick flips the boss into the attackingBase state; it must not despawn.
+      // Drive the boss to the base; it must flip into the attackingBase state and
+      // never despawn.
       engine.update(0.05);
+      for (let step = 0; step < 600 && !enemy.attackingBase; step++) engine.update(0.05);
       expect(enemy.attackingBase).toBe(true);
       expect(enemy.removed).toBe(false);
 
@@ -771,12 +777,10 @@ describe("GameEngine", () => {
       // Freeze the enemy at the tower so it stays within range during the tick
       // (a spawned enemy otherwise walks its path away from the tower), and
       // register it in the spatial hash so getEnemiesInRange can find it.
-      // Under the Rapier physics flag the enemy's rigid body is authoritative,
-      // so we move the body too; otherwise computeIntentOn reseeds the logical
-      // position from the (untouched) spawn body and the tower never sees it.
+      // Under physics the enemy's rigid body is authoritative, so we move the
+      // body too; otherwise computeIntent reseeds the logical position from the
+      // (untouched) spawn body and the tower never sees it.
       enemy.speed = 0;
-      enemy.laneOffsetX = 0;
-      enemy.laneOffsetY = 0;
       enemy.centerX = tower.x;
       enemy.centerY = tower.y;
       enemy.x = tower.x;

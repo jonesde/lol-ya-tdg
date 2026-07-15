@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Enemy ON-branch tests (body set) driven manually, without flipping RAPIER_PHYSICS.
+// Enemy ON-branch tests (body set) driven manually, unconditionally.
 // We construct a PhysicsWorld, addEnemy so enemy.body is non-null, then drive the
 // enemy via computeIntent / step / postPhysics ourselves.
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";

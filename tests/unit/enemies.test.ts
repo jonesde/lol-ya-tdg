@@ -2,7 +2,7 @@
 /** @vitest-environment node */
 
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
   BOSS_STUN_REDUCTION,
@@ -13,14 +13,17 @@ import {
 } from "@/sim/ConstantsEnemy.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
+import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";
-import { itIfOff } from "../helpers/physicsFlags.js";
 
 describe("Enemy", () => {
   let grid: Grid;
   let map: ReturnType<typeof makeBastionMap>;
+  let physicsWorld: PhysicsWorld;
+  let spawn: (type: string, level?: number, spawnIndex?: number, wave?: number) => Enemy;
+  let tickEnemy: (enemy: Enemy, dt: number) => void;
 
   beforeEach(() => {
     resetEnemyId();
@@ -31,23 +34,38 @@ describe("Enemy", () => {
     themeStore.activeTheme = mockDefaultTheme;
     map = makeBastionMap();
     grid = new Grid(map);
+    physicsWorld = new PhysicsWorld(grid);
+    spawn = (type, level = 1, spawnIndex = 0, wave = 1) => {
+      const enemy = new Enemy(type, level, spawnIndex, grid, wave);
+      physicsWorld.addEnemy(enemy);
+      return enemy;
+    };
+    tickEnemy = (enemy, dt) => {
+      enemy.computeIntent(dt, null);
+      physicsWorld.step();
+      enemy.postPhysics(dt, null);
+    };
+  });
+
+  afterEach(() => {
+    physicsWorld.dispose();
   });
 
   describe("constructor", () => {
-    itIfOff("assigns incrementing IDs", () => {
+    it("assigns incrementing IDs", () => {
       const enemy1 = new Enemy("minion", 1, 0, grid, 1);
       const enemy2 = new Enemy("minion", 1, 0, grid, 1);
       expect(enemy2.id).toBe(enemy1.id + 1);
     });
 
-    itIfOff("sets type, level, and meta", () => {
+    it("sets type, level, and meta", () => {
       const enemy = new Enemy("tank", 3, 0, grid, 10);
       expect(enemy.type).toBe("tank");
       expect(enemy.level).toBe(3);
       expect(enemy.meta).toBe(ENEMY_TYPES.tank);
     });
 
-    itIfOff("computes HP using the formula", () => {
+    it("computes HP using the formula", () => {
       const wave = 10;
       const level = 2;
       const diffTick = 0;
@@ -59,68 +77,68 @@ describe("Enemy", () => {
       expect(enemy.hp).toBe(enemy.maxHp);
     });
 
-    itIfOff("scales HP with wave number", () => {
+    it("scales HP with wave number", () => {
       const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
       const enemy2 = new Enemy("minion", 1, 0, grid, 11, 0);
       const expectedRatio = (1 + ENEMY_WAVE_DAMAGE_MULT * 10) / (1 + ENEMY_WAVE_DAMAGE_MULT * 0);
       expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(expectedRatio, 4);
     });
 
-    itIfOff("scales HP with enemy level", () => {
+    it("scales HP with enemy level", () => {
       const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
       const enemy2 = new Enemy("minion", 3, 0, grid, 1, 0);
       const expectedRatio = ENEMY_LEVEL_HP_MULT(3) / ENEMY_LEVEL_HP_MULT(1);
       expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(expectedRatio, 4);
     });
 
-    itIfOff("scales HP with difficulty tick", () => {
+    it("scales HP with difficulty tick", () => {
       const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
       const enemy2 = new Enemy("minion", 1, 0, grid, 1, 4);
       const expectedRatio = (1 + DIFFICULTY_MULT_TICK * 4) / (1 + DIFFICULTY_MULT_TICK * 0);
       expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(expectedRatio, 4);
     });
 
-    itIfOff("computes bounty using level scaling", () => {
+    it("computes bounty using level scaling", () => {
       const level = 3;
       const enemy = new Enemy("minion", level, 0, grid, 1, 0);
       const expected = Math.ceil(ENEMY_TYPES.minion.bounty * (1 + 0.5 * (level - 1)));
       expect(enemy.bounty).toBe(expected);
     });
 
-    itIfOff("sets shield for shielded enemies", () => {
+    it("sets shield for shielded enemies", () => {
       const enemy = new Enemy("shielded", 2, 0, grid, 1, 0);
       expect((enemy as { shield: number }).shield).toBe(ENEMY_TYPES.shielded.shield! * 2);
       expect((enemy as { maxShield: number }).maxShield).toBe((enemy as { shield: number }).shield);
     });
 
-    itIfOff("has zero shield for non-shielded types", () => {
+    it("has zero shield for non-shielded types", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       expect((enemy as { shield: number }).shield).toBe(0);
     });
 
-    itIfOff("sets speed from meta", () => {
+    it("sets speed from meta", () => {
       const enemy = new Enemy("runner", 1, 0, grid, 1, 0);
       expect(enemy.speed).toBe(ENEMY_TYPES.runner.speed);
     });
 
-    itIfOff("sets radius from meta and grid.tileSize", () => {
+    it("sets radius from meta and grid.tileSize", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       expect(enemy.radius).toBe(ENEMY_TYPES.minion.radius * grid.tileSize * 0.5);
     });
 
-    itIfOff("sets heal and healRange for healer type", () => {
+    it("sets heal and healRange for healer type", () => {
       const enemy = new Enemy("healer", 1, 0, grid, 1, 0);
       expect((enemy as { heal: number }).heal).toBe(ENEMY_TYPES.healer.heal!);
       expect((enemy as { healRange: number }).healRange).toBe(ENEMY_TYPES.healer.healRange! * grid.tileSize);
     });
 
-    itIfOff("sets resist and slowResist for boss", () => {
+    it("sets resist and slowResist for boss", () => {
       const enemy = new Enemy("boss", 1, 0, grid, 1, 0);
       expect((enemy as { resist: number }).resist).toBe(ENEMY_TYPES.boss.resist);
       expect((enemy as { slowResist: number }).slowResist).toBe(ENEMY_TYPES.boss.slowResist);
     });
 
-    itIfOff("initializes status effects to zero", () => {
+    it("initializes status effects to zero", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       expect(enemy.slowFactor).toBe(1);
       expect(enemy.slowStack).toHaveLength(0);
@@ -130,21 +148,21 @@ describe("Enemy", () => {
       expect(enemy.burnStack).toHaveLength(0);
     });
 
-    itIfOff("sets path and pathIdx from grid", () => {
+    it("sets path and pathIdx from grid", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       expect(enemy.path).not.toBeNull();
       expect(enemy.pathIdx).toBe(0);
       expect(enemy.path?.length).toBeGreaterThan(0);
     });
 
-    itIfOff("sets initial world position to first path tile", () => {
+    it("sets initial world position to first path tile", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       const firstTile = grid.tileToWorld(enemy.path![0].x, enemy.path![0].y);
       expect(enemy.x).toBe(firstTile.x);
       expect(enemy.y).toBe(firstTile.y);
     });
 
-    itIfOff("routes through fully-blocked path tiles via the weakest-path fallback", () => {
+    it("routes through fully-blocked path tiles via the weakest-path fallback", () => {
       const bastionMap = makeBastionMap();
       const grid2 = new Grid(bastionMap);
       for (const tile of grid2.paths[0]!) {
@@ -159,28 +177,28 @@ describe("Enemy", () => {
   });
 
   describe("takeDamage", () => {
-    itIfOff("reduces HP by damage amount", () => {
+    it("reduces HP by damage amount", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       const initialHp = enemy.hp;
       enemy.takeDamage(5);
       expect(enemy.hp).toBeCloseTo(initialHp - 5, 4);
     });
 
-    itIfOff("marks enemy as removed when HP <= 0", () => {
+    it("marks enemy as removed when HP <= 0", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.hp = 10;
       enemy.takeDamage(10);
       expect(enemy.removed).toBe(true);
     });
 
-    itIfOff("does not remove when HP > 0 after damage", () => {
+    it("does not remove when HP > 0 after damage", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.hp = 10;
       enemy.takeDamage(5);
       expect(enemy.removed).toBe(false);
     });
 
-    itIfOff("absorbs damage with shield before reducing HP", () => {
+    it("absorbs damage with shield before reducing HP", () => {
       const enemy = new Enemy("shielded", 1, 0, grid, 1, 0);
       const initialShield = (enemy as { shield: number }).shield;
       enemy.takeDamage(10);
@@ -188,7 +206,7 @@ describe("Enemy", () => {
       expect(enemy.hp).toBe(enemy.maxHp);
     });
 
-    itIfOff("depletes shield before damaging HP", () => {
+    it("depletes shield before damaging HP", () => {
       const enemy = new Enemy("shielded", 1, 0, grid, 1, 0);
       (enemy as { shield: number }).shield = 5;
       enemy.takeDamage(10);
@@ -196,7 +214,7 @@ describe("Enemy", () => {
       expect(enemy.hp).toBeLessThan(enemy.maxHp);
     });
 
-    itIfOff("does not use shield when armorPiercing is true", () => {
+    it("does not use shield when armorPiercing is true", () => {
       const enemy = new Enemy("shielded", 1, 0, grid, 1, 0);
       const initialShield = (enemy as { shield: number }).shield;
       enemy.takeDamage(10, true);
@@ -204,13 +222,13 @@ describe("Enemy", () => {
       expect(enemy.hp).toBeLessThan(enemy.maxHp);
     });
 
-    itIfOff("returns the actual damage dealt", () => {
+    it("returns the actual damage dealt", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       const damage = enemy.takeDamage(7);
       expect(damage).toBe(7);
     });
 
-    itIfOff("returns 0 when damage is fully absorbed by shield", () => {
+    it("returns 0 when damage is fully absorbed by shield", () => {
       const enemy = new Enemy("shielded", 1, 0, grid, 1, 0);
       (enemy as { shield: number }).shield = 100;
       const damage = enemy.takeDamage(5);
@@ -219,7 +237,7 @@ describe("Enemy", () => {
   });
 
   describe("applySlow", () => {
-    itIfOff("adds a slow entry to the stack", () => {
+    it("adds a slow entry to the stack", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applySlow(0.5, 2.0);
       expect(enemy.slowStack).toHaveLength(1);
@@ -227,14 +245,14 @@ describe("Enemy", () => {
       expect(enemy.slowStack[0].remaining).toBe(2.0);
     });
 
-    itIfOff("respects slowResist", () => {
+    it("respects slowResist", () => {
       const enemy = new Enemy("boss", 1, 0, grid, 1, 0);
       enemy.applySlow(0.5, 2.0);
       const expectedEff = 0.5 * (1 - enemy.slowResist);
       expect(enemy.slowStack[0].eff).toBeCloseTo(expectedEff, 4);
     });
 
-    itIfOff("keeps distinct strengths as separate multiplicative entries", () => {
+    it("keeps distinct strengths as separate multiplicative entries", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applySlow(0.3, 1.0);
       enemy.applySlow(0.4, 2.0);
@@ -242,7 +260,7 @@ describe("Enemy", () => {
       expect(enemy.slowFactor).toBeCloseTo(0.7 * 0.6, 4);
     });
 
-    itIfOff("refreshes duration of an existing entry with the same strength", () => {
+    it("refreshes duration of an existing entry with the same strength", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applySlow(0.3, 1.0);
       enemy.applySlow(0.3, 2.0);
@@ -250,13 +268,13 @@ describe("Enemy", () => {
       expect(enemy.slowStack[0].remaining).toBe(2.0);
     });
 
-    itIfOff("clamps slowFactor to MIN_SLOW_FACTOR", () => {
+    it("clamps slowFactor to MIN_SLOW_FACTOR", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applySlow(0.95, 10.0);
       expect(enemy.slowFactor).toBeGreaterThanOrEqual(MIN_SLOW_FACTOR);
     });
 
-    itIfOff("does nothing for zero or negative eff", () => {
+    it("does nothing for zero or negative eff", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applySlow(0, 1.0);
       expect(enemy.slowStack).toHaveLength(0);
@@ -264,20 +282,20 @@ describe("Enemy", () => {
   });
 
   describe("applyStun", () => {
-    itIfOff("sets stunTimer to the given duration", () => {
+    it("sets stunTimer to the given duration", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applyStun(0.5);
       expect(enemy.stunTimer).toBe(0.5);
     });
 
-    itIfOff("does not reduce existing stun timer", () => {
+    it("does not reduce existing stun timer", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applyStun(1.0);
       enemy.applyStun(0.5);
       expect(enemy.stunTimer).toBe(1.0);
     });
 
-    itIfOff("reduces duration for boss by BOSS_STUN_REDUCTION", () => {
+    it("reduces duration for boss by BOSS_STUN_REDUCTION", () => {
       const enemy = new Enemy("boss", 1, 0, grid, 1, 0);
       enemy.applyStun(1.0);
       expect(enemy.stunTimer).toBeCloseTo(1.0 * BOSS_STUN_REDUCTION, 4);
@@ -285,7 +303,7 @@ describe("Enemy", () => {
   });
 
   describe("applyBurn", () => {
-    itIfOff("adds a burn entry", () => {
+    it("adds a burn entry", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applyBurn(5, 3.0);
       expect(enemy.burnStack).toHaveLength(1);
@@ -293,7 +311,7 @@ describe("Enemy", () => {
       expect(enemy.burnStack[0]!.timer).toBeCloseTo(3.0, 4);
     });
 
-    itIfOff("stacks independent burns instead of overwriting", () => {
+    it("stacks independent burns instead of overwriting", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applyBurn(10, 5.0);
       enemy.applyBurn(5, 3.0);
@@ -304,105 +322,105 @@ describe("Enemy", () => {
   });
 
   describe("update", () => {
-    itIfOff("does nothing when removed", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("does nothing when removed", () => {
+      const enemy = spawn("minion", 1, 0, 1);
       enemy.removed = true;
-      enemy.update(0.1, null);
+      tickEnemy(enemy, 0.1);
       expect(enemy.removed).toBe(true);
     });
 
-    itIfOff("keeps attacking the base without being removed once it reaches the base", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("keeps attacking the base without being removed once it reaches the base", () => {
+      const enemy = spawn("minion", 1, 0, 1);
       enemy.pathIdx = enemy.path!.length - 1;
-      enemy.update(0.01, null);
+      tickEnemy(enemy, 0.01);
       expect(enemy.attackingBase).toBe(true);
-      for (let tick = 0; tick < 50; tick++) enemy.update(0.05, null);
+      for (let tick = 0; tick < 50; tick++) tickEnemy(enemy, 0.05);
       expect(enemy.removed).toBe(false);
     });
 
-    itIfOff("reduces stunTimer each tick", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("reduces stunTimer each tick", () => {
+      const enemy = spawn("minion", 1, 0, 1);
       enemy.applyStun(1.0);
-      enemy.update(0.5, null);
+      tickEnemy(enemy, 0.5);
       expect(enemy.stunTimer).toBeCloseTo(0.5, 4);
     });
 
-    itIfOff("does not move while stunned", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("does not move while stunned", () => {
+      const enemy = spawn("minion", 1, 0, 1);
       const startX = enemy.x;
       enemy.applyStun(1.0);
-      enemy.update(0.5, null);
+      tickEnemy(enemy, 0.5);
       expect(enemy.x).toBe(startX);
     });
 
-    itIfOff("moves toward next waypoint", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("moves toward next waypoint", () => {
+      const enemy = spawn("minion", 1, 0, 1);
       const startX = enemy.x;
       const startY = enemy.y;
-      enemy.update(1.0, null);
+      tickEnemy(enemy, 1.0);
       const distMoved = Math.hypot(enemy.x - startX, enemy.y - startY);
       expect(distMoved).toBeGreaterThan(0);
     });
 
-    itIfOff("reaches base when pathIdx reaches end", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("reaches base when pathIdx reaches end", () => {
+      const enemy = spawn("minion", 1, 0, 1);
       enemy.pathIdx = enemy.path!.length - 1;
-      enemy.update(0.01, null);
+      tickEnemy(enemy, 0.01);
       expect(enemy.attackingBase).toBe(true);
       expect(enemy.removed).toBe(false);
     });
 
-    itIfOff("reduces slow stack remaining time each tick", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("reduces slow stack remaining time each tick", () => {
+      const enemy = spawn("minion", 1, 0, 1);
       enemy.applySlow(0.5, 2.0);
-      enemy.update(1.0, null);
+      tickEnemy(enemy, 1.0);
       expect(enemy.slowStack[0].remaining).toBeCloseTo(1.0, 4);
     });
 
-    itIfOff("removes expired slow entries", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("removes expired slow entries", () => {
+      const enemy = spawn("minion", 1, 0, 1);
       enemy.applySlow(0.5, 0.5);
-      enemy.update(1.0, null);
+      tickEnemy(enemy, 1.0);
       expect(enemy.slowStack).toHaveLength(0);
       expect(enemy.slowFactor).toBe(1);
     });
 
-    itIfOff("applies burn damage each tick", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("applies burn damage each tick", () => {
+      const enemy = spawn("minion", 1, 0, 1);
       enemy.hp = 20;
       enemy.applyBurn(5, 2.0);
       const hpBefore = enemy.hp;
-      enemy.update(1.0, null);
+      tickEnemy(enemy, 1.0);
       expect(enemy.hp).toBeLessThan(hpBefore);
     });
 
-    itIfOff("stops burning when burnTimer expires", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("stops burning when burnTimer expires", () => {
+      const enemy = spawn("minion", 1, 0, 1);
       enemy.hp = 20;
       enemy.applyBurn(5, 0.5);
-      enemy.update(1.0, null);
+      tickEnemy(enemy, 1.0);
       const hpAfterExpiry = enemy.hp;
-      enemy.update(1.0, null);
+      tickEnemy(enemy, 1.0);
       expect(enemy.hp).toBe(hpAfterExpiry);
     });
 
-    itIfOff("does not move after burn damage kills it", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("does not move after burn damage kills it", () => {
+      const enemy = spawn("minion", 1, 0, 1);
       enemy.hp = 5;
       enemy.applyBurn(100, 1.0);
       const startX = enemy.x;
       const startY = enemy.y;
-      enemy.update(1.0, null);
+      tickEnemy(enemy, 1.0);
       expect(enemy.removed).toBe(true);
       expect(enemy.x).toBe(startX);
       expect(enemy.y).toBe(startY);
     });
 
-    itIfOff("adjusts pathIdx to nearest tile when path is recomputed", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("adjusts pathIdx to nearest tile when path is recomputed", () => {
+      const enemy = spawn("minion", 1, 0, 1);
 
       for (let i = 0; i < 5; i++) {
-        enemy.update(0.5, null);
+        tickEnemy(enemy, 0.5);
       }
       const midX = enemy.x;
       const midY = enemy.y;
@@ -412,7 +430,7 @@ describe("Enemy", () => {
         grid.blocked.add(`${blockedTile.x},${blockedTile.y}`);
         grid.recomputePathsForTile(blockedTile.x, blockedTile.y);
 
-        enemy.update(0.1, null);
+        tickEnemy(enemy, 0.1);
 
         const distFromMid = Math.hypot(enemy.x - midX, enemy.y - midY);
         expect(distFromMid).toBeLessThan(grid.tileSize * 3);
@@ -421,11 +439,11 @@ describe("Enemy", () => {
       }
     });
 
-    itIfOff("never selects a backward pathIdx on recalculation", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+    it("never selects a backward pathIdx on recalculation", () => {
+      const enemy = spawn("minion", 1, 0, 1);
 
       for (let i = 0; i < 5; i++) {
-        enemy.update(0.5, null);
+        tickEnemy(enemy, 0.5);
       }
 
       const baseWorldPos = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
@@ -439,7 +457,7 @@ describe("Enemy", () => {
         grid.blocked.add(`${blockedTile.x},${blockedTile.y}`);
         grid.recomputePathsForTile(blockedTile.x, blockedTile.y);
 
-        enemy.update(0.1, null);
+        tickEnemy(enemy, 0.1);
 
         const newPathTile = enemy.path![enemy.pathIdx];
         const newPathWorldPos = grid.tileToWorld(newPathTile.x, newPathTile.y);

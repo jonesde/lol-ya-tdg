@@ -47,33 +47,15 @@ function snapPathIndex(
   return bestIdx;
 }
 
-// Pile-smoothing tuning. resolveCollisions applies a hard overlap/2 correction in a
-// single pass. A front enemy pinned on the base keep-out gets shoved laterally by the
-// press from behind and re-projected by the keep-out each frame, producing the "pushed
-// aside, then a back enemy fills the gap" popping. The hard correction is what gives the
-// pile its desired multi-tile overflow, so it is kept at 1.0. Base-pile separation uses
-// the true inter-enemy contact normal (tangential separation allowed) so enemies pack
-// 2D against the base instead of collapsing into a single-file column.
-const COLLISION_STIFFNESS = 1.0; // <1 softens per-frame correction (1 = current hard behavior)
-const COLLISION_ITERATIONS = 1; // resolve the spatial-hash pairs this many times per frame (cheap convergence)
-
-// Polite yielding: when two enemies overlap at a contact line (both attacking base or
-// both blocked by the same tower), the separation is weighted by attack priority so a
-// higher-damage enemy (boss, shielded, tank) takes less of the push and the lower-
-// priority enemy (minion, runner) slides aside. This keeps the contact line accessible
-// to threats that matter most without shoving anyone through the square.
-const PRIORITY_YIELD_MIN = 0.1; // min fraction the higher-priority enemy takes (never zero)
-const PRIORITY_YIELD_MAX = 0.9; // max fraction the lower-priority enemy takes (never 100%)
-
-// Contact-line lateral slide speed multiplier. A contact-line enemy's only job
-// is to slide along the face to an open spot; a larger per-frame step lets a
-// packed pile flow instead of deadlocking in a 1-D packed column. Tune via
-// PoliteMotion.md §6 if the pile deadlocks or zips.
 // Shared contact epsilon for the attack gate: an enemy damages a blocked tower or
 // the base once its centerline is within `radius + ATTACK_CONTACT_EPSILON` of the
 // objective square. Identical for towers and the base so the two attack paths cannot
 // drift apart.
 const ATTACK_CONTACT_EPSILON = 1e-6;
+
+// Contact-line lateral slide speed multiplier. A contact-line enemy's only job
+// is to slide along the face to an open spot; a larger per-frame step lets a
+// packed pile flow instead of deadlocking in a 1-D packed column.
 const LATERAL_SPEED_MULT = 3;
 
 // Pile depth cap (standoff) for the contact-line steering regime, shared by both
@@ -152,9 +134,8 @@ export class Enemy {
   bounty: number;
   color: string;
   radius: number;
-  // Rapier rigid body backing this enemy when RAPIER_PHYSICS is on; null otherwise.
-  // Assigned by PhysicsWorld.addEnemy / cleared by removeEnemy; never read when the
-  // flag is off.
+  // Rapier rigid body backing this enemy; assigned by PhysicsWorld.addEnemy /
+  // cleared by removeEnemy.
   body: RAPIER.RigidBody | null = null;
   shape: unknown;
   walking: MapThemeAnimation | null;
@@ -173,18 +154,11 @@ export class Enemy {
   pathIdx: number;
   x!: number;
   y!: number;
-  // Path centerline position (Phase 4). x/y are derived from centerline + the
-  // lateral lane offset each frame; centerX/centerY are the only state the
-  // forward-step logic advances, so collisions never move the centerline.
-  // The lane offset is stored as a WORLD-SPACE vector (laneOffsetX/Y), not as a
-  // scalar relative to moveAngle: because moveAngle flips 90 deg at every
-  // right-angle turn, a scalar offset would rotate with it and make the enemy
-  // jump sideways at each corner. A world vector is turn-invariant, so the
-  // rendered position stays continuous through turns.
+  // Path centerline position. Under physics the rigid body owns the live position;
+  // centerX/centerY are mirrored from the body each frame so gameplay logic
+  // (re-anchor, contact checks, currentTile) reads one source.
   centerX: number = 0;
   centerY: number = 0;
-  laneOffsetX: number = 0;
-  laneOffsetY: number = 0;
   slowFactor!: number;
   slowStack!: SlowEntry[];
   stunTimer!: number;
@@ -198,11 +172,6 @@ export class Enemy {
   }
   onPathBlocked!: boolean;
   moveAngle!: number;
-  // Face tangent (unit) for the contact line this enemy is currently steering along,
-  // set by contactLineSteer. Used by resolveCollisions to separate contact-line pairs
-  // ALONG the face (so they spread across the entry) instead of radially into the base.
-  contactTangentX: number = 0;
-  contactTangentY: number = 0;
   // Tower the enemy is currently attacking/blocked by (live, non-ghost), or null.
   blockedByTower: Tower | null = null;
   // True once the enemy has reached the base and is now attacking it (does not despawn).
@@ -236,10 +205,6 @@ export class Enemy {
   lastCellX!: number;
   lastCellY!: number;
   private healTickDt: number = 0;
-  // Stashes the `hasNextTile` value computed at the start of computeIntentOff so
-  // postPhysicsOff can apply the identical end-of-frame clamp the original update
-  // applied (the original computed it once and reused it past the movement step).
-  private _intentHasNextTile: boolean = false;
   private applyHealAura = (ally: Enemy): void => {
     if (ally === this) return;
     if (ally.antiHealTimer > 0) return;
@@ -316,8 +281,6 @@ export class Enemy {
     this.y = start.y;
     this.centerX = this.x;
     this.centerY = this.y;
-    this.laneOffsetX = 0;
-    this.laneOffsetY = 0;
     this.lastCellX = -1;
     this.lastCellY = -1;
 
@@ -385,8 +348,8 @@ export class Enemy {
       }
     }
     if (this.body === null) {
-      this.x = this.centerX + this.laneOffsetX;
-      this.y = this.centerY + this.laneOffsetY;
+      this.x = this.centerX;
+      this.y = this.centerY;
     } else {
       // ON: teleport the body to the path-clamped centerline with zero velocity so
       // the knockback is deterministic and stays on the corridor (lane offset is
@@ -445,8 +408,6 @@ export class Enemy {
     this.y = safeWorld.y;
     this.centerX = safeWorld.x;
     this.centerY = safeWorld.y;
-    this.laneOffsetX = 0;
-    this.laneOffsetY = 0;
     if (safeIndex + 1 < this.path.length) {
       const nextTile = this.path[safeIndex + 1]!;
       const nextWorld = this.grid.tileToWorld(nextTile.x, nextTile.y);
@@ -573,21 +534,15 @@ export class Enemy {
     this.y = anchorWorld.y;
     this.centerX = anchorWorld.x;
     this.centerY = anchorWorld.y;
-    this.laneOffsetX = 0;
-    this.laneOffsetY = 0;
     if (this.pathIdx + 1 < this.path.length) {
       const nextWorld = this.grid.tileToWorld(this.path[this.pathIdx + 1]!.x, this.path[this.pathIdx + 1]!.y);
       this.moveAngle = Math.atan2(nextWorld.y - anchorWorld.y, nextWorld.x - anchorWorld.x);
     }
   }
 
-  // Thin wrapper that splits the per-frame update into intent (decision + motion
-  // integration) and post-physics (position read-back, clamp, attack, cull). The
-  // OFF path (body === null) reproduces the original monolithic update exactly:
-  // computeIntentOff runs the full status timers + motion integration (minus the
-  // final clamp), and postPhysicsOff applies the end-of-frame clamp. The ON path
-  // (body set) seeds motion from the rigid body and converts the same integration
-  // into a velocity for Rapier to step; see computeIntentOn / postPhysicsOn.
+  // Per-frame update: run the intent pass (decision + steering, seeding the rigid
+  // body velocity) then the post-physics pass (read back the stepped position,
+  // acquire/run attacks, cull). Rapier owns integration, separation, and containment.
   update(dt: number, enemyManager: EnemyManagerRef | null): void {
     if (this.removed) return;
     this.computeIntent(dt, enemyManager);
@@ -651,230 +606,6 @@ export class Enemy {
     if (this.removed) return;
     this.updateStatusTimers(dt, enemyManager);
     if (this.removed) return;
-    if (this.body === null) {
-      this.computeIntentOff(dt, enemyManager);
-    } else {
-      this.computeIntentOn(dt, enemyManager);
-    }
-  }
-
-  // OFF intent: the original monolithic update minus the final clamp (which moves
-  // to postPhysics). Status timers already ran in computeIntent; the stun early
-  // return here skips movement/attack but NOT the clamp (postPhysics applies it).
-  private computeIntentOff(dt: number, enemyManager: EnemyManagerRef | null): void {
-    const hasNextTile = this.path != null && this.pathIdx < this.path.length - 1;
-    if (this.stunTimer > 0) {
-      this._intentHasNextTile = hasNextTile;
-      return;
-    }
-    if (!this.path || this.pathIdx >= this.path.length - 1) {
-      if (this.routingMode === "default") {
-        this.attackingBase = true;
-      }
-      if (this.routingMode === "hold") {
-        // Stay put at the hold tile; the attack resolution below still runs so a
-        // tower on (or adjacent to) the tile is attacked via the forward/adjacent logic.
-        this.arrived = true;
-      } else if (this.routingMode === "route") {
-        // route mode: the command is complete — revert to the default grid path and
-        // fall through so the enemy immediately starts heading for the base. From
-        // here it behaves like a default-mode enemy that reached the base: it sets
-        // attackingBase and attacks the base rather than being culled.
-        this.releaseToDefault();
-        if (!this.path || this.pathIdx >= this.path.length - 1) {
-          this.attackingBase = true;
-        }
-      }
-    }
-
-    // Re-anchor to the latest grid path when it has changed since last frame (a tower
-    // was added/removed, ghosted, or restored). Gated to default-mode enemies: a
-    // hold/route enemy's path is commander-owned and must not be clobbered on a
-    // tower build/sell.
-    const gridVersion = this.grid.pathVersion;
-    if (this.routingMode === "default" && !this.attackingBase && this.pathVersion !== gridVersion) {
-      this.pathVersion = gridVersion;
-      const newPath = this.grid.getPathFor(this.spawnIndex);
-      if (newPath) {
-        this.reanchorToPath(newPath);
-      } else {
-        this.onPathBlocked = true;
-        this.removed = true;
-        return;
-      }
-    }
-
-    // Early edge-stop (Issue 1 backstop): before any forward step, if the enemy's
-    // centerline already contacts the base square, mark it attacking the base so it
-    // clamps to the edge on this side instead of walking into the interior. Hold-mode
-    // enemies are excluded so a commander hold tile inside the base footprint stays
-    // reachable.
-    if (this.routingMode === "default" && !this.attackingBase) {
-      const contactBaseTile = this.grid.getBase();
-      const contactBaseCenter = this.grid.tileToWorld(contactBaseTile.x, contactBaseTile.y);
-      const contact = baseSquareContact(
-        contactBaseCenter.x,
-        contactBaseCenter.y,
-        1.5 * this.grid.tileSize,
-        this.centerX,
-        this.centerY,
-        this.radius,
-      );
-      if (contact.overlapping) this.attackingBase = true;
-    }
-
-    // Attack-target resolution for a blocking tower. This mirrors the base's
-    // STICKY "all-in" entry: once an enemy is funneling toward a live tower it
-    // stays in the steering regime (blockedByTower) for the rest of its life, so
-    // the whole pile lines up against the tower face instead of only the front enemy.
-    // Acquire when the tower is the next path tile OR the enemy is already in contact
-    // with the tower square (the proximity check mirrors the base's early edge-stop
-    // baseSquareContact.overlapping). Keep it sticky; clear only when the tower is
-    // gone (ghost/dead) so re-anchor + pass-through still apply.
-    const nextTile = hasNextTile ? this.path![this.pathIdx + 1]! : null;
-    const forwardTower =
-      enemyManager && nextTile && this.grid.blocked.has(`${nextTile.x},${nextTile.y}`)
-        ? enemyManager.towerAt(nextTile.x, nextTile.y)
-        : null;
-    const liveForwardTower = forwardTower && !forwardTower.isGhost ? forwardTower : null;
-
-    let attackTarget: Tower | AttackTarget | null = null;
-
-    // (Re)acquire a tower contact only when none is held or the held one is
-    // gone — once set, it stays (sticky), so a piled enemy that gets shoved
-    // around by collision does not drop back into walk mode.
-    if (this.blockedByTower === null || this.blockedByTower.isGhost) {
-      const candidate = liveForwardTower ?? this.findAdjacentLiveTowerInContact(enemyManager);
-      if (candidate && !candidate.isGhost) this.blockedByTower = candidate;
-    }
-    // Release the contact when the held tower can no longer block: it was
-    // destroyed (isGhost) or it was sold/cancelled and removed from the grid
-    // entirely. A sold tower keeps isGhost false and is also dropped from
-    // `blocked`, so `!this.grid.blocked.has(key)` catches the sold case that
-    // `isGhost` alone misses. Without this the enemy would keep steering at the
-    // (now gone) tower tile and never re-anchor onto the freshly opened path.
-    // The re-acquire block above then re-attaches to any live tower still in
-    // contact, so destroying a tower re-anchors onto the next one and selling
-    // one lets the enemy walk through.
-    if (this.blockedByTower) {
-      const towerKey = `${this.blockedByTower.tileX},${this.blockedByTower.tileY}`;
-      const towerGone = this.blockedByTower.isGhost || !this.grid.blocked.has(towerKey);
-      if (towerGone) this.blockedByTower = null;
-    }
-
-    if (this.blockedByTower && !this.blockedByTower.isGhost) {
-      const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
-      // Gate the attack on square distance to the tower tile (mirrors the base path
-      // below, which uses distanceToBaseSquare <= radius). Square distance stays true
-      // for any position along the exposed perimeter, so the attack persists through
-      // the lateral spread that contactLineSteer applies.
-      const towerContact = distanceToBaseSquare(
-        this.centerX,
-        this.centerY,
-        towerCenter.x,
-        towerCenter.y,
-        this.grid.tileSize / 2,
-      );
-      if (towerContact <= this.radius + ATTACK_CONTACT_EPSILON) {
-        attackTarget = this.blockedByTower;
-      }
-    }
-
-    if (this.attackingBase && this.baseTarget) {
-      // Only an enemy actually in contact with the base square may damage it.
-      // Back-row (radial > 0) enemies hold their layer but do not attack the
-      // base until the front line clears and they collapse forward into it.
-      const attackBaseTile = this.grid.getBase();
-      const attackBaseCenter = this.grid.tileToWorld(attackBaseTile.x, attackBaseTile.y);
-      const attackDistToSquare = distanceToBaseSquare(
-        this.centerX,
-        this.centerY,
-        attackBaseCenter.x,
-        attackBaseCenter.y,
-        1.5 * this.grid.tileSize,
-      );
-      if (attackDistToSquare <= this.radius + ATTACK_CONTACT_EPSILON) attackTarget = this.baseTarget;
-    }
-
-    // Advance only the path centerline; x/y are derived after collision resolution.
-    if (hasNextTile && nextTile && !this.blockedByTower && !this.attackingBase && !attackTarget) {
-      // Walk the path (default or commander route) toward the next tile. This must
-      // run before the base-perimeter pull so a "route" enemy keeps following its
-      // route to the end (and reverts via releaseToDefault) instead of being held at
-      // the edge the moment it first touches the square.
-      const target = this.grid.tileToWorld(nextTile.x, nextTile.y);
-      const deltaX = target.x - this.centerX;
-      const deltaY = target.y - this.centerY;
-      const dist = Math.hypot(deltaX, deltaY);
-      const step = this.speed * this.slowFactor * this.grid.tileSize * dt;
-      this.moveAngle = Math.atan2(deltaY, deltaX);
-      if (step >= dist) {
-        this.centerX = target.x;
-        this.centerY = target.y;
-        this.pathIdx++;
-        if (this.path && this.pathIdx < this.path.length - 1) {
-          const nextWaypoint = this.grid.tileToWorld(this.path[this.pathIdx + 1]!.x, this.path[this.pathIdx + 1]!.y);
-          this.moveAngle = Math.atan2(nextWaypoint.y - this.centerY, nextWaypoint.x - this.centerX);
-        }
-      } else {
-        this.centerX += (deltaX / dist) * step;
-        this.centerY += (deltaY / dist) * step;
-      }
-    } else if (this.attackingBase) {
-      // Contact-line steering: the enemy treats the base edge as a line, not a
-      // point. It presses forward when unobstructed, redirects laterally to an
-      // open spot when blocked or on the line, and holds when the line is packed.
-      // This is the real in-game path (baseTarget is always set), so the unified
-      // steer handles both the "in contact and attacking" and "near base but not
-      // yet in contact" cases. See contactLineSteer for the full decision logic.
-      const baseTile = this.grid.getBase();
-      const baseCenter = this.grid.tileToWorld(baseTile.x, baseTile.y);
-      this.contactLineSteer(
-        enemyManager,
-        baseCenter.x,
-        baseCenter.y,
-        1.5 * this.grid.tileSize,
-        this.grid.getBaseEdgeSegments(),
-        dt,
-      );
-    } else if (this.blockedByTower) {
-      const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
-      this.contactLineSteer(
-        enemyManager,
-        towerCenter.x,
-        towerCenter.y,
-        this.grid.tileSize / 2,
-        this.grid.getTowerEdgeSegments(this.blockedByTower.tileX, this.blockedByTower.tileY, this.radius),
-        dt,
-      );
-    }
-
-    // Enemy-enemy collision: push overlapping neighbors apart via the world-space
-    // lane offset vector (slower enemy to the right, faster to the left). See
-    // resolveCollisions.
-    this.resolveCollisions(enemyManager);
-
-    // Attack tick. Stun already returned above, so this only runs while unstunned;
-    // the timer is paused (not reset) during stun. It counts down in real time, and
-    // the inter-attack interval is extended while slowed (see reset below).
-    if (attackTarget) {
-      this.attackTimer -= dt;
-      if (this.attackTimer <= 0) {
-        attackTarget.takeDamage(this.attackDamage, this);
-        this.attackAnimTime = this._gameSeconds;
-        this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
-      }
-    }
-
-    this._intentHasNextTile = hasNextTile;
-  }
-
-  // ON intent: seed the centerline from the rigid body, run the identical steering
-  // /movement integration (writing centerX/centerY exactly as OFF would), then push
-  // the intended displacement to the body as a velocity. Rapier owns separation and
-  // containment; the manual resolveCollisions and attack tick are omitted here (the
-  // latter runs in postPhysics after the step).
-  private computeIntentOn(dt: number, enemyManager: EnemyManagerRef | null): void {
     const pos = this.body!.translation();
     this.centerX = pos.x;
     this.centerY = pos.y;
@@ -1017,27 +748,15 @@ export class Enemy {
     this.body!.setLinvel({ x: velocityX, y: velocityY }, true);
   }
 
+  // OFF intent: the original monolithic update minus the final clamp (which moves
+  // to postPhysics). Status timers already ran in computeIntent; the stun early
+  // return here skips movement/attack but NOT the clamp (postPhysics applies it).
+
   // Reads back the post-physics position and applies the mode-specific finishing
   // (clamps, acquisition, attack, cull-trigger). Branches on body to mirror the
   // intent split so the OFF path remains byte-identical to the original clamp.
   postPhysics(dt: number, enemyManager: EnemyManagerRef | null): void {
     if (this.removed) return;
-    if (this.body === null) {
-      this.postPhysicsOff(dt, enemyManager);
-    } else {
-      this.postPhysicsOn(dt, enemyManager);
-    }
-  }
-
-  private postPhysicsOff(_dt: number, _enemyManager: EnemyManagerRef | null): void {
-    this.applyEndOfFrameClamps(this._intentHasNextTile);
-  }
-
-  // ON finishing: read the stepped body position, apply an out-of-bounds-only
-  // safety clamp (corridor containment is owned by static colliders), re-run the
-  // attack acquisition on the post-step center, run the attack tick, and guard
-  // moveAngle against low-speed flicker.
-  private postPhysicsOn(dt: number, enemyManager: EnemyManagerRef | null): void {
     const pos = this.body!.translation();
     this.centerX = pos.x;
     this.centerY = pos.y;
@@ -1053,9 +772,6 @@ export class Enemy {
       this.centerY = this.y;
     }
 
-    // TODO(rapier): narrow via world.contactPairsWith — for now reuse the
-    // distance-based acquisition on the post-step center (more correct than the
-    // pre-step acquisition done in computeIntentOn).
     const hasNextTile = this.path != null && this.pathIdx < this.path.length - 1;
     const nextTile = hasNextTile ? this.path![this.pathIdx + 1]! : null;
     const forwardTower =
@@ -1103,10 +819,6 @@ export class Enemy {
       if (attackDistToSquare <= this.radius + ATTACK_CONTACT_EPSILON) attackTarget = this.baseTarget;
     }
 
-    // Throttled attack tick (mirrors the OFF branch in computeIntentOff): the
-    // intent pass omits the attack, so it runs here once per (1/attackSpeed) using
-    // the post-step contact. Without the timer gate an ON-mode enemy would damage
-    // its target every frame instead of at its attack speed.
     if (attackTarget && this.stunTimer <= 0) {
       this.attackTimer -= dt;
       if (this.attackTimer <= 0) {
@@ -1123,80 +835,6 @@ export class Enemy {
     }
   }
 
-  // End-of-frame clamp: derive the rendered position from the centerline plus the
-  // world-space lane offset (clamping the perpendicular component to the tile), keep
-  // the rendered position out of the base square, keep the centerline out of the base
-  // square, and clamp contact-line enemies to their face span. Runs every frame and
-  // also for a stunned enemy (which skips movement/attack) so a stunned enemy is still
-  // ejected from the base square and held on its face tile.
-  private applyEndOfFrameClamps(hasNextTile: boolean): void {
-    // Derive the real engine position from the centerline plus the world-space
-    // lane offset. The offset vector is turn-invariant (it is not derived from
-    // moveAngle), so no lateral jump occurs when rounding a right-angle corner.
-    // Clamp only the component perpendicular to the current heading so the enemy
-    // stays within the path tile bounds; the along-corridor component is left
-    // untouched so the position stays continuous through turns.
-    const perpX = -Math.sin(this.moveAngle);
-    const perpY = Math.cos(this.moveAngle);
-    const maxLaneOffset = this.grid.tileSize / 2 - this.radius;
-    const laneProjection = this.laneOffsetX * perpX + this.laneOffsetY * perpY;
-    const clampedProjection = Math.max(-maxLaneOffset, Math.min(maxLaneOffset, laneProjection));
-    const tangentialX = this.laneOffsetX - laneProjection * perpX;
-    const tangentialY = this.laneOffsetY - laneProjection * perpY;
-    this.laneOffsetX = tangentialX + clampedProjection * perpX;
-    this.laneOffsetY = tangentialY + clampedProjection * perpY;
-    this.x = this.centerX + this.laneOffsetX;
-    this.y = this.centerY + this.laneOffsetY;
-
-    // Keep every enemy's rendered position outside the base square. A default-mode base
-    // enemy (or any base enemy that has reached its path end) also has its centerline kept
-    // out so the pile collides correctly even though it contacts the square before its
-    // path ends; a route/hold enemy mid-route keeps its centerline so it can reach the
-    // route end and revert via releaseToDefault. Projection only happens while actually
-    // overlapping the square, so a back enemy held behind the front line by collision stays
-    // piled in the tile instead of being yanked to the edge.
-    const keepOutTile = this.grid.getBase();
-    const keepOutCenter = this.grid.tileToWorld(keepOutTile.x, keepOutTile.y);
-    const keepOutContact = baseSquareContact(
-      keepOutCenter.x,
-      keepOutCenter.y,
-      1.5 * this.grid.tileSize,
-      this.x,
-      this.y,
-      this.radius,
-    );
-    if (keepOutContact.overlapping) {
-      this.x = keepOutContact.contactX;
-      this.y = keepOutContact.contactY;
-      this.laneOffsetX = this.x - this.centerX;
-      this.laneOffsetY = this.y - this.centerY;
-    }
-    if (this.attackingBase && (!hasNextTile || this.routingMode === "default")) {
-      const centerContact = baseSquareContact(
-        keepOutCenter.x,
-        keepOutCenter.y,
-        1.5 * this.grid.tileSize,
-        this.centerX,
-        this.centerY,
-        this.radius,
-      );
-      if (centerContact.overlapping) {
-        this.centerX = centerContact.contactX;
-        this.centerY = centerContact.contactY;
-      }
-    }
-    // Keep contact-line enemies (base or tower) on their face span so the tangential
-    // collision push cannot shove them sideways into terrain flanking the entry/corridor.
-    if (this.attackingBase || this.blockedByTower !== null) {
-      this.clampContactToSpan();
-    }
-  }
-
-  // Nearest point on a set of axis-aligned segments to (pointX, pointY). Works for
-  // arbitrary segment lists (tower edges as well as base edges).
-  // Returns the clamped point and the segment it lies on so the caller can derive the
-  // face-aligned tangent. Falls back to (pointX, pointY) with a null segment when the
-  // list is empty so the caller still has a valid anchor point.
   private nearestPointOnSegments(
     segments: Array<{ x1: number; y1: number; x2: number; y2: number }>,
     pointX: number,
@@ -1415,136 +1053,6 @@ export class Enemy {
     return { minT, maxT };
   }
 
-  // Re-project the enemy onto the objective's exposed face span AFTER collision
-  // resolution. Collision separates contact-line pairs ALONG the shared face tangent
-  // (resolveCollisions (:1526)) and applies that push straight to the centerline with
-  // no span re-clamp, so a pile pressed sideways can be shoved past the entry/corridor
-  // span into the terrain tiles flanking it (enemies visibly drift off the path tile when
-  // blocked by a tower in a 1-tile corridor or piled against the base). This clamps the
-  // tangential coordinate to [span.minT + radius, span.maxT - radius] — mirroring the
-  // lateral-search spanPad in contactLineSteer — so the enemy's whole body stays on the
-  // path tile it is attacking from. The normal (distance-from-objective) component is
-  // preserved untouched, so forward advance and the keep-out projection are unaffected.
-  private clampContactToSpan(): void {
-    let objectiveX: number;
-    let objectiveY: number;
-    let segments: Array<{ x1: number; y1: number; x2: number; y2: number }>;
-    if (this.attackingBase) {
-      const base = this.grid.getBase();
-      const baseCenter = this.grid.tileToWorld(base.x, base.y);
-      objectiveX = baseCenter.x;
-      objectiveY = baseCenter.y;
-      segments = this.grid.getBaseEdgeSegments();
-    } else if (this.blockedByTower) {
-      const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
-      objectiveX = towerCenter.x;
-      objectiveY = towerCenter.y;
-      segments = this.grid.getTowerEdgeSegments(this.blockedByTower.tileX, this.blockedByTower.tileY, this.radius);
-    } else {
-      return;
-    }
-    if (segments.length === 0) return;
-    const contact = this.nearestPointOnSegments(segments, this.centerX, this.centerY);
-    const faceSegment = contact.segment;
-    // Face-aligned tangent/normal, identical to the derivation in contactLineSteer.
-    let tangentX: number;
-    let tangentY: number;
-    let normalX: number;
-    let normalY: number;
-    if (faceSegment && faceSegment.y1 === faceSegment.y2) {
-      tangentX = 1;
-      tangentY = 0;
-      normalY = contact.y >= objectiveY ? 1 : -1;
-      normalX = 0;
-    } else if (faceSegment) {
-      tangentX = 0;
-      tangentY = 1;
-      normalX = contact.x >= objectiveX ? 1 : -1;
-      normalY = 0;
-    } else {
-      const normalLen = Math.hypot(contact.x - objectiveX, contact.y - objectiveY) || 1;
-      normalX = (contact.x - objectiveX) / normalLen;
-      normalY = (contact.y - objectiveY) / normalLen;
-      tangentX = -normalY;
-      tangentY = normalX;
-    }
-    const span = this.computeExposedSpan(segments, objectiveX, objectiveY, tangentX, tangentY, normalX, normalY);
-    if (!Number.isFinite(span.minT) || !Number.isFinite(span.maxT)) return;
-    // Pad by the full radius plus a small epsilon so the body edge stays strictly
-    // inside the tile (a center clamped to `span.maxT - radius` would put the body
-    // edge exactly on the tile boundary, which floors into the flanking terrain tile).
-    const spanPad = this.radius + 1e-3;
-    const minT = span.minT + spanPad;
-    const maxT = span.maxT - spanPad;
-    // A fixed perpendicular to the tangent makes the decomposition/reconstruction exact
-    // regardless of which side of the objective the enemy sits on (sign is preserved).
-    const reconstructX = -tangentY;
-    const reconstructY = tangentX;
-    const clampPoint = (pointX: number, pointY: number): { x: number; y: number } => {
-      const deltaX = pointX - objectiveX;
-      const deltaY = pointY - objectiveY;
-      const tComp = deltaX * tangentX + deltaY * tangentY;
-      const nComp = deltaX * reconstructX + deltaY * reconstructY;
-      const clampedT = Math.max(minT, Math.min(maxT, tComp));
-      return {
-        x: objectiveX + tangentX * clampedT + reconstructX * nComp,
-        y: objectiveY + tangentY * clampedT + reconstructY * nComp,
-      };
-    };
-    const center = clampPoint(this.centerX, this.centerY);
-    this.centerX = center.x;
-    this.centerY = center.y;
-    const rendered = clampPoint(this.x, this.y);
-    this.x = rendered.x;
-    this.y = rendered.y;
-  }
-
-  // Derive the face tangent (unit) for this enemy when it is at a contact line
-  // (attacking the base, or blocked by a tower), from the objective's exposed edge
-  // geometry rather than the cached contactTangentX/Y. Used by resolveCollisions to
-  // separate a contact-line pair ALONG the shared face; deriving it here makes the
-  // separation independent of update order (the cached tangent may be a prior-frame
-  // value for an enemy whose own contactLineSteer has not run yet this frame).
-  private contactFaceTangent(): { x: number; y: number } | null {
-    let objectiveX: number;
-    let objectiveY: number;
-    let segments: Array<{ x1: number; y1: number; x2: number; y2: number }>;
-    if (this.attackingBase) {
-      const base = this.grid.getBase();
-      const baseCenter = this.grid.tileToWorld(base.x, base.y);
-      objectiveX = baseCenter.x;
-      objectiveY = baseCenter.y;
-      segments = this.grid.getBaseEdgeSegments();
-    } else if (this.blockedByTower) {
-      const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
-      objectiveX = towerCenter.x;
-      objectiveY = towerCenter.y;
-      segments = this.grid.getTowerEdgeSegments(this.blockedByTower.tileX, this.blockedByTower.tileY, this.radius);
-    } else {
-      return null;
-    }
-    if (segments.length === 0) return null;
-    const contact = this.nearestPointOnSegments(segments, this.centerX, this.centerY);
-    const faceSegment = contact.segment;
-    if (!faceSegment) {
-      const normalLen = Math.hypot(contact.x - objectiveX, contact.y - objectiveY) || 1;
-      const normalX = (contact.x - objectiveX) / normalLen;
-      const normalY = (contact.y - objectiveY) / normalLen;
-      return { x: -normalY, y: normalX };
-    }
-    // Mirror the tangent derivation in clampContactToSpan: a horizontal face yields a
-    // horizontal tangent, a vertical face a vertical tangent.
-    if (faceSegment.y1 === faceSegment.y2) return { x: 1, y: 0 };
-    return { x: 0, y: 1 };
-  }
-
-  // Unified contact-line steering for base and tower attacks. The enemy wants to be
-  // ON the contact line (the exposed perimeter offset by its radius), not at a point.
-  // When not yet on the line and not blocked, it presses forward. When blocked ahead
-  // or already on the line, it searches laterally for open space along the tangent and
-  // slides there (pure tangential move preserves distance to the square, so it stays
-  // in contact). When the line is fully packed, it holds position. This eliminates the
-  // reactive push: a blocked enemy redirects instead of pressing into the blocker.
   private contactLineSteer(
     enemyManager: EnemyManagerRef | null,
     objectiveX: number,
@@ -1587,8 +1095,6 @@ export class Enemy {
       tangentX = -normalY;
       tangentY = normalX;
     }
-    this.contactTangentX = tangentX;
-    this.contactTangentY = tangentY;
     const distToSquare = distanceToBaseSquare(this.centerX, this.centerY, objectiveX, objectiveY, half);
     const onLine = distToSquare <= this.radius + 1e-3;
     const blocked = this.isBlockedAhead(enemyManager, objectiveX, objectiveY);
@@ -1794,168 +1300,6 @@ export class Enemy {
     return blocked;
   }
 
-  // Lateral collision separation against nearby enemies using the spatial hash.
-  // Each overlapping pair is pushed apart along each enemy's own perpendicular; the
-  // slower enemy moves right (+offset), the faster left (-offset). With a screen
-  // Y-down coordinate system and moveAngle = atan2(dy, dx), the forward unit vector
-  // is (cos, sin) and the right-perpendicular (clockwise) is (-sin, cos). The
-  // separation is accumulated into each enemy's WORLD-SPACE lane offset vector so
-  // the offset stays continuous through right-angle turns (it does not rotate with
-  // moveAngle).
-  private resolveCollisions(enemyManager: EnemyManagerRef | null): void {
-    if (!enemyManager) return;
-    for (let iter = 0; iter < COLLISION_ITERATIONS; iter++) {
-      enemyManager.forEachEnemyInRange(this.x, this.y, this.grid.tileSize, (other) => {
-        if (other === this) return;
-        const perpAx = -Math.sin(this.moveAngle);
-        const perpAy = Math.cos(this.moveAngle);
-        // A base- or tower-attacking enemy's pile is emergent: its separation moves the
-        // *centerline* so the 2-D stack gains real extent in the position that drives
-        // `currentTile()` and contact checks (its rendered lane offset is zeroed so it
-        // does not double-count). A path-following enemy keeps its centerline intact
-        // (its spread is purely visual via the lane offset) so path/tower logic and
-        // routing are undisturbed. Tower attackers use centerline too so contactLineSteer
-        // (which steers centerX/Y) and collision (which corrects centerX/Y) operate in
-        // the same position space — mixing centerline steering with lane-offset collisions
-        // would cause visual jitter as the two fight over the rendered position.
-        const thisUsesCenter = this.attackingBase || this.blockedByTower !== null;
-        const otherUsesCenter = other.attackingBase || other.blockedByTower !== null;
-        const thisAttacks = this.attackingBase;
-        const otherAttacks = other.attackingBase;
-        // Polite yielding applies when both enemies are at a contact line — either the
-        // base (attackingBase) or the same tower (blockedByTower references match).
-        const thisAtTower = this.blockedByTower !== null;
-        const otherAtTower = other.blockedByTower !== null;
-        const sameTower = thisAtTower && otherAtTower && this.blockedByTower === other.blockedByTower;
-        const bothAtLine = (thisAttacks && otherAttacks) || sameTower;
-        const ax = thisUsesCenter ? this.centerX : this.centerX + this.laneOffsetX;
-        const ay = thisUsesCenter ? this.centerY : this.centerY + this.laneOffsetY;
-        const bx = otherUsesCenter ? other.centerX : other.centerX + other.laneOffsetX;
-        const by = otherUsesCenter ? other.centerY : other.centerY + other.laneOffsetY;
-        const deltaX = bx - ax;
-        const deltaY = by - ay;
-        const dist = Math.hypot(deltaX, deltaY);
-        const overlap = this.radius + other.radius - dist;
-        if (overlap <= 0) return;
-        // Polite yielding: when both enemies are at a contact line, weight the
-        // separation by attack priority so higher-damage enemies (boss, shielded,
-        // tank) take less of the push and lower-priority enemies (minion, runner)
-        // slide aside. This keeps the contact line accessible to threats that
-        // matter most. For non-contact-line pairs the symmetric 50/50 split is kept.
-        let thisFraction: number;
-        let otherFraction: number;
-        if (bothAtLine) {
-          const totalPriority = this.attackDamage + other.attackDamage;
-          if (totalPriority < 1e-6) {
-            thisFraction = 0.5;
-            otherFraction = 0.5;
-          } else {
-            // Higher priority takes less of the push: its fraction is the other's
-            // priority / total. Clamp so neither side gets 0% or 100%.
-            const thisRaw = other.attackDamage / totalPriority;
-            const otherRaw = this.attackDamage / totalPriority;
-            thisFraction = Math.max(PRIORITY_YIELD_MIN, Math.min(PRIORITY_YIELD_MAX, thisRaw));
-            otherFraction = Math.max(PRIORITY_YIELD_MIN, Math.min(PRIORITY_YIELD_MAX, otherRaw));
-          }
-        } else {
-          thisFraction = 0.5;
-          otherFraction = 0.5;
-        }
-        const thisSeparation = overlap * thisFraction * COLLISION_STIFFNESS;
-        const otherSeparation = overlap * otherFraction * COLLISION_STIFFNESS;
-        // Separation axis. For two enemies at a contact line (both attacking the base
-        // or both blocked by the same tower) that share a face, separate them ALONG the
-        // shared face tangent so they spread laterally across the exposed entry width
-        // instead of stacking in a single column. A pile's depth (rows behind the front
-        // line) is provided by the funnel/arrival geometry and the keep-out clamp, not by
-        // a radial collision push — a radial push just re-clumps enemies at one lateral
-        // spot. For pairs on different faces (or non-contact-line pairs) the inter-center
-        // normal is kept. The tangent is oriented from the other enemy toward this one.
-        let normalX: number;
-        let normalY: number;
-        const thisTangent = this.contactFaceTangent();
-        const otherTangent = other.contactFaceTangent();
-        const tangentDot =
-          thisTangent && otherTangent ? thisTangent.x * otherTangent.x + thisTangent.y * otherTangent.y : 0;
-        if (bothAtLine && thisTangent && otherTangent && tangentDot > 0.5 && dist > 1e-6) {
-          let tx = thisTangent.x;
-          let ty = thisTangent.y;
-          const toward = (this.centerX - other.centerX) * tx + (this.centerY - other.centerY) * ty;
-          if (toward < 0) {
-            tx = -tx;
-            ty = -ty;
-          }
-          normalX = tx;
-          normalY = ty;
-        } else if (dist > 1e-6) {
-          // Inter-center normal, oriented from the other enemy toward this one so it
-          // matches the tangent branch's convention (which is already `other→this`).
-          // The previous `this→other` orientation made the pair converge (move into
-          // each other) instead of separating — a latent bug that also affected the
-          // path-following lane-offset spread.
-          normalX = -deltaX / dist;
-          normalY = -deltaY / dist;
-        } else {
-          normalX = perpAx;
-          normalY = perpAy;
-        }
-        let thisSign: number;
-        let otherSign: number;
-        if (this.speed < other.speed) {
-          thisSign = 1;
-          otherSign = -1;
-        } else if (this.speed > other.speed) {
-          thisSign = -1;
-          otherSign = 1;
-        } else if (this.id <= other.id) {
-          thisSign = 1;
-          otherSign = -1;
-        } else {
-          thisSign = -1;
-          otherSign = 1;
-        }
-        if (thisUsesCenter) {
-          this.centerX += thisSeparation * thisSign * normalX;
-          this.centerY += thisSeparation * thisSign * normalY;
-          this.laneOffsetX = 0;
-          this.laneOffsetY = 0;
-        } else {
-          this.laneOffsetX += thisSeparation * thisSign * normalX;
-          this.laneOffsetY += thisSeparation * thisSign * normalY;
-        }
-        if (otherUsesCenter) {
-          other.centerX += otherSeparation * otherSign * normalX;
-          other.centerY += otherSeparation * otherSign * normalY;
-          other.laneOffsetX = 0;
-          other.laneOffsetY = 0;
-          // Re-project the other (already-updated) enemy onto its face span and snap
-          // its rendered position to the centerline immediately, so the spatial hash
-          // (keyed on other.x/other.y) and every actual-position query see the
-          // displacement this frame (not a frame later) and the rendered body stays on
-          // the path tile the enemy attacks from. Without this, a collision push leaves
-          // the neighbor off-tile until its own next update re-clamps it.
-          other.clampContactToSpan();
-          other.x = other.centerX;
-          other.y = other.centerY;
-        } else {
-          other.laneOffsetX += otherSeparation * otherSign * normalX;
-          other.laneOffsetY += otherSeparation * otherSign * normalY;
-          // Re-derive the other enemy's rendered position from its centerline plus lane
-          // offset so the spatial hash and actual-position queries see the (visual) spread
-          // immediately. Path-followers are not span-clamped; their offset is in-tile.
-          other.x = other.centerX + other.laneOffsetX;
-          other.y = other.centerY + other.laneOffsetY;
-        }
-      });
-    }
-  }
-
-  // Returns the lowest-health adjacent live (non-ghost) tower this enemy is in
-  // contact with, or null. Handles the pile-up / junction case where an enemy is
-  // blocked by other enemies and ends up against a tower tile. Contact uses the
-  // square-distance-to-tile test shared with the forward-tower path, so an enemy
-  // touching any exposed face of an adjacent tower qualifies, not just one dead-
-  // center on a face.
   private findAdjacentLiveTowerInContact(enemyManager: EnemyManagerRef | null): Tower | null {
     if (!enemyManager || !this.path) return null;
     const currentTile = this.path[this.pathIdx]!;

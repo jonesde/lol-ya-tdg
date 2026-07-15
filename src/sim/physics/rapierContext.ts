@@ -27,8 +27,8 @@ export async function initPhysics(): Promise<void> {
 }
 
 // Returns the initialized Rapier module. THROWS if initPhysics() has not
-// resolved — this guards ON-mode misuse (the synchronous GameEngine constructor
-// only calls this when RAPIER_PHYSICS is true, so it is unreachable in OFF mode).
+// resolved — this guards misuse (the synchronous GameEngine constructor calls
+// this unconditionally, so it is only safe after initPhysics() has resolved).
 export function getRapier(): typeof RAPIER {
   if (!rapierModule) {
     throw new Error("initPhysics() must be awaited before getRapier() is called");

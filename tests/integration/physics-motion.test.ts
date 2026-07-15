@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Higher-level ON orchestration (flag OFF) without flipping RAPIER_PHYSICS.
+// Higher-level physics orchestration (unconditionally) without flipping a flag.
 // We wire a real PhysicsWorld into a real EnemyManager and drive the full
 // preStep -> step -> postStep pipeline so enemies move under physics.
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";

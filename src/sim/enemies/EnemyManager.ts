@@ -64,7 +64,7 @@ export class EnemyManager {
     this.towerManager = towerManager;
   }
 
-  // Wires the Rapier physics world (when RAPIER_PHYSICS is on). Enemies spawned
+  // Wires the Rapier physics world (unconditionally). Enemies spawned
   // after this point get a backing rigid body; null clears the link.
   setPhysicsWorld(physicsWorld: PhysicsWorld | null): void {
     this.physicsWorld = physicsWorld;

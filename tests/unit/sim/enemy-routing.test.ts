@@ -1,33 +1,42 @@
-import { describe, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
-import { itIfOff } from "../../helpers/physicsFlags.js";
+import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 
-// Minimal EnemyManagerRef satisfying what Enemy.update touches (no towers, no
-// other enemies) so we can drive routing in isolation.
+// Minimal EnemyManagerRef satisfying what Enemy.computeIntent/postPhysics touch
+// (no towers, no other enemies) so we can drive routing in isolation.
 function makeEnemyManager(enemy: Enemy) {
   return { enemies: [enemy], getEnemiesInRange: () => [], forEachEnemyInRange: () => {}, towerAt: () => null };
 }
 
 const FIXED_DT = 1 / 60;
 
+function tick(enemy: Enemy, manager: ReturnType<typeof makeEnemyManager>, physicsWorld: PhysicsWorld): void {
+  enemy.computeIntent(FIXED_DT, manager);
+  physicsWorld.step();
+  enemy.postPhysics(FIXED_DT, manager);
+}
+
 function runUntil(
   enemy: Enemy,
   manager: ReturnType<typeof makeEnemyManager>,
+  physicsWorld: PhysicsWorld,
   predicate: () => boolean,
   maxTicks = 6000,
 ): void {
-  for (let tick = 0; tick < maxTicks; tick++) {
-    enemy.update(FIXED_DT, manager);
+  for (let tickIndex = 0; tickIndex < maxTicks; tickIndex++) {
+    tick(enemy, manager, physicsWorld);
     if (predicate()) return;
   }
 }
 
 describe("Enemy routing (target-tile model)", () => {
-  itIfOff("applyRoute('hold') parks the enemy at the target tile and does not advance past it", () => {
+  it("applyRoute('hold') parks the enemy at the target tile and does not advance past it", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
+    const physicsWorld = new PhysicsWorld(grid);
+    physicsWorld.addEnemy(enemy);
     const manager = makeEnemyManager(enemy);
     const holdTile = grid.getPathFor(0)![3]!;
     const route = grid.computeRoute(enemy.currentTile(), holdTile);
@@ -36,6 +45,7 @@ describe("Enemy routing (target-tile model)", () => {
     runUntil(
       enemy,
       manager,
+      physicsWorld,
       () =>
         Math.floor(enemy.centerX / grid.tileSize) === holdTile.x &&
         Math.floor(enemy.centerY / grid.tileSize) === holdTile.y,
@@ -46,19 +56,26 @@ describe("Enemy routing (target-tile model)", () => {
     expect(Math.floor(enemy.centerY / grid.tileSize)).toBe(holdTile.y);
   });
 
-  itIfOff("applyRoute('route') follows the route then reverts to default pathing on completion", () => {
+  it("applyRoute('route') follows the route then reverts to default pathing on completion", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
+    const physicsWorld = new PhysicsWorld(grid);
+    physicsWorld.addEnemy(enemy);
     const manager = makeEnemyManager(enemy);
-    const route = grid.computeRoute(enemy.currentTile(), grid.base);
+    // Route to the tile just before the base: under physics the base is a solid
+    // collider, so an enemy can never actually enter the base tile to satisfy the
+    // route's final waypoint. Routing to a reachable tile lets the run complete and
+    // revert to the default path, which is the behavior under test.
+    const defaultPath = grid.getPathFor(0)!;
+    const routeTarget = defaultPath[defaultPath.length - 2]!;
+    const route = grid.computeRoute(enemy.currentTile(), routeTarget);
     enemy.applyRoute(route, "route");
 
-    const defaultPath = grid.getPathFor(0);
-    runUntil(enemy, manager, () => enemy.path === defaultPath);
+    runUntil(enemy, manager, physicsWorld, () => enemy.path === defaultPath);
     expect(enemy.path).toBe(defaultPath);
   });
 
-  itIfOff("releaseToDefault reverts routingMode to default and re-anchors to the grid path", () => {
+  it("releaseToDefault reverts routingMode to default and re-anchors to the grid path", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     const route = grid.computeRoute(enemy.currentTile(), grid.getPathFor(0)![3]!);
@@ -67,20 +84,22 @@ describe("Enemy routing (target-tile model)", () => {
     expect(enemy.path).toBe(grid.getPathFor(0));
   });
 
-  itIfOff("the pathVersion re-anchor is NOT applied while routingMode !== default", () => {
+  it("the pathVersion re-anchor is NOT applied while routingMode !== default", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
+    const physicsWorld = new PhysicsWorld(grid);
+    physicsWorld.addEnemy(enemy);
     const route = grid.computeRoute(enemy.currentTile(), grid.getPathFor(0)![3]!);
     enemy.applyRoute(route, "hold");
     const commanderPath = enemy.path;
     // A tower build/sell bumps pathVersion; a hold/route enemy's path is commander-owned.
     grid.pathVersion += 1;
-    enemy.update(FIXED_DT, makeEnemyManager(enemy));
+    tick(enemy, makeEnemyManager(enemy), physicsWorld);
     expect(enemy.path).toBe(commanderPath);
     expect(enemy.path).not.toBe(grid.getPathFor(0));
   });
 
-  itIfOff("applyRoute(null, 'hold') falls back to releaseToDefault", () => {
+  it("applyRoute(null, 'hold') falls back to releaseToDefault", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     enemy.applyRoute(null, "hold");
@@ -88,7 +107,7 @@ describe("Enemy routing (target-tile model)", () => {
     expect(enemy.path).toBe(grid.getPathFor(0));
   });
 
-  itIfOff("applyRoute(null, 'route') falls back to releaseToDefault", () => {
+  it("applyRoute(null, 'route') falls back to releaseToDefault", () => {
     const grid = new Grid(getMap(0));
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     enemy.applyRoute(null, "route");
@@ -96,7 +115,7 @@ describe("Enemy routing (target-tile model)", () => {
     expect(enemy.path).toBe(grid.getPathFor(0));
   });
 
-  itIfOff("computeRoute returns null for an unreachable terrain goal", () => {
+  it("computeRoute returns null for an unreachable terrain goal", () => {
     const grid = new Grid(getMap(0));
     // A terrain tile away from any path/spawn/base tile is unreachable.
     let terrainTile: { x: number; y: number } | null = null;

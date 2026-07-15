@@ -241,7 +241,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
   switch (msg.type) {
     case "init": {
       // Cached async init of the Rapier WASM module (plans/rapier2d.md Phase 0).
-      // No-op cost when RAPIER_PHYSICS is off; required before any getRapier().
+      // Required before any getRapier().
       await initPhysics();
       // Harden re-entry: a terminal run may leave the loop stopped while a new
       // `init` arrives on the same worker. stopLoop() first guarantees a clean

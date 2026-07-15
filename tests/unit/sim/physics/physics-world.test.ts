@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Direct PhysicsWorld tests (Phase 5, flag OFF). We never flip RAPIER_PHYSICS;
+// Direct PhysicsWorld tests. We construct the world unconditionally.
 // instead we construct the PhysicsWorld directly (which requires initPhysics() to
 // have resolved) and drive enemies as bare Rapier bodies.
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
