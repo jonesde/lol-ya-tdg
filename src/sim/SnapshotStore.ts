@@ -11,7 +11,7 @@ let latestSnapshot: SimulationSnapshot | null = null;
 // Cache of the accumulated wave-graph dots. The worker only ships the most
 // recent window (WAVE_GRAPH_MAX_SEND dots) when its generation changes, so the
 // receiver merges each window into this accumulation to fill the screen — see
-// the `paths`/`pathsVersion` gating pattern. Cap mirrors the worker's retained
+// the generation-based gating pattern. Cap mirrors the worker's retained
 // dot count so the accumulation never exceeds what can be displayed.
 let latestWaveGraphDots: WaveGraphDot[] = [];
 let latestWaveGraphGeneration = 0;

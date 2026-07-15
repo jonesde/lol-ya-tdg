@@ -117,8 +117,6 @@ const mainParticleSystem = new ParticleSystem();
 let effectManager!: EffectManager;
 let uiOverlayManager!: UiOverlayManager;
 let spawnManager!: SpawnManager;
-let pathHighlightsGroup: SVGGElement | null = null;
-let gridLayerEl: SVGGElement | null = null;
 // Last timestamp (ms) used to compute the per-frame particle simulation dt.
 let lastParticleFrame: number = 0;
 
@@ -404,29 +402,6 @@ function renderLoop(): void {
     uiOverlayManager.syncBaseHealthBar(gameStore.grid, snapshot.meta.baseHealth, snapshot.meta.maxBaseHealth);
   }
   spawnManager.sync(snapshot.spawnStates);
-  // Imperative path highlights — appended to grid-layer, not Vue-managed.
-  // Drawn from the worker-authoritative snapshot paths (rerouted when a tower
-  // blocks a path) rather than the main-thread Grid copy, which is not updated
-  // on placement.
-  if (!gridLayerEl) {
-    gridLayerEl = svgRoot.value?.querySelector(".grid-layer") as SVGGElement | null;
-  }
-  if (gridLayerEl && snapshot.paths) {
-    if (!pathHighlightsGroup?.parentNode) {
-      pathHighlightsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      pathHighlightsGroup.setAttribute("id", "path-highlights");
-      gridLayerEl.appendChild(pathHighlightsGroup);
-    }
-    let pathSvg = "";
-    for (const path of snapshot.paths) {
-      if (!path) continue;
-      const points = path
-        .map((tile) => `${tile.x * mapTileSize + mapTileSize / 2},${tile.y * mapTileSize + mapTileSize / 2}`)
-        .join(" ");
-      pathSvg += `<polyline points="${points}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4" />`;
-    }
-    pathHighlightsGroup.innerHTML = pathSvg;
-  }
 
   // Backpressure handshake (P2-1): the main thread acks each rendered snapshot
   // so the worker may build+post the next one. The early return at the top of
@@ -585,7 +560,6 @@ onUnmounted(() => {
   effectManager.dispose();
   uiOverlayManager.dispose();
   spawnManager.dispose();
-  pathHighlightsGroup = null;
   mainParticleSystem.clear();
 });
 </script>

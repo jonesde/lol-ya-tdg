@@ -91,6 +91,16 @@ const mockCanvas: {
   removeEventListener: vi.fn(),
 };
 
+// Make every HTMLCanvasElement (including ones created via document.createElement)
+// return the shared mock 2D context, so canvas-using code (e.g. the snapshot
+// minimap highlight) works regardless of test-file ordering. Without this, only
+// files that patch the prototype locally get a working getContext.
+if (typeof HTMLCanvasElement !== "undefined") {
+  HTMLCanvasElement.prototype.getContext = vi.fn(
+    () => mockCtx,
+  ) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+}
+
 class MockAudioContext {
   state: AudioContextState = "running";
   createOscillator: ReturnType<typeof vi.fn>;

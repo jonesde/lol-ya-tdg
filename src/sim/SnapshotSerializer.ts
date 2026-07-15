@@ -23,20 +23,22 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
   const persistState = engine.persistState;
   const visualEffects = engine.projectileManager?.consumeRenderVisualEffects() ?? { lightning: [], stuns: [] };
 
-  // Paths only change on tower build/sell/ghost (event-driven, versioned by
-  // grid.pathVersion). Ship the full path arrays only when the version changed
-  // since the last posted snapshot; the main thread keeps its cached copy on
-  // frames where `paths` is omitted. The version is always included so a reroute
-  // is still detectable even if this gating is reverted.
+  // The walkable navmesh corridor (`navMeshCorridor`) is shipped on a
+  // pathVersion change, so a tower placement/sell re-ships the highlight.
   const grid = engine.grid;
-  let paths: SimulationSnapshot["paths"];
-  let pathsVersion = 0;
+  let pathVersionChanged = false;
   if (grid) {
-    pathsVersion = grid.pathVersion;
-    if (grid.pathVersion !== engine.lastPostedPathVersion) {
-      paths = grid.paths;
+    pathVersionChanged = grid.pathVersion !== engine.lastPostedPathVersion;
+    if (pathVersionChanged) {
       engine.lastPostedPathVersion = grid.pathVersion;
     }
+  }
+
+  // Navmesh corridor highlight: ship the walkable triangle mesh on a
+  // pathVersion change, so it refreshes on tower placement/sale.
+  let navMeshCorridor: SimulationSnapshot["navMeshCorridor"] = null;
+  if (pathVersionChanged && engine.navMeshBuilder) {
+    navMeshCorridor = engine.navMeshBuilder.getCorridorGeometry();
   }
 
   // Commander grid-layout data feed: a constant map (0=terrain, 1=path, 2=base,
@@ -85,8 +87,7 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
       ...state,
       pendingCount: engine.enemyManager?.getPendingCountForSpawn(spawnIndex) ?? 0,
     })),
-    paths,
-    pathsVersion,
+    navMeshCorridor,
     lightningEffects: visualEffects.lightning,
     stunEffects: visualEffects.stuns,
     waveGraphDots,

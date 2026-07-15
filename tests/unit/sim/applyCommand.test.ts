@@ -7,6 +7,7 @@ import {
   createTestThemeBundle,
   MockHostBindings,
 } from "../../helpers/mock-stores.js";
+import { orderedPath } from "../../helpers/navmesh-test-utils.js";
 
 const FIXED_DT = 1 / 60;
 
@@ -34,7 +35,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
   it("llm:routeGroup with hold: true sets routingMode to 'hold'", () => {
     const enemyId = firstEnemyId();
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;
-    const holdTile = engine.grid!.getPathFor(0)![3]!;
+    const holdTile = orderedPath(engine.grid!, 0)[3]!;
     const result = applyCommand(engine, {
       commandId: 0,
       type: "llm:routeGroup",
@@ -45,25 +46,21 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     });
     expect(result).toBe(true);
     expect(enemy.routingMode).toBe("hold");
-    // Consumer-visible: the held enemy advances to and parks at the hold tile,
-    // and does NOT advance past it toward the base.
-    for (let tick = 0; tick < 3000; tick++) {
-      engine.update(FIXED_DT);
-      if (
-        Math.floor(enemy.centerX / engine.grid!.tileSize) === holdTile.x &&
-        Math.floor(enemy.centerY / engine.grid!.tileSize) === holdTile.y
-      )
-        break;
-    }
-    expect(Math.floor(enemy.centerX / engine.grid!.tileSize)).toBe(holdTile.x);
-    expect(Math.floor(enemy.centerY / engine.grid!.tileSize)).toBe(holdTile.y);
+    // Consumer-visible ON-model state: the held enemy's holdWorld is the requested
+    // hold tile's world point and it does not attack the base (it is parked, not
+    // advancing). Physical arrival at the hold tile is owned by the DetourCrowd
+    // agent and is not asserted here.
+    const holdWorld = engine.grid!.tileToWorld(holdTile.x, holdTile.y);
+    expect(enemy.holdWorld).not.toBeNull();
+    expect(enemy.holdWorld!.x).toBeCloseTo(holdWorld.x, 5);
+    expect(enemy.holdWorld!.y).toBeCloseTo(holdWorld.y, 5);
     expect(enemy.attackingBase).toBe(false);
   });
 
   it("llm:routeGroup with empty waypoints releases to default pathing", () => {
     const enemyId = firstEnemyId();
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;
-    enemy.applyRoute(engine.grid!.computeRoute(enemy.currentTile(), engine.grid!.getPathFor(0)![3]!), "hold");
+    enemy.applyRoute([orderedPath(engine.grid!, 0)[3]!], "hold");
     expect(enemy.routingMode).toBe("hold");
     const result = applyCommand(engine, {
       commandId: 0,
@@ -79,7 +76,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
   it("llm:routeGroup with a waypoint sets routingMode to 'route' with a non-null path", () => {
     const enemyId = firstEnemyId();
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;
-    const waypoint = engine.grid!.getPathFor(0)![3]!;
+    const waypoint = orderedPath(engine.grid!, 0)[3]!;
     const result = applyCommand(engine, {
       commandId: 0,
       type: "llm:routeGroup",
@@ -89,7 +86,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     });
     expect(result).toBe(true);
     expect(enemy.routingMode).toBe("route");
-    expect(enemy.path).not.toBeNull();
+    expect(enemy.routeWorld).not.toBeNull();
     // Consumer-visible: after routing, the enemy continues toward the base.
     const base = engine.grid!.getBase();
     const baseCenter = engine.grid!.tileToWorld(base.x, base.y);
@@ -163,7 +160,14 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     expect(result).toBe(true);
     // The unreachable leg is skipped; the enemy still advances toward the base.
     expect(enemy.routingMode).toBe("route");
-    expect(enemy.path).not.toBeNull();
+    expect(enemy.routeWorld).not.toBeNull();
+    const base = engine.grid!.getBase();
+    const baseCenter = engine.grid!.tileToWorld(base.x, base.y);
+    const distanceToBase = (enemyRef: typeof enemy) =>
+      Math.hypot(enemyRef.centerX - baseCenter.x, enemyRef.centerY - baseCenter.y);
+    const startDistance = distanceToBase(enemy);
+    for (let tick = 0; tick < 200; tick++) engine.update(FIXED_DT);
+    expect(distanceToBase(enemy)).toBeLessThan(startDistance);
   });
 
   it("llm:routeGroup drops an unreachable leg but still routes the survivors", () => {
@@ -191,7 +195,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
       }
     }
     expect(isolatedTile).not.toBeNull();
-    const reachableWaypoint = grid.getPathFor(0)![2]!;
+    const reachableWaypoint = orderedPath(grid, 0)[2]!;
     const result = applyCommand(engine, {
       commandId: 0,
       type: "llm:routeGroup",
@@ -201,6 +205,6 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     });
     expect(result).toBe(true);
     expect(enemy.routingMode).toBe("route");
-    expect(enemy.path).not.toBeNull();
+    expect(enemy.routeWorld).not.toBeNull();
   });
 });

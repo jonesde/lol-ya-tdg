@@ -1,0 +1,238 @@
+import {
+  getNavMeshPositionsAndIndices,
+  type NavMesh,
+  NavMeshQuery,
+  type Obstacle,
+  type ObstacleRef,
+  type TileCache,
+  type Vector3,
+} from "recast-navigation";
+import { generateTileCache, type TileCacheGeneratorConfig } from "recast-navigation/generators";
+import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
+import type { Grid } from "@/sim/grid/Grid.js";
+import { fromRecast, toRecast } from "./coords.js";
+
+export interface WorldPoint {
+  x: number;
+  y: number;
+}
+
+export class NavMeshBuilder {
+  private grid: Grid;
+  private navMesh: NavMesh | null = null;
+  private tileCache: TileCache | null = null;
+  private buildSuccess = false;
+  private buildError: string | undefined;
+  // Tracks the full obstacle object each occupied tower tile currently holds,
+  // keyed by `"tileX,tileY"`. The raw `ObstacleRef` in this build is itself an
+  // object, so removal must pass the WHOLE obstacle (not `.ref`) to
+  // `tileCache.removeObstacle` — passing `.ref` makes the wrapper read `.ref` off
+  // that object, yielding undefined and a failed raw removal. Drives the
+  // syncTowers diff and the rollback in wouldRemainReachable.
+  private obstacleRefs = new Map<string, Obstacle>();
+
+  constructor(grid: Grid) {
+    this.grid = grid;
+    this.build();
+  }
+
+  private isWalkableTile(x: number, y: number): boolean {
+    return this.grid.isPath(x, y) || this.grid.isBase(x, y) || this.grid.isSpawn(x, y);
+  }
+
+  private build(): void {
+    const tileSize = this.grid.tileSize;
+    const cellSize = tileSize / 4;
+    // Smallest enemy (runner) radius sets the agent clearance so a 1-wide corridor
+    // stays navigable; larger enemies rely on Rapier walls for collision.
+    const runnerRadius = ENEMY_TYPES.runner!.radius * tileSize * 0.5;
+    const walkableRadius = runnerRadius / cellSize;
+
+    const config: Partial<TileCacheGeneratorConfig> = {
+      expectedLayersPerTile: 1,
+      cs: cellSize,
+      ch: 1,
+      walkableRadius,
+      walkableHeight: 2,
+      walkableClimb: 1,
+      maxObstacles: 256,
+      tileSize: 8,
+    };
+
+    const positions: number[] = [];
+    const indices: number[] = [];
+    for (let tileY = 0; tileY < this.grid.height; tileY++) {
+      for (let tileX = 0; tileX < this.grid.width; tileX++) {
+        if (!this.isWalkableTile(tileX, tileY)) continue;
+        const baseVertex = positions.length / 3;
+        const corners: Vector3[] = [
+          toRecast({ x: tileX * tileSize, y: tileY * tileSize }),
+          toRecast({ x: (tileX + 1) * tileSize, y: tileY * tileSize }),
+          toRecast({ x: (tileX + 1) * tileSize, y: (tileY + 1) * tileSize }),
+          toRecast({ x: tileX * tileSize, y: (tileY + 1) * tileSize }),
+        ];
+        for (const corner of corners) {
+          positions.push(corner.x, corner.y, corner.z);
+        }
+        // Upward-facing winding (CCW about +Y) so Recast rasterizes the span.
+        indices.push(baseVertex, baseVertex + 2, baseVertex + 1);
+        indices.push(baseVertex, baseVertex + 3, baseVertex + 2);
+      }
+    }
+
+    const result = generateTileCache(positions, indices, config);
+    if (result.success) {
+      this.navMesh = result.navMesh;
+      this.tileCache = result.tileCache;
+      this.buildSuccess = true;
+    } else {
+      this.navMesh = null;
+      this.tileCache = null;
+      this.buildSuccess = false;
+      this.buildError = result.error;
+    }
+  }
+
+  getNavMesh(): NavMesh | null {
+    return this.navMesh;
+  }
+
+  getTileCache(): TileCache | null {
+    return this.tileCache;
+  }
+
+  isSuccess(): boolean {
+    return this.buildSuccess;
+  }
+
+  getError(): string | undefined {
+    return this.buildError;
+  }
+
+  // Returns a world-space polyline (game coordinates) from start to goal, or []
+  // when no corridor connects them. `start`/`goal` are game-plane points.
+  findPath(startWorld: WorldPoint, goalWorld: WorldPoint): WorldPoint[] {
+    if (!this.navMesh) return [];
+    const query = new NavMeshQuery(this.navMesh);
+    const halfExtents: Vector3 = { x: this.grid.tileSize, y: this.grid.tileSize, z: this.grid.tileSize };
+    const result = query.computePath(toRecast(startWorld), toRecast(goalWorld), { halfExtents });
+    if (!result.success || result.path.length === 0) return [];
+    const path = result.path.map(fromRecast);
+    // computePath clamps the goal to the start poly when start and goal lie in
+    // disconnected navmesh islands, yielding a degenerate path that never reaches
+    // the goal. Treat that as "no path" so callers get an empty result.
+    const lastPoint = path[path.length - 1]!;
+    const goalDistance = Math.hypot(lastPoint.x - goalWorld.x, lastPoint.y - goalWorld.y);
+    if (goalDistance > this.grid.tileSize) return [];
+    return path;
+  }
+
+  // Flattened walkable-corridor triangle mesh in game coordinates: `positions`
+  // is `[x0, y0, x1, y1, …]` (2 per vertex) and `indices` are triangle indices
+  // into that vertex list. Returned to the snapshot for the minimap highlight.
+  // Recast emits vertices as (x, height≈0, z); this map is flat so we drop the
+  // middle height component and take the third as game y.
+  getCorridorGeometry(): { positions: number[]; indices: number[] } | null {
+    if (!this.navMesh) return null;
+    const [rawPositions, rawIndices] = getNavMeshPositionsAndIndices(this.navMesh);
+    const positions: number[] = [];
+    for (let i = 0; i < rawPositions.length; i += 3) {
+      positions.push(rawPositions[i]!, rawPositions[i + 2]!);
+    }
+    return { positions, indices: rawIndices };
+  }
+
+  // Applies every queued obstacle request to the live navmesh. `tileCache.update`
+  // rebuilds up to 64 affected tiles per call and reports `upToDate` once the
+  // queue is drained, so we must loop until it settles (capped to avoid a hang if
+  // the navmesh never converges).
+  private applyTileCacheUpdates(): void {
+    if (!this.tileCache || !this.navMesh) return;
+    const maxUpdateIterations = 16;
+    for (let iteration = 0; iteration < maxUpdateIterations; iteration++) {
+      const updateResult = this.tileCache.update(this.navMesh);
+      if (updateResult.upToDate) return;
+    }
+  }
+
+  // Registers a tower cylinder at the given tile. Returns the obstacle ref (for
+  // later removal) or null when the tilecache is unavailable / the add failed.
+  // Radius is half a tile so the cylinder fills its tile; height is one tile.
+  addTowerObstacle(tileX: number, tileY: number): ObstacleRef | null {
+    const reference = this.addTowerObstacleInternal(tileX, tileY);
+    if (reference !== null) this.applyTileCacheUpdates();
+    return reference;
+  }
+
+  private addTowerObstacleInternal(tileX: number, tileY: number): ObstacleRef | null {
+    if (!this.tileCache) return null;
+    const center = toRecast(this.grid.tileToWorld(tileX, tileY));
+    const result = this.tileCache.addCylinderObstacle(center, this.grid.tileSize / 2, this.grid.tileSize);
+    if (!result.success) return null;
+    // Store the WHOLE obstacle object — removal passes it back to
+    // `tileCache.removeObstacle`, which fails if given only `.ref` (the raw
+    // ObstacleRef is itself an object in this build).
+    this.obstacleRefs.set(`${tileX},${tileY}`, result.obstacle);
+    return result.obstacle.ref;
+  }
+
+  removeTowerObstacle(tileX: number, tileY: number): void {
+    this.removeTowerObstacleInternal(tileX, tileY);
+    this.applyTileCacheUpdates();
+  }
+
+  private removeTowerObstacleInternal(tileX: number, tileY: number): void {
+    const key = `${tileX},${tileY}`;
+    const obstacle = this.obstacleRefs.get(key);
+    if (obstacle === undefined) return;
+    this.tileCache?.removeObstacle(obstacle);
+    this.obstacleRefs.delete(key);
+  }
+
+  // Reconciles the live obstacle set with the current tower set. Any non-ghost
+  // tower whose tile has no obstacle yet gets one; any tracked obstacle whose
+  // tower was sold or ghosted is removed. All queue changes are flushed with a
+  // single `tileCache.update` loop at the end.
+  syncTowers(towers: { id: string | number; tileX: number; tileY: number; isGhost: boolean }[]): void {
+    if (!this.tileCache) return;
+    const liveObstacleTiles = new Set<string>();
+    for (const tower of towers) {
+      if (tower.isGhost) continue;
+      const key = `${tower.tileX},${tower.tileY}`;
+      liveObstacleTiles.add(key);
+      if (!this.obstacleRefs.has(key)) {
+        this.addTowerObstacleInternal(tower.tileX, tower.tileY);
+      }
+    }
+    for (const key of Array.from(this.obstacleRefs.keys())) {
+      if (!liveObstacleTiles.has(key)) {
+        const keyParts = key.split(",");
+        const tileX = Number(keyParts[0]);
+        const tileY = Number(keyParts[1]);
+        this.removeTowerObstacleInternal(tileX, tileY);
+      }
+    }
+    this.applyTileCacheUpdates();
+  }
+
+  // Reachability guard for a PROPOSED tower placement: returns true (allow) when
+  // spawn→base is still pathable with the tower carved in, or when there is no
+  // navmesh constraint. The check runs on a throwaway builder that replays the
+  // live obstacle set plus the proposal, so the live navmesh is never mutated:
+  // Detour's TileCache does not reliably re-stitch a corridor it has just
+  // partitioned when the probe obstacle is removed, so an in-place add→remove
+  // rollback would corrupt the live navmesh of a rejected (base-walling) build.
+  wouldRemainReachable(towerTileX: number, towerTileY: number): boolean {
+    if (!this.tileCache || !this.navMesh) return true;
+    const probe = new NavMeshBuilder(this.grid);
+    if (!probe.isSuccess() || !probe.getNavMesh()) return true;
+    for (const key of this.obstacleRefs.keys()) {
+      const keyParts = key.split(",");
+      probe.addTowerObstacle(Number(keyParts[0]), Number(keyParts[1]));
+    }
+    probe.addTowerObstacle(towerTileX, towerTileY);
+    const spawn = this.grid.tileToWorld(this.grid.spawns[0]!.x, this.grid.spawns[0]!.y);
+    const base = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
+    return probe.findPath(spawn, base).length > 0;
+  }
+}

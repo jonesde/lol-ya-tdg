@@ -1,9 +1,6 @@
-// Central feature-flag home (static consts, not env/dynamic import, so the OFF path
-// stays dead-code and tree-shakeable during migration).
+// Central feature-flag home (static consts, not env/dynamic import).
 //
-// RECAST_NAV — when true, enemy pathfinding + routing use a recast-navigation navmesh
-// and DetourCrowd (plans/recast.md) instead of the grid BFS path + tile-path following
-// in Enemy.ts. Default OFF: the old BFS/`Enemy` motion path stays intact and existing
-// specs stay green until the behavioral suite passes; the BFS/`Enemy` motion code is
-// deleted at flip.
-export const RECAST_NAV = false;
+// RECAST_NAV — enemy pathfinding + routing use a recast-navigation navmesh and
+// DetourCrowd (plans/recast.md) instead of the grid BFS path + tile-path following
+// in Enemy.ts. The old OFF BFS/`Enemy` motion code has been deleted.
+export const RECAST_NAV = true;

@@ -5,6 +5,7 @@ import { MAP_GEM_MULTIPLIERS, MAP_LEVELS, TOTAL_MAPS } from "@/sim/Constants.js"
 import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
+import { orderedPath } from "../helpers/navmesh-test-utils.js";
 
 describe("Map generation", () => {
   describe("getMap", () => {
@@ -24,7 +25,7 @@ describe("Map generation", () => {
         const map = getMap(i);
         const grid = new Grid(map);
         for (let s = 0; s < grid.spawns.length; s++) {
-          const path = grid.getPathFor(s);
+          const path = orderedPath(grid, s);
           expect(path, `Map ${i}, spawn ${s} should have a valid path`).not.toBeNull();
           expect(path?.length).toBeGreaterThan(0);
           const pathTiles = path!;
@@ -103,7 +104,7 @@ describe("Map generation", () => {
         const map = generateRandomMap(20, 20, style, 0, 1, 42);
         const grid = new Grid(map);
         for (let s = 0; s < grid.spawns.length; s++) {
-          const path = grid.getPathFor(s);
+          const path = orderedPath(grid, s);
           expect(path, `${style}: spawn ${s} should have a valid path`).not.toBeNull();
           void path;
         }
@@ -285,7 +286,7 @@ describe("Map generation", () => {
         const map = generateRandomMap(30, 30, "bastion", 0, 1, 42);
         const grid = new Grid(map);
         for (let s = 0; s < grid.spawns.length; s++) {
-          const path = grid.getPathFor(s);
+          const path = orderedPath(grid, s);
           expect(path, `bastion shape ${shape}: spawn ${s} should have a valid path`).not.toBeNull();
         }
       }
@@ -366,7 +367,7 @@ describe("Map generation", () => {
         const map = getMap(i);
         const grid = new Grid(map);
         for (let s = 0; s < grid.spawns.length; s++) {
-          const path = grid.getPathFor(s);
+          const path = orderedPath(grid, s);
           expect(path, `Landscape map ${i}, spawn ${s} should have a valid path`).not.toBeNull();
           expect(path?.length).toBeGreaterThan(0);
           const pathTiles = path!;

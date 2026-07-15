@@ -8,8 +8,6 @@ interface EnemyManagerRef {
   enemies: {
     x: number;
     y: number;
-    pathIdx: number;
-    path: { x: number; y: number }[] | null;
     removed: boolean;
     maxHp: number;
     hp: number;
@@ -25,8 +23,6 @@ interface EnemyManagerRef {
   ): {
     x: number;
     y: number;
-    pathIdx: number;
-    path: { x: number; y: number }[] | null;
     removed: boolean;
     maxHp: number;
     hp: number;
@@ -35,17 +31,7 @@ interface EnemyManagerRef {
     applyStun?(duration: number): void;
     takeDamage(amount: number, armorPiercing?: boolean): void;
   }[];
-  getEnemyById(
-    id: number,
-  ): {
-    id: number;
-    removed: boolean;
-    x: number;
-    y: number;
-    hp: number;
-    pathIdx: number;
-    path: { x: number; y: number }[] | null;
-  } | null;
+  getEnemyById(id: number): { id: number; removed: boolean; x: number; y: number; hp: number } | null;
   forEachEnemyInRange(
     x: number,
     y: number,
@@ -53,8 +39,6 @@ interface EnemyManagerRef {
     cb: (enemy: {
       x: number;
       y: number;
-      pathIdx: number;
-      path: { x: number; y: number }[] | null;
       removed: boolean;
       maxHp: number;
       hp: number;
@@ -103,6 +87,8 @@ interface GridRef {
   registerTower(x: number, y: number): boolean;
   unregisterTower(x: number, y: number): boolean;
   clearTowerGhost(x: number, y: number): void;
+  getBase(): { x: number; y: number };
+  tileToWorld(tx: number, ty: number): { x: number; y: number };
 }
 
 export class TowerManager {

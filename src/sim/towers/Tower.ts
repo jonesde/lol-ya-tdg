@@ -52,6 +52,8 @@ import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
 interface GridRef {
   tileSize: number;
   tiles?: { type: string; height: number }[][];
+  getBase(): { x: number; y: number };
+  tileToWorld(tx: number, ty: number): { x: number; y: number };
   clearTowerGhost(x: number, y: number): void;
 }
 
@@ -73,8 +75,6 @@ interface EnemyManagerRef {
   enemies: {
     x: number;
     y: number;
-    pathIdx: number;
-    path: { x: number; y: number }[] | null;
     removed: boolean;
     maxHp: number;
     hp: number;
@@ -90,8 +90,6 @@ interface EnemyManagerRef {
   ): {
     x: number;
     y: number;
-    pathIdx: number;
-    path: { x: number; y: number }[] | null;
     removed: boolean;
     maxHp: number;
     hp: number;
@@ -107,8 +105,6 @@ interface EnemyManagerRef {
     cb: (enemy: {
       x: number;
       y: number;
-      pathIdx: number;
-      path: { x: number; y: number }[] | null;
       removed: boolean;
       maxHp: number;
       hp: number;
@@ -118,17 +114,7 @@ interface EnemyManagerRef {
       takeDamage(amount: number, armorPiercing?: boolean): void;
     }) => void,
   ): void;
-  getEnemyById(
-    id: number,
-  ): {
-    id: number;
-    removed: boolean;
-    x: number;
-    y: number;
-    hp: number;
-    pathIdx: number;
-    path: { x: number; y: number }[] | null;
-  } | null;
+  getEnemyById(id: number): { id: number; removed: boolean; x: number; y: number; hp: number } | null;
   towerAt(x: number, y: number): Tower | null;
 }
 
@@ -755,44 +741,25 @@ export class Tower {
   }
 
   selectTarget(
-    enemies: {
-      x: number;
-      y: number;
-      pathIdx: number;
-      hp: number;
-      id: number;
-      path: { x: number; y: number }[] | null;
-    }[],
-  ): { x: number; y: number; pathIdx: number; hp: number; id: number } | null {
+    enemies: { x: number; y: number; hp: number; id: number }[],
+  ): { x: number; y: number; hp: number; id: number } | null {
     if (enemies.length === 0) return null;
-    let target: { x: number; y: number; pathIdx: number; hp: number; id: number } | null = null;
+    let target: { x: number; y: number; hp: number; id: number } | null = null;
 
-    const distToNextWaypoint = (enemy: {
-      x: number;
-      y: number;
-      pathIdx: number;
-      path: { x: number; y: number }[] | null;
-    }): number => {
-      const nextIdx = enemy.pathIdx + 1;
-      if (!enemy.path || nextIdx >= enemy.path.length) return 0;
-      const wp = enemy.path[nextIdx]!;
-      const wpX = wp.x * this.grid.tileSize + this.grid.tileSize / 2;
-      const wpY = wp.y * this.grid.tileSize + this.grid.tileSize / 2;
-      return Math.hypot(enemy.x - wpX, enemy.y - wpY);
-    };
+    // Under RECAST_NAV there is no grid path, so "first"/"last" targeting is
+    // approximated by the enemy's straight-line distance to the base: the enemy
+    // nearest the base is "first" (furthest along), the farthest is "last".
+    const base = this.grid.getBase();
+    const baseWorld = this.grid.tileToWorld(base.x, base.y);
+    const distToBase = (enemy: { x: number; y: number }): number =>
+      Math.hypot(enemy.x - baseWorld.x, enemy.y - baseWorld.y);
 
     switch (this.targeting) {
       case "first":
-        target = enemies.reduce((prevA, prevB) => {
-          if (prevA.pathIdx !== prevB.pathIdx) return prevA.pathIdx > prevB.pathIdx ? prevA : prevB;
-          return distToNextWaypoint(prevA) <= distToNextWaypoint(prevB) ? prevA : prevB;
-        });
+        target = enemies.reduce((prevA, prevB) => (distToBase(prevA) <= distToBase(prevB) ? prevA : prevB));
         break;
       case "last":
-        target = enemies.reduce((prevA, prevB) => {
-          if (prevA.pathIdx !== prevB.pathIdx) return prevA.pathIdx < prevB.pathIdx ? prevA : prevB;
-          return distToNextWaypoint(prevA) >= distToNextWaypoint(prevB) ? prevA : prevB;
-        });
+        target = enemies.reduce((prevA, prevB) => (distToBase(prevA) >= distToBase(prevB) ? prevA : prevB));
         break;
       case "closest":
         target = enemies.reduce((prevA, prevB) => {
@@ -921,7 +888,7 @@ export class Tower {
       return;
     }
 
-    let target: { x: number; y: number; pathIdx: number; hp: number; id: number } | null = null;
+    let target: { x: number; y: number; hp: number; id: number } | null = null;
     if (this.cachedTargetId !== null) {
       const cached = enemyManager.getEnemyById(this.cachedTargetId);
       if (cached && !cached.removed) {

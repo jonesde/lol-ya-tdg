@@ -17,17 +17,11 @@ export interface SimulationSnapshot {
   // request into its own ParticleSystem and consumes the array exactly once.
   particleSpawns: ParticleSpawnRequest[] | undefined;
   spawnStates: SpawnStateSnapshot[]; // for spawn-queue overlay renderer
-  // Authoritative enemy paths (tile coords), rerouted by the worker when a tower
-  // blocks a path. The main thread renders path highlights from this rather than
-  // its own Grid copy, so the highlight stays in sync with the simulation.
-  // `undefined` on ticks where the path version has not changed since the last
-  // posted snapshot — the main thread keeps its cached copy (see SnapshotSerializer).
-  // Typed as `| undefined` (not `?`) so it can be assigned undefined under
-  // exactOptionalPropertyTypes; the main thread treats undefined/null identically.
-  paths: Array<Array<{ x: number; y: number }> | null> | undefined;
-  // Path version accompanying `paths`. Present every tick so the main thread can
-  // detect a reroute even if a future refactor re-adds per-tick paths.
-  pathsVersion: number;
+  // Navmesh walkable-corridor triangle mesh (game (x,y) vertex pairs + triangle
+  // `indices`) for the minimap corridor highlight when RECAST_NAV is on; `null`
+  // otherwise. Refreshed on a pathVersion change, so a tower placement/sell
+  // re-ships it.
+  navMeshCorridor: { positions: number[]; indices: number[] } | null;
   // Per-interval wave-graph dots (damage/gold/gems/peak enemy HP). The full
   // array is shipped ONLY when `waveGraphDotsGeneration` changed since the last
   // posted snapshot (a dot is flushed roughly every WAVE_GRAPH_INTERVAL_SECONDS,

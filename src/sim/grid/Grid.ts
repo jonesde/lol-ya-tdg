@@ -1,5 +1,3 @@
-import { bfsShortestPath, canPlaceWithoutBlocking, dijkstraWeakestPath } from "./Pathfinding.js";
-
 // Minimal structural view of a tower needed by the weakest-path routing fallback.
 // `TowerManager.towerAt` is adapted to this shape when it is wired into the grid.
 export interface TowerLookup {
@@ -37,16 +35,15 @@ export class Grid {
   blocked: Set<string>;
   terrainTowers: Set<string>;
   ghostTowers: Set<string>;
-  paths: (Point[] | null)[] = [];
   regionId: number = 0;
-  // Bumped on every path recompute so enemies can cheaply detect when their cached
-  // path has changed (tower added/removed, ghosted, or restored) and re-anchor.
+  // Bumped on every tower build/sell/ghost/restore so the physics tower colliders,
+  // navmesh obstacles, and corridor refresh re-run. No longer drives BFS (the
+  // navmesh/routing owns movement under RECAST_NAV).
   pathVersion: number = 0;
   // Optional lookup used by the weakest-path Dijkstra fallback to weight edges by
   // live tower health. Wired by the GameEngine after both managers are constructed.
   towerLookup: TowerLookup | null = null;
   private _blockCount: number = 0;
-  private _cachedPathTiles: Set<string> | null = null;
 
   towerHealthAt(x: number, y: number): number | undefined {
     return this.towerLookup?.towerAt(x, y)?.health;
@@ -67,7 +64,7 @@ export class Grid {
     this.terrainTowers = new Set();
     this.ghostTowers = new Set();
     this.regionId = map.regionId ?? 0;
-    this.recomputePaths();
+    this.pathVersion = 0;
   }
 
   get blockCount(): number {
@@ -105,27 +102,10 @@ export class Grid {
     if (tileType.type === "base") return false;
     if (tileType.type === "terrain") return !this.terrainTowers.has(`${x},${y}`);
     if (tileType.type === "path") {
-      if (this.blocked.has(`${x},${y}`)) return false;
-      if (this.ghostTowers.has(`${x},${y}`)) return false;
-      const cachedPathTiles = this.paths.length > 0 ? this.buildCachedPathTiles() : undefined;
-      return canPlaceWithoutBlocking(this, this.spawns, this.base, { x, y }, this.blocked, cachedPathTiles);
+      return !this.blocked.has(`${x},${y}`) && !this.ghostTowers.has(`${x},${y}`);
     }
     if (tileType.type === "spawn") return false;
     return false;
-  }
-
-  buildCachedPathTiles(): Set<string> {
-    if (this._cachedPathTiles !== null) return this._cachedPathTiles;
-    const pathTiles = new Set<string>();
-    for (const path of this.paths) {
-      if (path) {
-        for (const tile of path) {
-          pathTiles.add(`${tile.x},${tile.y}`);
-        }
-      }
-    }
-    this._cachedPathTiles = pathTiles;
-    return pathTiles;
   }
 
   registerTower(x: number, y: number): boolean {
@@ -135,7 +115,7 @@ export class Grid {
       if (this.blocked.has(towerKey)) return false;
       this.blocked.add(towerKey);
       this._blockCount++;
-      this.recomputePathsForTile(x, y);
+      this.pathVersion++;
       return true;
     } else {
       const towerKey = `${x},${y}`;
@@ -156,7 +136,7 @@ export class Grid {
       this.blocked.delete(towerKey);
       this.ghostTowers.delete(towerKey);
       this._blockCount--;
-      this.recomputePaths();
+      this.pathVersion++;
       return true;
     } else {
       const towerKey = `${x},${y}`;
@@ -167,28 +147,29 @@ export class Grid {
   }
 
   // A path-tile tower that has been destroyed becomes a ghost: it no longer
-  // blocks routing, so the key moves from `blocked` to `ghostTowers` and paths
-  // are recomputed so enemies may route through the (now passable) tile.
+  // blocks routing, so the key moves from `blocked` to `ghostTowers` and the
+  // navmesh obstacle for it is removed at update() time via pathVersion.
   setTowerGhost(x: number, y: number): void {
     const towerKey = `${x},${y}`;
     this.blocked.delete(towerKey);
     this.ghostTowers.add(towerKey);
     this._blockCount--;
-    this.recomputePaths();
+    this.pathVersion++;
   }
 
   // A ghosted tower is restored to a live (blocking) state: the key moves back
-  // into `blocked` and paths are recomputed.
+  // into `blocked` and the navmesh obstacle is re-added at update() time.
   clearTowerGhost(x: number, y: number): void {
     const towerKey = `${x},${y}`;
     this.ghostTowers.delete(towerKey);
     this.blocked.add(towerKey);
     this._blockCount++;
-    this.recomputePaths();
+    this.pathVersion++;
   }
 
-  // Bulk restore of every ghosted tower, recomputing paths exactly once. Used by
-  // the wave-start bulk restore so N ghost towers do not trigger N recomputes.
+  // Bulk restore of every ghosted tower. Bumping pathVersion once triggers the
+  // navmesh obstacle re-sync + corridor refresh at update() time so N ghost
+  // towers do not each re-sync.
   batchClearGhosts(): void {
     if (this.ghostTowers.size === 0) return;
     for (const key of this.ghostTowers) {
@@ -196,101 +177,7 @@ export class Grid {
     }
     this._blockCount += this.ghostTowers.size;
     this.ghostTowers.clear();
-    this.recomputePaths();
-  }
-
-  recomputePathsForTile(x: number, y: number) {
-    for (let i = 0; i < this.paths.length; i++) {
-      const path = this.paths[i];
-      if (path?.some((p) => p.x === x && p.y === y)) {
-        const openPath = bfsShortestPath(this, this.spawns[i]!, this.getBaseGoalTiles(), this.blocked);
-        this.paths[i] =
-          openPath ??
-          dijkstraWeakestPath(
-            this,
-            this.spawns[i]!,
-            this.getBaseGoalTiles(),
-            (tileX, tileY) => this.towerHealthAt(tileX, tileY),
-            (tileX, tileY) => this.isGhostAt(tileX, tileY),
-          );
-      }
-    }
-    this._cachedPathTiles = null;
     this.pathVersion++;
-  }
-
-  recomputePaths() {
-    this.paths = [];
-    this._cachedPathTiles = null;
-    this.pathVersion++;
-    for (const spawn of this.spawns) {
-      const openPath = bfsShortestPath(this, spawn, this.getBaseGoalTiles(), this.blocked);
-      if (openPath) {
-        this.paths.push(openPath);
-      } else {
-        // No open route: fall back to the weakest-path Dijkstra search, which routes
-        // enemies *through* live towers (weighted by remaining health) and treats
-        // ghosted tiles as free. The returned path may include tower tiles; enemies
-        // decide whether to walk through (ghost/none) or attack (live) per the Enemy.
-        this.paths.push(
-          dijkstraWeakestPath(
-            this,
-            spawn,
-            this.getBaseGoalTiles(),
-            (tileX, tileY) => this.towerHealthAt(tileX, tileY),
-            (tileX, tileY) => this.isGhostAt(tileX, tileY),
-          ),
-        );
-      }
-    }
-  }
-
-  getPathFor(spawnIndex: number): Point[] | null {
-    const paths = this.paths;
-    return paths && spawnIndex >= 0 && spawnIndex < paths.length ? (paths[spawnIndex] ?? null) : null;
-  }
-
-  // Computes a route from `start` to `goal` (defaulting to the base), mirroring
-  // recomputePaths' routing policy: prefer the open BFS path, falling back to the
-  // weakest-path Dijkstra search (which routes *through* live towers) when no open
-  // route exists. Used by the enemy-commander `applyCommand` leg chains so a custom
-  // route honors the same tower-crossing behavior as the default grid path.
-  computeRoute(start: Point, goal: Point | Point[] = this.base): Point[] | null {
-    const openPath = bfsShortestPath(this, start, goal, this.blocked);
-    if (openPath) return openPath;
-    return dijkstraWeakestPath(
-      this,
-      start,
-      goal,
-      (tileX, tileY) => this.towerHealthAt(tileX, tileY),
-      (tileX, tileY) => this.isGhostAt(tileX, tileY),
-    );
-  }
-
-  computeRouteToBase(start: Point): Point[] | null {
-    return this.computeRoute(start, this.base);
-  }
-
-  // Computes a route to `goal` that avoids the base interior: every base tile is
-  // added to the blocked set (except `goal` itself, if it happens to be a base
-  // tile) so BFS/Dijkstra hug the outside of the 3x3 and reach `goal` from its
-  // outer side. Used to route perimeter enemies around the base to their assigned
-  // dock instead of cutting through the interior to the nearest ring tile.
-  computeSurroundRoute(start: Point, goal: Point): Point[] | null {
-    const blocked = new Set(this.blocked);
-    for (const baseTile of this.getBaseGoalTiles()) {
-      if (baseTile.x === goal.x && baseTile.y === goal.y) continue;
-      blocked.add(`${baseTile.x},${baseTile.y}`);
-    }
-    const openPath = bfsShortestPath(this, start, goal, blocked);
-    if (openPath) return openPath;
-    return dijkstraWeakestPath(
-      this,
-      start,
-      goal,
-      (tileX, tileY) => this.towerHealthAt(tileX, tileY),
-      (tileX, tileY) => this.isGhostAt(tileX, tileY),
-    );
   }
 
   worldToTile(wx: number, wy: number): Point {

@@ -20,6 +20,11 @@ export class PhysicsWorld {
   private towerBodies: RAPIER.RigidBody[] = [];
   private corridorBodies: RAPIER.RigidBody[] = [];
   private enemyByHandle: Map<number, Enemy> = new Map();
+  // Whether enemy bodies collide with each other. Default true (OFF path, no
+  // change). Under RECAST_NAV the DetourCrowd owns enemy-enemy avoidance, so this
+  // is flipped to false to avoid two solvers fighting (enemies still collide with
+  // towers/base/walls via Rapier's default groups).
+  enemyEnemyCollisions = true;
 
   constructor(grid: Grid) {
     const RAPIER = getRapier();
@@ -83,16 +88,10 @@ export class PhysicsWorld {
       seenWalkable.add(key);
       walkableTiles.push({ x, y });
     };
-    for (const path of this.grid.paths) {
-      if (path) {
-        for (const tile of path) {
-          addWalkable(tile.x, tile.y);
-        }
+    for (let tileY = 0; tileY < this.grid.height; tileY++) {
+      for (let tileX = 0; tileX < this.grid.width; tileX++) {
+        if (this.isWalkable(tileX, tileY)) addWalkable(tileX, tileY);
       }
-    }
-    addWalkable(this.grid.base.x, this.grid.base.y);
-    for (const spawn of this.grid.spawns) {
-      addWalkable(spawn.x, spawn.y);
     }
 
     const neighbors = [
@@ -134,9 +133,20 @@ export class PhysicsWorld {
       .setLinearDamping(0.9);
     const body = this.world.createRigidBody(bodyDesc);
     const colliderDesc = RAPIER.ColliderDesc.ball(enemy.radius).setRestitution(0);
+    // When enemy-enemy collisions are disabled (RECAST_NAV), put enemies in group
+    // 1 and exclude group 1 from their collision filter. Membership/filter are the
+    // high/low 16 bits of the group: (group << 16) | filter. Towers/base/walls keep
+    // Rapier's default groups, so enemies still collide with them.
+    if (!this.enemyEnemyCollisions) colliderDesc.setCollisionGroups((0x0001 << 16) | 0xfffe);
     this.world.createCollider(colliderDesc, body);
     enemy.body = body;
     this.enemyByHandle.set(body.handle, enemy);
+  }
+
+  // Toggle enemy-enemy collisions (see `enemyEnemyCollisions`). Only takes effect
+  // for enemies added after the call; existing bodies are left as-is.
+  setEnemyEnemyCollisions(enabled: boolean): void {
+    this.enemyEnemyCollisions = enabled;
   }
 
   // Remove the enemy's rigid body (and its collider) from the world.

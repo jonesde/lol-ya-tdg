@@ -133,33 +133,27 @@ describe("TextOverlayRenderer", () => {
 });
 
 describe("TextPathRenderer", () => {
-  it("draws a polyline through the scaled tile centers of each path", () => {
+  it("draws the cached navmesh corridor as triangles through the scaled vertices", () => {
     const ctx = makeCtx();
     (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
     (mockCtx.lineTo as ReturnType<typeof vi.fn>).mockClear();
     const manager = new TextPathRenderer();
-    const snapshot = {
-      paths: [
-        [
-          { x: 0, y: 1 },
-          { x: 1, y: 1 },
-        ],
-      ],
-    } as never;
+    const snapshot = { navMeshCorridor: { positions: [0, 0, 10, 0, 0, 10], indices: [0, 1, 2] } } as never;
     manager.render(ctx, snapshot, scale);
-    // tile (0,1) center = (18, 54); tile (1,1) center = (54, 54) under scale 1.
-    expect(mockCtx.moveTo).toHaveBeenCalledWith(18, 54);
-    expect(mockCtx.lineTo).toHaveBeenCalledWith(54, 54);
+    // Triangle vertices (0,0) -> (10,0) -> (0,10) under scale 1.
+    expect(mockCtx.moveTo).toHaveBeenCalledWith(0, 0);
+    expect(mockCtx.lineTo).toHaveBeenCalledWith(10, 0);
+    expect(mockCtx.lineTo).toHaveBeenCalledWith(0, 10);
   });
 
-  it("keeps drawing the cached path when snapshot.paths is undefined", () => {
+  it("keeps drawing the cached corridor when snapshot.navMeshCorridor is undefined", () => {
     const ctx = makeCtx();
     (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
     (mockCtx.lineTo as ReturnType<typeof vi.fn>).mockClear();
     const manager = new TextPathRenderer();
-    manager.render(ctx, { paths: [[{ x: 2, y: 3 }]] } as never, scale);
+    manager.render(ctx, { navMeshCorridor: { positions: [0, 0, 10, 0, 0, 10], indices: [0, 1, 2] } } as never, scale);
     (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
-    manager.render(ctx, { paths: undefined } as never, scale);
-    expect(mockCtx.moveTo).toHaveBeenCalledWith(90, 126);
+    manager.render(ctx, { navMeshCorridor: undefined } as never, scale);
+    expect(mockCtx.moveTo).toHaveBeenCalledWith(0, 0);
   });
 });

@@ -1,11 +1,14 @@
 // @ts-nocheck
 // Enemy ON-branch tests (body set) driven manually, unconditionally.
-// We construct a PhysicsWorld, addEnemy so enemy.body is non-null, then drive the
-// enemy via computeIntent / step / postPhysics ourselves.
+// We construct a PhysicsWorld + CrowdManager, addAgent so enemy.agent is non-null,
+// then drive the enemy via computeIntent / crowd.update / step / postPhysics.
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
+import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
+import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
+import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { initPhysics } from "@/sim/physics/rapierContext.js";
 
@@ -19,31 +22,41 @@ function baseCenterOf(grid) {
 describe("Enemy ON branches (body set) driven manually", () => {
   let grid: Grid;
   let physicsWorld: PhysicsWorld;
+  let crowdManager: CrowdManager;
   let enemy: Enemy;
 
   beforeAll(async () => {
     await initPhysics();
+    await initNavMesh();
   });
 
   beforeEach(() => {
     grid = new Grid(getMap(0));
     physicsWorld = new PhysicsWorld(grid);
+    const navBuilder = new NavMeshBuilder(grid);
+    crowdManager = new CrowdManager(navBuilder.getNavMesh()!, grid.tileSize, 10);
     enemy = new Enemy("minion", 1, 0, grid, 1);
     physicsWorld.addEnemy(enemy);
+    crowdManager.addAgent(enemy);
+    crowdManager.setBaseTarget(enemy, baseCenterOf(grid));
   });
+
+  function drive(enemy: Enemy, frames: number): void {
+    for (let i = 0; i < frames; i++) {
+      enemy.computeIntent(FIXED_DT, null);
+      crowdManager.update(FIXED_DT, [enemy]);
+      physicsWorld.step();
+      enemy.postPhysics(FIXED_DT, null);
+    }
+  }
 
   it("advances toward the base, stays in sync with its body, and reaches the base", () => {
     const baseCenter = baseCenterOf(grid);
     const startDist = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
 
-    for (let i = 0; i < 300; i++) {
-      enemy.computeIntent(FIXED_DT, null);
-      physicsWorld.step();
-      enemy.postPhysics(FIXED_DT, null);
-    }
+    drive(enemy, 300);
 
     const endDist = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
-    expect(enemy.pathIdx).toBeGreaterThan(0);
     expect(endDist).toBeLessThan(startDist);
 
     const bodyPos = physicsWorld.getEnemyPosition(enemy);
@@ -54,6 +67,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
     let reached = enemy.attackingBase;
     for (let i = 0; i < 12000 && !reached; i++) {
       enemy.computeIntent(FIXED_DT, null);
+      crowdManager.update(FIXED_DT, [enemy]);
       physicsWorld.step();
       enemy.postPhysics(FIXED_DT, null);
       reached = enemy.attackingBase;
@@ -62,18 +76,16 @@ describe("Enemy ON branches (body set) driven manually", () => {
   });
 
   it("knockback pushes the body backward and zeroes its velocity", () => {
-    // Advance a bit so pathIdx > 0, then record distance to base.
-    for (let i = 0; i < 200; i++) {
-      enemy.computeIntent(FIXED_DT, null);
-      physicsWorld.step();
-      enemy.postPhysics(FIXED_DT, null);
-    }
-    expect(enemy.pathIdx).toBeGreaterThan(0);
+    // Advance a bit so the enemy is moving toward the base, then record distance.
+    drive(enemy, 200);
+    const startDist = Math.hypot(enemy.centerX - baseCenterOf(grid).x, enemy.centerY - baseCenterOf(grid).y);
+    expect(startDist).toBeGreaterThan(0);
 
     const baseCenter = baseCenterOf(grid);
     const before = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
 
     enemy.applyKnockback(2 * grid.tileSize);
+    crowdManager.update(FIXED_DT, [enemy]);
     physicsWorld.step();
     enemy.postPhysics(FIXED_DT, null);
 
@@ -89,6 +101,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
     let reached = false;
     for (let i = 0; i < 12000 && !reached; i++) {
       enemy.computeIntent(FIXED_DT, null);
+      crowdManager.update(FIXED_DT, [enemy]);
       physicsWorld.step();
       enemy.postPhysics(FIXED_DT, null);
       reached = enemy.attackingBase;
@@ -97,6 +110,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
 
     const beforeAngle = enemy.moveAngle;
     enemy.computeIntent(FIXED_DT, null);
+    crowdManager.update(FIXED_DT, [enemy]);
     physicsWorld.step();
     enemy.postPhysics(FIXED_DT, null);
 
@@ -120,6 +134,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
     let reached = false;
     for (let i = 0; i < 12000 && !reached; i++) {
       enemy.computeIntent(FIXED_DT, null);
+      crowdManager.update(FIXED_DT, [enemy]);
       physicsWorld.step();
       enemy.postPhysics(FIXED_DT, null);
       reached = enemy.attackingBase;
@@ -129,6 +144,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
     // Two seconds of contact — an unthrottled tick would call takeDamage ~120×.
     for (let i = 0; i < 120; i++) {
       enemy.computeIntent(FIXED_DT, null);
+      crowdManager.update(FIXED_DT, [enemy]);
       physicsWorld.step();
       enemy.postPhysics(FIXED_DT, null);
     }
@@ -139,35 +155,24 @@ describe("Enemy ON branches (body set) driven manually", () => {
   });
 
   it("decrements stunTimer by exactly dt per frame (no double decrement)", () => {
-    for (let i = 0; i < 50; i++) {
-      enemy.computeIntent(FIXED_DT, null);
-      physicsWorld.step();
-      enemy.postPhysics(FIXED_DT, null);
-    }
+    drive(enemy, 50);
     expect(enemy.stunTimer).toBe(0);
 
     enemy.applyStun(1.0);
-    for (let i = 0; i < 30; i++) {
-      enemy.computeIntent(FIXED_DT, null);
-      physicsWorld.step();
-      enemy.postPhysics(FIXED_DT, null);
-    }
+    drive(enemy, 30);
     // 30 frames * (1/60)s = 0.5s elapsed, so ~0.5s of stun remaining.
     expect(enemy.stunTimer).toBeCloseTo(1.0 - 30 * FIXED_DT, 6);
     expect(enemy.stunTimer).toBeGreaterThan(0.4);
   });
 
   it("stun zeroes velocity and barely moves the body", () => {
-    for (let i = 0; i < 50; i++) {
-      enemy.computeIntent(FIXED_DT, null);
-      physicsWorld.step();
-      enemy.postPhysics(FIXED_DT, null);
-    }
+    drive(enemy, 50);
     const beforeX = enemy.centerX;
     const beforeY = enemy.centerY;
 
     enemy.applyStun(1.0);
     enemy.computeIntent(FIXED_DT, null);
+    crowdManager.update(FIXED_DT, [enemy]);
     physicsWorld.step();
     enemy.postPhysics(FIXED_DT, null);
 

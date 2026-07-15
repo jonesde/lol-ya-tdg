@@ -238,14 +238,14 @@ describe("GameEngine", () => {
       initEngine(0, persistState);
       const enemy = new Enemy("boss", 1, 0, engine.grid, 1);
       enemy.baseTarget = engine.enemyManager.baseTarget;
-      enemy.pathIdx = enemy.path.length - 1;
-      // Motion is now physics-backed, so the boss needs a rigid body. Place it on
-      // the last walkable path tile (inside the corridor containment walls) and let
-      // the step carry it to the base — a body parked just outside the base square
-      // edge would be ejected by the corridor wall and never reach contact.
-      const path = enemy.path!;
-      const lastWalkable = path[path.length - 2]!;
-      const spawnPos = engine.grid.tileToWorld(lastWalkable.x, lastWalkable.y);
+      // Under RECAST_NAV there is no grid path; park the boss just outside the base
+      // square (within one radius) so postPhysics immediately detects base contact
+      // and flips it into the attackingBase state. The boss needs a rigid body so
+      // postPhysics can read its translation back.
+      const baseTile = engine.grid.getBase();
+      const baseCenter = engine.grid.tileToWorld(baseTile.x, baseTile.y);
+      const half = 1.5 * engine.grid.tileSize;
+      const spawnPos = { x: baseCenter.x - half - enemy.radius * 0.5, y: baseCenter.y };
       enemy.centerX = spawnPos.x;
       enemy.centerY = spawnPos.y;
       enemy.x = spawnPos.x;

@@ -13,15 +13,20 @@ import {
 } from "@/sim/ConstantsEnemy.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
+import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
+import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";
+import { orderedPath } from "../helpers/navmesh-test-utils.js";
 
 describe("Enemy", () => {
   let grid: Grid;
   let map: ReturnType<typeof makeBastionMap>;
   let physicsWorld: PhysicsWorld;
+  let navBuilder: NavMeshBuilder;
+  let crowd: CrowdManager;
   let spawn: (type: string, level?: number, spawnIndex?: number, wave?: number) => Enemy;
   let tickEnemy: (enemy: Enemy, dt: number) => void;
 
@@ -35,19 +40,25 @@ describe("Enemy", () => {
     map = makeBastionMap();
     grid = new Grid(map);
     physicsWorld = new PhysicsWorld(grid);
+    navBuilder = new NavMeshBuilder(grid);
+    crowd = new CrowdManager(navBuilder.getNavMesh()!, grid.tileSize, 50);
     spawn = (type, level = 1, spawnIndex = 0, wave = 1) => {
       const enemy = new Enemy(type, level, spawnIndex, grid, wave);
       physicsWorld.addEnemy(enemy);
+      crowd.addAgent(enemy);
+      crowd.setBaseTarget(enemy, grid.tileToWorld(grid.getBase().x, grid.getBase().y));
       return enemy;
     };
     tickEnemy = (enemy, dt) => {
       enemy.computeIntent(dt, null);
+      crowd.update(dt, [enemy]);
       physicsWorld.step();
       enemy.postPhysics(dt, null);
     };
   });
 
   afterEach(() => {
+    crowd.destroy();
     physicsWorld.dispose();
   });
 
@@ -148,31 +159,23 @@ describe("Enemy", () => {
       expect(enemy.burnStack).toHaveLength(0);
     });
 
-    it("sets path and pathIdx from grid", () => {
+    it("spawns at the first corridor tile (spawn tile center)", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
-      expect(enemy.path).not.toBeNull();
-      expect(enemy.pathIdx).toBe(0);
-      expect(enemy.path?.length).toBeGreaterThan(0);
+      const firstTile = orderedPath(grid, 0)[0]!;
+      const firstCenter = grid.tileToWorld(firstTile.x, firstTile.y);
+      expect(enemy.x).toBeCloseTo(firstCenter.x, 5);
+      expect(enemy.y).toBeCloseTo(firstCenter.y, 5);
     });
 
-    it("sets initial world position to first path tile", () => {
-      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
-      const firstTile = grid.tileToWorld(enemy.path![0].x, enemy.path![0].y);
-      expect(enemy.x).toBe(firstTile.x);
-      expect(enemy.y).toBe(firstTile.y);
-    });
-
-    it("routes through fully-blocked path tiles via the weakest-path fallback", () => {
-      const bastionMap = makeBastionMap();
-      const grid2 = new Grid(bastionMap);
-      for (const tile of grid2.paths[0]!) {
-        grid2.blocked.add(`${tile.x},${tile.y}`);
-      }
-      grid2.recomputePaths();
-      const enemy = new Enemy("minion", 1, 0, grid2, 1, 0);
-      expect(enemy.removed).toBe(false);
-      expect(enemy.path).not.toBeNull();
-      expect(enemy.path!.length).toBeGreaterThan(0);
+    it("keeps a navmesh route from spawn to base", () => {
+      expect(navBuilder.isSuccess()).toBe(true);
+      const spawnPoint = grid.spawns[0]!;
+      const base = grid.getBase();
+      const corridor = navBuilder.findPath(
+        grid.tileToWorld(spawnPoint.x, spawnPoint.y),
+        grid.tileToWorld(base.x, base.y),
+      );
+      expect(corridor.length).toBeGreaterThan(0);
     });
   });
 
@@ -331,7 +334,8 @@ describe("Enemy", () => {
 
     it("keeps attacking the base without being removed once it reaches the base", () => {
       const enemy = spawn("minion", 1, 0, 1);
-      enemy.pathIdx = enemy.path!.length - 1;
+      const baseCenter = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
+      enemy.body!.setTranslation({ x: baseCenter.x, y: baseCenter.y }, true);
       tickEnemy(enemy, 0.01);
       expect(enemy.attackingBase).toBe(true);
       for (let tick = 0; tick < 50; tick++) tickEnemy(enemy, 0.05);
@@ -353,7 +357,7 @@ describe("Enemy", () => {
       expect(enemy.x).toBe(startX);
     });
 
-    it("moves toward next waypoint", () => {
+    it("moves toward the base", () => {
       const enemy = spawn("minion", 1, 0, 1);
       const startX = enemy.x;
       const startY = enemy.y;
@@ -362,9 +366,10 @@ describe("Enemy", () => {
       expect(distMoved).toBeGreaterThan(0);
     });
 
-    it("reaches base when pathIdx reaches end", () => {
+    it("reaches and attacks the base when placed at it", () => {
       const enemy = spawn("minion", 1, 0, 1);
-      enemy.pathIdx = enemy.path!.length - 1;
+      const baseCenter = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
+      enemy.body!.setTranslation({ x: baseCenter.x, y: baseCenter.y }, true);
       tickEnemy(enemy, 0.01);
       expect(enemy.attackingBase).toBe(true);
       expect(enemy.removed).toBe(false);
@@ -414,57 +419,6 @@ describe("Enemy", () => {
       expect(enemy.removed).toBe(true);
       expect(enemy.x).toBe(startX);
       expect(enemy.y).toBe(startY);
-    });
-
-    it("adjusts pathIdx to nearest tile when path is recomputed", () => {
-      const enemy = spawn("minion", 1, 0, 1);
-
-      for (let i = 0; i < 5; i++) {
-        tickEnemy(enemy, 0.5);
-      }
-      const midX = enemy.x;
-      const midY = enemy.y;
-
-      if (enemy.pathIdx + 1 < enemy.path!.length) {
-        const blockedTile = enemy.path![enemy.pathIdx + 1];
-        grid.blocked.add(`${blockedTile.x},${blockedTile.y}`);
-        grid.recomputePathsForTile(blockedTile.x, blockedTile.y);
-
-        tickEnemy(enemy, 0.1);
-
-        const distFromMid = Math.hypot(enemy.x - midX, enemy.y - midY);
-        expect(distFromMid).toBeLessThan(grid.tileSize * 3);
-        expect(enemy.pathIdx).toBeGreaterThanOrEqual(0);
-        expect(enemy.pathIdx).toBeLessThan(enemy.path!.length);
-      }
-    });
-
-    it("never selects a backward pathIdx on recalculation", () => {
-      const enemy = spawn("minion", 1, 0, 1);
-
-      for (let i = 0; i < 5; i++) {
-        tickEnemy(enemy, 0.5);
-      }
-
-      const baseWorldPos = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
-      const oldPathIdx = enemy.pathIdx;
-      const oldPathTile = enemy.path![oldPathIdx];
-      const oldPathWorldPos = grid.tileToWorld(oldPathTile.x, oldPathTile.y);
-      const oldPathDistSqToBase = (oldPathWorldPos.x - baseWorldPos.x) ** 2 + (oldPathWorldPos.y - baseWorldPos.y) ** 2;
-
-      if (oldPathIdx + 1 < enemy.path!.length) {
-        const blockedTile = enemy.path![oldPathIdx + 1];
-        grid.blocked.add(`${blockedTile.x},${blockedTile.y}`);
-        grid.recomputePathsForTile(blockedTile.x, blockedTile.y);
-
-        tickEnemy(enemy, 0.1);
-
-        const newPathTile = enemy.path![enemy.pathIdx];
-        const newPathWorldPos = grid.tileToWorld(newPathTile.x, newPathTile.y);
-        const newPathDistSqToBase =
-          (newPathWorldPos.x - baseWorldPos.x) ** 2 + (newPathWorldPos.y - baseWorldPos.y) ** 2;
-        expect(newPathDistSqToBase).toBeLessThanOrEqual(oldPathDistSqToBase);
-      }
     });
   });
 });

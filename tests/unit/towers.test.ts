@@ -65,7 +65,12 @@ function makeSave(addons: boolean[] | null = null): SaveFixture {
 
 function makeMockGrid() {
   const map = makeBastionMap();
-  return { tileSize: 36, tiles: map.tiles };
+  return {
+    tileSize: 36,
+    tiles: map.tiles,
+    getBase: () => ({ x: map.base.x, y: map.base.y }),
+    tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+  };
 }
 
 describe("Tower", () => {
@@ -655,26 +660,8 @@ describe("Tower", () => {
   });
 
   describe("selectTarget", () => {
-    const defaultPath = Array.from({ length: 10 }, (_, i) => ({ x: i, y: 0 }));
-
-    function makeEnemy(params: {
-      pathIdx: number;
-      x: number;
-      y: number;
-      hp: number;
-      id?: number;
-      path?: { x: number; y: number }[] | null;
-    }) {
-      return {
-        pathIdx: params.pathIdx,
-        x: params.x,
-        y: params.y,
-        hp: params.hp,
-        path: params.path ?? defaultPath,
-        removed: false,
-        type: "minion",
-        id: params.id ?? 1,
-      };
+    function makeEnemy(params: { x: number; y: number; hp: number; id?: number }) {
+      return { x: params.x, y: params.y, hp: params.hp, removed: false, type: "minion", id: params.id ?? 1 };
     }
 
     it("returns null when no enemies provided", () => {
@@ -684,42 +671,42 @@ describe("Tower", () => {
 
     it("selects enemies regardless of removed flag", () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
-      const enemies = [makeEnemy({ pathIdx: 0, x: tower.x, y: tower.y, hp: 10 })];
+      const enemies = [makeEnemy({ x: tower.x, y: tower.y, hp: 10, id: 1 })];
       const target = tower.selectTarget(enemies);
       expect(target).not.toBeNull();
     });
 
-    it('picks the enemy furthest along the path for "first" targeting', () => {
+    it('picks the enemy nearest the base for "first" targeting', () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
       const enemies = [
-        makeEnemy({ pathIdx: 1, x: tower.x + 50, y: tower.y, hp: 10 }),
-        makeEnemy({ pathIdx: 5, x: tower.x + 100, y: tower.y, hp: 10 }),
-        makeEnemy({ pathIdx: 3, x: tower.x + 70, y: tower.y, hp: 10 }),
+        makeEnemy({ x: tower.x + 50, y: tower.y, hp: 10, id: 1 }),
+        makeEnemy({ x: tower.x + 100, y: tower.y, hp: 10, id: 2 }),
+        makeEnemy({ x: tower.x + 70, y: tower.y, hp: 10, id: 3 }),
       ];
       const target = tower.selectTarget(enemies);
       expect(target).not.toBeNull();
-      expect(target?.pathIdx).toBe(5);
+      expect(target?.id).toBe(2);
     });
 
-    it('picks the enemy closest to spawn for "last" targeting', () => {
+    it('picks the enemy farthest from the base for "last" targeting', () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
       const enemies = [
-        makeEnemy({ pathIdx: 1, x: tower.x + 50, y: tower.y, hp: 10 }),
-        makeEnemy({ pathIdx: 5, x: tower.x + 100, y: tower.y, hp: 10 }),
-        makeEnemy({ pathIdx: 3, x: tower.x + 70, y: tower.y, hp: 10 }),
+        makeEnemy({ x: tower.x + 50, y: tower.y, hp: 10, id: 1 }),
+        makeEnemy({ x: tower.x + 100, y: tower.y, hp: 10, id: 2 }),
+        makeEnemy({ x: tower.x + 70, y: tower.y, hp: 10, id: 3 }),
       ];
       tower.targeting = "last";
       const target = tower.selectTarget(enemies);
       expect(target).not.toBeNull();
-      expect(target?.pathIdx).toBe(1);
+      expect(target?.id).toBe(1);
     });
 
     it('picks the nearest enemy for "closest" targeting', () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
       const enemies = [
-        makeEnemy({ pathIdx: 1, x: tower.x + 100, y: tower.y, hp: 10 }),
-        makeEnemy({ pathIdx: 5, x: tower.x + 20, y: tower.y, hp: 10 }),
-        makeEnemy({ pathIdx: 3, x: tower.x + 50, y: tower.y, hp: 10 }),
+        makeEnemy({ x: tower.x + 100, y: tower.y, hp: 10, id: 1 }),
+        makeEnemy({ x: tower.x + 20, y: tower.y, hp: 10, id: 2 }),
+        makeEnemy({ x: tower.x + 50, y: tower.y, hp: 10, id: 3 }),
       ];
       tower.targeting = "closest";
       const target = tower.selectTarget(enemies);
@@ -730,9 +717,9 @@ describe("Tower", () => {
     it('picks the highest HP enemy for "strong" targeting', () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
       const enemies = [
-        makeEnemy({ pathIdx: 1, x: tower.x + 50, y: tower.y, hp: 10 }),
-        makeEnemy({ pathIdx: 5, x: tower.x + 100, y: tower.y, hp: 50 }),
-        makeEnemy({ pathIdx: 3, x: tower.x + 70, y: tower.y, hp: 30 }),
+        makeEnemy({ x: tower.x + 50, y: tower.y, hp: 10, id: 1 }),
+        makeEnemy({ x: tower.x + 100, y: tower.y, hp: 50, id: 2 }),
+        makeEnemy({ x: tower.x + 70, y: tower.y, hp: 30, id: 3 }),
       ];
       tower.targeting = "strong";
       const target = tower.selectTarget(enemies);
@@ -740,107 +727,30 @@ describe("Tower", () => {
       expect(target?.hp).toBe(50);
     });
 
-    it('breaks ties for "first" targeting by distance to next waypoint (picks enemy further along segment)', () => {
+    it('picks the enemy nearer the base for "first" targeting when positions differ', () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
-      const tileSize = 36;
-      const path = [
-        { x: 0, y: 0 },
-        { x: 5, y: 0 },
-      ];
-      const waypointWorldX = path[1]!.x * tileSize + tileSize / 2;
-      const waypointWorldY = path[1]!.y * tileSize + tileSize / 2;
-      const enemyNearWaypoint = {
-        x: waypointWorldX - 5,
-        y: waypointWorldY,
-        pathIdx: 0,
-        hp: 10,
-        path,
-        removed: false,
-        type: "minion",
-        id: 1,
-      };
-      const enemyFarFromWaypoint = {
-        x: waypointWorldX - 150,
-        y: waypointWorldY,
-        pathIdx: 0,
-        hp: 10,
-        path,
-        removed: false,
-        type: "minion",
-        id: 2,
-      };
-      const target = tower.selectTarget([enemyNearWaypoint, enemyFarFromWaypoint]);
+      const enemies = [makeEnemy({ x: 193, y: 18, hp: 10, id: 1 }), makeEnemy({ x: 48, y: 18, hp: 10, id: 2 })];
+      const target = tower.selectTarget(enemies);
       expect(target).not.toBeNull();
       expect(target?.id).toBe(1);
     });
 
-    it('breaks ties for "last" targeting by distance to next waypoint (picks enemy earlier along segment)', () => {
+    it('picks the enemy farther from the base for "last" targeting when positions differ', () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
-      const tileSize = 36;
-      const path = [
-        { x: 0, y: 0 },
-        { x: 5, y: 0 },
-      ];
-      const waypointWorldX = path[1]!.x * tileSize + tileSize / 2;
-      const waypointWorldY = path[1]!.y * tileSize + tileSize / 2;
-      const enemyNearWaypoint = {
-        x: waypointWorldX - 5,
-        y: waypointWorldY,
-        pathIdx: 0,
-        hp: 10,
-        path,
-        removed: false,
-        type: "minion",
-        id: 1,
-      };
-      const enemyFarFromWaypoint = {
-        x: waypointWorldX - 150,
-        y: waypointWorldY,
-        pathIdx: 0,
-        hp: 10,
-        path,
-        removed: false,
-        type: "minion",
-        id: 2,
-      };
+      const enemies = [makeEnemy({ x: 193, y: 18, hp: 10, id: 1 }), makeEnemy({ x: 48, y: 18, hp: 10, id: 2 })];
       tower.targeting = "last";
-      const target = tower.selectTarget([enemyNearWaypoint, enemyFarFromWaypoint]);
+      const target = tower.selectTarget(enemies);
       expect(target).not.toBeNull();
       expect(target?.id).toBe(2);
     });
 
-    it('preserves pathIdx ordering over tiebreaker for "first" targeting', () => {
+    it('picks the enemy nearest the base for "first" targeting when positions are unambiguous', () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
-      const tileSize = 36;
-      const shortPath = [
-        { x: 0, y: 0 },
-        { x: 2, y: 0 },
+      const enemies = [
+        makeEnemy({ x: 2 * 36 + 18 - 1, y: 18, hp: 10, id: 1 }),
+        makeEnemy({ x: 10 * 36 + 18 - 200, y: 18, hp: 10, id: 2 }),
       ];
-      const longPath = [
-        { x: 0, y: 0 },
-        { x: 10, y: 0 },
-      ];
-      const nearWp = {
-        x: 2 * tileSize + tileSize / 2 - 1,
-        y: tileSize / 2,
-        pathIdx: 0,
-        hp: 10,
-        path: shortPath,
-        removed: false,
-        type: "minion",
-        id: 1,
-      };
-      const farWp = {
-        x: 10 * tileSize + tileSize / 2 - 200,
-        y: tileSize / 2,
-        pathIdx: 1,
-        hp: 10,
-        path: longPath,
-        removed: false,
-        type: "minion",
-        id: 2,
-      };
-      const target = tower.selectTarget([nearWp, farWp]);
+      const target = tower.selectTarget(enemies);
       expect(target).not.toBeNull();
       expect(target?.id).toBe(2);
     });

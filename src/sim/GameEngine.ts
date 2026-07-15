@@ -1,8 +1,10 @@
+import { ENEMY_POOL_SIZE } from "@/render/svg/types.js";
 import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
 import type { DebugKind } from "@/sim/Command.js";
 import type { AttackTarget, Enemy } from "@/sim/enemies/Enemy.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { RECAST_NAV } from "@/sim/featureFlags.js";
 import type { GameRunState } from "@/sim/GameRunState.js";
 import {
   addGold,
@@ -21,6 +23,8 @@ import { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
+import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
+import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { PersistState } from "@/sim/PersistState.js";
@@ -89,6 +93,13 @@ export class GameEngine {
   enemyManager: EnemyManager | null;
   towerManager: TowerManager | null;
   physicsWorld: PhysicsWorld | null = null;
+  // DetourCrowd wrapper (RECAST_NAV). Null when the flag is off, so the OFF enemy
+  // update path is byte-identical.
+  crowdManager: CrowdManager | null = null;
+  // TileCache-backed navmesh builder (RECAST_NAV). Kept on the engine so tower
+  // obstacles can be synced and proposed placements reachability-checked at
+  // runtime. Null when the flag is off.
+  navMeshBuilder: NavMeshBuilder | null = null;
   // Last grid.pathVersion we rebuilt tower/corridor colliders for; bumped by the
   // ON orchestration in update() so colliders track builds/sells/reroutes.
   private lastPathVersion = -1;
@@ -243,6 +254,24 @@ export class GameEngine {
     this.physicsWorld?.dispose();
     this.physicsWorld = new PhysicsWorld(this.grid);
     this.enemyManager.setPhysicsWorld(this.physicsWorld);
+    if (RECAST_NAV) {
+      const navBuilder = new NavMeshBuilder(this.grid);
+      // Keep the builder on the engine for tower-obstacle sync + reachability
+      // checks (Phase 3) even when the crowd is unavailable.
+      this.navMeshBuilder = navBuilder;
+      if (navBuilder.isSuccess() && navBuilder.getNavMesh()) {
+        this.crowdManager = new CrowdManager(navBuilder.getNavMesh()!, this.grid.tileSize, ENEMY_POOL_SIZE);
+        this.enemyManager.setCrowdManager(this.crowdManager);
+        // DetourCrowd owns enemy-enemy avoidance, so disable enemy-enemy collision
+        // pairs in Rapier (enemies still collide with towers/base/walls).
+        this.physicsWorld.setEnemyEnemyCollisions(false);
+      } else {
+        console.error("RECAST_NAV: navmesh build failed:", navBuilder.getError());
+        this.crowdManager = null;
+      }
+    } else {
+      this.navMeshBuilder = null;
+    }
     this.physicsWorld.rebuildTowers(this.towerManager);
     this.enemyManager.baseTarget = new BaseTarget(this);
     this.grid.towerLookup = {
@@ -334,33 +363,36 @@ export class GameEngine {
     if (this.grid!.pathVersion !== this.lastPathVersion) {
       this.physicsWorld!.rebuildTowers(this.towerManager!);
       this.physicsWorld!.rebuildCorridor();
+      // Sync tower obstacles into the navmesh so enemies re-route around
+      // builds/sells/ghosts at runtime (Phase 3). No-op until a tower is placed.
+      this.navMeshBuilder?.syncTowers(this.towerManager!.towers);
       this.lastPathVersion = this.grid!.pathVersion;
     }
-    this.enemyManager.preStep(dt);
-    this.physicsWorld!.step();
-    this.enemyManager.postStep(
-      dt,
-      (enemy) => {
-        if (enemy.removed) {
-          if (enemy.type === "boss") {
-            this.onBossKilled();
-          }
-          if (enemy.onPathBlocked) {
-            const bounty = Math.ceil((ENEMY_TYPES[enemy.type]?.bounty || 1) * BOUNTY_BLOCKED_RATIO);
-            this.waveGraphTracker?.onGoldBounty(bounty);
-            this.earnGold(bounty);
-          } else {
-            this.onEnemyKill(enemy);
-          }
-        }
-      },
-      (enemy) => {
-        this.waveManager!.baseReached = true;
+    const onEnemyKill = (enemy: Enemy): void => {
+      if (enemy.removed) {
         if (enemy.type === "boss") {
-          this.runState.bossesReachedBaseThisRun++;
+          this.onBossKilled();
         }
-      },
-    );
+        if (enemy.onPathBlocked) {
+          const bounty = Math.ceil((ENEMY_TYPES[enemy.type]?.bounty || 1) * BOUNTY_BLOCKED_RATIO);
+          this.waveGraphTracker?.onGoldBounty(bounty);
+          this.earnGold(bounty);
+        } else {
+          this.onEnemyKill(enemy);
+        }
+      }
+    };
+    const onEnemyBeginAttackBase = (enemy: Enemy): void => {
+      this.waveManager!.baseReached = true;
+      if (enemy.type === "boss") {
+        this.runState.bossesReachedBaseThisRun++;
+      }
+    };
+
+    this.enemyManager.preStep(dt);
+    this.crowdManager?.update(dt, this.enemyManager.enemies);
+    this.physicsWorld!.step();
+    this.enemyManager.postStep(dt, onEnemyKill, onEnemyBeginAttackBase);
 
     // Projectiles resolve hits against current (post-step) enemy positions.
     this.projectileManager?.update(dt);
@@ -486,14 +518,6 @@ export class GameEngine {
     }
     if (towersToClear.length > 0 && this.grid) {
       this.grid.batchClearGhosts();
-      for (const enemy of this.enemyManager!.enemies) {
-        if (enemy.removed) continue;
-        const tileX = Math.floor(enemy.x / this.grid.tileSize);
-        const tileY = Math.floor(enemy.y / this.grid.tileSize);
-        if (this.grid.blocked.has(`${tileX},${tileY}`)) {
-          enemy.repositionBeforeBlockedTile();
-        }
-      }
     }
 
     const generalAddons = this.persistState.generalAddons;
@@ -659,6 +683,12 @@ export class GameEngine {
         const discount = this.persistState.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
         const cost = Math.floor(meta.cost * discount);
         if (this.runState.gold >= cost && this.grid.canBuild(tx, ty)) {
+          // Reachability guard (RECAST_NAV): a tower that would fully wall off the
+          // base is rejected so the maze tactic can never block the corridor. The
+          // OFF path is byte-identical — this branch is never taken under the flag.
+          if (RECAST_NAV && this.navMeshBuilder && !this.navMeshBuilder.wouldRemainReachable(tx, ty)) {
+            return;
+          }
           const tower = this.towerManager?.build(towerType, tx, ty, this.persistState, this.grid, cost);
           if (tower) {
             setGold(this.runState, this.runState.gold - cost);
@@ -930,6 +960,8 @@ export class GameEngine {
 
   dispose(): void {
     this.stop();
+    this.crowdManager?.destroy();
+    this.crowdManager = null;
     if (this.physicsWorld) {
       this.physicsWorld.dispose();
       this.physicsWorld = null;

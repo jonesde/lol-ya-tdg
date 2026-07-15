@@ -20,14 +20,6 @@ describe("Grid", () => {
       expect(grid.spawns).toEqual(map.spawns);
       expect(grid.base).toEqual(map.base);
     });
-
-    it("computes initial paths for all spawns", () => {
-      const map = makeBastionMap();
-      const grid = new Grid(map);
-      expect(grid.paths).toHaveLength(1);
-      expect(grid.paths?.[0]).not.toBeNull();
-      expect(grid.paths?.[0]?.length).toBeGreaterThan(0);
-    });
   });
 
   describe("tile type queries", () => {
@@ -35,12 +27,6 @@ describe("Grid", () => {
     beforeEach(() => {
       const map = makeBastionMap();
       grid = new Grid(map);
-    });
-
-    it("isPath returns true for path tiles", () => {
-      const pathTile = grid.paths![0]!.find((tile) => grid.tiles[tile.y][tile.x].type === "path");
-      expect(pathTile).toBeDefined();
-      expect(grid.isPath(pathTile!.x, pathTile!.y)).toBe(true);
     });
 
     it("isPath returns false for terrain tiles", () => {
@@ -51,11 +37,6 @@ describe("Grid", () => {
     it("isTerrain returns true for terrain tiles", () => {
       expect(grid.isTerrain(0, 0)).toBe(true);
       expect(grid.isTerrain(0, 2)).toBe(true);
-    });
-
-    it("isTerrain returns false for path tiles", () => {
-      const pathTile = grid.paths![0]![0];
-      expect(grid.isTerrain(pathTile.x, pathTile.y)).toBe(false);
     });
 
     it("isBase returns true for base tiles", () => {
@@ -141,68 +122,11 @@ describe("Grid", () => {
       grid = new Grid(map);
     });
 
-    it("registers a tower on terrain without affecting paths", () => {
-      grid.registerTower(0, 0);
-      expect(grid.terrainTowers.has("0,0")).toBe(true);
-      expect(grid.blocked.has("0,0")).toBe(false);
-      expect(grid.getPathFor(0)).not.toBeNull();
-    });
-
-    it("registers a tower on a path tile and marks it blocked", () => {
-      const pathTile = grid.paths![0]!.find((tile) => grid.tiles[tile.y][tile.x].type === "path" && tile.x > 0);
-      grid.registerTower(pathTile!.x, pathTile!.y);
-      expect(grid.blocked.has(`${pathTile!.x},${pathTile!.y}`)).toBe(true);
-      expect(grid.terrainTowers.has(`${pathTile!.x},${pathTile!.y}`)).toBe(false);
-    });
-
-    it("keeps a route through a path tile when a tower is placed on it (Phase 2 fallback)", () => {
-      const pathTile = grid.paths![0]!.find((tile) => grid.tiles[tile.y][tile.x].type === "path" && tile.x > 0);
-      const originalLength = grid.paths![0]!.length;
-      grid.registerTower(pathTile!.x, pathTile!.y);
-      const newPath = grid.getPathFor(0);
-      expect(newPath).not.toBeNull();
-      expect(newPath!.length).toBe(originalLength);
-      // The weakest-path route crosses the tower tile rather than rerouting around it.
-      expect(newPath!.some((tile) => tile.x === pathTile!.x && tile.y === pathTile!.y)).toBe(true);
-    });
-
     it("unregisters a terrain tower", () => {
       grid.registerTower(0, 0);
       expect(grid.terrainTowers.has("0,0")).toBe(true);
       grid.unregisterTower(0, 0);
       expect(grid.terrainTowers.has("0,0")).toBe(false);
-    });
-
-    it("unregisters a path tower and removes from blocked", () => {
-      const pathTile = grid.paths![0]!.find((tile) => grid.tiles[tile.y][tile.x].type === "path" && tile.x > 0);
-      grid.registerTower(pathTile!.x, pathTile!.y);
-      expect(grid.blocked.has(`${pathTile!.x},${pathTile!.y}`)).toBe(true);
-      grid.unregisterTower(pathTile!.x, pathTile!.y);
-      expect(grid.blocked.has(`${pathTile!.x},${pathTile!.y}`)).toBe(false);
-    });
-
-    it("recalculates path when a path tower is removed, restoring the original route", () => {
-      const map = makeSplitMap();
-      const splitGrid = new Grid(map);
-      const pathTile = { x: 5, y: 2 };
-      const originalPath = [...splitGrid.paths![0]!];
-      expect(originalPath.some((tile) => tile.x === pathTile.x && tile.y === pathTile.y)).toBe(true);
-      splitGrid.registerTower(pathTile.x, pathTile.y);
-      expect(splitGrid.paths![0]!).not.toEqual(originalPath);
-      splitGrid.unregisterTower(pathTile.x, pathTile.y);
-      expect(splitGrid.blocked.has(`${pathTile.x},${pathTile.y}`)).toBe(false);
-      expect(splitGrid.paths![0]!).toEqual(originalPath);
-    });
-
-    it("getPathFor returns null for invalid spawn index", () => {
-      expect(grid.getPathFor(-1)).toBeNull();
-      expect(grid.getPathFor(99)).toBeNull();
-    });
-
-    it("getPathFor returns the path for valid spawn index", () => {
-      const path = grid.getPathFor(0);
-      expect(path).not.toBeNull();
-      expect(Array.isArray(path)).toBe(true);
     });
   });
 
@@ -229,25 +153,6 @@ describe("Grid", () => {
       const world = grid.tileToWorld(tileX, tileY);
       const back = grid.worldToTile(world.x, world.y);
       expect(back).toEqual({ x: tileX, y: tileY });
-    });
-  });
-
-  describe("multi-spawn maps", () => {
-    it("computes paths for each spawn in a split map", () => {
-      const map = makeSplitMap();
-      const grid = new Grid(map);
-      expect(grid.paths).toHaveLength(2);
-      expect(grid.paths?.[0]).not.toBeNull();
-      expect(grid.paths?.[1]).not.toBeNull();
-    });
-
-    it("getPathFor returns correct path for each spawn", () => {
-      const map = makeSplitMap();
-      const grid = new Grid(map);
-      const path0 = grid.getPathFor(0)!;
-      const path1 = grid.getPathFor(1)!;
-      expect(path0[0]).toEqual(map.spawns[0]);
-      expect(path1[0]).toEqual(map.spawns[1]);
     });
   });
 

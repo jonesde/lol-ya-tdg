@@ -75,6 +75,18 @@ describe("worker round-trip", () => {
   function wait(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+  // Polls until `condition` is true or `timeoutMs` elapses. Used in place of a
+  // fixed setTimeout wait so the assertions are robust to scheduling contention
+  // when many test files run in parallel (the worker's loop is setTimeout-driven
+  // and a short fixed wait can be starved under load).
+  async function waitFor(condition: () => boolean, timeoutMs = 1000, intervalMs = 10): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (condition()) return true;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+    return condition();
+  }
 
   // Counts acks actually delivered to the worker (the worker processes snapshotAck
   // synchronously), so this equals "acks received by the worker" used by the
@@ -104,7 +116,7 @@ describe("worker round-trip", () => {
     });
 
     // Let the setTimeout-driven fixed-timestep loop run a few ticks.
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await waitFor(() => snapshotMessages(posted).length > 0);
 
     // Stop the loop cleanly.
     mockSelf.onmessage!({ data: { type: "dispose" } });
@@ -144,7 +156,7 @@ describe("worker round-trip", () => {
       data: { type: "command", command: { commandId: 1, type: "action:selectBuildType", towerType: "basic" } },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitFor(() => snapshotMessages(posted).some((m) => m.snapshot.meta.selectedTowerType === "basic"));
     const afterSelect = snapshotMessages(posted);
     expect(afterSelect[afterSelect.length - 1]!.snapshot.meta.selectedTowerType).toBe("basic");
 

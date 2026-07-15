@@ -368,5 +368,37 @@ tower-obstacle maze tactics without us hand-writing any of it — exactly the
 - **Behavior change acceptance:** tower-as-obstacle (avoid, not attack-through) is a
   deliberate departure; confirm it reads as a feature, not a regression, in playtest.
 - **If DetourCrowd is a poor fit:** pivot to `navcat` (pure TS, no WASM) rather than
-  rebuilding all of this — the module boundaries (NavMeshBuilder/CrowdManager behind
-  `RECAST_NAV`) keep that swap localized.
+   rebuilding all of this — the module boundaries (NavMeshBuilder/CrowdManager behind
+   `RECAST_NAV`) keep that swap localized.
+
+## Status — COMPLETE (all phases 0–7)
+
+- `RECAST_NAV = true` in `src/sim/featureFlags.ts`. The old BFS `Pathfinding.ts` is
+  deleted; `Grid.ts` retains only `isPath`/`isBase`/`isSpawn` + walkable predicate +
+  tower-placement helpers + `pathVersion` (no `paths`/`getPathFor`/`recomputePaths`/
+  `recomputePathsForTile`/`computeSurroundRoute`). `Enemy.path`/`pathIdx` are gone;
+  `computeIntent`/`postPhysics` are the canonical (ON) methods. `SimulationSnapshot`
+  ships `navMeshCorridor` (the `paths`/`pathsVersion` fields were removed);
+  `TextPathRenderer` consumes the corridor only; `SvgGameRoot.vue` path-highlight block
+  removed.
+- Test suite is fully green under `RECAST_NAV`:
+  - `npx tsc --noEmit` → zero errors.
+  - `npx vitest run` → **1084 passing** (70 files).
+  - `navmesh-build`, `crowd-motion`, `tower-obstacle`, `base-attack`, `commander-route`,
+    `corridor-geometry` cover the new navmesh/crowd/routing behavior.
+  - Deleted `tests/unit/pathfinding.test.ts` and `tests/unit/sim/enemy-routing.test.ts`
+    (old BFS/perimeter model). Retired/rewrote position-exact specs in `enemies.test.ts`,
+    `enemy-manager.test.ts`, `grid.test.ts`, `map.test.ts`, `applyCommand.test.ts`,
+    `physics-world.test.ts`, `pre-step-queries.test.ts`, `towers.test.ts` (selectTarget now
+    orders by distance-to-base, not `pathIdx`), `enemy-physics.test.ts`, `game-engine.test.ts`,
+    `enemy-perimeter.test.ts`, `text-render.test.ts`, `integration/commander.test.ts`,
+    `integration/physics-motion.test.ts`. Movement tests drive a real `CrowdManager`
+    (`initNavMesh` + `NavMeshBuilder` + `addAgent` + `crowd.update` per tick).
+- A shared test helper `tests/helpers/navmesh-test-utils.ts` `orderedPath(grid, spawnIndex)`
+  provides an ordered walkable-tile list (BFS over `isPath`/`isBase`/`isSpawn`) for tests
+  that previously used `getPathFor`; the start node is marked `visited` to avoid a
+  reconstruction 2-cycle (a synchronous infinite loop that previously hung the suite).
+- No remaining references to `getPathFor`/`recomputePaths`/`computeRoute`/`computeSurroundRoute`/
+  `canPlaceWithoutBlocking`/`bfsShortestPath`/`dijkstraWeakestPath`/`reanchorToPath`/
+  `contactLineSteer`/`findLateralOpenSpot`/`postPhysicsNavMesh`/`computeIntentNavMesh`/
+  `preStepNavMesh`/`postStepNavMesh`/`enemy.pathIdx`/`enemy.path` anywhere in `src/` or `tests/`.

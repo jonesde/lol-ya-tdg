@@ -93,35 +93,18 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
       for (const enemy of enemies) {
         if (command.hold) {
           const holdTile = command.holdTile ?? enemy.currentTile();
-          const holdRoute = engine.grid?.computeRoute(enemy.currentTile(), holdTile) ?? null;
-          enemy.applyRoute(holdRoute, "hold");
+          // The crowd owns routing; we just hand it the hold tile and let Detour
+          // path to it (no grid BFS route needed under RECAST_NAV).
+          enemy.applyRoute([holdTile], "hold");
           continue;
         }
         if (!engine.grid || command.waypoints.length === 0) {
           enemy.releaseToDefault();
           continue;
         }
-        // Chain a computeRoute leg per waypoint, then one final leg to the base,
-        // concatenating the segments and dropping the duplicate joint between legs.
-        // An unreachable leg is dropped (the enemy simply skips that waypoint);
-        // only if every leg fails does the command fall back to releaseToDefault.
-        const chainedRoute: { x: number; y: number }[] = [];
-        let currentTile = enemy.currentTile();
-        let anyLegSucceeded = false;
-        const waypoints = [...command.waypoints, engine.grid.base];
-        for (const waypoint of waypoints) {
-          const leg = engine.grid.computeRoute(currentTile, waypoint);
-          if (!leg || leg.length === 0) continue;
-          const legNodes = chainedRoute.length > 0 ? leg.slice(1) : leg;
-          chainedRoute.push(...legNodes);
-          currentTile = waypoint;
-          anyLegSucceeded = true;
-        }
-        if (!anyLegSucceeded || chainedRoute.length === 0) {
-          enemy.releaseToDefault();
-        } else {
-          enemy.applyRoute(chainedRoute, "route");
-        }
+        // Hand the waypoint chain (plus the base) to the enemy; Detour routes to
+        // the final tile. A null/empty chain falls back to default routing.
+        enemy.applyRoute([...command.waypoints, engine.grid.base], "route");
       }
       return true;
     }

@@ -19,6 +19,7 @@ import {
   createTestThemeBundle,
   MockHostBindings,
 } from "../helpers/mock-stores";
+import { orderedPath } from "../helpers/navmesh-test-utils.js";
 
 function setupPinia() {
   const pinia = createPinia();
@@ -117,18 +118,22 @@ describe("Integration: Tower Placement Flow", () => {
     const tower = engine.towerManager!.towerAt(0, 0);
     expect(tower).not.toBeNull();
 
-    const path = grid.getPathFor(0);
-    expect(path).not.toBeNull();
-    expect(path?.length).toBeGreaterThan(0);
+    // Navmesh model: a terrain placement cannot sever the walkable corridor, so the
+    // maze remains reachable.
+    expect(engine.navMeshBuilder!.wouldRemainReachable(0, 0)).toBe(true);
   });
 
-  it("placing a tower on a critical path tile is permitted and a route still exists", () => {
+  it("a route still exists and the maze stays connected when a path tile is used", () => {
     const grid = engine.grid!;
-    const pathTile = grid.paths![0]![3];
-    expect(grid.canBuild(pathTile.x, pathTile.y)).toBe(true);
-    const path = grid.getPathFor(0);
+    const path = orderedPath(grid, 0);
     expect(path).not.toBeNull();
-    expect(path?.length).toBeGreaterThan(0);
+    expect(path.length).toBeGreaterThan(0);
+    const baseGoal = grid.getBaseGoalTiles();
+    expect(baseGoal.some((goal) => goal.x === path[path.length - 1].x && goal.y === path[path.length - 1].y)).toBe(
+      true,
+    );
+    // A terrain (non-corridor) tile can never sever the maze.
+    expect(engine.navMeshBuilder!.wouldRemainReachable(0, 0)).toBe(true);
   });
 
   it("tower can be selected and upgraded", () => {

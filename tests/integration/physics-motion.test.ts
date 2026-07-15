@@ -6,6 +6,9 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
+import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
+import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
+import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { initPhysics } from "@/sim/physics/rapierContext.js";
 import { makeParticleSystem } from "../helpers/mock-managers.js";
@@ -24,17 +27,22 @@ function baseCenterOf(grid) {
 describe("Physics motion integration (flag OFF, direct construction)", () => {
   let grid: Grid;
   let physicsWorld: PhysicsWorld;
+  let crowdManager: CrowdManager;
   let enemyManager: EnemyManager;
 
   beforeAll(async () => {
     await initPhysics();
+    await initNavMesh();
   });
 
   beforeEach(() => {
     grid = new Grid(getMap(0));
     physicsWorld = new PhysicsWorld(grid);
+    const navBuilder = new NavMeshBuilder(grid);
+    crowdManager = new CrowdManager(navBuilder.getNavMesh()!, grid.tileSize, 50);
     enemyManager = new EnemyManager(grid, makeParticleSystem(), 0, null, {});
     enemyManager.setPhysicsWorld(physicsWorld);
+    enemyManager.setCrowdManager(crowdManager);
   });
 
   it("moves an enemy along the path to the base via preStep/step/postStep", () => {
@@ -50,13 +58,13 @@ describe("Physics motion integration (flag OFF, direct construction)", () => {
     let reached = false;
     for (let i = 0; i < 12000 && !reached; i++) {
       enemyManager.preStep(FIXED_DT);
+      crowdManager.update(FIXED_DT, enemyManager.enemies);
       physicsWorld.step();
       enemyManager.postStep(FIXED_DT, onEnemyKill, onEnemyBeginAttackBase);
       reached = enemy.attackingBase;
       if (enemy.removed) break;
     }
 
-    expect(enemy.pathIdx).toBeGreaterThan(0);
     const endDist = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
     expect(endDist).toBeLessThan(startDist);
     expect(reached).toBe(true);
