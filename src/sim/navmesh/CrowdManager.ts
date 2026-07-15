@@ -2,6 +2,13 @@ import { Crowd, type NavMesh } from "recast-navigation";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import { toRecast } from "./coords.js";
 
+// Acceleration factor on top of (speed * tileSize). The original value (8) lets
+// agents follow the navmesh path at full responsiveness; the inside-corner catch
+// that caused pause-and-reroute is fixed geometrically by the chamfered corridor
+// walls (see PhysicsWorld.rebuildCorridor), so acceleration is left at the
+// original value to avoid slowing every enemy's base approach.
+const CROWD_MAX_ACCEL_FACTOR = 8;
+
 // Wraps one DetourCrowd derived from the run's NavMesh. Each live enemy owns a
 // CrowdAgent; the crowd computes the desired velocity (path follow + local
 // avoidance) and CrowdManager.update pushes that into the enemy's Rapier body so
@@ -22,7 +29,10 @@ export class CrowdManager {
     const agent = this.crowd.addAgent(toRecast({ x: enemy.x, y: enemy.y }), {
       radius: enemy.radius,
       maxSpeed: enemy.speed * this.tileSize,
-      maxAcceleration: enemy.speed * this.tileSize * 8,
+      // Lower acceleration than the default so agents follow a wider, smoother arc
+      // through corners instead of snapping velocity to cut the inside of a bend
+      // (which would clip the wall and trigger a physics reroute).
+      maxAcceleration: enemy.speed * this.tileSize * CROWD_MAX_ACCEL_FACTOR,
       separationWeight: 1,
     });
     enemy.agent = agent;

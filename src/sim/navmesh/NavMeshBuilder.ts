@@ -8,9 +8,9 @@ import {
   type Vector3,
 } from "recast-navigation";
 import { generateTileCache, type TileCacheGeneratorConfig } from "recast-navigation/generators";
-import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import { fromRecast, toRecast } from "./coords.js";
+import { navmeshClearanceWorld } from "./navmeshConfig.js";
 
 export interface WorldPoint {
   x: number;
@@ -43,10 +43,16 @@ export class NavMeshBuilder {
   private build(): void {
     const tileSize = this.grid.tileSize;
     const cellSize = tileSize / 4;
-    // Smallest enemy (runner) radius sets the agent clearance so a 1-wide corridor
-    // stays navigable; larger enemies rely on Rapier walls for collision.
-    const runnerRadius = ENEMY_TYPES.runner!.radius * tileSize * 0.5;
-    const walkableRadius = runnerRadius / cellSize;
+    // Agent clearance (world units) the navmesh corridor is eroded from the tile
+    // boundary. Computed from the largest *common* enemy radius (tank) plus a
+    // margin so the eroded bend fillet is wider than the tank and even it can round
+    // a 1-wide corner without wedging. Because the erosion exceeds every common
+    // enemy's radius, each enemy's circle stays fully inside the walkable area and
+    // never reaches the physics corridor wall (which still sits at the tile edge),
+    // eliminating the inside-corner block-and-reroute. 1-wide corridors stay
+    // navigable (the erosion is well under half a tile); wider corridors unaffected.
+    const clearanceWorld = navmeshClearanceWorld(tileSize);
+    const walkableRadius = clearanceWorld / cellSize;
 
     const config: Partial<TileCacheGeneratorConfig> = {
       expectedLayersPerTile: 1,

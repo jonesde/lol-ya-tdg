@@ -2,6 +2,7 @@ import type RAPIER from "@dimforge/rapier2d-compat";
 import { FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { Grid } from "@/sim/grid/Grid.js";
+import { corridorWallInsetWorld } from "@/sim/navmesh/navmeshConfig.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import { getRapier } from "./rapierContext.js";
 
@@ -78,7 +79,6 @@ export class PhysicsWorld {
     this.dropBodies(this.corridorBodies);
     const tileSize = this.grid.tileSize;
     const halfThickness = tileSize * 0.05;
-    const halfLength = tileSize / 2;
 
     const walkableTiles: { x: number; y: number }[] = [];
     const seenWalkable = new Set<string>();
@@ -94,6 +94,48 @@ export class PhysicsWorld {
       }
     }
 
+    // Convex-corner detection. A tile-corner (i, j) is a convex wall vertex poking
+    // into the corridor when exactly one of its four flanking tiles is terrain and
+    // that terrain tile's two walkable neighbours flank it (the inside of a bend).
+    // We round these vertices so enemy circles stop catching on them (the inside-
+    // corner reroute). `convexCorners` marks any corner to be shortened on the
+    // straight walls; `convexDirs` records which two axis directions the walls run
+    // from the vertex (into the corridor) so the chamfer can replace the sharp point.
+    const convexCorners = new Set<string>();
+    const convexDirs = new Map<string, { sx: number; sy: number }>();
+    const cornerKey = (i: number, j: number): string => `${i},${j}`;
+    for (let j = 1; j < this.grid.height; j++) {
+      for (let i = 1; i < this.grid.width; i++) {
+        const nw = this.isWalkable(i - 1, j - 1);
+        const ne = this.isWalkable(i, j - 1);
+        const sw = this.isWalkable(i - 1, j);
+        const se = this.isWalkable(i, j);
+        let sx = 0;
+        let sy = 0;
+        if (!nw && ne && sw) {
+          sx = 1;
+          sy = 1;
+        } else if (!ne && nw && se) {
+          sx = -1;
+          sy = 1;
+        } else if (!sw && nw && se) {
+          sx = 1;
+          sy = -1;
+        } else if (!se && ne && sw) {
+          sx = -1;
+          sy = -1;
+        }
+        if (sx !== 0) {
+          const key = cornerKey(i, j);
+          convexCorners.add(key);
+          convexDirs.set(key, { sx, sy });
+        }
+      }
+    }
+
+    const inset = corridorWallInsetWorld(tileSize);
+    const chamferHalfThickness = halfThickness;
+
     const neighbors = [
       { dx: 1, dy: 0 },
       { dx: -1, dy: 0 },
@@ -101,26 +143,95 @@ export class PhysicsWorld {
       { dx: 0, dy: -1 },
     ];
 
+    const addWallSegment = (x1: number, y1: number, x2: number, y2: number): void => {
+      const centerX = (x1 + x2) / 2;
+      const centerY = (y1 + y2) / 2;
+      const horizontal = y1 === y2;
+      const halfX = horizontal ? Math.abs(x2 - x1) / 2 : chamferHalfThickness;
+      const halfY = horizontal ? chamferHalfThickness : Math.abs(y2 - y1) / 2;
+      const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY));
+      this.world.createCollider(RAPIER.ColliderDesc.cuboid(halfX, halfY), body);
+      this.corridorBodies.push(body);
+    };
+
     for (const tile of walkableTiles) {
-      const tileCenter = this.grid.tileToWorld(tile.x, tile.y);
       for (const neighbor of neighbors) {
         const nx = tile.x + neighbor.dx;
         const ny = tile.y + neighbor.dy;
         if (this.isWalkable(nx, ny)) continue;
 
-        const neighborCenter = this.grid.tileToWorld(nx, ny);
-        const edgeCenterX = (tileCenter.x + neighborCenter.x) / 2;
-        const edgeCenterY = (tileCenter.y + neighborCenter.y) / 2;
+        // The shared edge runs between `tile` and the non-walkable `neighbor`. Its
+        // two endpoints are tile corners; if a corner is a convex wall vertex we pull
+        // that endpoint back by `inset` so the chamfer diagonal can replace the sharp
+        // point (widening the turn without opening a gap into terrain).
+        let x1: number;
+        let y1: number;
+        let x2: number;
+        let y2: number;
+        let c1i: number;
+        let c1j: number;
+        let c2i: number;
+        let c2j: number;
+        if (neighbor.dy !== 0) {
+          const y = neighbor.dy < 0 ? tile.y * tileSize : (tile.y + 1) * tileSize;
+          x1 = tile.x * tileSize;
+          y1 = y;
+          c1i = tile.x;
+          c1j = neighbor.dy < 0 ? tile.y : tile.y + 1;
+          x2 = (tile.x + 1) * tileSize;
+          y2 = y;
+          c2i = tile.x + 1;
+          c2j = c1j;
+        } else {
+          const x = neighbor.dx < 0 ? tile.x * tileSize : (tile.x + 1) * tileSize;
+          x1 = x;
+          y1 = tile.y * tileSize;
+          c1i = neighbor.dx < 0 ? tile.x : tile.x + 1;
+          c1j = tile.y;
+          x2 = x;
+          y2 = (tile.y + 1) * tileSize;
+          c2i = c1i;
+          c2j = tile.y + 1;
+        }
 
-        // Vertical edge (neighbor left/right) → thin along x, full length along y.
-        // Horizontal edge (neighbor up/down) → full length along x, thin along y.
-        const halfX = neighbor.dx !== 0 ? halfThickness : halfLength;
-        const halfY = neighbor.dx !== 0 ? halfLength : halfThickness;
+        const length = tileSize;
+        if (convexCorners.has(cornerKey(c1i, c1j))) {
+          const t = inset / length;
+          x1 += (x2 - x1) * t;
+          y1 += (y2 - y1) * t;
+        }
+        if (convexCorners.has(cornerKey(c2i, c2j))) {
+          const t = inset / length;
+          x2 += (x1 - x2) * t;
+          y2 += (y1 - y2) * t;
+        }
 
-        const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(edgeCenterX, edgeCenterY));
-        this.world.createCollider(RAPIER.ColliderDesc.cuboid(halfX, halfY), body);
-        this.corridorBodies.push(body);
+        addWallSegment(x1, y1, x2, y2);
       }
+    }
+
+    // Close each convex corner with a diagonal chamfer wall. The straight walls were
+    // shortened back by `inset`, so the endpoints (A, B) meet this diagonal; the sharp
+    // convex vertex is replaced by a rounded pocket the enemy can follow.
+    for (const [key, dir] of convexDirs) {
+      const parts = key.split(",");
+      const i = Number(parts[0]);
+      const j = Number(parts[1]);
+      const vertexX = i * tileSize;
+      const vertexY = j * tileSize;
+      const axX = vertexX - dir.sx * inset;
+      const axY = vertexY;
+      const bxX = vertexX;
+      const bxY = vertexY - dir.sy * inset;
+      const centerX = (axX + bxX) / 2;
+      const centerY = (axY + bxY) / 2;
+      const length = Math.hypot(bxX - axX, bxY - axY);
+      const angle = Math.atan2(bxY - axY, bxX - axX);
+      const body = this.world.createRigidBody(
+        RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setRotation(angle),
+      );
+      this.world.createCollider(RAPIER.ColliderDesc.cuboid(length / 2, chamferHalfThickness), body);
+      this.corridorBodies.push(body);
     }
   }
 

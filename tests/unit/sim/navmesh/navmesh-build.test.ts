@@ -98,6 +98,19 @@ describe("NavMeshBuilder", () => {
     expect(path.length).toBeGreaterThan(0);
   });
 
+  it("keeps the 1-wide L-corridor navigable under the tank corner clearance", () => {
+    // The navmesh is inset by the tank radius (largest common enemy). This guards
+    // against that erosion severing a 1-wide serpentine bend.
+    const grid = new Grid(makeOneWideCorridorMap());
+    const builder = new NavMeshBuilder(grid);
+    expect(builder.isSuccess()).toBe(true);
+    const start = grid.spawns[0];
+    const base = grid.getBase();
+    if (!start || !base) throw new Error("map missing spawn or base");
+    const path = builder.findPath(worldVector(grid, start.x, start.y), worldVector(grid, base.x, base.y));
+    expect(path.length).toBeGreaterThan(0);
+  });
+
   it("builds successfully over an open-area map and connects spawn to base", () => {
     const grid = new Grid(makeOpenFieldMap());
     const path = connectivityPath(grid);
