@@ -1,5 +1,6 @@
 import { FIXED_DT, GameState, MAX_ACCUM, MAX_STEPS_PER_FRAME } from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
 import { initPhysics } from "@/sim/physics/rapierContext.js";
 import { applyCommand } from "./applyCommand.js";
@@ -243,6 +244,9 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       // Cached async init of the Rapier WASM module (plans/rapier2d.md Phase 0).
       // Required before any getRapier().
       await initPhysics();
+      // Cached async init of the recast-navigation WASM module (plans/recast.md
+      // Phase 0). Required before any getRecast() / NavMeshBuilder / CrowdManager.
+      await initNavMesh();
       // Harden re-entry: a terminal run may leave the loop stopped while a new
       // `init` arrives on the same worker. stopLoop() first guarantees a clean
       // loop state (clears any pending timeout) before we build the new engine

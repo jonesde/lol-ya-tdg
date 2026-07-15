@@ -53,3 +53,7 @@ Every search and replace operation must follow this pattern:
 4. **Run the search and replace**: apply the replacement if, and only if, the verification passes.
 
 If a variable name or other value to replace is not sufficiently distinct to isolate with a regular expression, then: limit the search and replace to line ranges within the file, or patch each replacement manually instead of doing a search and replace.
+
+## Temporary Files
+
+Use the tmp/ directory in the project root for temporary files. Never use /tmp or other directories outside the project root.

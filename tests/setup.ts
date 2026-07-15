@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { vi } from "vitest";
+import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { initPhysics } from "@/sim/physics/rapierContext.js";
 
 const noop = (): void => {};
@@ -165,5 +166,8 @@ globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserv
 // Physics init safety net (plans/rapier2d.md Phase 0). Every direct-construct test
 // path is safe at start-up without per-file init calls.
 await initPhysics();
+// Navmesh init safety net (plans/recast.md Phase 0). Same rationale as above — every
+// direct-construct test path that touches recast-navigation is safe at start-up.
+await initNavMesh();
 
 export { mockCanvas, mockCtx };
