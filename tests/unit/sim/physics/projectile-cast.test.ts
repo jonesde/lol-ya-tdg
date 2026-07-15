@@ -2,14 +2,13 @@
 // Swept-shape projectile casts (continuous collision, no tunneling).
 
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PROJECTILE_HIT_THRESHOLD } from "@/sim/Constants.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
-import { initPhysics } from "@/sim/physics/rapierContext.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../../../helpers/mock-grid.js";
 import { makeParticleSystem } from "../../../helpers/mock-managers.js";
@@ -21,12 +20,12 @@ const BALL = 3 + PROJECTILE_HIT_THRESHOLD;
 describe("PhysicsWorld swept casts", () => {
   let grid: Grid;
   let pw: PhysicsWorld;
-  beforeAll(async () => {
-    await initPhysics();
-  });
   beforeEach(() => {
     grid = new Grid(getMap(0));
     pw = new PhysicsWorld(grid);
+  });
+  afterEach(() => {
+    pw.dispose();
   });
 
   function addAt(x: number, y: number): Enemy {
@@ -83,9 +82,6 @@ describe("EnemyManager cast delegate", () => {
   let grid: Grid;
   let pw: PhysicsWorld;
   let particles: ReturnType<typeof makeParticleSystem>;
-  beforeAll(async () => {
-    await initPhysics();
-  });
   beforeEach(() => {
     const pinia = createPinia();
     setActivePinia(pinia);

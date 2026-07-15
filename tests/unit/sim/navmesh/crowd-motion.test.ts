@@ -1,11 +1,10 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { FIXED_DT } from "@/sim/Constants.js";
 import type { AttackTarget } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
-import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { makeBastionMap, makeMapData } from "../../../helpers/mock-grid.js";
@@ -96,26 +95,35 @@ function distanceToBase(enemy: { centerX: number; centerY: number }, baseWorld: 
 }
 
 describe("CrowdManager motion", () => {
-  beforeAll(async () => {
-    // setup.ts already initializes both WASM modules, but be safe for this suite.
-    await initNavMesh();
-  });
+  let grid: Grid;
+  let physicsWorld: PhysicsWorld;
+  let crowdManager: CrowdManager;
+  let enemyManager: EnemyManager;
 
-  it("drives enemies toward the base and keeps them from overlapping", () => {
-    const grid = new Grid(makeBastionMap());
+  // Builds a fresh PhysicsWorld + CrowdManager + EnemyManager for the given map.
+  // setup.ts already initializes both WASM modules at module load, so no per-file
+  // init is needed. Disposed in afterEach so each scenario frees its Rapier world.
+  function setupScenario(mapFactory: () => ReturnType<typeof makeMapData>): void {
+    grid = new Grid(mapFactory());
     const navBuilder = new NavMeshBuilder(grid);
     expect(navBuilder.isSuccess()).toBe(true);
-    const navMesh = navBuilder.getNavMesh()!;
-
-    const crowdManager = new CrowdManager(navMesh, grid.tileSize, 50);
-
-    const enemyManager = new EnemyManager(grid, new NoopParticleSpawner(), 0, null, {});
-    const physicsWorld = new PhysicsWorld(grid);
+    crowdManager = new CrowdManager(navBuilder.getNavMesh()!, grid.tileSize, 50);
+    enemyManager = new EnemyManager(grid, new NoopParticleSpawner(), 0, null, {});
+    physicsWorld = new PhysicsWorld(grid);
     // DetourCrowd owns enemy-enemy avoidance, so disable Rapier enemy-enemy
     // collisions — this isolates the crowd's local avoidance in the overlap check.
     physicsWorld.setEnemyEnemyCollisions(false);
     enemyManager.setPhysicsWorld(physicsWorld);
     enemyManager.baseTarget = makeBaseTarget();
+  }
+
+  afterEach(() => {
+    crowdManager.destroy();
+    physicsWorld.dispose();
+  });
+
+  it("drives enemies toward the base and keeps them from overlapping", () => {
+    setupScenario(makeBastionMap);
 
     const baseWorld = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
 
@@ -165,17 +173,8 @@ describe("CrowdManager motion", () => {
     // clearance. With the widened clearance its full circle stays off the
     // inside-corner wall through the bend, so it threads the L and reaches base
     // without stalling or reversing.
-    const grid = new Grid(makeOneWideCornerMap());
-    const navBuilder = new NavMeshBuilder(grid);
-    expect(navBuilder.isSuccess()).toBe(true);
-
-    const physicsWorld = new PhysicsWorld(grid);
-    physicsWorld.setEnemyEnemyCollisions(false);
-    const crowdManager = new CrowdManager(navBuilder.getNavMesh()!, grid.tileSize, 50);
-    const enemyManager = new EnemyManager(grid, new NoopParticleSpawner(), 0, null, {});
-    enemyManager.setPhysicsWorld(physicsWorld);
+    setupScenario(makeOneWideCornerMap);
     enemyManager.setCrowdManager(crowdManager);
-    enemyManager.baseTarget = makeBaseTarget();
 
     const baseWorld = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
     const enemy = enemyManager.spawn("tank", 1, 0, 1)!;
@@ -215,17 +214,8 @@ describe("CrowdManager motion", () => {
     // slower tank instead of crawling/ramming it (and the tank is not pulled
     // backward into the runner). At the old crawl speed (one acceleration step
     // per frame) the runner could not reach the base within this budget.
-    const grid = new Grid(makeTwoWideLaneMap());
-    const navBuilder = new NavMeshBuilder(grid);
-    expect(navBuilder.isSuccess()).toBe(true);
-
-    const physicsWorld = new PhysicsWorld(grid);
-    physicsWorld.setEnemyEnemyCollisions(false);
-    const crowdManager = new CrowdManager(navBuilder.getNavMesh()!, grid.tileSize, 50);
-    const enemyManager = new EnemyManager(grid, new NoopParticleSpawner(), 0, null, {});
-    enemyManager.setPhysicsWorld(physicsWorld);
+    setupScenario(makeTwoWideLaneMap);
     enemyManager.setCrowdManager(crowdManager);
-    enemyManager.baseTarget = makeBaseTarget();
 
     const baseWorld = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
 

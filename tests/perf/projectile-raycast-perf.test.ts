@@ -1,21 +1,21 @@
 // @ts-nocheck
 // Performance guard for swept-shape projectile casts under a heavy wave (Risk 2).
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
-import { initPhysics } from "@/sim/physics/rapierContext.js";
 
 describe("projectile raycast perf (Risk 2)", () => {
   let grid: Grid;
   let pw: PhysicsWorld;
-  beforeAll(async () => {
-    await initPhysics();
-  });
   beforeEach(() => {
+    // setup.ts already initializes the WASM module at module load.
     grid = new Grid(getMap(0));
     pw = new PhysicsWorld(grid);
+  });
+  afterEach(() => {
+    pw.dispose();
   });
 
   it("sustains many swept casts over a heavy wave under budget", () => {

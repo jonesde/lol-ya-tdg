@@ -2,15 +2,13 @@
 // Higher-level physics orchestration (unconditionally) without flipping a flag.
 // We wire a real PhysicsWorld into a real EnemyManager and drive the full
 // preStep -> step -> postStep pipeline so enemies move under physics.
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
-import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
-import { initPhysics } from "@/sim/physics/rapierContext.js";
 import { makeParticleSystem } from "../helpers/mock-managers.js";
 
 const FIXED_DT = 1 / 60;
@@ -30,12 +28,8 @@ describe("Physics motion integration (flag OFF, direct construction)", () => {
   let crowdManager: CrowdManager;
   let enemyManager: EnemyManager;
 
-  beforeAll(async () => {
-    await initPhysics();
-    await initNavMesh();
-  });
-
   beforeEach(() => {
+    // setup.ts already initializes both WASM modules at module load.
     grid = new Grid(getMap(0));
     physicsWorld = new PhysicsWorld(grid);
     const navBuilder = new NavMeshBuilder(grid);
@@ -43,6 +37,11 @@ describe("Physics motion integration (flag OFF, direct construction)", () => {
     enemyManager = new EnemyManager(grid, makeParticleSystem(), 0, null, {});
     enemyManager.setPhysicsWorld(physicsWorld);
     enemyManager.setCrowdManager(crowdManager);
+  });
+
+  afterEach(() => {
+    crowdManager.destroy();
+    physicsWorld.dispose();
   });
 
   it("moves an enemy along the path to the base via preStep/step/postStep", () => {

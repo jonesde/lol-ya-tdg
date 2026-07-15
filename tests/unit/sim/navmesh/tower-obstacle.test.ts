@@ -1,9 +1,8 @@
 import { NavMeshQuery } from "recast-navigation";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Grid } from "@/sim/grid/Grid.js";
 import { toRecast } from "@/sim/navmesh/coords.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
-import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { makeMapData } from "../../../helpers/mock-grid.js";
 import { orderedPath } from "../../../helpers/navmesh-test-utils.js";
 
@@ -85,10 +84,6 @@ function spawnBaseWorld(grid: Grid) {
 }
 
 describe("NavMeshBuilder tower obstacles", () => {
-  beforeAll(async () => {
-    await initNavMesh();
-  });
-
   it("places a tower obstacle and re-routes enemies around it", () => {
     const grid = new Grid(makeTwoWideCorridorMap());
     const builder = new NavMeshBuilder(grid);

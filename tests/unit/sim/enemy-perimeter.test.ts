@@ -1,11 +1,10 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
-import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { makeParticleSystem } from "../../helpers/mock-managers.js";
 import { stepPhysics } from "../../helpers/physicsTestDriver.js";
@@ -14,11 +13,13 @@ const FIXED_DT = 1 / 60;
 
 let navBuilder: NavMeshBuilder | null = null;
 
-beforeAll(async () => {
-  await initNavMesh();
-});
+type Manager = { grid: Grid; enemyManager: EnemyManager; physicsWorld: PhysicsWorld; crowdManager: CrowdManager };
 
-function makeManager() {
+let manager: Manager;
+
+beforeEach(() => {
+  // setup.ts already initializes the WASM modules at module load, so no per-file
+  // init is needed here. The navmesh is built once per suite (shared geometry).
   const grid = new Grid(getMap(0));
   const enemyManager = new EnemyManager(grid, makeParticleSystem(), 0);
   const physicsWorld = new PhysicsWorld(grid);
@@ -26,7 +27,16 @@ function makeManager() {
   if (!navBuilder) navBuilder = new NavMeshBuilder(grid);
   const crowdManager = new CrowdManager(navBuilder.getNavMesh()!, grid.tileSize, 50);
   enemyManager.setCrowdManager(crowdManager);
-  return { grid, enemyManager, physicsWorld, crowdManager };
+  manager = { grid, enemyManager, physicsWorld, crowdManager };
+});
+
+afterEach(() => {
+  manager.crowdManager.destroy();
+  manager.physicsWorld.dispose();
+});
+
+function makeManager(): Manager {
+  return manager;
 }
 
 function distanceToBaseSquare(x: number, y: number, baseCenterX: number, baseCenterY: number, half: number): number {

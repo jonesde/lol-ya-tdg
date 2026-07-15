@@ -1,9 +1,8 @@
 import type { Vector3 } from "recast-navigation";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
-import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { makeBastionMap, makeMapData } from "../../../helpers/mock-grid.js";
 
 type TileType = "terrain" | "path" | "base" | "spawn";
@@ -76,10 +75,6 @@ function connectivityPath(grid: Grid): { x: number; y: number }[] {
 }
 
 describe("NavMeshBuilder", () => {
-  beforeAll(async () => {
-    await initNavMesh();
-  });
-
   it("builds a connected navmesh over a known map (getMap(0))", () => {
     const grid = new Grid(getMap(0));
     const path = connectivityPath(grid);

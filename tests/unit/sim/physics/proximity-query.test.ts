@@ -2,13 +2,12 @@
 // Proximity queries backed by Rapier (replaces the deleted spatial hash).
 
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
-import { initPhysics } from "@/sim/physics/rapierContext.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../../../helpers/mock-grid.js";
 import { makeParticleSystem } from "../../../helpers/mock-managers.js";
@@ -17,12 +16,12 @@ import { mockDefaultTheme } from "../../../helpers/mock-stores.js";
 describe("PhysicsWorld proximity queries", () => {
   let grid: Grid;
   let pw: PhysicsWorld;
-  beforeAll(async () => {
-    await initPhysics();
-  });
   beforeEach(() => {
     grid = new Grid(getMap(0));
     pw = new PhysicsWorld(grid);
+  });
+  afterEach(() => {
+    pw.dispose();
   });
 
   function addEnemyAt(x: number, y: number): Enemy {
@@ -76,9 +75,6 @@ describe("EnemyManager proximity delegate", () => {
   let grid: Grid;
   let particles: ReturnType<typeof makeParticleSystem>;
   let pw: PhysicsWorld;
-  beforeAll(async () => {
-    await initPhysics();
-  });
   beforeEach(() => {
     const pinia = createPinia();
     setActivePinia(pinia);

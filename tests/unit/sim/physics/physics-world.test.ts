@@ -2,7 +2,7 @@
 // Direct PhysicsWorld tests. We construct the world unconditionally.
 // instead we construct the PhysicsWorld directly (which requires initPhysics() to
 // have resolved) and drive enemies as bare Rapier bodies.
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
@@ -41,6 +41,10 @@ describe("PhysicsWorld — lifecycle & containment (flag OFF, direct constructio
   beforeEach(() => {
     grid = new Grid(getMap(0));
     physicsWorld = new PhysicsWorld(grid);
+  });
+
+  afterEach(() => {
+    physicsWorld.dispose();
   });
 
   it("keeps two overlapping enemies separated (no enemy-enemy overlap)", () => {

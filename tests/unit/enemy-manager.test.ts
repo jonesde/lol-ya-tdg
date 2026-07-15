@@ -2,14 +2,13 @@
 /** @vitest-environment node */
 
 import { createPinia, setActivePinia } from "pinia";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
-import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
@@ -24,10 +23,6 @@ describe("EnemyManager", () => {
   let particles: ReturnType<typeof makeParticleSystem>;
   let physicsWorld: PhysicsWorld;
   let crowdManager: CrowdManager | null = null;
-
-  beforeAll(async () => {
-    await initNavMesh();
-  });
 
   beforeEach(() => {
     const pinia = createPinia();
@@ -48,6 +43,11 @@ describe("EnemyManager", () => {
     const navBuilder = new NavMeshBuilder(grid);
     crowdManager = new CrowdManager(navBuilder.getNavMesh()!, grid.tileSize, 50);
     manager.setCrowdManager(crowdManager);
+  });
+
+  afterEach(() => {
+    crowdManager?.destroy();
+    physicsWorld.dispose();
   });
 
   it("starts with no enemies", () => {

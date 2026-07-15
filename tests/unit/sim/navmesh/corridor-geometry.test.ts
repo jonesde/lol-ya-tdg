@@ -1,16 +1,11 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Grid } from "@/sim/grid/Grid.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
-import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { makeBastionMap } from "../../../helpers/mock-grid.js";
 
 // Flag-independent: getCorridorGeometry reads straight off the built navmesh, so
 // it exercises the RECAST_NAV shipping shape without flipping the flag.
 describe("NavMeshBuilder.getCorridorGeometry", () => {
-  beforeAll(async () => {
-    await initNavMesh();
-  });
-
   it("returns a walkable triangle mesh in game coordinates within map bounds", () => {
     const grid = new Grid(makeBastionMap());
     const builder = new NavMeshBuilder(grid);

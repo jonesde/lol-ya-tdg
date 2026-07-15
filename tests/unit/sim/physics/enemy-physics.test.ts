@@ -2,15 +2,13 @@
 // Enemy ON-branch tests (body set) driven manually, unconditionally.
 // We construct a PhysicsWorld + CrowdManager, addAgent so enemy.agent is non-null,
 // then drive the enemy via computeIntent / crowd.update / step / postPhysics.
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
-import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
-import { initPhysics } from "@/sim/physics/rapierContext.js";
 
 const FIXED_DT = 1 / 60;
 
@@ -26,8 +24,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
   let enemy: Enemy;
 
   beforeAll(async () => {
-    await initPhysics();
-    await initNavMesh();
+    // setup.ts already initializes both WASM modules at module load.
   });
 
   beforeEach(() => {
@@ -39,6 +36,11 @@ describe("Enemy ON branches (body set) driven manually", () => {
     physicsWorld.addEnemy(enemy);
     crowdManager.addAgent(enemy);
     crowdManager.setBaseTarget(enemy, baseCenterOf(grid));
+  });
+
+  afterEach(() => {
+    crowdManager.destroy();
+    physicsWorld.dispose();
   });
 
   function drive(enemy: Enemy, frames: number): void {

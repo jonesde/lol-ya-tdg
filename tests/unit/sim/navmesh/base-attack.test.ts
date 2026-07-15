@@ -1,9 +1,8 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { FIXED_DT } from "@/sim/Constants.js";
 import type { AttackTarget } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
-import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import type { Tower } from "@/sim/towers/Tower.js";
@@ -23,17 +22,24 @@ function makeBaseTarget(): AttackTarget & { damage: number } {
 }
 
 describe("postPhysics base attack", () => {
-  beforeAll(async () => {
-    // setup.ts already initializes both WASM modules, but be safe for this suite.
-    await initNavMesh();
+  let grid: Grid;
+  let physicsWorld: PhysicsWorld;
+  let enemyManager: EnemyManager;
+
+  // setup.ts already initializes the WASM module at module load. Builds a fresh
+  // PhysicsWorld per test and frees it in afterEach.
+  beforeEach(() => {
+    grid = new Grid(makeBastionMap());
+    enemyManager = new EnemyManager(grid, new NoopParticleSpawner(), 0, null, {});
+    physicsWorld = new PhysicsWorld(grid);
+    enemyManager.setPhysicsWorld(physicsWorld);
+  });
+
+  afterEach(() => {
+    physicsWorld.dispose();
   });
 
   it("marks attackingBase and deals damage when the body is at the base", () => {
-    const grid = new Grid(makeBastionMap());
-    const enemyManager = new EnemyManager(grid, new NoopParticleSpawner(), 0, null, {});
-    const physicsWorld = new PhysicsWorld(grid);
-    enemyManager.setPhysicsWorld(physicsWorld);
-
     const fakeBase = makeBaseTarget();
     enemyManager.baseTarget = fakeBase;
 
@@ -56,10 +62,6 @@ describe("postPhysics base attack", () => {
   // be detected via findAdjacentLiveTowerInContact and take damage (towers are
   // obstacles, so this only fires on contact / avoidance failure).
   it("attacks an adjacent live tower when not attacking the base", () => {
-    const grid = new Grid(makeBastionMap());
-    const enemyManager = new EnemyManager(grid, new NoopParticleSpawner(), 0, null, {});
-    const physicsWorld = new PhysicsWorld(grid);
-    enemyManager.setPhysicsWorld(physicsWorld);
     enemyManager.baseTarget = makeBaseTarget();
 
     const enemy = enemyManager.spawn("runner", 1, 0, 1);
