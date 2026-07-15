@@ -879,7 +879,6 @@ export class Enemy {
     this.centerX = pos.x;
     this.centerY = pos.y;
     if (this.stunTimer > 0) {
-      this.stunTimer -= dt;
       this.body!.setLinvel({ x: 0, y: 0 }, true);
       return;
     }
@@ -1038,7 +1037,7 @@ export class Enemy {
   // safety clamp (corridor containment is owned by static colliders), re-run the
   // attack acquisition on the post-step center, run the attack tick, and guard
   // moveAngle against low-speed flicker.
-  private postPhysicsOn(_dt: number, enemyManager: EnemyManagerRef | null): void {
+  private postPhysicsOn(dt: number, enemyManager: EnemyManagerRef | null): void {
     const pos = this.body!.translation();
     this.centerX = pos.x;
     this.centerY = pos.y;
@@ -1104,7 +1103,18 @@ export class Enemy {
       if (attackDistToSquare <= this.radius + ATTACK_CONTACT_EPSILON) attackTarget = this.baseTarget;
     }
 
-    if (attackTarget && this.stunTimer <= 0) attackTarget.takeDamage(this.attackDamage, this);
+    // Throttled attack tick (mirrors the OFF branch in computeIntentOff): the
+    // intent pass omits the attack, so it runs here once per (1/attackSpeed) using
+    // the post-step contact. Without the timer gate an ON-mode enemy would damage
+    // its target every frame instead of at its attack speed.
+    if (attackTarget && this.stunTimer <= 0) {
+      this.attackTimer -= dt;
+      if (this.attackTimer <= 0) {
+        attackTarget.takeDamage(this.attackDamage, this);
+        this.attackAnimTime = this._gameSeconds;
+        this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
+      }
+    }
 
     const linvel = this.body!.linvel();
     const moveSpeedEpsilon = 1e-4;

@@ -4,6 +4,7 @@ import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import { makeParticleSystem } from "../../helpers/mock-managers.js";
+import { itIfOff } from "../../helpers/physicsFlags.js";
 
 const FIXED_DT = 1 / 60;
 
@@ -202,7 +203,11 @@ describe("Enemy perimeter surround routing", () => {
     expect(lateralPositions.size).toBeGreaterThan(1);
   });
 
-  it("even spread: the front line fills the exposed 2-wide entry instead of bunching into one spot", () => {
+  // Position-exact geometry spec: the 0.3 entry-fill threshold is tuned for the
+  // OFF-mode guided lateral spread (laneOffset), which is unused under physics
+  // (separation is owned by Rapier's radial solver, ~0.21 fill). Gated off per
+  // plans/rapier2d.md Phase 5 — the physics suite is the source of truth here.
+  itIfOff("even spread: the front line fills the exposed 2-wide entry instead of bunching into one spot", () => {
     const { grid, enemyManager } = makeManager();
     const baseTarget = new StubBaseTarget();
     enemyManager.baseTarget = baseTarget;

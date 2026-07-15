@@ -104,6 +104,59 @@ describe("Enemy ON branches (body set) driven manually", () => {
     expect(Math.abs(enemy.moveAngle - beforeAngle)).toBeLessThan(0.05);
   });
 
+  it("attacks its base target at most at attackSpeed (throttled, not every frame)", () => {
+    let totalDamage = 0;
+    let hits = 0;
+    const fakeTarget = {
+      isGhost: false,
+      takeDamage(amount: number) {
+        totalDamage += amount;
+        hits++;
+      },
+    };
+    enemy.baseTarget = fakeTarget as unknown as Enemy["baseTarget"];
+
+    // Drive until it is in contact with the base.
+    let reached = false;
+    for (let i = 0; i < 12000 && !reached; i++) {
+      enemy.computeIntent(FIXED_DT, null);
+      physicsWorld.step();
+      enemy.postPhysics(FIXED_DT, null);
+      reached = enemy.attackingBase;
+    }
+    expect(reached).toBe(true);
+
+    // Two seconds of contact — an unthrottled tick would call takeDamage ~120×.
+    for (let i = 0; i < 120; i++) {
+      enemy.computeIntent(FIXED_DT, null);
+      physicsWorld.step();
+      enemy.postPhysics(FIXED_DT, null);
+    }
+
+    expect(hits).toBeGreaterThan(0);
+    expect(hits).toBeLessThan(20); // throttle holds: ~attackSpeed hits, not 120
+    expect(totalDamage).toBeCloseTo(hits * enemy.attackDamage, 6);
+  });
+
+  it("decrements stunTimer by exactly dt per frame (no double decrement)", () => {
+    for (let i = 0; i < 50; i++) {
+      enemy.computeIntent(FIXED_DT, null);
+      physicsWorld.step();
+      enemy.postPhysics(FIXED_DT, null);
+    }
+    expect(enemy.stunTimer).toBe(0);
+
+    enemy.applyStun(1.0);
+    for (let i = 0; i < 30; i++) {
+      enemy.computeIntent(FIXED_DT, null);
+      physicsWorld.step();
+      enemy.postPhysics(FIXED_DT, null);
+    }
+    // 30 frames * (1/60)s = 0.5s elapsed, so ~0.5s of stun remaining.
+    expect(enemy.stunTimer).toBeCloseTo(1.0 - 30 * FIXED_DT, 6);
+    expect(enemy.stunTimer).toBeGreaterThan(0.4);
+  });
+
   it("stun zeroes velocity and barely moves the body", () => {
     for (let i = 0; i < 50; i++) {
       enemy.computeIntent(FIXED_DT, null);
