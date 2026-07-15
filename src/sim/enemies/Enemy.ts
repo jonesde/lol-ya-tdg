@@ -473,7 +473,20 @@ export class Enemy {
     // Re-align the crowd's internal position with Rapier's resolved body so the
     // crowd and the physics body stay on the same point (Rapier may shove the body
     // off the agent's path around a tower/base/wall).
-    this.agent?.teleport(toRecast({ x: this.x, y: this.y }));
+    const crowdAgent = this.agent;
+    if (crowdAgent) {
+      const previousVelocity = crowdAgent.velocity();
+      crowdAgent.teleport(toRecast({ x: this.x, y: this.y }));
+      // `teleport` zeroes the agent's internal velocity, and because this runs
+      // every frame that previously capped every enemy at one acceleration step
+      // (~1/8 of its maxSpeed) and erased the forward momentum a faster enemy
+      // needs to push past a slower one — so faster enemies rammed/crawled and
+      // the front enemy got pulled back into the bumper behind it. Re-apply the
+      // pre-teleport velocity so speed and momentum persist across the resync.
+      crowdAgent.raw.set_vel(0, previousVelocity.x);
+      crowdAgent.raw.set_vel(1, previousVelocity.y);
+      crowdAgent.raw.set_vel(2, previousVelocity.z);
+    }
 
     const baseCenter = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
     const distanceToBase = distanceToBaseSquare(

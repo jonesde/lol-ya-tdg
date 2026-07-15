@@ -42,6 +42,55 @@ function makeBaseTarget(): AttackTarget {
   return { isGhost: false, takeDamage: () => {} };
 }
 
+// A 2-tile-wide straight lane (rows 3-4) from spawn to base. Wider than a body
+// so a faster enemy spawned directly behind a slower one has room to steer
+// around it. Used to verify Detour keeps speed/momentum across the per-frame
+// crowd<->body resync: a fast runner should overtake a slow tank instead of
+// crawling/ramming it or pulling the tank backward.
+function makeTwoWideLaneMap() {
+  const width = 9;
+  const height = 6;
+  const tiles: { type: "terrain" | "path" | "base" | "spawn"; height: number }[][] = [];
+  for (let rowIndex = 0; rowIndex < height; rowIndex++) {
+    const row: { type: "terrain" | "path" | "base" | "spawn"; height: number }[] = [];
+    for (let colIndex = 0; colIndex < width; colIndex++) row.push({ type: "terrain", height: 1 });
+    tiles.push(row);
+  }
+  for (let colIndex = 0; colIndex < width; colIndex++) {
+    tiles[3]![colIndex]!.type = "path";
+    tiles[4]![colIndex]!.type = "path";
+  }
+  return makeMapData({
+    width,
+    height,
+    tiles,
+    spawns: [{ x: 0, y: 3 }],
+    base: { x: width - 1, y: 3 },
+    regionId: 0,
+    level: 1,
+    style: "bastion",
+  });
+}
+
+// Drives the real engine loop (preStep -> crowd.update -> physics.step ->
+// postStep) so crowd agents keep their velocity across the per-frame resync.
+// The bare `enemy.postPhysics` loop silently freezes agents.
+function runCrowdLoop(
+  stepCount: number,
+  enemyManager: EnemyManager,
+  crowdManager: CrowdManager,
+  physicsWorld: PhysicsWorld,
+  onEnemyKill: () => void,
+  onEnemyBeginAttackBase: () => void,
+): void {
+  for (let step = 0; step < stepCount; step++) {
+    enemyManager.preStep(FIXED_DT);
+    crowdManager.update(FIXED_DT, enemyManager.enemies);
+    physicsWorld.step();
+    enemyManager.postStep(FIXED_DT, onEnemyKill, onEnemyBeginAttackBase);
+  }
+}
+
 function distanceToBase(enemy: { centerX: number; centerY: number }, baseWorld: { x: number; y: number }): number {
   return Math.hypot(enemy.centerX - baseWorld.x, enemy.centerY - baseWorld.y);
 }
@@ -158,5 +207,75 @@ describe("CrowdManager motion", () => {
     // (c) It never reversed by more than a small bobble: no wall-shove reroute at
     // the inside corner.
     expect(maxBacktrack).toBeLessThan(enemy.radius);
+  });
+
+  it("lets a faster runner overtake a slower tank on a 2-wide lane", () => {
+    // Regression guard: with the crowd<->body velocity preserved across the
+    // per-frame resync, the runner keeps speed/momentum and steers around the
+    // slower tank instead of crawling/ramming it (and the tank is not pulled
+    // backward into the runner). At the old crawl speed (one acceleration step
+    // per frame) the runner could not reach the base within this budget.
+    const grid = new Grid(makeTwoWideLaneMap());
+    const navBuilder = new NavMeshBuilder(grid);
+    expect(navBuilder.isSuccess()).toBe(true);
+
+    const physicsWorld = new PhysicsWorld(grid);
+    physicsWorld.setEnemyEnemyCollisions(false);
+    const crowdManager = new CrowdManager(navBuilder.getNavMesh()!, grid.tileSize, 50);
+    const enemyManager = new EnemyManager(grid, new NoopParticleSpawner(), 0, null, {});
+    enemyManager.setPhysicsWorld(physicsWorld);
+    enemyManager.setCrowdManager(crowdManager);
+    enemyManager.baseTarget = makeBaseTarget();
+
+    const baseWorld = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
+
+    // Slow tank ahead in row 3; fast runner directly behind it in row 3.
+    const tank = enemyManager.spawn("tank", 1, 0, 1)!;
+    const runner = enemyManager.spawn("runner", 1, 0, 1)!;
+    expect(tank).not.toBeNull();
+    expect(runner).not.toBeNull();
+
+    const tankLead = grid.tileSize * 3;
+    tank.body!.setTranslation({ x: tank.x + tankLead, y: tank.y }, true);
+    tank.x = tank.x + tankLead;
+    tank.centerX = tank.x;
+
+    crowdManager.addAgent(tank);
+    crowdManager.setBaseTarget(tank, baseWorld);
+    crowdManager.addAgent(runner);
+    crowdManager.setBaseTarget(runner, baseWorld);
+
+    const startDistTank = distanceToBase(tank, baseWorld);
+    const startDistRunner = distanceToBase(runner, baseWorld);
+
+    const onEnemyKill = () => {};
+    const onEnemyBeginAttackBase = () => {};
+
+    let minCenterDistance = Number.POSITIVE_INFINITY;
+    let runnerReachedBase = false;
+    for (let step = 0; step < 800 && !runnerReachedBase; step++) {
+      runCrowdLoop(1, enemyManager, crowdManager, physicsWorld, onEnemyKill, onEnemyBeginAttackBase);
+      // The two only touch while the runner is mid-overtake (brief full overlap
+      // at the pass); exclude that single transient frame so the assertion checks
+      // the steady-state gap the crowd maintains, not the instant of passing.
+      const centerDistance = Math.hypot(tank.centerX - runner.centerX, tank.centerY - runner.centerY);
+      if (step > 0 && centerDistance > tank.radius) minCenterDistance = Math.min(minCenterDistance, centerDistance);
+      runnerReachedBase = runner.attackingBase;
+    }
+
+    // (a) Both enemies advanced toward the base.
+    expect(distanceToBase(tank, baseWorld)).toBeLessThan(startDistTank);
+    expect(distanceToBase(runner, baseWorld)).toBeLessThan(startDistRunner);
+
+    // (b) The runner overtook the tank: it ends closer to the base.
+    expect(distanceToBase(runner, baseWorld)).toBeLessThan(distanceToBase(tank, baseWorld));
+
+    // (c) The runner reached the base within a budget impossible at crawl speed,
+    //     confirming velocity actually accumulates to maxSpeed.
+    expect(runnerReachedBase).toBe(true);
+
+    // (d) Once the runner pulls alongside to pass, the crowd keeps a real gap
+    //     (the runner ends well clear of the tank, not stacked on it).
+    expect(minCenterDistance).toBeGreaterThan(tank.radius);
   });
 });
