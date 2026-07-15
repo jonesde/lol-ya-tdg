@@ -202,8 +202,6 @@ export class Enemy {
   markTargetMult!: number;
   markTargetTimer!: number;
   antiHealTimer!: number;
-  lastCellX!: number;
-  lastCellY!: number;
   private healTickDt: number = 0;
   private applyHealAura = (ally: Enemy): void => {
     if (ally === this) return;
@@ -281,8 +279,6 @@ export class Enemy {
     this.y = start.y;
     this.centerX = this.x;
     this.centerY = this.y;
-    this.lastCellX = -1;
-    this.lastCellY = -1;
 
     this.removed = false;
   }

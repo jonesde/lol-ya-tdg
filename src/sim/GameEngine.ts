@@ -331,8 +331,6 @@ export class GameEngine {
       this.runState.waveCountdown = null;
     }
 
-    this.projectileManager?.update(dt);
-
     if (this.grid!.pathVersion !== this.lastPathVersion) {
       this.physicsWorld!.rebuildTowers(this.towerManager!);
       this.physicsWorld!.rebuildCorridor();
@@ -363,6 +361,9 @@ export class GameEngine {
         }
       },
     );
+
+    // Projectiles resolve hits against current (post-step) enemy positions.
+    this.projectileManager?.update(dt);
 
     this.towerManager.update(dt, this.enemyManager);
 

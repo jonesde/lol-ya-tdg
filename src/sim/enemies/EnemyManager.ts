@@ -14,18 +14,6 @@ interface PendingEnemyEntry {
   wave: number;
 }
 
-const SpatialCellSize = 100;
-
-// Spatial-hash cell coordinates can be negative (enemies can briefly leave the
-// map bounds during collision separation). Offset each coordinate by a power of
-// two well beyond any map's cell range so the packed key stays a positive
-// integer, and use a stride of 2*offset so every (cellX, cellY) pair maps to a
-// unique key. Map cell coords top out around a few dozen, far below 1<<16.
-const SPATIAL_AXIS_OFFSET = 1 << 16;
-function spatialCellKey(cellX: number, cellY: number): number {
-  return (cellX + SPATIAL_AXIS_OFFSET) * (2 * SPATIAL_AXIS_OFFSET) + (cellY + SPATIAL_AXIS_OFFSET);
-}
-
 export class EnemyManager {
   grid: Grid;
   particles: ParticleSpawner;
@@ -36,7 +24,6 @@ export class EnemyManager {
   towerManager: TowerManager | null = null;
   baseTarget: AttackTarget | null = null;
   physicsWorld: PhysicsWorld | null = null;
-  private spatialHash: Map<number, Enemy[]>;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
 
@@ -53,7 +40,6 @@ export class EnemyManager {
     this.difficultyTick = difficultyTick;
     this.theme = theme;
     this.defaultEnemyVisuals = defaultEnemyVisuals;
-    this.spatialHash = new Map();
     this.idToEnemy = new Map();
     this.pendingQueues = new Map();
   }
@@ -76,7 +62,6 @@ export class EnemyManager {
 
   clear(): void {
     this.enemies = [];
-    this.spatialHash.clear();
     this.idToEnemy.clear();
     this.pendingQueues.clear();
     resetEnemyId();
@@ -99,7 +84,6 @@ export class EnemyManager {
     }
     this.enemies.push(enemy);
     this.idToEnemy.set(enemy.id, enemy);
-    this.addToSpatialHash(enemy);
     this.physicsWorld?.addEnemy(enemy);
     return enemy;
   }
@@ -127,7 +111,6 @@ export class EnemyManager {
     const enemy = this.enemies[i]!;
     this.physicsWorld?.removeEnemy(enemy);
     this.particles.spawn(enemy.x, enemy.y, enemy.color, 12, { speed: 80, life: 0.5 });
-    this.removeFromSpatialHash(enemy);
     this.idToEnemy.delete(enemy.id);
     const removedSpawnIndex = enemy.spawnIndex;
     this.enemies.splice(i, 1);
@@ -188,7 +171,6 @@ export class EnemyManager {
         onEnemyBeginAttackBase?.(enemy);
       }
     }
-    this.updateSpatialHash();
   }
 
   // Pre-step intent pass (physics ON): mirrors the per-enemy loop body of `update`
@@ -237,112 +219,71 @@ export class EnemyManager {
         onEnemyBeginAttackBase?.(enemy);
       }
     }
-    this.updateSpatialHash();
   }
 
-  rebuildSpatialHash(): void {
-    this.spatialHash.clear();
+  forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void {
+    if (this.physicsWorld) {
+      this.physicsWorld.forEachEnemyInRange(x, y, range, cb);
+      return;
+    }
+    const rangeSquared = range * range;
     for (const enemy of this.enemies) {
       if (enemy.removed) continue;
-      const cellX = Math.floor(enemy.x / SpatialCellSize);
-      const cellY = Math.floor(enemy.y / SpatialCellSize);
-      const cellKey = spatialCellKey(cellX, cellY);
-      const bucket = this.spatialHash.get(cellKey);
-      if (bucket) {
-        bucket.push(enemy);
-      } else {
-        this.spatialHash.set(cellKey, [enemy]);
-      }
-    }
-  }
-
-  addToSpatialHash(enemy: Enemy): void {
-    const cellX = Math.floor(enemy.x / SpatialCellSize);
-    const cellY = Math.floor(enemy.y / SpatialCellSize);
-    const cellKey = spatialCellKey(cellX, cellY);
-    const bucket = this.spatialHash.get(cellKey);
-    if (bucket) {
-      bucket.push(enemy);
-    } else {
-      this.spatialHash.set(cellKey, [enemy]);
-    }
-    enemy.lastCellX = cellX;
-    enemy.lastCellY = cellY;
-  }
-
-  removeFromSpatialHash(enemy: Enemy): void {
-    const cellKey = spatialCellKey(enemy.lastCellX, enemy.lastCellY);
-    const bucket = this.spatialHash.get(cellKey);
-    if (!bucket) return;
-    const index = bucket.indexOf(enemy);
-    if (index !== -1) bucket.splice(index, 1);
-    if (bucket.length === 0) this.spatialHash.delete(cellKey);
-  }
-
-  updateSpatialHash(): void {
-    for (const enemy of this.enemies) {
-      const currentCellX = Math.floor(enemy.x / SpatialCellSize);
-      const currentCellY = Math.floor(enemy.y / SpatialCellSize);
-      if (currentCellX === enemy.lastCellX && currentCellY === enemy.lastCellY) continue;
-      this.removeFromSpatialHash(enemy);
-      const cellKey = spatialCellKey(currentCellX, currentCellY);
-      const bucket = this.spatialHash.get(cellKey);
-      if (bucket) {
-        bucket.push(enemy);
-      } else {
-        this.spatialHash.set(cellKey, [enemy]);
-      }
-      enemy.lastCellX = currentCellX;
-      enemy.lastCellY = currentCellY;
-    }
-  }
-
-  // Allocation-free range query. Iterates the same buckets and applies the same
-  // distance filter as getEnemiesInRange, but invokes `cb` per surviving enemy
-  // instead of building a result array — eliminating per-call array allocation
-  // (and the GC churn it causes under heavy waves / lightning usage).
-  forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void {
-    const rangeSquared = range * range;
-    const cellRadius = Math.ceil(range / SpatialCellSize);
-    const centerCellX = Math.floor(x / SpatialCellSize);
-    const centerCellY = Math.floor(y / SpatialCellSize);
-
-    for (let cellX = centerCellX - cellRadius; cellX <= centerCellX + cellRadius; cellX++) {
-      for (let cellY = centerCellY - cellRadius; cellY <= centerCellY + cellRadius; cellY++) {
-        const bucket = this.spatialHash.get(spatialCellKey(cellX, cellY));
-        if (!bucket) continue;
-        for (const enemy of bucket) {
-          if (enemy.removed) continue;
-          const deltaX = enemy.x - x;
-          const deltaY = enemy.y - y;
-          if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) cb(enemy);
-        }
-      }
+      const deltaX = enemy.x - x;
+      const deltaY = enemy.y - y;
+      if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) cb(enemy);
     }
   }
 
   getEnemiesInRange(x: number, y: number, range: number): Enemy[] {
+    if (this.physicsWorld) return this.physicsWorld.queryEnemiesInRange(x, y, range);
     const rangeSquared = range * range;
-    const cellRadius = Math.ceil(range / SpatialCellSize);
-    const centerCellX = Math.floor(x / SpatialCellSize);
-    const centerCellY = Math.floor(y / SpatialCellSize);
     const result: Enemy[] = [];
-
-    for (let cellX = centerCellX - cellRadius; cellX <= centerCellX + cellRadius; cellX++) {
-      for (let cellY = centerCellY - cellRadius; cellY <= centerCellY + cellRadius; cellY++) {
-        const bucket = this.spatialHash.get(spatialCellKey(cellX, cellY));
-        if (!bucket) continue;
-        for (const enemy of bucket) {
-          if (enemy.removed) continue;
-          const deltaX = enemy.x - x;
-          const deltaY = enemy.y - y;
-          if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) {
-            result.push(enemy);
-          }
-        }
-      }
+    for (const enemy of this.enemies) {
+      if (enemy.removed) continue;
+      const deltaX = enemy.x - x;
+      const deltaY = enemy.y - y;
+      if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) result.push(enemy);
     }
     return result;
+  }
+
+  castShapePierce(
+    originX: number,
+    originY: number,
+    dirX: number,
+    dirY: number,
+    ballRadius: number,
+    maxDistance: number,
+    maxHits: number,
+    cb: (enemy: Enemy) => boolean,
+  ): void {
+    if (this.physicsWorld) {
+      this.physicsWorld.castShapePierce(originX, originY, dirX, dirY, ballRadius, maxDistance, maxHits, cb);
+      return;
+    }
+    const length = Math.hypot(dirX, dirY) || 1;
+    const unitX = dirX / length;
+    const unitY = dirY / length;
+    const candidates: { enemy: Enemy; projection: number }[] = [];
+    for (const enemy of this.enemies) {
+      if (enemy.removed) continue;
+      const apx = enemy.x - originX;
+      const apy = enemy.y - originY;
+      const projection = Math.max(0, Math.min(maxDistance, apx * unitX + apy * unitY));
+      const closestX = originX + unitX * projection;
+      const closestY = originY + unitY * projection;
+      const dist = Math.hypot(enemy.x - closestX, enemy.y - closestY);
+      if (dist <= ballRadius + (enemy.radius ?? 0)) candidates.push({ enemy, projection });
+    }
+    candidates.sort((a, b) => a.projection - b.projection);
+    let hits = 0;
+    for (const candidate of candidates) {
+      if (hits >= maxHits) break;
+      hits++;
+      const keepGoing = cb(candidate.enemy);
+      if (!keepGoing) break;
+    }
   }
 
   getEnemyById(id: number): Enemy | null {

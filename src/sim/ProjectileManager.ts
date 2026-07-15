@@ -84,6 +84,23 @@ interface GridRef {
   blocked: Set<string>;
 }
 
+type CastEnemy = {
+  id: number;
+  type: string;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  removed: boolean;
+  takeDamage(dmg: number, armorPiercing?: boolean): void;
+  applyBurn?(dps: number, duration: number): void;
+  applySlow?(factor: number, duration: number): void;
+  applyStun?(duration: number): void;
+  applyMarkTarget?(mult: number, duration: number): void;
+  applyAntiHeal?(duration: number): void;
+  applyKnockback?(amount: number): void;
+};
+
 export interface EnemyManager {
   getEnemiesInRange(
     x: number,
@@ -132,6 +149,16 @@ export interface EnemyManager {
     removed: boolean;
     takeDamage(dmg: number): void;
   } | null;
+  castShapePierce(
+    originX: number,
+    originY: number,
+    dirX: number,
+    dirY: number,
+    ballRadius: number,
+    maxDistance: number,
+    maxHits: number,
+    cb: (enemy: CastEnemy) => boolean,
+  ): void;
   enemies: {
     id: number;
     type: string;
@@ -370,8 +397,7 @@ export class ProjectileManager {
     // Fixed-aim: targetId === 0, travel straight toward aimed world position
     if (projectile.targetId === 0) {
       const hitThreshold = projectile.radius + PROJECTILE_HIT_THRESHOLD;
-      const hitEnemyIds = projectile.hitEnemyIds;
-      if (hitEnemyIds === undefined) {
+      if (projectile.hitEnemyIds === undefined) {
         projectile.hitEnemyIds = new Set<number>();
       }
       const hitSet = projectile.hitEnemyIds as Set<number>;
@@ -383,27 +409,41 @@ export class ProjectileManager {
       const targetDy = projectile.targetY - projectile.y;
       const targetDist = Math.sqrt(targetDx * targetDx + targetDy * targetDy);
       const moveAmount = projectile.speed * dt;
+      const moveDist = Math.min(moveAmount, targetDist);
+      const dirX = targetDist > 0 ? targetDx / targetDist : 0;
+      const dirY = targetDist > 0 ? targetDy / targetDist : 0;
+      const ballRadius = hitThreshold;
+      const castLen = moveDist + ballRadius;
+      const maxHits = projectile.maxHitCount > 0 ? projectile.maxHitCount : 1;
 
-      // Scan for enemies at current position before moving
-      this.scanNearbyFixedAim(projectile, hitSet, hitThreshold);
+      // Continuous swept-ball cast: catches enemies the discrete per-frame check
+      // would tunnel past. Closest-first, up to maxHits enemies.
+      this.enemyManager.castShapePierce(
+        projectile.x,
+        projectile.y,
+        dirX,
+        dirY,
+        ballRadius,
+        castLen,
+        maxHits,
+        (enemy) => {
+          if (hitSet.has(enemy.id)) return true;
+          this.hitCircleProjectile(projectile, enemy);
+          hitSet.add(enemy.id);
+          projectile.fixedAimHits = (projectile.fixedAimHits ?? 0) + 1;
+          return projectile.active;
+        },
+      );
       if (!projectile.active) return;
 
-      // Move toward target position
       if (targetDist > 0) {
-        const moveDist = Math.min(moveAmount, targetDist);
         projectile.x += (targetDx / targetDist) * moveDist;
         projectile.y += (targetDy / targetDist) * moveDist;
       }
-
-      // Scan for enemies at new position after moving
-      this.scanNearbyFixedAim(projectile, hitSet, hitThreshold);
-      if (!projectile.active) return;
-
-      // Check if reached aim point (after hit scan so enemies AT aim point are hit)
       const finalDx = projectile.targetX - projectile.x;
       const finalDy = projectile.targetY - projectile.y;
       const finalDist = Math.sqrt(finalDx * finalDx + finalDy * finalDy);
-      if (finalDist <= hitThreshold) {
+      if (finalDist <= ballRadius) {
         this.removeProjectile(projectile, "reached-target");
       }
       return;
@@ -425,54 +465,48 @@ export class ProjectileManager {
       return;
     }
 
-    if (dist < projectile.radius + PROJECTILE_HIT_THRESHOLD) {
-      this.hitCircleProjectile(projectile, enemy);
+    const ballRadius = projectile.radius + PROJECTILE_HIT_THRESHOLD;
+    const moveDist = projectile.speed * dt;
+    const dirX = dist > 0 ? dx / dist : 1;
+    const dirY = dist > 0 ? dy / dist : 0;
+    if (projectile.hitEnemyIds === undefined) {
+      projectile.hitEnemyIds = new Set<number>();
+    }
+    const homingHitSet = projectile.hitEnemyIds as Set<number>;
+    // Continuous swept-ball cast: strikes whatever lies first along the path
+    // (the locked target, or a closer enemy that stepped into the line). Already
+    // hit enemies are skipped so a pierce re-home does not re-strike a passed enemy.
+    const homingHits: CastEnemy[] = [];
+    this.enemyManager.castShapePierce(
+      projectile.x,
+      projectile.y,
+      dirX,
+      dirY,
+      ballRadius,
+      moveDist + ballRadius,
+      1,
+      (candidate) => {
+        if (homingHitSet.has(candidate.id)) return true;
+        homingHits.push(candidate);
+        return false;
+      },
+    );
+    const hitEnemy = homingHits[0] ?? null;
+    if (hitEnemy) {
+      this.hitCircleProjectile(projectile, hitEnemy);
+      homingHitSet.add(hitEnemy.id);
       return;
     }
 
-    const moveDist = projectile.speed * dt;
     if (dist > 0) {
       projectile.x += (dx / dist) * moveDist;
       projectile.y += (dy / dist) * moveDist;
     }
   }
 
-  private scanNearbyFixedAim(projectile: ProjectileGame, hitSet: Set<number>, hitThreshold: number): boolean {
-    const nearbyEnemies = this.enemyManager.getEnemiesInRange(projectile.x, projectile.y, hitThreshold);
-    for (const nearbyEnemy of nearbyEnemies) {
-      if (!hitSet.has(nearbyEnemy.id)) {
-        this.hitCircleProjectile(projectile, nearbyEnemy);
-        hitSet.add(nearbyEnemy.id);
-        const fixedAimHits = (projectile.fixedAimHits ?? 0) + 1;
-        projectile.fixedAimHits = fixedAimHits;
-        // If pierce removed projectile, restore it to continue toward aim point
-        if (!projectile.active && fixedAimHits <= projectile.maxHitCount) {
-          projectile.active = true;
-          projectile.targetId = 0;
-        }
-        return true;
-      }
-    }
-    return false;
-  }
-
   private hitCircleProjectile(
     projectile: ProjectileGame,
-    enemy: {
-      id: number;
-      type: string;
-      x: number;
-      y: number;
-      hp: number;
-      maxHp: number;
-      takeDamage(dmg: number, armorPiercing?: boolean): void;
-      applyBurn?(dps: number, duration: number): void;
-      applySlow?(factor: number, duration: number): void;
-      applyStun?(duration: number): void;
-      applyKnockback?(amount: number): void;
-      applyMarkTarget?(mult: number, duration: number): void;
-      applyAntiHeal?(duration: number): void;
-    },
+    enemy: CastEnemy,
   ): void {
     const finalDamage = projectile.isCrit ? projectile.damage * projectile.critMultiplier : projectile.damage;
 
@@ -567,20 +601,21 @@ export class ProjectileManager {
     if (projectile.maxHitCount > 0) {
       projectile.hitCount++;
       if (projectile.hitCount < projectile.maxHitCount) {
-        // Fixed-aim projectiles travel toward a fixed world point, so they must
-        // not re-home onto an enemy — continue straight and hit whatever lies
-        // along the aim line (handled by the targetId === 0 branch next frame).
-        if (!projectile.fixedAim) {
-          const nextTarget = this.findNearestEnemy(
-            projectile.x,
-            projectile.y,
-            projectile.range * (this.grid?.tileSize ?? 36),
-            enemy.id,
-          );
-          if (nextTarget) {
-            projectile.targetId = nextTarget.id;
-            return;
-          }
+        if (projectile.fixedAim) {
+          // Fixed-aim projectiles travel toward a fixed world point, so they must
+          // not re-home onto an enemy — keep travelling along the aim line so the
+          // cast in the targetId === 0 branch can strike the next enemy.
+          return;
+        }
+        const nextTarget = this.findNearestEnemy(
+          projectile.x,
+          projectile.y,
+          projectile.range * (this.grid?.tileSize ?? 36),
+          enemy.id,
+        );
+        if (nextTarget) {
+          projectile.targetId = nextTarget.id;
+          return;
         }
       }
     }

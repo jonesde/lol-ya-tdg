@@ -19,6 +19,7 @@ export class PhysicsWorld {
   private baseBody: RAPIER.RigidBody | null = null;
   private towerBodies: RAPIER.RigidBody[] = [];
   private corridorBodies: RAPIER.RigidBody[] = [];
+  private enemyByHandle: Map<number, Enemy> = new Map();
 
   constructor(grid: Grid) {
     const RAPIER = getRapier();
@@ -135,13 +136,144 @@ export class PhysicsWorld {
     const colliderDesc = RAPIER.ColliderDesc.ball(enemy.radius).setRestitution(0);
     this.world.createCollider(colliderDesc, body);
     enemy.body = body;
+    this.enemyByHandle.set(body.handle, enemy);
   }
 
   // Remove the enemy's rigid body (and its collider) from the world.
   removeEnemy(enemy: Enemy): void {
     if (enemy.body) {
+      this.enemyByHandle.delete(enemy.body.handle);
       this.world.removeRigidBody(enemy.body);
       enemy.body = null;
+    }
+  }
+
+  // Returns true only for colliders whose parent rigid body is a live enemy.
+  private isEnemyCollider = (collider: RAPIER.Collider): boolean => {
+    const parent = collider.parent();
+    return parent !== null && this.enemyByHandle.has(parent.handle);
+  };
+
+  // Resolves a collider back to its Enemy, skipping removed enemies.
+  private enemyFromCollider(collider: RAPIER.Collider): Enemy | null {
+    const parent = collider.parent();
+    if (!parent) return null;
+    const enemy = this.enemyByHandle.get(parent.handle);
+    return enemy && !enemy.removed ? enemy : null;
+  }
+
+  // Proximity query replacing the deleted spatial hash. Returns enemies whose
+  // CENTER is within `range` of (x, y) — matches the legacy getEnemiesInRange
+  // center-distance filter exactly.
+  queryEnemiesInRange(x: number, y: number, range: number): Enemy[] {
+    const RAPIER = getRapier();
+    const result: Enemy[] = [];
+    const rangeSquared = range * range;
+    this.world.intersectionsWithShape(
+      { x, y },
+      0,
+      new RAPIER.Ball(range),
+      (collider) => {
+        const enemy = this.enemyFromCollider(collider);
+        if (enemy) {
+          const deltaX = enemy.x - x;
+          const deltaY = enemy.y - y;
+          if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) result.push(enemy);
+        }
+        return true;
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      this.isEnemyCollider,
+    );
+    return result;
+  }
+
+  forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void {
+    const RAPIER = getRapier();
+    const rangeSquared = range * range;
+    this.world.intersectionsWithShape(
+      { x, y },
+      0,
+      new RAPIER.Ball(range),
+      (collider) => {
+        const enemy = this.enemyFromCollider(collider);
+        if (enemy) {
+          const deltaX = enemy.x - x;
+          const deltaY = enemy.y - y;
+          if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) cb(enemy);
+        }
+        return true;
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      this.isEnemyCollider,
+    );
+  }
+
+  // Swept-shape cast against enemy colliders only. Returns the first enemy hit
+  // along (dirX, dirY) from (originX, originY) within `maxDistance`, plus its
+  // collider (needed to exclude it on a subsequent pierce pass). `excludeCollider`
+  // skips a previously-hit collider. Returns null if nothing is hit.
+  castShapeFirstEnemy(
+    originX: number,
+    originY: number,
+    dirX: number,
+    dirY: number,
+    ballRadius: number,
+    maxDistance: number,
+    excludeCollider?: RAPIER.Collider | null,
+  ): { enemy: Enemy; collider: RAPIER.Collider } | null {
+    const RAPIER = getRapier();
+    const length = Math.hypot(dirX, dirY) || 1;
+    const velocity = { x: (dirX / length) * maxDistance, y: (dirY / length) * maxDistance };
+    const hit = this.world.castShape(
+      { x: originX, y: originY },
+      0,
+      velocity,
+      new RAPIER.Ball(ballRadius),
+      0,
+      1,
+      true,
+      undefined,
+      undefined,
+      excludeCollider ?? undefined,
+      undefined,
+      this.isEnemyCollider,
+    );
+    if (!hit) return null;
+    const enemy = this.enemyFromCollider(hit.collider);
+    if (!enemy) return null;
+    return { enemy, collider: hit.collider };
+  }
+
+  // Multi-hit variant for piercing: repeatedly casts from the SAME origin,
+  // excluding each hit collider so the next pass returns the next enemy along
+  // the ray (closest-first). Calls `cb(enemy)` for each hit; `cb` returns false
+  // to stop early. Stops after `maxHits` hits or when nothing more is hit.
+  castShapePierce(
+    originX: number,
+    originY: number,
+    dirX: number,
+    dirY: number,
+    ballRadius: number,
+    maxDistance: number,
+    maxHits: number,
+    cb: (enemy: Enemy) => boolean,
+  ): void {
+    let excluded: RAPIER.Collider | null = null;
+    let hits = 0;
+    while (hits < maxHits) {
+      const result = this.castShapeFirstEnemy(originX, originY, dirX, dirY, ballRadius, maxDistance, excluded);
+      if (!result) break;
+      hits++;
+      const keepGoing = cb(result.enemy);
+      if (!keepGoing) break;
+      excluded = result.collider;
     }
   }
 

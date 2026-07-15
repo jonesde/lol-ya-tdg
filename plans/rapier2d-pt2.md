@@ -64,28 +64,46 @@ has not run yet this frame). Therefore:
   sync; eliminates the pile/pushback desync class the original plan's "attack
   acquisition re-validation" bullet had to special-case.
 
-## B. Projectile↔enemy hits via Rapier casts (with continuous collision)
+## B. Projectile↔enemy hits via Rapier swept-shape casts (continuous collision)
 
-- Enemies are the only colliders a projectile ray may hit (see Risk 3). Projectiles
-  never become bodies — they only cast rays.
+> Radius note: an enemy's effective hit shape is a circle of its body radius. A
+> zero-radius point ray (`castRay`) would only strike enemies whose *center* lies
+> exactly on the travel line and would miss every enemy within
+> `projectile.radius + PROJECTILE_HIT_THRESHOLD` but off-axis — strictly worse than
+> today's discrete `dist < projectile.radius + PROJECTILE_HIT_THRESHOLD` check. So all
+> hits use `world.castShape` sweeping a **ball** of radius
+> `projectile.radius + PROJECTILE_HIT_THRESHOLD` (this bakes in the enemy radius + the
+> existing graze slack); the sweep covers the per-step travel distance
+> (`moveDist + slack`). `castShape` is confirmed available
+> (`@dimforge/rapier2d-compat` `world.d.ts:402`) and is broadphase-accelerated.
+
+- Enemies are the only colliders a projectile cast may hit (see Risk 3). Projectiles
+  never become bodies — they only sweep a shape.
 - **Wiring:** `ProjectileManager` currently only holds an `EnemyManager` *interface*
   (defined locally at `ProjectileManager.ts:87`) and has no `PhysicsWorld` reference, so
-  it cannot call `castRay` directly. Expose the casts as methods on `EnemyManager` that
+  it cannot call `castShape` directly. Expose the casts as methods on `EnemyManager` that
   delegate to `PhysicsWorld` (which owns the handle→Enemy map + enemy predicate), add
   matching signatures to `ProjectileManager`'s `EnemyManager` interface, and have
   `GameEngine` wire `physicsWorld`/`EnemyManager` into `ProjectileManager` (mirror
   `setTowerLookup`, `ProjectileManager.ts:198`). `tests/unit/game-projectile-manager.test.ts`
   must extend its `MockEnemyManager` for the new signatures.
-- **Homing** (`ProjectileManager.ts:412`): replace the per-step distance check with
-  `world.castRay(origin, dir, maxToi = moveDist, true, filter)`. First hit = target;
-  call `hitCircleProjectile`. Continuous, so no tunneling past small/fast enemies.
-- **Fixed-aim / pierce** (`:370`,`:441`): `castRay` returns the first enemy; for pierce
-  re-cast from the hit point up to the remaining range, passing the prior hit's collider
-  as `filterExcludeCollider` so already-hit enemies are skipped.
-- **Continuous collision:** `castRay` (segment) instead of discrete position checks;
-  `PROJECTILE_HIT_THRESHOLD` becomes a small `maxToi` slack so grazes register. This is
-  the main win for the railgun (`projSpeed:60`, `fixedAim`).
-- **Tradeoff:** N raycasts/step — see Risk 2 for the perf gate and fallback.
+- **Homing** (`ProjectileManager.ts:412`): replace the per-step distance check with a
+  swept-shape cast — `world.castShape(origin, identityRotation, dirScaledBy(moveDist + slack), ball(projectile.radius + PROJECTILE_HIT_THRESHOLD), 0, 1, true, filter)`.
+  This hits **whichever enemy is encountered first** along the path: the locked target
+  when nothing blocks it, or a closer enemy that has stepped into the line. That is the
+  desired behavior (target the original enemy, strike whatever is hit first). Call
+  `hitCircleProjectile` on the returned enemy. Continuous, so no tunneling past small/fast
+  enemies.
+- **Fixed-aim / pierce** (`:370`,`:441`): `castShape` returns the first enemy hit; for
+  pierce re-cast from the hit point up to the remaining range, passing the prior hit's
+  collider as `filterExcludeCollider` so already-hit enemies are skipped. (Alternative:
+  `intersectionsWithRay(ray, maxToi, solid, callback, …)` at `world.d.ts:341` is a native
+  multi-hit primitive; use it if the re-cast loop proves awkward.)
+- **Continuous collision:** a swept ball instead of discrete position checks; the ball
+  radius already encodes `projectile.radius + PROJECTILE_HIT_THRESHOLD` so grazes and
+  off-axis enemies register — which a point ray would miss. This is the main win for the
+  railgun (`projSpeed:60`, `fixedAim`).
+- **Tradeoff:** N swept-shape casts/step — see Risk 2 for the perf gate and fallback.
 
 ## C. Area-effect sensors (subset of A — optional, low priority)
 
@@ -122,22 +140,24 @@ projectile state and that `ProjectileManager.update` has no step dependency.
      new post-step behavior (physics is permanently ON, so there is no OFF variant to
      gate).
 
-### Risk 2 — Raycast cost under huge waves
-N projectiles × raycast at 60 Hz. `castRay` uses the broadphase (~O(log n + k)), not
-O(N), but a wave of hundreds of enemies/projectiles still warrants a guardrail.
+### Risk 2 — Swept-shape cast cost under huge waves
+N projectiles × castShape at 60 Hz. `castShape` (swept ball) uses the broadphase
+(~O(log n + k)), not O(N), but is marginally heavier than a point `castRay`; a wave of
+hundreds of enemies/projectiles still warrants a guardrail.
 **Mitigation / plan:**
 1. Collision predicate limits candidates to enemy colliders only (Risk 3).
-2. Cache the enemy predicate closure (and reuse a single `Ray` object) per step rather
-   than allocating per cast. (`world.castRay` / `intersectionsWithShape` take the
-   predicate directly as a `filterPredicate` argument — there is no separate reusable
-   `QueryFilter` object to hold.)
+2. Cache the enemy predicate closure and reuse a single `ball(projectile.radius +
+   PROJECTILE_HIT_THRESHOLD)` `Shape` plus a direction vector per step rather than
+   allocating per cast. (`world.castShape` / `intersectionsWithShape` take the predicate
+   directly as a `filterPredicate` argument — there is no separate reusable `QueryFilter`
+   object to hold.)
 3. Bound N via the existing projectile lifecycle cap (`MAX_PROJECTILE_AGE = 12`,
    `Constants.ts:98`) and wave scaling.
 4. Add a perf guard test: spawn ~200 enemies + ~150 active projectiles, step the engine
    for 1 s, assert average step time stays under a budget measured from a baseline
    (instrument once; pick a conservative bound, e.g. well under the 16.6 ms frame).
 5. **Fallback (only if the gate fails):** two-phase — pre-filter candidate enemies with
-   the A-range query (cheap ball query), then precise `castRay` only among them.
+   the A-range query (cheap ball query), then precise `castShape` only among them.
    Documented; implement only if the guard test fails.
 
 ### Risk 3 — Filtering must preserve "projectiles fly over towers/walls/base"
@@ -150,8 +170,8 @@ behavior. **Mitigation / plan:**
    that map → predicate returns false → ignored. This predicate approach is more robust
    than a group bitmask and cannot accidentally collide a projectile with non-enemy
    geometry.
-3. Unit test: a ray through a tower returns no hit; a ray through an enemy returns it;
-   a ray through wall+enemy returns only the enemy.
+  3. Unit test: a swept cast through a tower returns no hit; a swept cast through an
+    enemy returns it; a swept cast through wall+enemy returns only the enemy.
 4. Enemy↔enemy and enemy↔tower/wall/base *solver* separation is independent of the query
    predicate (it uses the bodies' own collision groups), so it is unaffected.
 
@@ -192,8 +212,8 @@ positions only, so cross-version drift is acceptable. No mitigation required.
   hash for a known layout; a pile returns only genuinely-in-range bodies; removed
   enemies never returned (Risk 5).
 - `tests/unit/sim/physics/projectile-cast.test.ts`: fast projectile hits a thin enemy it
-  would tunnel past under discrete checks; pierce hits multiple along a line; a ray
-  through a tower/wall returns no hit (Risk 3).
+  would tunnel past under discrete checks (swept ball via `castShape`); pierce hits
+  multiple along a line; a cast through a tower/wall returns no hit (Risk 3).
 - `tests/unit/sim/physics/pre-step-queries.test.ts`: `isBlockedAhead` /
   `findLateralOpenSpot` selection matches the pre-migration (spatial-hash) result for a
   pile (Risk 4) — i.e. Rapier queries return the same blockers.
