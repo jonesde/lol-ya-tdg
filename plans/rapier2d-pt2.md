@@ -41,10 +41,13 @@ has not run yet this frame). Therefore:
 
 - `PhysicsWorld.queryEnemiesInRange(x, y, range): Enemy[]` and
   `forEachEnemyInRange(x, y, range, cb)` implemented with
-  `world.intersectionsWithShape(point, identityRotation, RAPIER.ColliderDesc.ball(range), filter)`
-  restricted to enemy colliders (see Risk 3 predicate), mapping each returned
-  collider's parent handle → `Enemy` via the handle map, then applying the same
-  squared-distance filter as today (`EnemyManager.ts:324`/`:304`).
+  `world.intersectionsWithShape(shapePos, shapeRot, shape, callback, filterFlags?, filterGroups?, filterExcludeCollider?, filterExcludeRigidBody?, filterPredicate?)`
+  where `shapePos = { x, y }`, `shapeRot = 0` (Rapier2d rotation is a scalar, identity
+  `0`; there is no `identityRotation` helper), `shape = new RAPIER.Ball(range)` (NOT
+  `RAPIER.ColliderDesc.ball` — that builds a collider, not a query `Shape`), and
+  `filterPredicate` restricts to enemy colliders (see Risk 3). Each returned collider's
+  parent handle → `Enemy` via the handle map, then apply the same squared-distance
+  filter as today (`EnemyManager.ts:324`/`:304`).
 - Repoint all callers. Tower (`src/sim/towers/Tower.ts`): targeting at `:900`/`:936`,
   plus the four aura loops that use `forEachEnemyInRange` — `frostAura` (`:843`),
   `staticField` (`:850`), `iceBurst` (`:860`), `electricFence` (`:872`). Projectile
@@ -88,17 +91,21 @@ has not run yet this frame). Therefore:
   `setTowerLookup`, `ProjectileManager.ts:198`). `tests/unit/game-projectile-manager.test.ts`
   must extend its `MockEnemyManager` for the new signatures.
 - **Homing** (`ProjectileManager.ts:412`): replace the per-step distance check with a
-  swept-shape cast — `world.castShape(origin, identityRotation, dirScaledBy(moveDist + slack), ball(projectile.radius + PROJECTILE_HIT_THRESHOLD), 0, 1, true, filter)`.
-  This hits **whichever enemy is encountered first** along the path: the locked target
+  swept-shape cast — `world.castShape(origin, 0, { x: (dirX/len)*(moveDist + slack), y: (dirY/len)*(moveDist + slack) }, new RAPIER.Ball(projectile.radius + PROJECTILE_HIT_THRESHOLD), 0, 1, true, undefined, undefined, undefined, undefined, enemyPredicate)`.
+  (Rapier2d `castShape` signature: `castShape(shapePos, shapeRot, shapeVel, shape, targetDistance, maxToi, stopAtPenetration, filterFlags?, filterGroups?, filterExcludeCollider?, filterExcludeRigidBody?, filterPredicate?)`. Rotation is the scalar `0`; `shapeVel` is the direction scaled by the swept distance; query `Shape` is `new RAPIER.Ball(...)`, not `ColliderDesc.ball`. There is no `dirScaledBy` helper.) This hits **whichever enemy is encountered first** along the path: the locked target
   when nothing blocks it, or a closer enemy that has stepped into the line. That is the
   desired behavior (target the original enemy, strike whatever is hit first). Call
   `hitCircleProjectile` on the returned enemy. Continuous, so no tunneling past small/fast
   enemies.
 - **Fixed-aim / pierce** (`:370`,`:441`): `castShape` returns the first enemy hit; for
-  pierce re-cast from the hit point up to the remaining range, passing the prior hit's
-  collider as `filterExcludeCollider` so already-hit enemies are skipped. (Alternative:
-  `intersectionsWithRay(ray, maxToi, solid, callback, …)` at `world.d.ts:341` is a native
-  multi-hit primitive; use it if the re-cast loop proves awkward.)
+  pierce re-cast from the SAME origin up to remaining range. `castShape` accepts only a
+  single `filterExcludeCollider`, so a multi-hit pierce must accumulate a `Set` of hit
+  colliders and reject them inside the `filterPredicate` (return `false` when the collider
+  is in the excluded set) — otherwise a subsequent pass would re-hit an earlier enemy
+  (verified bug). Closest-first ordering falls out of repeatedly taking the first hit.
+  (Alternative considered: `intersectionsWithShape` + manual sort, or
+  `intersectionsWithRay` at `world.d.ts:341`; the re-cast loop is simplest and already
+  implemented.)
 - **Continuous collision:** a swept ball instead of discrete position checks; the ball
   radius already encodes `projectile.radius + PROJECTILE_HIT_THRESHOLD` so grazes and
   off-axis enemies register — which a point ray would miss. This is the main win for the
@@ -234,14 +241,14 @@ Modify:
   registration; `queryEnemiesInRange` / `forEachEnemyInRange`; raycast helper)
 - `src/sim/enemies/EnemyManager.ts` (delete spatial-hash methods + `lastCellX/Y` on
   `Enemy`; keep `getEnemiesInRange` / `forEachEnemyInRange` as always-on delegates to
-  `PhysicsWorld`; add `castRayFirstEnemy` / `castRayPierce` delegating to `PhysicsWorld`)
+  `PhysicsWorld`; add `castShapePierce` delegating to `PhysicsWorld`)
 - `src/sim/towers/Tower.ts` (targeting + four aura callers → delegate, unchanged signatures)
 - `src/sim/ProjectileManager.ts` (homing/fixed-aim/pierce → `EnemyManager` raycast
   delegates; add `PhysicsWorld`/`EnemyManager` wiring to constructor or a setter)
 - `src/sim/GameEngine.ts` (wire `physicsWorld` into `ProjectileManager`; move
   `projectileManager.update` post-step)
 - `tests/unit/game-projectile-manager.test.ts` (extend `MockEnemyManager` for the new
-  `castRayFirstEnemy` / `castRayPierce` signatures)
+  `castShapePierce` signature)
 
 ## Acceptance criteria at flip
 

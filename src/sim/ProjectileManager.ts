@@ -504,10 +504,7 @@ export class ProjectileManager {
     }
   }
 
-  private hitCircleProjectile(
-    projectile: ProjectileGame,
-    enemy: CastEnemy,
-  ): void {
+  private hitCircleProjectile(projectile: ProjectileGame, enemy: CastEnemy): void {
     const finalDamage = projectile.isCrit ? projectile.damage * projectile.critMultiplier : projectile.damage;
 
     // True Shot: 20% chance to instant-kill non-boss enemies

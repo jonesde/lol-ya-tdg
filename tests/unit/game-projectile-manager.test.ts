@@ -37,6 +37,16 @@ interface MockEnemyManager {
   getEnemiesInRange: (x: number, y: number, range: number) => MockEnemy[];
   forEachEnemyInRange: (x: number, y: number, range: number, cb: (enemy: MockEnemy) => void) => void;
   getEnemyById: (id: number) => MockEnemy | null;
+  castShapePierce: (
+    originX: number,
+    originY: number,
+    dirX: number,
+    dirY: number,
+    ballRadius: number,
+    maxDistance: number,
+    maxHits: number,
+    cb: (enemy: MockEnemy) => boolean,
+  ) => void;
 }
 
 interface MockParticleSystem {
@@ -82,6 +92,29 @@ function createMockEnemyManager(enemies: MockEnemy[]): MockEnemyManager {
     },
     getEnemyById(id) {
       return enemies.find((e) => e.id === id) ?? null;
+    },
+    castShapePierce(originX, originY, dirX, dirY, ballRadius, maxDistance, maxHits, cb) {
+      const length = Math.hypot(dirX, dirY) || 1;
+      const unitX = dirX / length;
+      const unitY = dirY / length;
+      const candidates: { enemy: MockEnemy; projection: number }[] = [];
+      for (const enemy of enemies) {
+        if (enemy.removed) continue;
+        const apx = enemy.x - originX;
+        const apy = enemy.y - originY;
+        const projection = Math.max(0, Math.min(maxDistance, apx * unitX + apy * unitY));
+        const closestX = originX + unitX * projection;
+        const closestY = originY + unitY * projection;
+        const dist = Math.hypot(enemy.x - closestX, enemy.y - closestY);
+        if (dist <= ballRadius) candidates.push({ enemy, projection });
+      }
+      candidates.sort((a, b) => a.projection - b.projection);
+      let hits = 0;
+      for (const candidate of candidates) {
+        if (hits >= maxHits) break;
+        hits++;
+        if (!cb(candidate.enemy)) break;
+      }
     },
   };
 }
@@ -1279,16 +1312,15 @@ describe("ProjectileManager", () => {
       manager = new ProjectileManager(enemyManager, particles);
     });
 
-    // Spawn an enemy and re-hash it at an explicit position (spawn hashes by the
-    // original spawn point). Enemy ids are assigned naturally (1,2,3,...) because
-    // beforeEach resets the module id counter, so getEnemyById resolves correctly.
+    // Spawn an enemy and place it at an explicit position. Enemy ids are assigned
+    // naturally (1,2,3,...) because beforeEach resets the module id counter, so
+    // getEnemyById resolves correctly. This EnemyManager has no physics world, so
+    // range queries read enemy.x/enemy.y directly and no re-hash step is needed.
     function makeEnemy(x: number, y: number) {
       const enemy = enemyManager.spawn("minion", 1, 0, 1)!;
       enemy.x = x;
       enemy.y = y;
       enemy.takeDamage = vi.fn();
-      // Re-hash at the explicit position through the public update path.
-      enemyManager.updateSpatialHash();
       return enemy;
     }
 

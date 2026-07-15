@@ -217,8 +217,9 @@ export class PhysicsWorld {
 
   // Swept-shape cast against enemy colliders only. Returns the first enemy hit
   // along (dirX, dirY) from (originX, originY) within `maxDistance`, plus its
-  // collider (needed to exclude it on a subsequent pierce pass). `excludeCollider`
-  // skips a previously-hit collider. Returns null if nothing is hit.
+  // collider (needed to exclude it on a subsequent pierce pass). `excluded`
+  // skips previously-hit colliders: either a single collider or a Set of them.
+  // Returns null if nothing is hit.
   castShapeFirstEnemy(
     originX: number,
     originY: number,
@@ -226,11 +227,12 @@ export class PhysicsWorld {
     dirY: number,
     ballRadius: number,
     maxDistance: number,
-    excludeCollider?: RAPIER.Collider | null,
+    excluded?: RAPIER.Collider | Set<RAPIER.Collider> | null,
   ): { enemy: Enemy; collider: RAPIER.Collider } | null {
     const RAPIER = getRapier();
     const length = Math.hypot(dirX, dirY) || 1;
     const velocity = { x: (dirX / length) * maxDistance, y: (dirY / length) * maxDistance };
+    const excludedSet = excluded instanceof Set ? excluded : excluded ? new Set([excluded]) : null;
     const hit = this.world.castShape(
       { x: originX, y: originY },
       0,
@@ -241,9 +243,12 @@ export class PhysicsWorld {
       true,
       undefined,
       undefined,
-      excludeCollider ?? undefined,
       undefined,
-      this.isEnemyCollider,
+      undefined,
+      (collider) => {
+        if (excludedSet?.has(collider)) return false;
+        return this.isEnemyCollider(collider);
+      },
     );
     if (!hit) return null;
     const enemy = this.enemyFromCollider(hit.collider);
@@ -252,9 +257,10 @@ export class PhysicsWorld {
   }
 
   // Multi-hit variant for piercing: repeatedly casts from the SAME origin,
-  // excluding each hit collider so the next pass returns the next enemy along
-  // the ray (closest-first). Calls `cb(enemy)` for each hit; `cb` returns false
-  // to stop early. Stops after `maxHits` hits or when nothing more is hit.
+  // accumulating every hit collider in an exclusion set so the next pass returns
+  // the next enemy along the ray (closest-first). Calling `cb(enemy)` for each
+  // hit; `cb` returns false to stop early. Stops after `maxHits` hits or when
+  // nothing more is hit.
   castShapePierce(
     originX: number,
     originY: number,
@@ -265,7 +271,7 @@ export class PhysicsWorld {
     maxHits: number,
     cb: (enemy: Enemy) => boolean,
   ): void {
-    let excluded: RAPIER.Collider | null = null;
+    const excluded = new Set<RAPIER.Collider>();
     let hits = 0;
     while (hits < maxHits) {
       const result = this.castShapeFirstEnemy(originX, originY, dirX, dirY, ballRadius, maxDistance, excluded);
@@ -273,7 +279,7 @@ export class PhysicsWorld {
       hits++;
       const keepGoing = cb(result.enemy);
       if (!keepGoing) break;
-      excluded = result.collider;
+      excluded.add(result.collider);
     }
   }
 

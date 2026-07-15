@@ -114,6 +114,7 @@ describe("EnemyManager", () => {
   describe("getEnemiesInRange", () => {
     it("returns enemies within range", () => {
       manager.spawn("minion", 1, 0, 1);
+      stepPhysics(manager, physicsWorld, 1 / 60);
       const towerPos = { x: 18, y: 18 };
       const inRange = manager.getEnemiesInRange(towerPos.x, towerPos.y, grid.tileSize * 3.5);
       expect(inRange.length).toBeGreaterThan(0);
@@ -128,6 +129,7 @@ describe("EnemyManager", () => {
 
     it("includes enemies attacking the base in range queries (they still collide)", () => {
       const enemy = manager.spawn("minion", 1, 0, 1);
+      stepPhysics(manager, physicsWorld, 1 / 60);
       enemy.attackingBase = true;
       const inRange = manager.getEnemiesInRange(enemy.x, enemy.y, 10);
       expect(inRange).toContain(enemy);
@@ -165,6 +167,7 @@ describe("EnemyManager", () => {
     it("maintains correct hash after multiple spawn and cull cycles", () => {
       const e1 = manager.spawn("minion", 1, 0, 1);
       const e2 = manager.spawn("runner", 1, 0, 1);
+      stepPhysics(manager, physicsWorld, 1 / 60);
       e1.removed = true;
       manager.update(0.016, () => {});
       expect(manager.enemies).toHaveLength(1);
@@ -180,8 +183,9 @@ describe("EnemyManager", () => {
       const e1 = manager.spawn("minion", 1, 0, 1);
       const e2 = manager.spawn("minion", 1, 0, 1);
       const removed = manager.spawn("runner", 1, 0, 1);
-      removed.removed = true;
       const reached = manager.spawn("minion", 1, 0, 1);
+      stepPhysics(manager, physicsWorld, 1 / 60);
+      removed.removed = true;
       reached.attackingBase = true;
 
       const arr = manager.getEnemiesInRange(18, 18, 10000);

@@ -775,18 +775,15 @@ describe("GameEngine", () => {
     function placeEnemyInTowerRange(tower: Tower): Enemy {
       const enemy = engine.enemyManager!.spawn("minion", 1, 0, 1)!;
       // Freeze the enemy at the tower so it stays within range during the tick
-      // (a spawned enemy otherwise walks its path away from the tower), and
-      // register it in the spatial hash so getEnemiesInRange can find it.
-      // Under physics the enemy's rigid body is authoritative, so we move the
-      // body too; otherwise computeIntent reseeds the logical position from the
-      // (untouched) spawn body and the tower never sees it.
+      // (a spawned enemy otherwise walks its path away from the tower). Under
+      // physics the enemy's rigid body is authoritative, so we move the body
+      // too; getEnemiesInRange now resolves through the physics world.
       enemy.speed = 0;
       enemy.centerX = tower.x;
       enemy.centerY = tower.y;
       enemy.x = tower.x;
       enemy.y = tower.y;
       enemy.body?.setTranslation({ x: tower.x, y: tower.y }, true);
-      engine.enemyManager!.rebuildSpatialHash();
       return enemy;
     }
 
