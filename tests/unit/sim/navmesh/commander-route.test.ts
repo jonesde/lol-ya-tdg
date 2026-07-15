@@ -3,7 +3,6 @@ import type { AttackTarget } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
-import { toRecast } from "@/sim/navmesh/coords.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";

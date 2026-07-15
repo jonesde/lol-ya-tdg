@@ -113,7 +113,6 @@ describe("Integration: Tower Placement Flow", () => {
   });
 
   it("placing a tower does not block the path in non-critical positions", () => {
-    const grid = engine.grid!;
     buildTowerAt(engine, 0, 0);
     const tower = engine.towerManager!.towerAt(0, 0);
     expect(tower).not.toBeNull();

@@ -574,62 +574,6 @@ export class Enemy {
   }
 }
 
-// Closest point on the 3x3 base square (centered at baseCenter, half-extent `half`)
-// to the point (pointX, pointY), and the contact center that places a circle of the
-// given `radius` just outside the square along the outward normal. `overlapping` is
-// true when the point is inside (or touching) the square, so the caller can push the
-// enemy out to `contactX/contactY`. Using square distance (not distance-to-center)
-// lets enemies ring the base's outline, including the corners.
-function baseSquareContact(
-  baseCenterX: number,
-  baseCenterY: number,
-  half: number,
-  pointX: number,
-  pointY: number,
-  radius: number,
-): { contactX: number; contactY: number; overlapping: boolean } {
-  const deltaX = pointX - baseCenterX;
-  const deltaY = pointY - baseCenterY;
-  const closestX = baseCenterX + Math.max(-half, Math.min(half, deltaX));
-  const closestY = baseCenterY + Math.max(-half, Math.min(half, deltaY));
-  let normalX: number;
-  let normalY: number;
-  const distance = Math.hypot(pointX - closestX, pointY - closestY);
-  let contactX: number;
-  let contactY: number;
-  if (distance > 1e-6) {
-    // Point is outside the square: normalize the outward normal and place the
-    // center a full `radius` beyond the nearest edge.
-    normalX = (pointX - closestX) / distance;
-    normalY = (pointY - closestY) / distance;
-    contactX = closestX + normalX * radius;
-    contactY = closestY + normalY * radius;
-  } else {
-    // Point is inside the square. Collision can shove a centerline deep past the
-    // base center, so a plain `radius` push along the radial would still leave it
-    // inside. Eject it to `radius` outside the *nearest* edge instead.
-    const penRight = half - deltaX;
-    const penLeft = half + deltaX;
-    const penDown = half - deltaY;
-    const penUp = half + deltaY;
-    const minPen = Math.min(penRight, penLeft, penDown, penUp);
-    if (minPen === penRight) {
-      contactX = baseCenterX + half + radius;
-      contactY = pointY;
-    } else if (minPen === penLeft) {
-      contactX = baseCenterX - half - radius;
-      contactY = pointY;
-    } else if (minPen === penDown) {
-      contactX = pointX;
-      contactY = baseCenterY + half + radius;
-    } else {
-      contactX = pointX;
-      contactY = baseCenterY - half - radius;
-    }
-  }
-  return { contactX, contactY, overlapping: distance < radius };
-}
-
 // Distance from (pointX, pointY) to the nearest point on the 3x3 base square
 // (centered at baseCenter, half-extent `half`). Zero when inside the square.
 function distanceToBaseSquare(
