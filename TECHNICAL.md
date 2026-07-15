@@ -42,7 +42,9 @@ src/
 │   ├── ConfirmDialog.vue        # Reusable modal dialog (teleported to body)
 │   ├── DebugPanel.vue           # Debug buttons: gold/gems/lives injection, wave skip, map unlock, time scale
 │   ├── StatsPanel.vue           # Wave composition, enemy list, and run statistics
-│   └── HistoryScreen.vue        # Run history entries with gem breakdown formatting
+│   ├── HistoryScreen.vue        # Run history entries with gem breakdown formatting
+│   ├── CommandersScreen.vue     # LLM commander management UI: create/edit/delete custom commanders, activate built-in or LLM commanders
+│   └── EnemyChat.vue            # Draggable in-game chat panel for interacting with active LLM enemy commander
 ├── sim/
 │   ├── Command.ts               # Command discriminated-union types (input/action/lifecycle/llm) for simulation intent
 │   ├── CommandDispatcher.ts     # CommandDispatcher interface — the dispatch seam every intent flows through
@@ -77,8 +79,11 @@ src/
 │   ├── enemies/
 │   │   ├── Enemy.ts             # Enemy types, stats, behavior, pathfinding, status effects
 │   │   └── EnemyManager.ts      # Enemy spawning, lifecycle, death handling
-│   └── waves/
-│       └── WaveManager.ts       # Wave composition, boss cadence, inter-wave timer
+│   ├── waves/
+│   │   └── WaveManager.ts       # Wave composition, boss cadence, inter-wave timer
+│   └── physics/
+│       ├── PhysicsWorld.ts      # Rapier2d world: static geometry (base/towers/corridor), dynamic enemy bodies driven by velocity
+│       └── rapierContext.ts     # Lazy WASM loader for Rapier2d; gates physics initialization until resolved
 ├── sim-adapters/
 │   └── MainThreadHostBindings.ts      # Main-thread HostBindings adapter: SoundManager/uiStore/persistStore
 ├── render/
@@ -117,6 +122,12 @@ src/
 │   │   ├── brain.ts                 # CommanderBrain interface + CommanderMemory state + createBrain() factory
 │   │   ├── stubby/brain.ts          # Sergeant Stubby: hold-then-rush (holds emerging enemies, rushes wave to base when wave completes)
 │   │   └── stubbs/brain.ts          # Commander Stubbs: aggressive routing to highest-HP live tower ahead of the group; re-routes on tower-set change
+│   └── llm/
+│       ├── types.ts                 # LlmCommanderConfig interface + DEFAULT_LLM_SYSTEM_PROMPT constant
+│       ├── schema.ts                # Message schemas for LLM API communication
+│       ├── apiClient.ts             # HTTP client for posting observations and receiving commands from LLM endpoint
+│       ├── systemPrompt.ts          # System prompt template for enemy commander behavior
+│       └── brain.ts                 # LLM-based CommanderBrain that uses apiClient to communicate with external model
 └── sound/
     └── SoundManager.ts          # Lightweight WebAudio synth for game sounds
 ```
@@ -158,7 +169,7 @@ The SVG structure is:
 ### Four Pinia Stores
 
 - **`gameStore`** — reactive mirror/projection of the simulation `SimulationSnapshot`. The worker is authoritative for simulation state; `gameStore` holds the subset the Vue UI binds to (lives, gold, wave, game state, selection, time scale, dialog visibility, frame id, run gem/boss counters, milestone breakdown, end-screen data) and is updated by snapshot diffs each frame. Main-thread-only state (camera, hover tile, hover-upgrade-button, tower/panel positions, random-map params, worker reference) also lives here. Reset when starting a new map.
-- **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons, random-map preferences, last-selected theme). Auto-saved to `localStorage` via manual `save()` calls.
+- **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons, random-map preferences, last-selected theme) and LLM commander configurations (`llmCommanders` array). Auto-saved to `localStorage` via manual `save()` calls.
 - **`uiStore`** — UI overlay visibility and confirm dialog state, plus notifications, minimap toggle, enemy commander selection ("none"/"stubby"/"stubbs"), random-map panel visibility, and wasPlaying flags for pause/skill-tree/help (so closing these overlays restores the prior playing/paused state).
 - **`mapThemeStore`** — map theme state: `defaultTheme` (preloaded at app init for synchronous access by non-game screens) and `activeTheme` (resolved for the current run), plus `availableThemes` and preload/load actions.
 
@@ -314,6 +325,26 @@ cache supplied by the relay, not the whole thing.
 `stopEnemyCommander()` dispatches `llm:routeGroup(enemyIds, hold: false, [])` for every
 live enemy (reverts held enemies to default path) before stopping the relay.
 
+**LLM Commanders:** For custom external LLM integration, `persistStore` maintains an array of `LlmCommanderConfig` entries (id, name, endpointUrl, token, modelName, contextLimit, commanderInstructions, systemPrompt). When an LLM commander is activated via `setEnemyCommander(id)`, the relay starts with `"llm"` mode and passes the config. The worker's LLM brain (`src/commanders/llm/brain.ts`) uses `apiClient.ts` to POST observations to the configured endpoint and receive commands. A draggable `EnemyChat.vue` panel lets players send messages and update commander instructions in real time; changes are posted via `postUpdateInstructions()` to the active worker.
+
+### Physics System (Rapier2d)
+
+A dedicated Rapier2d world handles all rigid-body physics for enemies and static geometry. The system is always active once initialized; WASM loading is gated behind `getRapier()` in `rapierContext.ts`.
+
+**Static Geometry:**
+- **Base**: Fixed cuboid covering the 3×3 base tile, preventing enemies from passing through.
+- **Towers**: Each non-ghost tower gets a fixed cuboid collider at its position; rebuilt whenever `grid.pathVersion` changes or towers are added/removed.
+- **Corridor Walls**: Thin fixed wall segments form a closed boundary around all walkable tiles (path ∪ base ∪ spawn), keeping dynamic bodies within the playable area.
+
+**Dynamic Bodies:**
+- Each enemy is a dynamic circle body driven by velocity rather than direct position updates.
+- Physics simulation runs at `FIXED_DT` (60 Hz) inside the worker loop, integrated with the game tick.
+
+**Integration:**
+- `PhysicsWorld` is constructed with the grid and manages all colliders/bodies.
+- `GameEngine` passes tower data to `PhysicsWorld.rebuildTowers()` when needed.
+- Enemy movement now uses physics-based velocity; pathfinding still determines target direction but actual motion is resolved by Rapier2d.
+
 ### Router Navigation Guards
 
 `router.beforeEach` disposes the game engine and saves progress when leaving `/game`. Auto-redirects to `/game-over` or `/victory` when the game state transitions.
@@ -377,6 +408,8 @@ live enemy (reverts held enemies to default path) before stopping the relay.
 | `src/components/DebugPanel.vue` | Debug overlay: gold/gems/lives injection, wave skip, enemy clear, map unlock |
 | `src/components/StatsPanel.vue` | Wave composition, enemy list, and run statistics; reads enemy name/color/shape from active theme |
 | `src/components/HistoryScreen.vue` | Run history entries with gem breakdown formatting; reads default theme for region names |
+| `src/components/CommandersScreen.vue` | LLM commander management UI: create/edit/delete custom commanders, activate built-in or LLM commanders |
+| `src/components/EnemyChat.vue` | Draggable in-game chat panel for interacting with active LLM enemy commander |
 
 ### Game Engine
 
@@ -391,6 +424,8 @@ live enemy (reverts held enemies to default path) before stopping the relay.
 | `src/sim/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback |
 | `src/sim/ParticleSystem.ts` | Game-side particle simulation: spawn, motion, life/expiry |
 | `src/sim/WaveGraphTracker.ts` | Per-wave graph data: damage dealt, gold earned, gems earned, peak enemy HP per wave |
+| `src/sim/physics/PhysicsWorld.ts` | Rapier2d physics world: static geometry (base/towers/corridor walls), dynamic enemy bodies driven by velocity |
+| `src/sim/physics/rapierContext.ts` | Lazy WASM loader for Rapier2d; gates physics initialization until resolved |
 
 ### Grid & Maps
 
@@ -459,6 +494,11 @@ live enemy (reverts held enemies to default path) before stopping the relay.
 | `src/commanders/brain.ts` | `CommanderBrain` interface + `CommanderMemory` state + `createBrain()` factory |
 | `src/commanders/stubby/brain.ts` | Sergeant Stubby: hold-then-rush (holds emerging enemies, rushes wave to base when wave completes) |
 | `src/commanders/stubbs/brain.ts` | Commander Stubbs: aggressive routing to highest-HP live tower ahead of the group; re-routes on tower-set change |
+| `src/commanders/llm/types.ts` | `LlmCommanderConfig` interface + `DEFAULT_LLM_SYSTEM_PROMPT` constant |
+| `src/commanders/llm/schema.ts` | Message schemas for LLM API communication |
+| `src/commanders/llm/apiClient.ts` | HTTP client for posting observations and receiving commands from LLM endpoint |
+| `src/commanders/llm/systemPrompt.ts` | System prompt template for enemy commander behavior |
+| `src/commanders/llm/brain.ts` | LLM-based `CommanderBrain` that uses `apiClient` to communicate with external model |
 
 ### Camera
 
@@ -501,6 +541,7 @@ Game progress (gems, unlocks, difficulty, map progress) is saved to `localStorag
 | `/map-select` | `MapSelect.vue` | Map selection grid with theme drop-down, responsive layout, awaits theme resolution before navigation |
 | `/skill-tree` | `SkillTree.vue` | Gem-based upgrade tree |
 | `/game` | `GameScreen.vue` | Active gameplay with single SVG root + UI overlays |
+| `/commanders` | `CommandersScreen.vue` | LLM commander management: create/edit/delete custom commanders, activate built-in or LLM commanders |
 | `/game-over` | `EndScreen.vue` | Game over screen (`won: false`) |
 | `/victory` | `EndScreen.vue` | Victory screen (`won: true`) |
 | `/history` | `HistoryScreen.vue` | Run history with gem breakdown |
@@ -554,8 +595,9 @@ All component styles use `<style scoped>` to prevent leakage.
 | Sound | `sound-manager.test.ts` | WebAudio synth, all sound names, dispose, enabled flag |
 | Stores | `game-store.test.ts`, `persist-store.test.ts`, `ui-store.test.ts`, `map-theme.test.ts` | State, getters, actions, save/load, schema migration; theme registry, loader, normalize, store preload/load/visual getters |
 | Snapshot Store | `snapshot-store.test.ts`, `sim/snapshot.test.ts` | Latest-snapshot holding, meta mirroring into gameStore, snapshot serialization/round-trip |
-| Enemy Commanders | `tests/unit/commanders/observation.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts`, `integration/commander.test.ts` | Observation projection (world→tile, hp rename), Stubby hold-then-rush per wave, Stubbs ahead-tower routing + tower-set re-route, worker message round-trip |
+| Enemy Commanders | `tests/unit/commanders/observation.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts`, `integration/commander.test.ts`, `integration/commander-llm.test.ts` | Observation projection (world→tile, hp rename), Stubby hold-then-rush per wave, Stubbs ahead-tower routing + tower-set re-route, LLM worker message round-trip, chat/instructions updates |
+| Physics | `tests/unit/sim/physics/enemy-physics.test.ts`, `tests/unit/sim/physics/physics-world.test.ts`, `integration/physics-motion.test.ts` | Rapier2d body/collider creation, static geometry (base/towers/corridor), dynamic enemy motion, velocity integration, collision with walls and towers |
 | Router | `router.test.ts` | Navigation guards, block without map, save on leave, redirects, activeTheme requirement |
 | Input | `input.test.ts` | Keyboard dispatch, timeScale, pause, upgrade/sell, escape handling |
-| Components | 13 files in `tests/unit/components/` | Rendering, user interactions, store bindings (includes PauseMenu) |
+| Components | 15 files in `tests/unit/components/` | Rendering, user interactions, store bindings (includes PauseMenu, CommandersScreen, EnemyChat) |
 | Integration | `integration.test.ts`, `worker-roundtrip.test.ts` | Single wave simulation: kill enemies, gold economy, boss mechanics, victory; command→snapshot worker round-trip |
