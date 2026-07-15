@@ -123,16 +123,21 @@ avoidance) → write that as Rapier `setLinvel` on the enemy body →
 
 ## Phase 1 — `NavMeshBuilder` (`src/sim/navmesh/NavMeshBuilder.ts`)
 
-Builds one `NavMesh` per run from the walkable tile set.
+Builds one **tiled** navmesh (+ `TileCache`) per run from the walkable tile set. We
+use the **tiled** generator from the start (not solo) because the map *is* a tile grid
+and, critically, **only tiled navmeshes support dynamic obstacles** — towers are added
+as `TileCache` obstacles (Phase 3) with no full rebuild.
+
 - Input geometry: for each walkable tile (same predicate as `PhysicsWorld.isWalkable`),
   emit two triangles on the z=0 plane (4 verts, 2 tris) in world space
-  (`tileToWorld`). Build with `generateSoloNavMesh(positions, indices, config)`
-  imported from **`recast-navigation/generators`** (the top-level `recast-navigation`
-  does **not** re-export the generators) → returns a `NavMesh` directly. The
-  `positions`/`indices` are flat arrays; `config` is `RecastConfig` (`cs`/`ch` cell
-  size, `walkableRadius` agent clearance, …).
+  (`tileToWorld`). Build with `generateTileCache(positions, indices, config)` imported
+  from **`recast-navigation/generators`** (the top-level `recast-navigation` does
+  **not** re-export the generators). It returns `{ tileCache, navMesh }` in one call
+  (verified in v0.43.1 types: `TileCache` exposes `addObstacle`/`removeObstacle`).
+  The `positions`/`indices` are flat arrays; `config` is `TileCacheGeneratorConfig`
+  (`cs`/`ch` cell size, `walkableRadius` agent clearance, `maxObstacles`, `bounds`, …).
 - Config tuning (the riskiest tuning, esp. for 1-wide corridors): `cellSize` /
-  `cellHeight` relative to `tileSize`; **`agentRadius` set to the smallest enemy
+  `cellHeight` relative to `tileSize`; **`walkableRadius` set to the smallest enemy
   radius** (runner `0.05*tileSize`) so a 1-wide corridor stays navigable; larger
   enemies just collide more with Rapier walls. `agentHeight`/`maxEdgeLen` nominal.
   Validate: a packed stream through a serpentine 1-wide map must produce a connected
@@ -140,9 +145,12 @@ Builds one `NavMesh` per run from the walkable tile set.
 - Open areas: Recast builds a natural navmesh over arbitrary walkable polygons — no
   special casing; this is where the "more options" payoff lands (enemies take
   organic paths and avoid each other).
-- Expose `navMesh`, `detour`, and a `findPath(startWorld, goalWorld): Vec2[]` helper
+- Expose `navMesh`, `tileCache`, and a `findPath(startWorld, goalWorld): Vec2[]` helper
   (Detour polyline of corridor points) for snapshot path-highlight + commander viz.
-- Build once in `GameEngine` ctor (when `RECAST_NAV`), rebuild only on new map.
+- Build once in `GameEngine` ctor (when `RECAST_NAV`), rebuild only on new map. The
+  `Crowd` (Phase 2) is constructed from this `navMesh`; the `tileCache` is what
+  `Phase 3` mutates for towers (the `NavMesh` it holds is updated in place by
+  `tileCache.addObstacle`/`removeObstacle`).
 
 ## Phase 2 — `CrowdManager` + enemy movement split (`src/sim/navmesh/CrowdManager.ts`)
 
@@ -174,13 +182,22 @@ Wraps one `Crowd` derived from the `NavMesh`.
 
 ## Phase 3 — Towers baked into the navmesh + reachability
 
-- **The `NavMesh` wrapper exposes no `addObstacle`/`removeObstacle`** (verified against
-  v0.43.1 types), so runtime Detour dynamic obstacles are not available. Instead,
-  represent a tower as **non-walkable in the navmesh geometry**: on tower build/sell,
-  rebuild the solo navmesh from the walkable tiles *excluding* live tower tiles. Grids
-  are small (~600 tiles) so a recast rebuild per tower placement is cheap, and it
-  yields maze-building (enemies route around towers) for free. `PhysicsWorld.rebuildTowers`
-  still adds the Rapier collider; both run on the same `navVersion` bump.
+- **Towers are `TileCache` obstacles (the maze tactic), not navmesh rebuilds.** The
+  navmesh is **tiled** from Phase 1, so `tileCache.addObstacle(obstacle)` /
+  `tileCache.removeObstacle(ref)` add/remove a tower cylinder and re-bake only the
+  affected tiles in place — the `NavMesh` the `Crowd` holds is updated in place, so
+  agents re-path automatically with no full-navmesh rebuild. (This supersedes the earlier
+  solo-navmesh-rebuild fallback now that tiled+TileCache is confirmed available.)
+  `PhysicsWorld.rebuildTowers` still adds the Rapier collider; both run on the same
+  `navVersion` bump.
+- **Alternative library evaluated — `navcat` (v0.4.1, pure TS):** investigated
+  2026-07-15. It is a pure-TS reimplementation of Recast/Detour (same crowd /
+  obstacle-avoidance internals) and needs **no WASM init**. However its `NavMesh`
+  wrapper **also lacks `addObstacle`/`removeObstacle`** (same navmesh-carve gap), and
+  its `addCircleObstacle` is only *local steering* avoidance, not path carving — so
+  it does **not** resolve the maze-building limitation. Its only edge is dropping the
+  WASM dependency, which is minor given Rapier already WASM-gates. **Not adopted**;
+  recast-navigation (tiled navmesh + TileCache) remains the choice.
 - Replace `canPlaceWithoutBlocking` with a Detour reachability check: before committing
   the rebuild, confirm a `NavMeshQuery.findPath` spawn→base still exists on the proposed
   geometry; if not, reject placement (maze can never fully wall off the base).
