@@ -53,14 +53,14 @@ export interface TowerBase {
 
 // Tower Base Settings
 export const TOWER_BASE: Record<string, TowerBase> = {
-  basic: { range: 3.5, damage: 8, fireRate: 1.2, projSpeed: 14, splash: 0, health: 25 },
+  basic: { range: 3.5, damage: 8, fireRate: 1.2, projSpeed: 14, splash: 0, health: 10 },
   ice: { range: 2.8, damage: 4, fireRate: 1.0, projSpeed: 12, slowAmt: 0.45, slowDur: 1.5, splash: 0.25, health: 20 },
-  sniper: { range: 7, damage: 32, fireRate: 0.45, projSpeed: 30, splash: 0, stun: 0.2, health: 20 },
+  sniper: { range: 7, damage: 32, fireRate: 0.45, projSpeed: 30, splash: 0, stun: 0.2, health: 25 },
   cannon: { range: 3.2, damage: 16, fireRate: 0.55, projSpeed: 5, splash: 0.5, health: 30 },
-  lightning: { range: 3.5, damage: 4, fireRate: 0.8, projSpeed: 99, chain: 2, stun: 0.1, health: 22 },
-  railgun: { range: 8, damage: 14, fireRate: 0.28, projSpeed: 60, fixedAim: true, pierceFalloff: 0.5, health: 28 },
-  sturdyWall: { range: 0, damage: 0, fireRate: 0, projSpeed: 0, health: 250 },
-  shotgunTank: { range: 1, damage: 8, fireRate: 1.2, projSpeed: 14, health: 150 },
+  lightning: { range: 3.5, damage: 4, fireRate: 0.8, projSpeed: 99, chain: 2, stun: 0.1, health: 35 },
+  railgun: { range: 8, damage: 14, fireRate: 0.28, projSpeed: 60, fixedAim: true, pierceFalloff: 0.5, health: 45 },
+  sturdyWall: { range: 0, damage: 0, fireRate: 0, projSpeed: 0, health: 100 },
+  shotgunTank: { range: 1, damage: 8, fireRate: 1.2, projSpeed: 14, health: 75 },
 };
 
 // ===== Global Projectile Speed Tuning =====
