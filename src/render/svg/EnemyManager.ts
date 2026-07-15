@@ -1,5 +1,5 @@
 import type { EnemySnapshot } from "../../sim/SimulationSnapshot.js";
-import { ENEMY_POOL_SIZE, SVG_NS } from "./types.js";
+import { ENEMY_POOL_SIZE, ENEMY_SCALED_SIZE, SVG_NS } from "./types.js";
 
 export class EnemyManager {
   private pool: EnemyRenderProxy[] = [];
@@ -74,7 +74,7 @@ class EnemyRenderProxy {
     this.active = true;
     this.el.style.visibility = "visible";
 
-    const spriteSize = enemy.radius * 4;
+    const spriteSize = ENEMY_SCALED_SIZE;
     const halfSize = spriteSize / 2;
     const angleDeg = enemy.angle * (180 / Math.PI);
     const posX = enemy.x - halfSize;

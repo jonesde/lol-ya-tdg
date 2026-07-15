@@ -3,6 +3,7 @@ export const XLINK_NS = "http://www.w3.org/1999/xlink";
 
 export const GRID_TILE_SIZE = 36;
 export const TOWER_SCALED_SIZE = GRID_TILE_SIZE * 0.75;
+export const ENEMY_SCALED_SIZE = GRID_TILE_SIZE * 0.75;
 
 /*
 | Render Manager   | Pool           | Size | Const Name            | Exhaustion Strategy | Behavior                              |
