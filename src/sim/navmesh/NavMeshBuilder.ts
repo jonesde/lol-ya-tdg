@@ -115,9 +115,28 @@ export class NavMeshBuilder {
     return this.buildError;
   }
 
+  // Releases the WASM-backed NavMesh and TileCache. These are not reclaimed by
+  // JavaScript GC automatically, so the engine must call this on dispose (and any
+  // throwaway builder must free itself) to avoid leaking WASM memory.
+  destroy(): void {
+    this.navMesh?.destroy();
+    this.tileCache?.destroy();
+    this.navMesh = null;
+    this.tileCache = null;
+  }
+
   // Returns a world-space polyline (game coordinates) from start to goal, or []
   // when no corridor connects them. `start`/`goal` are game-plane points.
-  findPath(startWorld: WorldPoint, goalWorld: WorldPoint): WorldPoint[] {
+  // `goalDistanceTolerance` is the max distance the clamped end point may sit from
+  // `goalWorld` and still count as a real path; beyond it the path is treated as the
+  // degenerate "goal clamped to start island" case and rejected. Callers that route
+  // to an exact target (e.g. a waypoint) should tighten this; the default keeps the
+  // full-tile tolerance used by the spawn→base reachability guard.
+  findPath(
+    startWorld: WorldPoint,
+    goalWorld: WorldPoint,
+    goalDistanceTolerance: number = this.grid.tileSize,
+  ): WorldPoint[] {
     if (!this.navMesh) return [];
     const query = new NavMeshQuery(this.navMesh);
     const halfExtents: Vector3 = { x: this.grid.tileSize, y: this.grid.tileSize, z: this.grid.tileSize };
@@ -129,7 +148,7 @@ export class NavMeshBuilder {
     // the goal. Treat that as "no path" so callers get an empty result.
     const lastPoint = path[path.length - 1]!;
     const goalDistance = Math.hypot(lastPoint.x - goalWorld.x, lastPoint.y - goalWorld.y);
-    if (goalDistance > this.grid.tileSize) return [];
+    if (goalDistance > goalDistanceTolerance) return [];
     return path;
   }
 
@@ -155,9 +174,13 @@ export class NavMeshBuilder {
   private applyTileCacheUpdates(): void {
     if (!this.tileCache || !this.navMesh) return;
     const maxUpdateIterations = 16;
+    let updateResult = { upToDate: false };
     for (let iteration = 0; iteration < maxUpdateIterations; iteration++) {
-      const updateResult = this.tileCache.update(this.navMesh);
+      updateResult = this.tileCache.update(this.navMesh);
       if (updateResult.upToDate) return;
+    }
+    if (!updateResult.upToDate) {
+      console.warn("NavMeshBuilder: tileCache.update did not converge after", maxUpdateIterations, "iterations");
     }
   }
 
@@ -231,14 +254,18 @@ export class NavMeshBuilder {
   wouldRemainReachable(towerTileX: number, towerTileY: number): boolean {
     if (!this.tileCache || !this.navMesh) return true;
     const probe = new NavMeshBuilder(this.grid);
-    if (!probe.isSuccess() || !probe.getNavMesh()) return true;
-    for (const key of this.obstacleRefs.keys()) {
-      const keyParts = key.split(",");
-      probe.addTowerObstacle(Number(keyParts[0]), Number(keyParts[1]));
+    try {
+      if (!probe.isSuccess() || !probe.getNavMesh()) return true;
+      for (const key of this.obstacleRefs.keys()) {
+        const keyParts = key.split(",");
+        probe.addTowerObstacle(Number(keyParts[0]), Number(keyParts[1]));
+      }
+      probe.addTowerObstacle(towerTileX, towerTileY);
+      const spawn = this.grid.tileToWorld(this.grid.spawns[0]!.x, this.grid.spawns[0]!.y);
+      const base = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
+      return probe.findPath(spawn, base).length > 0;
+    } finally {
+      probe.destroy();
     }
-    probe.addTowerObstacle(towerTileX, towerTileY);
-    const spawn = this.grid.tileToWorld(this.grid.spawns[0]!.x, this.grid.spawns[0]!.y);
-    const base = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
-    return probe.findPath(spawn, base).length > 0;
   }
 }

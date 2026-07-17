@@ -962,6 +962,8 @@ export class GameEngine {
     this.stop();
     this.crowdManager?.destroy();
     this.crowdManager = null;
+    this.navMeshBuilder?.destroy();
+    this.navMeshBuilder = null;
     if (this.physicsWorld) {
       this.physicsWorld.dispose();
       this.physicsWorld = null;
