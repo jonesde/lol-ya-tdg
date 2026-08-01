@@ -92,6 +92,7 @@ type CastEnemy = {
   type: string;
   x: number;
   y: number;
+  radius?: number;
   hp: number;
   maxHp: number;
   removed: boolean;
@@ -148,6 +149,7 @@ export interface EnemyManager {
     type: string;
     x: number;
     y: number;
+    radius?: number;
     hp: number;
     maxHp: number;
     removed: boolean;
@@ -457,6 +459,17 @@ export class ProjectileManager {
 
   // After physics step: read body positions, process contact hits, castShape fallback.
   postPhysics(dt: number, contactHits: ProjectileHitEvent[]): void {
+    // Sync body translations before contact resolution so impact FX use post-step
+    // positions rather than the pre-physics frame.
+    for (const projectile of this.projectiles) {
+      if (!projectile.active) continue;
+      const bodyPos = this.physicsWorld?.getProjectilePosition(projectile.id);
+      if (bodyPos) {
+        projectile.x = bodyPos.x;
+        projectile.y = bodyPos.y;
+      }
+    }
+
     const hitByContact = new Set<number>();
     for (const hit of contactHits) {
       const projectile = this.projectiles.find((p) => p.id === hit.projectileId && p.active);
@@ -477,16 +490,10 @@ export class ProjectileManager {
         this.projectiles.splice(i, 1);
         continue;
       }
-      // Prefer body translation when present.
-      const bodyPos = this.physicsWorld?.getProjectilePosition(projectile.id);
-      if (bodyPos) {
-        projectile.x = bodyPos.x;
-        projectile.y = bodyPos.y;
-      }
       // castShape path also advances position when no body (tests) and catches
-      // hits contacts missed.
+      // hits contacts missed. Body positions were already synced above.
       if (!hitByContact.has(projectile.id) || projectile.active) {
-        this.updateCircleProjectile(projectile, dt, Boolean(bodyPos));
+        this.updateCircleProjectile(projectile, dt, this.bodyIds.has(projectile.id));
       }
       if (!projectile.active) {
         this.destroyProjectileBody(projectile.id);
@@ -635,7 +642,25 @@ export class ProjectileManager {
     }
   }
 
+  // Impact on the enemy silhouette edge facing the projectile (center − radius along
+  // the approach vector). Used for hit particles and the projectile's final frame.
+  private snapProjectileToEnemyImpact(projectile: ProjectileGame, enemy: CastEnemy): void {
+    const deltaX = enemy.x - projectile.x;
+    const deltaY = enemy.y - projectile.y;
+    const distance = Math.hypot(deltaX, deltaY);
+    const enemyRadius = enemy.radius ?? 0;
+    if (distance <= 1e-6) {
+      projectile.x = enemy.x;
+      projectile.y = enemy.y;
+      return;
+    }
+    projectile.x = enemy.x - (deltaX / distance) * enemyRadius;
+    projectile.y = enemy.y - (deltaY / distance) * enemyRadius;
+  }
+
   private hitCircleProjectile(projectile: ProjectileGame, enemy: CastEnemy): void {
+    this.snapProjectileToEnemyImpact(projectile, enemy);
+
     const finalDamage = projectile.isCrit ? projectile.damage * projectile.critMultiplier : projectile.damage;
     // pierceFalloff <= 0 means no falloff (e.g. Rail Lance sets 0); else exponential per prior hit.
     const falloff = projectile.pierceFalloff > 0 ? projectile.pierceFalloff : 1;
