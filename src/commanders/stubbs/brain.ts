@@ -13,53 +13,6 @@ function isPathTile(tileValue: number): boolean {
   return PATH_TILE_VALUES.includes(tileValue);
 }
 
-// Single BFS from every base tile (value 2) over path/spawn/base tiles (1/2/3),
-// ignoring towers — the authoritative "between enemies and base" measure reused
-// for both the ahead-filter and the waypoint snap. Unreachable tiles stay -1.
-function computeDistancesToBase(gridLayout: number[][]): number[][] {
-  const rowCount = gridLayout.length;
-  const columnCount = gridLayout[0]?.length ?? 0;
-  const distances: number[][] = gridLayout.map((row) => row.map(() => -1));
-  const distanceQueue: GridCoordinate[] = [];
-  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
-    const gridRow = gridLayout[rowIndex];
-    const distanceRow = distances[rowIndex];
-    if (!gridRow || !distanceRow) continue;
-    for (let columnIndex = 0; columnIndex < columnCount; columnIndex++) {
-      if (gridRow[columnIndex] === 2) {
-        distanceRow[columnIndex] = 0;
-        distanceQueue.push({ x: columnIndex, y: rowIndex });
-      }
-    }
-  }
-  const directionOffsets = [
-    { x: 0, y: -1 },
-    { x: 0, y: 1 },
-    { x: -1, y: 0 },
-    { x: 1, y: 0 },
-  ];
-  let queueHead = 0;
-  while (queueHead < distanceQueue.length) {
-    const currentTile = distanceQueue[queueHead];
-    queueHead += 1;
-    if (!currentTile) break;
-    const currentDistance = distances[currentTile.y]?.[currentTile.x];
-    if (currentDistance === undefined) continue;
-    for (const offset of directionOffsets) {
-      const nextX = currentTile.x + offset.x;
-      const nextY = currentTile.y + offset.y;
-      if (nextX < 0 || nextY < 0 || nextX >= columnCount || nextY >= rowCount) continue;
-      const tileValue = gridLayout[nextY]?.[nextX];
-      if (tileValue === undefined || !isPathTile(tileValue)) continue;
-      const nextDistanceRow = distances[nextY];
-      if (!nextDistanceRow || nextDistanceRow[nextX] !== -1) continue;
-      nextDistanceRow[nextX] = currentDistance + 1;
-      distanceQueue.push({ x: nextX, y: nextY });
-    }
-  }
-  return distances;
-}
-
 // Nearest path/spawn/base tile (Euclidean) to an arbitrary tile — towers may sit
 // on terrain, so the waypoint must snap to a tile the engine can route through.
 function nearestPathTileTo(tileX: number, tileY: number, gridLayout: number[][]): GridCoordinate | null {
@@ -86,8 +39,6 @@ function nearestPathTileTo(tileX: number, tileY: number, gridLayout: number[][])
   return bestTile;
 }
 
-// Representative enemy position: mean of current-wave enemy tiles, snapped to the
-// nearest path tile so a distance lookup is always defined.
 function representativeEnemyTile(enemies: ObservationEnemy[], gridLayout: number[][]): GridCoordinate | null {
   if (enemies.length === 0) return null;
   let sumX = 0;
@@ -108,10 +59,19 @@ function computeTowerSignature(liveTowers: ObservationTower[]): string {
     .join("|");
 }
 
-// Commander Stubbs — aggressive, never holds. He routes every newly-seen enemy
-// straight at the highest-hp live tower that is *ahead* (closer to base) of the
-// group, and re-routes whenever the tower set changes. Pure function of the
-// observation + worker-owned memory; the engine does all pathing.
+// Distance from nav field (tower-aware). Falls back to -1 when nav missing.
+function distanceAt(
+  distanceToBase: number[][] | undefined,
+  tileX: number,
+  tileY: number,
+): number {
+  if (!distanceToBase) return -1;
+  return distanceToBase[tileY]?.[tileX] ?? -1;
+}
+
+// Commander Stubbs — aggressive, never holds. Routes newly-seen enemies at the
+// highest-hp live tower *ahead* (closer to base on the live nav field) and
+// re-routes when the tower set changes. Uses observation.nav as source of truth.
 export function createStubbsBrain(): CommanderBrain {
   return {
     decide(observation: CommanderObservation, memory: CommanderMemory): Command[] {
@@ -133,44 +93,44 @@ export function createStubbsBrain(): CommanderBrain {
       }
 
       const gridLayout = observation.map;
-      if (!gridLayout) {
-        // No map this tick — can't choose a target; ids are already recorded.
+      const navDistances = observation.nav?.distanceToBase;
+      if (!gridLayout || !navDistances) {
         return commands;
       }
 
-      const distancesToBase = computeDistancesToBase(gridLayout);
       const liveTowers = observation.towers.filter((tower) => tower.hp > 0);
       const towerSignature = computeTowerSignature(liveTowers);
 
       const enemyTile = representativeEnemyTile(observation.enemies, gridLayout);
-      const enemyDistance = enemyTile ? distancesToBase[enemyTile.y]?.[enemyTile.x] : undefined;
+      const enemyDistance = enemyTile ? distanceAt(navDistances, enemyTile.x, enemyTile.y) : -1;
 
       let targetTower: ObservationTower | null = null;
       for (const tower of liveTowers) {
-        const towerDistance = distancesToBase[tower.tileY]?.[tower.tileX];
-        if (towerDistance === undefined || towerDistance < 0) continue;
-        if (enemyDistance !== undefined && enemyDistance >= 0 && !(towerDistance < enemyDistance)) continue;
+        // Path-adjacent snap for towers on terrain; distance read at nearest path tile.
+        const snap = nearestPathTileTo(tower.tileX, tower.tileY, gridLayout);
+        const towerDistance = snap
+          ? distanceAt(navDistances, snap.x, snap.y)
+          : distanceAt(navDistances, tower.tileX, tower.tileY);
+        if (towerDistance < 0) continue;
+        if (enemyDistance >= 0 && !(towerDistance < enemyDistance)) continue;
         if (!targetTower || tower.hp > targetTower.hp) {
           targetTower = tower;
         }
       }
 
       if (targetTower) {
-        const targetWaypoint = nearestPathTileTo(targetTower.tileX, targetTower.tileY, gridLayout);
-        if (targetWaypoint) {
-          const signatureChanged = towerSignature !== memory.lastRoutedTowerSignature;
-          const shouldEmit = newlySeenIds.length > 0 || signatureChanged;
-          if (shouldEmit) {
-            const routableIds = signatureChanged ? Array.from(seenIds).filter((id) => aliveIds.has(id)) : newlySeenIds;
-            if (routableIds.length > 0) {
-              commands.push({
-                commandId: 0,
-                type: "llm:routeGroup",
-                enemyIds: routableIds,
-                hold: false,
-                waypoints: [{ x: targetWaypoint.x, y: targetWaypoint.y }],
-              });
-            }
+        const signatureChanged = towerSignature !== memory.lastRoutedTowerSignature;
+        const shouldEmit = newlySeenIds.length > 0 || signatureChanged;
+        if (shouldEmit) {
+          const routableIds = signatureChanged ? Array.from(seenIds).filter((id) => aliveIds.has(id)) : newlySeenIds;
+          if (routableIds.length > 0) {
+            // Prefer explicit siege so engine parks on contact and attacks.
+            commands.push({
+              commandId: 0,
+              type: "llm:siegeTower",
+              enemyIds: routableIds,
+              towerTile: { x: targetTower.tileX, y: targetTower.tileY },
+            });
           }
         }
       }

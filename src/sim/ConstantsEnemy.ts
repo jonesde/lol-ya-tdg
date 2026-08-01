@@ -57,6 +57,12 @@ export const BOSS_STUN_REDUCTION = 0.3;
 export const MIN_SLOW_FACTOR = 0.1;
 // max concurrent burn stacks on one enemy; additional hits refresh similar DPS or replace lowest (Enemy.js)
 export const MAX_BURN_STACKS = 5;
+// After impulse knockback, crowd steering is suppressed this long so residual velocity sticks.
+export const KNOCKBACK_BALLISTIC_SECONDS = 0.2;
+// Agent/body drift above this fraction of radius triggers a sparse teleport resync.
+export const AGENT_RESYNC_RADIUS_FRACTION = 0.25;
+// Stuck against a tower without progress for this long → auto-enter siege.
+export const SIEGE_STUCK_SECONDS = 0.75;
 
 // ===== Wave Generation =====
 

@@ -85,5 +85,11 @@ export type Command =
       holdTile?: { x: number; y: number };
       waypoints: Array<{ x: number; y: number }>;
     }
+  | {
+      commandId: number;
+      type: "llm:siegeTower";
+      enemyIds: number[];
+      towerTile: { x: number; y: number };
+    }
   | { commandId: number; type: "llm:setTargeting"; enemyIds: number[]; mode: string }
   | { commandId: number; type: "llm:gridLayoutToggle" };

@@ -19,7 +19,13 @@ export interface ParsedSetTargeting {
   mode: string;
 }
 
-export type ParsedLlmCommand = ParsedRouteGroup | ParsedSetTargeting;
+export interface ParsedSiegeTower {
+  type: "llm:siegeTower";
+  enemyIds: number[];
+  towerTile: TileCoordinate;
+}
+
+export type ParsedLlmCommand = ParsedRouteGroup | ParsedSetTargeting | ParsedSiegeTower;
 
 export interface LlmResponseResult {
   commands: ParsedLlmCommand[];
@@ -59,9 +65,7 @@ function parseWaypoints(raw: unknown): TileCoordinate[] {
 
 // Validates an LLM response into a strict command list. Accepts either a bare
 // array of command objects or an object wrapping `{ commands?, chat? }`. Only
-// `llm:routeGroup` and `llm:setTargeting` are permitted; anything else is
-// dropped and recorded in `error`. `error` is set only for whole-response
-// structural failures, so salvageable commands still execute.
+// `llm:routeGroup`, `llm:siegeTower`, and `llm:setTargeting` are permitted.
 export function validateLlmResponse(raw: unknown, _config: LlmCommanderConfig): LlmResponseResult {
   const commands: ParsedLlmCommand[] = [];
   let chat: string | undefined;
@@ -89,7 +93,7 @@ export function validateLlmResponse(raw: unknown, _config: LlmCommanderConfig): 
     }
     const command = entry as Record<string, unknown>;
     const type = command.type;
-    if (type !== "llm:routeGroup" && type !== "llm:setTargeting") {
+    if (type !== "llm:routeGroup" && type !== "llm:setTargeting" && type !== "llm:siegeTower") {
       error = error ?? `rejected command type: ${String(type)}`;
       continue;
     }
@@ -107,6 +111,13 @@ export function validateLlmResponse(raw: unknown, _config: LlmCommanderConfig): 
       if (typeof command.hold === "boolean") routeGroup.hold = command.hold;
       if (parsedHoldTile) routeGroup.holdTile = parsedHoldTile;
       commands.push(routeGroup);
+    } else if (type === "llm:siegeTower") {
+      const towerTile = asTileCoordinate(command.towerTile);
+      if (!towerTile) {
+        error = error ?? "siegeTower missing towerTile";
+        continue;
+      }
+      commands.push({ type: "llm:siegeTower", enemyIds, towerTile });
     } else {
       const mode = typeof command.mode === "string" ? command.mode : "";
       if (!mode) {

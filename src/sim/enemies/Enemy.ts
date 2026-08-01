@@ -3,14 +3,17 @@ import type { CrowdAgent } from "recast-navigation";
 import type { EnemyVisualMeta, MapThemeAnimation, MapThemeData } from "@/render/themes/index.js";
 import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
+  AGENT_RESYNC_RADIUS_FRACTION,
   BOSS_STUN_REDUCTION,
   ENEMY_LEVEL_HP_MULT,
   ENEMY_TYPES,
   ENEMY_WAVE_DAMAGE_MULT,
+  KNOCKBACK_BALLISTIC_SECONDS,
   MAX_BURN_STACKS,
   MIN_SLOW_FACTOR,
+  SIEGE_STUCK_SECONDS,
 } from "@/sim/ConstantsEnemy.js";
-import { toRecast } from "@/sim/navmesh/coords.js";
+import { fromRecast, toRecast } from "@/sim/navmesh/coords.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 
 let nextId = 1;
@@ -148,26 +151,28 @@ export class Enemy {
   attackTimer: number = 0;
   attackAnimTime: number = 0;
   attackAnimation: MapThemeAnimation | null = null;
-  // Commander routing mode. `default` follows the grid path; `hold` parks at a
-  // target tile (never auto-completes); `route` follows a custom waypoint chain and
-  // reverts to `default` once it reaches the base. Set by applyRoute/releaseToDefault.
-  routingMode: "default" | "hold" | "route" = "default";
-  // Hold destination for `hold` mode (set by commander routing in a later batch).
-  // Null until then; computeIntent falls back to the base when unset so a held
-  // enemy simply parks where it is.
+  // Commander / engine routing mode.
+  // default → base; hold → park at tile; route → waypoint then base; siege → attack tower.
+  routingMode: "default" | "hold" | "route" | "siege" = "default";
   holdWorld: { x: number; y: number } | null = null;
-  // Route destination for `route` mode (set by commander routing under RECAST_NAV).
-  // Null until then; computeIntent falls back to the base when unset.
   routeWorld: { x: number; y: number } | null = null;
+  // Siege target tower (live); cleared on ghost/sell/release.
+  siegeTower: Tower | null = null;
   // True once a `hold` enemy has reached its hold tile (used only for hold mode).
   arrived: boolean = false;
-  // Captured at preStep (before computeIntent) so postStep can detect the
-  // attackingBase transition that may occur during the split without re-running
-  // the whole frame comparison inside the EnemyManager loop.
   preStepAttackingBase: boolean = false;
-  // Commander-assigned targeting preference (e.g. "first"/"strongest"); stored for
-  // future logic and currently harmless.
   targetingMode: string | null = null;
+  // Impulse knockback window: crowd does not overwrite linvel while > 0.
+  ballisticTimer: number = 0;
+  // Motion lock: park zeroes velocity (stun/base/hold-arrived/siege-contact).
+  motionLock: "none" | "park" = "none";
+  // Cached last crowd move target so requestMoveTarget is not spammed every tick.
+  lastMoveTargetWorld: { x: number; y: number } | null = null;
+  lastMoveTargetMode: string | null = null;
+  // Progress tracking for auto-siege when stuck on a choke.
+  stuckTimer: number = 0;
+  lastProgressX: number = 0;
+  lastProgressY: number = 0;
   markTargetMult!: number;
   markTargetTimer!: number;
   antiHealTimer!: number;
@@ -221,6 +226,14 @@ export class Enemy {
     this.attackSpeed = meta.attackSpeed;
     this.attackTimer = 0;
     this.blockedByTower = null;
+    this.siegeTower = null;
+    this.ballisticTimer = 0;
+    this.motionLock = "none";
+    this.lastMoveTargetWorld = null;
+    this.lastMoveTargetMode = null;
+    this.stuckTimer = 0;
+    this.lastProgressX = 0;
+    this.lastProgressY = 0;
     this.baseTarget = baseTarget;
 
     this.spawnIndex = spawnIndex;
@@ -243,6 +256,8 @@ export class Enemy {
     this.y = spawn.y;
     this.centerX = this.x;
     this.centerY = this.y;
+    this.lastProgressX = this.x;
+    this.lastProgressY = this.y;
 
     this.removed = false;
   }
@@ -293,55 +308,19 @@ export class Enemy {
     }
   }
 
-  // Knockback shoves the enemy backward along its travel direction (away from the
-  // base). The crowd agent owns the enemy's position under RECAST_NAV, so we
-  // teleport both the agent and the Rapier body to a deterministic point stepped
-  // backward along `moveAngle` and clamped to the map bounds. Writing x/y directly
-  // is a no-op because the per-frame update derives them from the body.
+  // Impulse knockback along −moveAngle. Crowd steering is suppressed for
+  // KNOCKBACK_BALLISTIC_SECONDS so residual velocity is not overwritten.
   applyKnockback(amount: number): void {
     if (amount <= 0) return;
-    if (!this.agent) return;
-    const target = this.computeKnockbackTarget(amount);
-    this.agent.teleport(toRecast(target));
-    if (this.body) {
-      this.body.setTranslation({ x: target.x, y: target.y }, true);
-      this.body.setLinvel({ x: 0, y: 0 }, true);
-    }
-    this.x = target.x;
-    this.y = target.y;
-    this.centerX = target.x;
-    this.centerY = target.y;
-  }
-
-  // Computes the world-space point an enemy is knocked back to: stepped backward
-  // along `moveAngle` (its current travel heading), clamped to the map bounds, then
-  // stepped back along the knock vector until the landing tile is walkable
-  // (path|spawn|base) or the amount is exhausted (stay put).
-  private computeKnockbackTarget(amount: number): { x: number; y: number } {
-    const stepX = -Math.cos(this.moveAngle) * amount;
-    const stepY = -Math.sin(this.moveAngle) * amount;
-    const tileSize = this.grid.tileSize;
-    const worldWidth = this.grid.width * tileSize;
-    const worldHeight = this.grid.height * tileSize;
-    const originX = this.centerX;
-    const originY = this.centerY;
-    const fullTargetX = Math.max(0, Math.min(worldWidth, originX + stepX));
-    const fullTargetY = Math.max(0, Math.min(worldHeight, originY + stepY));
-    const knockX = fullTargetX - originX;
-    const knockY = fullTargetY - originY;
-    const stepCount = 8;
-    for (let stepIndex = stepCount; stepIndex >= 0; stepIndex--) {
-      const fraction = stepIndex / stepCount;
-      const candidateX = originX + knockX * fraction;
-      const candidateY = originY + knockY * fraction;
-      const tileX = Math.floor(candidateX / tileSize);
-      const tileY = Math.floor(candidateY / tileSize);
-      if (!this.grid.inBounds(tileX, tileY)) continue;
-      if (this.grid.isPath(tileX, tileY) || this.grid.isBase(tileX, tileY) || this.grid.isSpawn(tileX, tileY)) {
-        return { x: candidateX, y: candidateY };
-      }
-    }
-    return { x: originX, y: originY };
+    if (!this.body) return;
+    // Scale impulse so typical knockback amounts move the body ~`amount` world units
+    // over the ballistic window against linear damping.
+    const mass = Math.max(0.2, this.body.mass());
+    const impulseX = -Math.cos(this.moveAngle) * amount * mass * 8;
+    const impulseY = -Math.sin(this.moveAngle) * amount * mass * 8;
+    this.body.applyImpulse({ x: impulseX, y: impulseY }, true);
+    this.ballisticTimer = Math.max(this.ballisticTimer, KNOCKBACK_BALLISTIC_SECONDS);
+    this.motionLock = "none";
   }
 
   applyMarkTarget(mult: number, duration: number) {
@@ -377,10 +356,7 @@ export class Enemy {
     return { x: Math.floor(this.centerX / this.grid.tileSize), y: Math.floor(this.centerY / this.grid.tileSize) };
   }
 
-  // Routes the enemy to a waypoint chain in the given mode. The crowd agent owns
-  // motion, so we only set the routing mode + hold/route target world point (from
-  // the first tile for `hold`, the last for `route`) and request that move target.
-  // A null/empty route falls back to releaseToDefault().
+  // Routes the enemy to a waypoint chain in the given mode. Null/empty → default.
   applyRoute(routePath: { x: number; y: number }[] | null, mode: "hold" | "route"): void {
     if (!routePath || routePath.length === 0) {
       this.releaseToDefault();
@@ -389,26 +365,66 @@ export class Enemy {
     this.routingMode = mode;
     this.arrived = false;
     this.attackingBase = false;
+    this.siegeTower = null;
+    this.motionLock = "none";
+    this.clearMoveTargetCache();
 
     const targetTile = mode === "hold" ? routePath[0]! : routePath[routePath.length - 1]!;
     const targetWorld = this.grid.tileToWorld(targetTile.x, targetTile.y);
     if (mode === "hold") this.holdWorld = targetWorld;
     else this.routeWorld = targetWorld;
-    this.agent?.requestMoveTarget(toRecast(targetWorld));
+    this.requestMoveTargetCached(targetWorld, mode);
   }
 
-  // Reverts the enemy to its default routing: head straight for the base. Used by
-  // empty-waypoint llm:routeGroup release and by the route-end fall through.
+  // Siege a live tower: path to it, park on contact, attack until ghosted.
+  applySiege(tower: Tower): void {
+    if (tower.isGhost) {
+      this.releaseToDefault();
+      return;
+    }
+    this.routingMode = "siege";
+    this.siegeTower = tower;
+    this.blockedByTower = tower;
+    this.arrived = false;
+    this.attackingBase = false;
+    this.motionLock = "none";
+    this.clearMoveTargetCache();
+    const targetWorld = this.grid.tileToWorld(tower.tileX, tower.tileY);
+    this.requestMoveTargetCached(targetWorld, "siege");
+  }
+
   releaseToDefault(): void {
     this.routingMode = "default";
     this.arrived = false;
     this.attackingBase = false;
     this.holdWorld = null;
     this.routeWorld = null;
-    if (this.agent) {
-      const baseWorld = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
-      this.agent.requestMoveTarget(toRecast(baseWorld));
+    this.siegeTower = null;
+    this.blockedByTower = null;
+    this.motionLock = "none";
+    this.clearMoveTargetCache();
+    const baseWorld = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
+    this.requestMoveTargetCached(baseWorld, "default");
+  }
+
+  private clearMoveTargetCache(): void {
+    this.lastMoveTargetWorld = null;
+    this.lastMoveTargetMode = null;
+  }
+
+  private requestMoveTargetCached(targetWorld: { x: number; y: number }, mode: string): void {
+    if (!this.agent) return;
+    const previous = this.lastMoveTargetWorld;
+    if (
+      previous &&
+      this.lastMoveTargetMode === mode &&
+      Math.hypot(previous.x - targetWorld.x, previous.y - targetWorld.y) < 1e-3
+    ) {
+      return;
     }
+    this.agent.requestMoveTarget(toRecast(targetWorld));
+    this.lastMoveTargetWorld = { x: targetWorld.x, y: targetWorld.y };
+    this.lastMoveTargetMode = mode;
   }
 
   // Per-frame update: run the intent pass (decision + steering, seeding the rigid
@@ -469,36 +485,75 @@ export class Enemy {
     }
   }
 
-  // Decision + motion integration (RECAST_NAV). Sets the crowd agent's move target
-  // from the routing mode but performs NO position integration — the crowd owns
-  // motion and CrowdManager.update pushes the resulting velocity into the body.
-  // Status timers run via the shared updateStatusTimers helper.
+  // Sets crowd move target from routing mode (cached). No position integration.
   computeIntent(dt: number, enemyManager: EnemyManagerRef | null): void {
     if (this.removed) return;
     this.updateStatusTimers(dt, enemyManager);
     if (this.removed) return;
 
+    if (this.stunTimer > 0) {
+      this.motionLock = "park";
+    } else if (this.motionLock === "park" && !this.attackingBase && this.routingMode !== "hold" && this.routingMode !== "siege") {
+      this.motionLock = "none";
+    }
+
+    // Siege target gone → repath to base.
+    if (this.routingMode === "siege") {
+      if (!this.siegeTower || this.siegeTower.isGhost) {
+        this.releaseToDefault();
+      }
+    }
+
+    // Auto-siege when stuck against a live tower (choke).
+    if (
+      !this.attackingBase &&
+      this.routingMode === "default" &&
+      enemyManager &&
+      this.blockedByTower &&
+      !this.blockedByTower.isGhost
+    ) {
+      const progress = Math.hypot(this.x - this.lastProgressX, this.y - this.lastProgressY);
+      if (progress < this.grid.tileSize * 0.05) {
+        this.stuckTimer += dt;
+        if (this.stuckTimer >= SIEGE_STUCK_SECONDS) {
+          this.applySiege(this.blockedByTower);
+          this.stuckTimer = 0;
+        }
+      } else {
+        this.stuckTimer = 0;
+        this.lastProgressX = this.x;
+        this.lastProgressY = this.y;
+      }
+    } else if (this.routingMode !== "siege") {
+      this.stuckTimer = 0;
+      this.lastProgressX = this.x;
+      this.lastProgressY = this.y;
+    }
+
     const baseWorld = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
     switch (this.routingMode) {
       case "hold":
-        // Walk to the hold tile; CrowdManager zeroes velocity only after arrival.
-        this.agent?.requestMoveTarget(toRecast(this.holdWorld ?? baseWorld));
+        this.requestMoveTargetCached(this.holdWorld ?? baseWorld, "hold");
         break;
       case "route":
-        // Follow the routed destination; fall back to the base if unspecified.
-        this.agent?.requestMoveTarget(toRecast(this.routeWorld ?? baseWorld));
+        this.requestMoveTargetCached(this.routeWorld ?? baseWorld, "route");
         break;
+      case "siege": {
+        const tower = this.siegeTower;
+        if (tower && !tower.isGhost) {
+          this.requestMoveTargetCached(this.grid.tileToWorld(tower.tileX, tower.tileY), "siege");
+        } else {
+          this.requestMoveTargetCached(baseWorld, "default");
+        }
+        break;
+      }
       default:
-        this.agent?.requestMoveTarget(toRecast(baseWorld));
+        this.requestMoveTargetCached(baseWorld, "default");
         break;
     }
   }
 
-  // ON post-physics (RECAST_NAV): reads the stepped body back, re-syncs the crowd
-  // agent to the physics-resolved position so the two never drift apart, then runs
-  // the base proximity attack + world-bounds clamp + moveAngle. Tower-contact
-  // attack is intentionally omitted here (towers are obstacles); Phase 4 may add
-  // optional tower attack.
+  // Reads stepped body, sparse agent resync, contact-driven attacks, bounds.
   postPhysics(dt: number, enemyManager: EnemyManagerRef | null): void {
     if (this.removed) return;
     const pos = this.body!.translation();
@@ -507,35 +562,42 @@ export class Enemy {
     this.x = pos.x;
     this.y = pos.y;
 
-    // Re-align the crowd's internal position with Rapier's resolved body so the
-    // crowd and the physics body stay on the same point (Rapier may shove the body
-    // off the agent's path around a tower/base/wall).
+    // Sparse agent resync: teleporting every frame zeroes Detour steering (even
+    // with set_vel restore). Only realign when the body has been shoved off the
+    // agent's path (wall/tower contact) beyond a fraction of radius.
     const crowdAgent = this.agent;
     if (crowdAgent) {
-      const previousVelocity = crowdAgent.velocity();
-      crowdAgent.teleport(toRecast({ x: this.x, y: this.y }));
-      // `teleport` zeroes the agent's internal velocity, and because this runs
-      // every frame that previously capped every enemy at one acceleration step
-      // (~1/8 of its maxSpeed) and erased the forward momentum a faster enemy
-      // needs to push past a slower one — so faster enemies rammed/crawled and
-      // the front enemy got pulled back into the bumper behind it. Re-apply the
-      // pre-teleport velocity so speed and momentum persist across the resync.
-      crowdAgent.raw.set_vel(0, previousVelocity.x);
-      crowdAgent.raw.set_vel(1, previousVelocity.y);
-      crowdAgent.raw.set_vel(2, previousVelocity.z);
+      const agentPos = fromRecast(crowdAgent.position());
+      const drift = Math.hypot(this.x - agentPos.x, this.y - agentPos.y);
+      const resyncThreshold = Math.max(this.radius * AGENT_RESYNC_RADIUS_FRACTION, this.grid.tileSize * 0.15);
+      if (drift > resyncThreshold) {
+        const previousVelocity = crowdAgent.velocity();
+        crowdAgent.teleport(toRecast({ x: this.x, y: this.y }));
+        crowdAgent.raw.set_vel(0, previousVelocity.x);
+        crowdAgent.raw.set_vel(1, previousVelocity.y);
+        crowdAgent.raw.set_vel(2, previousVelocity.z);
+        // Re-assert move target after teleport so Detour rebuilds the corridor.
+        if (this.lastMoveTargetWorld) {
+          crowdAgent.requestMoveTarget(toRecast(this.lastMoveTargetWorld));
+        }
+      }
     }
 
-    const baseCenter = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
-    const distanceToBase = distanceToBaseSquare(
-      this.centerX,
-      this.centerY,
-      baseCenter.x,
-      baseCenter.y,
-      1.5 * this.grid.tileSize,
-    );
-    if (distanceToBase <= this.radius + ATTACK_CONTACT_EPSILON) {
-      this.attackingBase = true;
-      this.agent?.resetMoveTarget();
+    // Geometric fallback for base contact (contacts also set attackingBase).
+    if (!this.attackingBase) {
+      const baseCenter = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
+      const distanceToBase = distanceToBaseSquare(
+        this.centerX,
+        this.centerY,
+        baseCenter.x,
+        baseCenter.y,
+        1.5 * this.grid.tileSize,
+      );
+      if (distanceToBase <= this.radius + ATTACK_CONTACT_EPSILON) {
+        this.attackingBase = true;
+        this.motionLock = "park";
+        this.agent?.resetMoveTarget();
+      }
     }
 
     if (this.attackingBase && this.baseTarget && this.stunTimer <= 0) {
@@ -547,18 +609,21 @@ export class Enemy {
       }
     }
 
-    // Optional tower-contact edge case (Phase 4). Towers are obstacles the crowd
-    // routes around, so this only fires when an enemy is shoved against a live
-    // tower (dead-end / avoidance failure). It never gates the base attack above.
+    // Tower siege / choke attack: contact or geometric adjacency.
     if (!this.attackingBase && enemyManager) {
-      if (this.blockedByTower === null || this.blockedByTower.isGhost) {
+      if (this.routingMode === "siege" && this.siegeTower && !this.siegeTower.isGhost) {
+        this.blockedByTower = this.siegeTower;
+      } else if (this.blockedByTower === null || this.blockedByTower.isGhost) {
         const candidate = this.findAdjacentLiveTowerInContact(enemyManager);
         if (candidate && !candidate.isGhost) this.blockedByTower = candidate;
       }
       if (this.blockedByTower) {
         const towerKey = `${this.blockedByTower.tileX},${this.blockedByTower.tileY}`;
         const towerGone = this.blockedByTower.isGhost || !this.grid.blocked.has(towerKey);
-        if (towerGone) this.blockedByTower = null;
+        if (towerGone) {
+          this.blockedByTower = null;
+          if (this.routingMode === "siege") this.releaseToDefault();
+        }
       }
       if (this.blockedByTower && !this.blockedByTower.isGhost && this.stunTimer <= 0) {
         const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
@@ -570,6 +635,7 @@ export class Enemy {
           this.grid.tileSize / 2,
         );
         if (towerContact <= this.radius + ATTACK_CONTACT_EPSILON) {
+          if (this.routingMode === "siege") this.motionLock = "park";
           this.attackTimer -= dt;
           if (this.attackTimer <= 0) {
             this.blockedByTower.takeDamage(this.attackDamage, this);
@@ -609,6 +675,7 @@ export class Enemy {
       { x: currentTile.x - 1, y: currentTile.y },
       { x: currentTile.x, y: currentTile.y + 1 },
       { x: currentTile.x, y: currentTile.y - 1 },
+      { x: currentTile.x, y: currentTile.y },
     ];
     let lowestTower: Tower | null = null;
     for (const tile of candidateTiles) {

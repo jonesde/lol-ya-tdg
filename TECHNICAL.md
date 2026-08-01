@@ -81,9 +81,19 @@ src/
 │   │   └── EnemyManager.ts      # Enemy spawning, lifecycle, death handling
 │   ├── waves/
 │   │   └── WaveManager.ts       # Wave composition, boss cadence, inter-wave timer
+│   ├── navmesh/
+│   │   ├── CrowdManager.ts      # DetourCrowd agents: path follow + avoidance → Rapier linvel
+│   │   ├── NavMeshBuilder.ts    # Tiled navmesh + TileCache tower obstacles + findPath
+│   │   ├── NavDistanceField.ts  # Tower-aware distance-to-base + path metrics
+│   │   ├── recastContext.ts     # Lazy WASM loader for recast-navigation
+│   │   ├── navmeshConfig.ts     # Clearance / corridor chamfer tuning
+│   │   └── coords.ts            # Game (x,y) ↔ Recast (x,0,z) mapping
 │   └── physics/
-│       ├── PhysicsWorld.ts      # Rapier2d world: static geometry (base/towers/corridor), dynamic enemy bodies driven by velocity
-│       └── rapierContext.ts     # Lazy WASM loader for Rapier2d; gates physics initialization until resolved
+│       ├── PhysicsWorld.ts      # Rapier2d: static geometry, enemies, projectiles, EventQueue step
+│       ├── ForceFieldSystem.ts  # Continuous push/pull fields (future towers)
+│       ├── ContactProcessor.ts  # Collision event drain → base/tower/projectile hits
+│       ├── ColliderUserData.ts  # Body tags (base/tower/enemy/projectile/sensor)
+│       └── rapierContext.ts     # Lazy WASM loader for Rapier2d
 ├── sim-adapters/
 │   └── MainThreadHostBindings.ts      # Main-thread HostBindings adapter: SoundManager/uiStore/persistStore
 ├── render/
@@ -327,23 +337,26 @@ live enemy (reverts held enemies to default path) before stopping the relay.
 
 **LLM Commanders:** For custom external LLM integration, `persistStore` maintains an array of `LlmCommanderConfig` entries (id, name, endpointUrl, token, modelName, contextLimit, commanderInstructions, systemPrompt). When an LLM commander is activated via `setEnemyCommander(id)`, the relay starts with `"llm"` mode and passes the config. The worker's LLM brain (`src/commanders/llm/brain.ts`) uses `apiClient.ts` to POST observations to the configured endpoint and receive commands. A draggable `EnemyChat.vue` panel lets players send messages and update commander instructions in real time; changes are posted via `postUpdateInstructions()` to the active worker.
 
-### Physics System (Rapier2d)
+### Physics + Navmesh (Rapier2d + Recast/DetourCrowd)
 
-A dedicated Rapier2d world handles all rigid-body physics for enemies and static geometry. The system is always active once initialized; WASM loading is gated behind `getRapier()` in `rapierContext.ts`.
+Full-physics motion: DetourCrowd owns path follow + local avoidance; Rapier owns hard collision, impulses/forces, projectile bodies, and contact events. See `plans/FullPhysics.md`.
 
-**Static Geometry:**
-- **Base**: Fixed cuboid covering the 3×3 base tile, preventing enemies from passing through.
-- **Towers**: Each non-ghost tower gets a fixed cuboid collider at its position; rebuilt whenever `grid.pathVersion` changes or towers are added/removed.
-- **Corridor Walls**: Thin fixed wall segments form a closed boundary around all walkable tiles (path ∪ base ∪ spawn), keeping dynamic bodies within the playable area.
+**Tick order:** `preStep` → `crowd.update` → `forceFieldSystem.apply` → `projectile.prePhysics` → `physics.step(EventQueue)` → contact drain → `postStep` → `projectile.postPhysics`.
 
-**Dynamic Bodies:**
-- Each enemy is a dynamic circle body driven by velocity rather than direct position updates.
-- Physics simulation runs at `FIXED_DT` (60 Hz) inside the worker loop, integrated with the game tick.
+**Rapier (`PhysicsWorld`):**
+- Static: base cuboid, tower cuboids (tagged), corridor walls with convex-corner chamfers.
+- Dynamic enemy circles (mass by type, CCD for fast runners); enemy–enemy collisions off (Crowd avoidance).
+- Traveling projectiles as kinematic velocity bodies; beams stay query/`castShape`.
+- Impulse knockback + ballistic window; `ForceFieldSystem` continuous push/pull seam (no push towers yet).
+- Contact events for enemy↔base / enemy↔tower / projectile↔enemy.
 
-**Integration:**
-- `PhysicsWorld` is constructed with the grid and manages all colliders/bodies.
-- `GameEngine` passes tower data to `PhysicsWorld.rebuildTowers()` when needed.
-- Enemy movement now uses physics-based velocity; pathfinding still determines target direction but actual motion is resolved by Rapier2d.
+**Recast (`NavMeshBuilder` + `CrowdManager`):**
+- Tiled navmesh + TileCache tower obstacles; choke/full block is legal.
+- Siege mode: enemies attack blocking towers until ghost, then repath to base.
+- Per-type crowd profiles; move-target caching; sparse agent resync on body drift.
+- `NavDistanceField`: tower-aware distance-to-base + path metrics for commanders/UI.
+
+**Commanders:** snapshot ships `navField` (relay-cached); Stubbs uses live distances and issues `llm:siegeTower`.
 
 ### Router Navigation Guards
 
@@ -433,7 +446,9 @@ A dedicated Rapier2d world handles all rigid-body physics for enemies and static
 |---|---|
 | `src/sim/grid/Grid.ts` | Grid data structure: path tiles, base/spawn locations, build validation |
 | `src/sim/grid/Map.ts` | Procedural map generation: 36 maps, 3 regions, 6 layout styles (open, canyon, serpentine, split, bastion, battlefield); `name` computed lazily via `getMapDisplayName(map, theme)` |
-| `src/sim/grid/Pathfinding.ts` | BFS pathfinding with dynamic tower obstacle avoidance |
+| `src/sim/navmesh/*` | Recast navmesh, DetourCrowd, distance field, path metrics |
+| `src/sim/physics/ForceFieldSystem.ts` | Continuous radial/directional force fields for future push/pull towers |
+| `src/sim/physics/ContactProcessor.ts` | Rapier collision events → siege/base attack + projectile hits |
 
 ### Towers
 

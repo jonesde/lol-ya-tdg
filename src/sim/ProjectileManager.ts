@@ -1,5 +1,7 @@
 import { GRID_TILE_SIZE } from "@/render/svg/types.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
+import type { ProjectileHitEvent } from "@/sim/physics/ContactProcessor.js";
+import type { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { MAX_PROJECTILE_AGE, PROJECTILE_HIT_THRESHOLD } from "./Constants.js";
 import {
@@ -193,6 +195,7 @@ export class ProjectileManager {
   private enemyManager: EnemyManager;
   private particles: ParticleSpawner | null;
   private grid: GridRef | null;
+  private physicsWorld: PhysicsWorld | null = null;
   private onStunEffect: OnStunEffectCallback | null;
   private onGoldReward: OnGoldRewardCallback | null;
   private nextProjectileId: number;
@@ -201,6 +204,8 @@ export class ProjectileManager {
   private pendingStuns: StunVisualEffect[];
   private renderDataBuffer: Array<{ id: number; x: number; y: number; radius: number; color: string; icon: string }> =
     [];
+  // Projectile ids that already have a Rapier body this frame.
+  private bodyIds = new Set<number>();
 
   constructor(
     enemyManager: EnemyManager,
@@ -218,6 +223,10 @@ export class ProjectileManager {
     this.towerLookup = towerLookup;
     this.pendingLightning = [];
     this.pendingStuns = [];
+  }
+
+  setPhysicsWorld(physicsWorld: PhysicsWorld | null): void {
+    this.physicsWorld = physicsWorld;
   }
 
   setOnGoldReward(callback: OnGoldRewardCallback | null): void {
@@ -332,6 +341,24 @@ export class ProjectileManager {
     );
 
     this.projectiles.push(projectile);
+    this.ensureProjectileBody(projectile);
+  }
+
+  private ensureProjectileBody(projectile: ProjectileGame): void {
+    if (!this.physicsWorld || this.bodyIds.has(projectile.id)) return;
+    const isPierce = projectile.maxHitCount > 1;
+    this.physicsWorld.addProjectileBody({
+      projectileId: projectile.id,
+      x: projectile.x,
+      y: projectile.y,
+      radius: projectile.radius + PROJECTILE_HIT_THRESHOLD * 0.5,
+      velocityX: 0,
+      velocityY: 0,
+      isSensor: isPierce,
+      restitution: 0,
+      collidesWithWalls: false,
+    });
+    this.bodyIds.add(projectile.id);
   }
 
   private applyProjectileEffects(
@@ -380,25 +407,129 @@ export class ProjectileManager {
     }
   }
 
+  // Standalone update (tests / no split tick): castShape + manual integrate.
+  // Engine uses prePhysics + postPhysics around world.step instead.
   update(dt: number): void {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const projectile = this.projectiles[i];
       if (!projectile) continue;
       if (!projectile.active) {
+        this.destroyProjectileBody(projectile.id);
         this.projectiles.splice(i, 1);
         continue;
       }
       projectile.age += dt;
       if (projectile.age > MAX_PROJECTILE_AGE) {
         this.removeProjectile(projectile, "expired");
+        this.destroyProjectileBody(projectile.id);
         this.projectiles.splice(i, 1);
         continue;
       }
-      this.updateCircleProjectile(projectile, dt);
+      this.updateCircleProjectile(projectile, dt, false);
+      if (!projectile.active) {
+        this.destroyProjectileBody(projectile.id);
+        this.projectiles.splice(i, 1);
+      }
     }
   }
 
-  private updateCircleProjectile(projectile: ProjectileGame, dt: number): void {
+  // Before physics step: age cull + set kinematic velocities toward targets.
+  prePhysics(dt: number): void {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const projectile = this.projectiles[i];
+      if (!projectile) continue;
+      if (!projectile.active) {
+        this.destroyProjectileBody(projectile.id);
+        this.projectiles.splice(i, 1);
+        continue;
+      }
+      projectile.age += dt;
+      if (projectile.age > MAX_PROJECTILE_AGE) {
+        this.removeProjectile(projectile, "expired");
+        this.destroyProjectileBody(projectile.id);
+        this.projectiles.splice(i, 1);
+        continue;
+      }
+      this.ensureProjectileBody(projectile);
+      this.setProjectileBodyVelocity(projectile, dt);
+    }
+  }
+
+  // After physics step: read body positions, process contact hits, castShape fallback.
+  postPhysics(dt: number, contactHits: ProjectileHitEvent[]): void {
+    const hitByContact = new Set<number>();
+    for (const hit of contactHits) {
+      const projectile = this.projectiles.find((p) => p.id === hit.projectileId && p.active);
+      const enemy = this.enemyManager.getEnemyById(hit.enemyId);
+      if (!projectile || !enemy || enemy.removed) continue;
+      if (projectile.hitEnemyIds?.has(enemy.id)) continue;
+      this.hitCircleProjectile(projectile, enemy);
+      if (!projectile.hitEnemyIds) projectile.hitEnemyIds = new Set();
+      projectile.hitEnemyIds.add(enemy.id);
+      hitByContact.add(projectile.id);
+    }
+
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const projectile = this.projectiles[i];
+      if (!projectile) continue;
+      if (!projectile.active) {
+        this.destroyProjectileBody(projectile.id);
+        this.projectiles.splice(i, 1);
+        continue;
+      }
+      // Prefer body translation when present.
+      const bodyPos = this.physicsWorld?.getProjectilePosition(projectile.id);
+      if (bodyPos) {
+        projectile.x = bodyPos.x;
+        projectile.y = bodyPos.y;
+      }
+      // castShape path also advances position when no body (tests) and catches
+      // hits contacts missed.
+      if (!hitByContact.has(projectile.id) || projectile.active) {
+        this.updateCircleProjectile(projectile, dt, Boolean(bodyPos));
+      }
+      if (!projectile.active) {
+        this.destroyProjectileBody(projectile.id);
+        this.projectiles.splice(i, 1);
+      }
+    }
+  }
+
+  private setProjectileBodyVelocity(projectile: ProjectileGame, _dt: number): void {
+    if (!this.physicsWorld || !this.bodyIds.has(projectile.id)) return;
+    let dirX = 0;
+    let dirY = 0;
+    if (projectile.targetId === 0) {
+      const targetDx = projectile.targetX - projectile.x;
+      const targetDy = projectile.targetY - projectile.y;
+      const targetDist = Math.hypot(targetDx, targetDy) || 1;
+      dirX = targetDx / targetDist;
+      dirY = targetDy / targetDist;
+    } else {
+      const enemy = this.enemyManager.getEnemyById(projectile.targetId);
+      if (!enemy || enemy.removed) {
+        this.physicsWorld.setProjectileVelocity(projectile.id, 0, 0);
+        return;
+      }
+      const dx = enemy.x - projectile.x;
+      const dy = enemy.y - projectile.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      dirX = dx / dist;
+      dirY = dy / dist;
+    }
+    const speed = projectile.speed;
+    this.physicsWorld.setProjectileVelocity(projectile.id, dirX * speed, dirY * speed);
+  }
+
+  private destroyProjectileBody(projectileId: number): void {
+    if (!this.bodyIds.has(projectileId)) return;
+    this.physicsWorld?.removeProjectileBody(projectileId);
+    this.bodyIds.delete(projectileId);
+  }
+
+  // `positionFromBody`: when true, body already advanced position this step — only
+  // run hit casts and range checks, do not double-integrate translation.
+  private updateCircleProjectile(projectile: ProjectileGame, dt: number, positionFromBody = false): void {
     // Fixed-aim: targetId === 0, travel straight toward aimed world position
     if (projectile.targetId === 0) {
       const hitThreshold = projectile.radius + PROJECTILE_HIT_THRESHOLD;
@@ -421,8 +552,6 @@ export class ProjectileManager {
       const castLen = moveDist + ballRadius;
       const maxHits = projectile.maxHitCount > 0 ? projectile.maxHitCount : 1;
 
-      // Continuous swept-ball cast: catches enemies the discrete per-frame check
-      // would tunnel past. Closest-first, up to maxHits enemies.
       this.enemyManager.castShapePierce(
         projectile.x,
         projectile.y,
@@ -441,7 +570,7 @@ export class ProjectileManager {
       );
       if (!projectile.active) return;
 
-      if (targetDist > 0) {
+      if (!positionFromBody && targetDist > 0) {
         projectile.x += (targetDx / targetDist) * moveDist;
         projectile.y += (targetDy / targetDist) * moveDist;
       }
@@ -478,9 +607,6 @@ export class ProjectileManager {
       projectile.hitEnemyIds = new Set<number>();
     }
     const homingHitSet = projectile.hitEnemyIds as Set<number>;
-    // Continuous swept-ball cast: strikes whatever lies first along the path
-    // (the locked target, or a closer enemy that stepped into the line). Already
-    // hit enemies are skipped so a pierce re-home does not re-strike a passed enemy.
     const homingHits: CastEnemy[] = [];
     this.enemyManager.castShapePierce(
       projectile.x,
@@ -503,7 +629,7 @@ export class ProjectileManager {
       return;
     }
 
-    if (dist > 0) {
+    if (!positionFromBody && dist > 0) {
       projectile.x += (dx / dist) * moveDist;
       projectile.y += (dy / dist) * moveDist;
     }
@@ -850,6 +976,7 @@ export class ProjectileManager {
 
   private removeProjectile(projectile: ProjectileGame, _reason: string): void {
     projectile.active = false;
+    this.destroyProjectileBody(projectile.id);
   }
 
   getRenderData(): Array<{ id: number; x: number; y: number; radius: number; color: string; icon: string }> {
@@ -879,6 +1006,10 @@ export class ProjectileManager {
   }
 
   clear(): void {
+    for (const projectileId of this.bodyIds) {
+      this.physicsWorld?.removeProjectileBody(projectileId);
+    }
+    this.bodyIds.clear();
     this.projectiles = [];
     this.pendingLightning = [];
     this.pendingStuns = [];

@@ -34,11 +34,23 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
     }
   }
 
-  // Navmesh corridor highlight: ship the walkable triangle mesh on a
-  // pathVersion change, so it refreshes on tower placement/sale.
+  // Navmesh corridor highlight + nav field: ship on pathVersion change.
   let navMeshCorridor: SimulationSnapshot["navMeshCorridor"] = null;
-  if (pathVersionChanged && engine.navMeshBuilder) {
-    navMeshCorridor = engine.navMeshBuilder.getCorridorGeometry();
+  let navField: SimulationSnapshot["navField"] = null;
+  if (pathVersionChanged) {
+    if (engine.navMeshBuilder) {
+      navMeshCorridor = engine.navMeshBuilder.getCorridorGeometry();
+    }
+    engine.navDistanceField?.ensureUpToDate(true);
+    if (engine.navDistanceField) {
+      const fieldSnapshot = engine.navDistanceField.getSnapshot();
+      navField = {
+        pathVersion: fieldSnapshot.pathVersion,
+        distanceToBase: fieldSnapshot.distanceToBase,
+        spawnReachable: fieldSnapshot.spawnReachable,
+        pathMetrics: fieldSnapshot.pathMetrics,
+      };
+    }
   }
 
   // Commander grid-layout data feed: a constant map (0=terrain, 1=path, 2=base,
@@ -76,7 +88,7 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
     frameId: nextFrameId++,
     lastAppliedCommandId,
     meta: buildMeta(engine),
-    enemies: enemies.map(snapshotEnemy),
+    enemies: enemies.map((enemy) => snapshotEnemy(enemy, engine)),
     towers: towers.map((tower) => snapshotTower(tower, persistState, tower.id === selectedTowerId)),
     projectiles: (engine.projectileManager?.getRenderData() ?? []) as ProjectileSnapshot[],
     // Particles are a render-only main-thread effect (see Optimize.md Finding 7):
@@ -88,6 +100,7 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
       pendingCount: engine.enemyManager?.getPendingCountForSpawn(spawnIndex) ?? 0,
     })),
     navMeshCorridor,
+    navField,
     lightningEffects: visualEffects.lightning,
     stunEffects: visualEffects.stuns,
     waveGraphDots,
@@ -124,10 +137,12 @@ function buildMeta(engine: GameEngine): SnapshotMeta {
   };
 }
 
-function snapshotEnemy(e: Enemy): EnemySnapshot {
+function snapshotEnemy(e: Enemy, engine?: GameEngine): EnemySnapshot {
   const maxSlowRemaining = e.slowStack?.reduce((max, s) => Math.max(max, s.remaining), 0) ?? 0;
   const maxBurnRemaining = e.burnStack?.reduce((max, burnEntry) => Math.max(max, burnEntry.timer), 0) ?? 0;
   const totalBurnDps = e.burnStack?.reduce((sum, burnEntry) => sum + burnEntry.dps, 0) ?? 0;
+  const tile = e.currentTile();
+  const distanceToBase = engine?.navDistanceField?.getDistanceToBase(tile.x, tile.y) ?? -1;
   return {
     id: e.id,
     type: e.type,
@@ -155,6 +170,12 @@ function snapshotEnemy(e: Enemy): EnemySnapshot {
     walking: e.walking,
     hitReaction: e.hitReaction,
     attackAnimation: e.attackAnimation,
+    routingMode: e.routingMode,
+    attackingBase: e.attackingBase,
+    blockedByTowerTile: e.blockedByTower
+      ? { x: e.blockedByTower.tileX, y: e.blockedByTower.tileY }
+      : null,
+    distanceToBase,
   };
 }
 

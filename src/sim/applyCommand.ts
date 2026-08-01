@@ -98,8 +98,6 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
       for (const enemy of enemies) {
         if (command.hold) {
           const holdTile = command.holdTile ?? enemy.currentTile();
-          // The crowd owns routing; we just hand it the hold tile and let Detour
-          // path to it (no grid BFS route needed under RECAST_NAV).
           enemy.applyRoute([holdTile], "hold");
           continue;
         }
@@ -107,9 +105,16 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
           enemy.releaseToDefault();
           continue;
         }
-        // Hand the waypoint chain (plus the base) to the enemy; Detour routes to
-        // the final tile. A null/empty chain falls back to default routing.
         enemy.applyRoute([...command.waypoints, engine.grid.base], "route");
+      }
+      return true;
+    }
+    case "llm:siegeTower": {
+      const enemies = engine.getEnemiesByIds(command.enemyIds);
+      const tower = engine.towerManager?.towerAt(command.towerTile.x, command.towerTile.y) ?? null;
+      for (const enemy of enemies) {
+        if (tower && !tower.isGhost) enemy.applySiege(tower);
+        else enemy.releaseToDefault();
       }
       return true;
     }

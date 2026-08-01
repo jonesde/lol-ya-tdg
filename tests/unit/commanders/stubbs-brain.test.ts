@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommanderMemory } from "@/commanders/brain.js";
-import type { CommanderObservation, ObservationEnemy, ObservationTower } from "@/commanders/observation.js";
+import type { CommanderObservation, ObservationEnemy, ObservationNav, ObservationTower } from "@/commanders/observation.js";
 import { createStubbsBrain } from "@/commanders/stubbs/brain.js";
 import type { Command } from "@/sim/Command.js";
 
@@ -9,12 +9,57 @@ type SyncBrain = { decide(observation: CommanderObservation, memory: CommanderMe
 import { makeBastionMap } from "../../helpers/mock-grid.js";
 
 // Build a commander gridLayout (0=terrain,1=path,2=base,3=spawn) from the bastion
-// mock map: a single straight path row with the base at the right edge. Using the
-// real map guarantees a connected path the brain's BFS distance can traverse.
+// mock map: a single straight path row with the base at the right edge.
 const bastionMap = makeBastionMap();
 const gridLayout: number[][] = bastionMap.tiles.map((row) =>
   row.map((tile) => (tile.type === "path" ? 1 : tile.type === "base" ? 2 : tile.type === "spawn" ? 3 : 0)),
 );
+
+// Tower-aware distance field: BFS from base over path tiles (no towers blocked
+// in these unit tests). Mirrors NavDistanceField output shape.
+function buildOpenDistanceField(): number[][] {
+  const height = gridLayout.length;
+  const width = gridLayout[0]?.length ?? 0;
+  const distances: number[][] = Array.from({ length: height }, () => Array(width).fill(-1) as number[]);
+  const queue: Array<{ x: number; y: number }> = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (gridLayout[y]![x] === 2) {
+        distances[y]![x] = 0;
+        queue.push({ x, y });
+      }
+    }
+  }
+  const offsets = [
+    { x: 0, y: -1 },
+    { x: 0, y: 1 },
+    { x: -1, y: 0 },
+    { x: 1, y: 0 },
+  ];
+  let head = 0;
+  while (head < queue.length) {
+    const current = queue[head]!;
+    head += 1;
+    const currentDistance = distances[current.y]![current.x]!;
+    for (const offset of offsets) {
+      const nextX = current.x + offset.x;
+      const nextY = current.y + offset.y;
+      if (nextX < 0 || nextY < 0 || nextX >= width || nextY >= height) continue;
+      const tileValue = gridLayout[nextY]![nextX];
+      if (tileValue === undefined || tileValue === 0) continue;
+      if (distances[nextY]![nextX] !== -1) continue;
+      distances[nextY]![nextX] = currentDistance + 1;
+      queue.push({ x: nextX, y: nextY });
+    }
+  }
+  return distances;
+}
+
+const openNav: ObservationNav = {
+  pathVersion: 0,
+  distanceToBase: buildOpenDistanceField(),
+  spawnReachable: [true],
+};
 
 function freshMemory(): CommanderMemory {
   return {
@@ -44,6 +89,7 @@ function observation(opts: {
   currentWave?: number;
   enemies?: ObservationEnemy[];
   towers?: ObservationTower[];
+  nav?: ObservationNav | undefined;
 }): CommanderObservation {
   return {
     map: gridLayout,
@@ -56,17 +102,18 @@ function observation(opts: {
       remainingScheduledSpawns: 0,
       active: true,
     },
+    nav: opts.nav === undefined ? openNav : opts.nav,
   };
 }
 
-function routeGroupWaypoint(commands: Command[]) {
-  const command = commands.find((c) => c.type === "llm:routeGroup");
-  if (command?.type !== "llm:routeGroup") return null;
-  return command.waypoints[0] ?? null;
+function siegeTowerTile(commands: Command[]) {
+  const command = commands.find((c) => c.type === "llm:siegeTower");
+  if (command?.type !== "llm:siegeTower") return null;
+  return command.towerTile;
 }
 
 describe("StubbsBrain", () => {
-  it("routes newly-seen enemies immediately (no hold) toward the highest-hp ahead tower", () => {
+  it("sieges newly-seen enemies immediately (no hold) toward the highest-hp ahead tower", () => {
     const brain = createStubbsBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     const commands = brain.decide(
@@ -75,10 +122,8 @@ describe("StubbsBrain", () => {
     );
     const hold = commands.find((c) => c.type === "llm:routeGroup" && c.hold === true);
     expect(hold).toBeUndefined();
-    const waypoint = routeGroupWaypoint(commands);
-    expect(waypoint).not.toBeNull();
-    // Highest-hp ahead tower is (5,3); its nearest path tile is itself.
-    expect(waypoint).toEqual({ x: 5, y: 3 });
+    const target = siegeTowerTile(commands);
+    expect(target).toEqual({ x: 5, y: 3 });
   });
 
   it("excludes towers behind the group and keeps the behind tower untargeted", () => {
@@ -88,23 +133,38 @@ describe("StubbsBrain", () => {
       observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100), tower(0, 3, 200)] }),
       memory,
     );
-    const waypoint = routeGroupWaypoint(commands);
-    expect(waypoint).toEqual({ x: 5, y: 3 });
+    expect(siegeTowerTile(commands)).toEqual({ x: 5, y: 3 });
   });
 
   it("emits no command when no live towers are ahead (default pathing)", () => {
     const brain = createStubbsBrain() as unknown as SyncBrain;
     const memory = freshMemory();
-    // Only a tower behind the enemy (closer to spawn than the group).
     const commands = brain.decide(observation({ enemies: [enemy(1, 2, 3)], towers: [tower(0, 3, 200)] }), memory);
     expect(commands).toHaveLength(0);
+  });
+
+  it("emits no command when nav field is missing", () => {
+    const brain = createStubbsBrain() as unknown as SyncBrain;
+    const memory = freshMemory();
+    const bare: CommanderObservation = {
+      map: gridLayout,
+      enemies: [enemy(1, 1, 3)],
+      towers: [tower(5, 3, 100)],
+      wave: {
+        currentWave: 1,
+        pendingEnemyCount: 0,
+        spawnStates: [],
+        remainingScheduledSpawns: 0,
+        active: true,
+      },
+    };
+    expect(brain.decide(bare, memory)).toHaveLength(0);
   });
 
   it("does NOT re-route when only a tower's hp changes (stable signature)", () => {
     const brain = createStubbsBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     brain.decide(observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100), tower(3, 3, 60)] }), memory);
-    // The highest-hp ahead tower (5,3) drops to 30 — signature uses level, not hp, so it is stable.
     const reroute = brain.decide(
       observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 30), tower(3, 3, 60)] }),
       memory,
@@ -119,15 +179,11 @@ describe("StubbsBrain", () => {
       observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100, 100, 1), tower(3, 3, 60, 60, 1)] }),
       memory,
     );
-    // The (5,3) tower upgrades to level 2 — signature changes, forcing a re-route.
     const reroute = brain.decide(
       observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100, 100, 2), tower(3, 3, 60, 60, 1)] }),
       memory,
     );
-    const waypoint = routeGroupWaypoint(reroute);
-    expect(waypoint).not.toBeNull();
-    // Highest-hp ahead tower is still (5,3); its nearest path tile is itself.
-    expect(waypoint).toEqual({ x: 5, y: 3 });
+    expect(siegeTowerTile(reroute)).toEqual({ x: 5, y: 3 });
   });
 
   it("is idempotent per wave: a second identical observation emits nothing", () => {
@@ -146,7 +202,6 @@ describe("StubbsBrain", () => {
       observation({ currentWave: 2, enemies: [enemy(2, 1, 3)], towers: [tower(5, 3, 100)] }),
       memory,
     );
-    const waypoint = routeGroupWaypoint(next);
-    expect(waypoint).toEqual({ x: 5, y: 3 });
+    expect(siegeTowerTile(next)).toEqual({ x: 5, y: 3 });
   });
 });

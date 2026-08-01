@@ -1,6 +1,7 @@
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useUiStore } from "@/stores/ui.js";
+import type { NavFieldSnapshotData } from "@/sim/SimulationSnapshot.js";
 import type { LlmCommanderConfig } from "./llm/types.js";
 import type {
   CommanderKind,
@@ -9,22 +10,15 @@ import type {
   MainToCommanderMessage,
 } from "./protocol.js";
 
-// The main-thread half of the commander transport. It is a passive reader of the
-// snapshot store (never posts snapshotAck — the single-ack backpressure gate is
-// untouched) and the only piece that touches the snapshot module / command bus.
-// It polls at ~4 Hz, builds a throttled slice (with its OWN cached gridLayout on
-// every observation so the worker always has the map), posts it to the commander
-// worker, and forwards any returned commands via dispatchCommand.
+// The main-thread half of the commander transport. Passive reader of the snapshot
+// store (~4 Hz). Caches gridLayout and navField so the worker always has map +
+// tower-aware distances even when the serializer omits them mid-run.
 const RELAY_INTERVAL_MS = 250;
 
 let commanderWorker: Worker | null = null;
 let relayIntervalId: ReturnType<typeof setInterval> | null = null;
 let cachedGridLayout: number[][] | undefined;
-// The run the cached layout belongs to (GameEngine.runId). Keying the cache to the
-// run — rather than clearing it on worker stop — keeps it valid across a *worker*
-// restart within the same run (the feed stays off and the map is still correct). A
-// run restart bumps runId and must drop the stale layout so the previous map is
-// never forwarded to the worker for the new run.
+let cachedNavField: NavFieldSnapshotData | undefined;
 let cachedRunId: number | null = null;
 
 export function startRelay(kind: CommanderKind, config?: LlmCommanderConfig): void {
@@ -61,9 +55,13 @@ function postObservation(): void {
   if ((snapshot.meta.runId ?? null) !== cachedRunId) {
     cachedRunId = snapshot.meta.runId ?? null;
     cachedGridLayout = undefined;
+    cachedNavField = undefined;
   }
   if (snapshot.gridLayout) {
     cachedGridLayout = snapshot.gridLayout;
+  }
+  if (snapshot.navField) {
+    cachedNavField = snapshot.navField;
   }
   const slice: CommanderSnapshotSlice = {
     gridLayout: cachedGridLayout,
@@ -71,6 +69,7 @@ function postObservation(): void {
     towers: snapshot.towers,
     spawnStates: snapshot.spawnStates,
     meta: snapshot.meta,
+    nav: cachedNavField,
   };
   commanderWorker.postMessage({ type: "observation", slice } satisfies MainToCommanderMessage);
 }

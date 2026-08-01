@@ -18,10 +18,11 @@ export interface SimulationSnapshot {
   particleSpawns: ParticleSpawnRequest[] | undefined;
   spawnStates: SpawnStateSnapshot[]; // for spawn-queue overlay renderer
   // Navmesh walkable-corridor triangle mesh (game (x,y) vertex pairs + triangle
-  // `indices`) for the minimap corridor highlight when RECAST_NAV is on; `null`
-  // otherwise. Refreshed on a pathVersion change, so a tower placement/sell
-  // re-ships it.
+  // `indices`) for the minimap corridor highlight. Refreshed on pathVersion change.
   navMeshCorridor: { positions: number[]; indices: number[] } | null;
+  // Tower-aware nav field for commanders (distance-to-base, spawn reachability).
+  // Shipped on pathVersion change; relay caches like gridLayout.
+  navField: NavFieldSnapshotData | null;
   // Per-interval wave-graph dots (damage/gold/gems/peak enemy HP). The full
   // array is shipped ONLY when `waveGraphDotsGeneration` changed since the last
   // posted snapshot (a dot is flushed roughly every WAVE_GRAPH_INTERVAL_SECONDS,
@@ -105,6 +106,18 @@ export interface SnapshotMeta {
 // Field set is the union of everything the render managers currently read
 // off the live entity objects.
 
+export interface NavFieldSnapshotData {
+  pathVersion: number;
+  distanceToBase: number[][];
+  spawnReachable: boolean[];
+  pathMetrics: Array<{
+    spawnIndex: number;
+    pathLengthWorld: number;
+    reachable: boolean;
+    chokeTile?: { x: number; y: number };
+  }>;
+}
+
 export interface EnemySnapshot {
   id: number;
   type: string;
@@ -130,10 +143,14 @@ export interface EnemySnapshot {
   isBoss: boolean;
   statusEffects: StatusEffectSnapshot[];
   // Theme-derived visual config needed by the render proxy to compute frames.
-  // Shared by reference on the main thread; acceptable overhead for Phase 5.
   walking: MapThemeAnimation | null;
   hitReaction: MapThemeAnimation | null;
   attackAnimation: MapThemeAnimation | null;
+  // Full-physics routing state for commanders / debug.
+  routingMode?: "default" | "hold" | "route" | "siege";
+  attackingBase?: boolean;
+  blockedByTowerTile?: { x: number; y: number } | null;
+  distanceToBase?: number;
 }
 
 export interface StatusEffectSnapshot {

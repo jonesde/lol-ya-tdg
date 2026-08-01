@@ -4,7 +4,6 @@ import type { DebugKind } from "@/sim/Command.js";
 import type { AttackTarget, Enemy } from "@/sim/enemies/Enemy.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
-import { RECAST_NAV } from "@/sim/featureFlags.js";
 import type { GameRunState } from "@/sim/GameRunState.js";
 import {
   addGold,
@@ -24,6 +23,7 @@ import type { GeneratedMap } from "@/sim/grid/Map.js";
 import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
+import { NavDistanceField } from "@/sim/navmesh/NavDistanceField.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
@@ -41,6 +41,8 @@ import {
   updateBestWave as persistUpdateBestWave,
 } from "@/sim/PersistState.js";
 import { ProjectileManager } from "@/sim/ProjectileManager.js";
+import { ContactProcessor } from "@/sim/physics/ContactProcessor.js";
+import { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { TowerManager } from "@/sim/towers/TowerManager.js";
@@ -92,15 +94,12 @@ export class GameEngine {
   enemyManager: EnemyManager | null;
   towerManager: TowerManager | null;
   physicsWorld: PhysicsWorld | null = null;
-  // DetourCrowd wrapper (RECAST_NAV). Null when the flag is off, so the OFF enemy
-  // update path is byte-identical.
   crowdManager: CrowdManager | null = null;
-  // TileCache-backed navmesh builder (RECAST_NAV). Kept on the engine so tower
-  // obstacles can be synced and proposed placements reachability-checked at
-  // runtime. Null when the flag is off.
   navMeshBuilder: NavMeshBuilder | null = null;
-  // Last grid.pathVersion we rebuilt tower/corridor colliders for; bumped by the
-  // ON orchestration in update() so colliders track builds/sells/reroutes.
+  forceFieldSystem: ForceFieldSystem = new ForceFieldSystem();
+  contactProcessor: ContactProcessor | null = null;
+  navDistanceField: NavDistanceField | null = null;
+  // Last grid.pathVersion we rebuilt tower/corridor colliders + nav field for.
   private lastPathVersion = -1;
   waveManager: WaveManagerRef | null;
   projectileManager: ProjectileManager | null;
@@ -255,27 +254,31 @@ export class GameEngine {
     this.enemyManager?.setCrowdManager(null);
     this.navMeshBuilder?.destroy();
     this.navMeshBuilder = null;
+    this.forceFieldSystem.clear();
+    this.contactProcessor = null;
+    this.navDistanceField = null;
     this.physicsWorld?.dispose();
     this.physicsWorld = new PhysicsWorld(this.grid);
     this.enemyManager.setPhysicsWorld(this.physicsWorld);
-    if (RECAST_NAV) {
-      const navBuilder = new NavMeshBuilder(this.grid);
-      // Keep the builder on the engine for tower-obstacle sync + reachability
-      // checks (Phase 3) even when the crowd is unavailable.
-      this.navMeshBuilder = navBuilder;
-      if (navBuilder.isSuccess() && navBuilder.getNavMesh()) {
-        this.crowdManager = new CrowdManager(navBuilder.getNavMesh()!, this.grid.tileSize, ENEMY_POOL_SIZE);
-        this.enemyManager.setCrowdManager(this.crowdManager);
-        // DetourCrowd owns enemy-enemy avoidance, so disable enemy-enemy collision
-        // pairs in Rapier (enemies still collide with towers/base/walls).
-        this.physicsWorld.setEnemyEnemyCollisions(false);
-      } else {
-        console.error("RECAST_NAV: navmesh build failed:", navBuilder.getError());
-        this.crowdManager = null;
-      }
+    this.projectileManager.setPhysicsWorld(this.physicsWorld);
+    this.contactProcessor = new ContactProcessor({
+      getEnemyById: (enemyId) => this.enemyManager?.getEnemyById(enemyId) ?? null,
+      getTowerById: (towerId) => this.towerManager?.getTowerById(towerId) ?? null,
+    });
+    this.physicsWorld.setContactProcessor(this.contactProcessor);
+    const navBuilder = new NavMeshBuilder(this.grid);
+    this.navMeshBuilder = navBuilder;
+    if (navBuilder.isSuccess() && navBuilder.getNavMesh()) {
+      this.crowdManager = new CrowdManager(navBuilder.getNavMesh()!, this.grid.tileSize, ENEMY_POOL_SIZE);
+      this.crowdManager.setForceFieldSystem(this.forceFieldSystem);
+      this.enemyManager.setCrowdManager(this.crowdManager);
+      this.physicsWorld.setEnemyEnemyCollisions(false);
     } else {
-      this.navMeshBuilder = null;
+      console.error("navmesh build failed:", navBuilder.getError());
+      this.crowdManager = null;
     }
+    this.navDistanceField = new NavDistanceField(this.grid, this.navMeshBuilder);
+    this.navDistanceField.rebuild();
     this.physicsWorld.rebuildTowers(this.towerManager);
     this.enemyManager.baseTarget = new BaseTarget(this);
     this.grid.towerLookup = {
@@ -369,9 +372,8 @@ export class GameEngine {
     if (this.grid!.pathVersion !== this.lastPathVersion) {
       this.physicsWorld!.rebuildTowers(this.towerManager!);
       this.physicsWorld!.rebuildCorridor();
-      // Sync tower obstacles into the navmesh so enemies re-route around
-      // builds/sells/ghosts at runtime (Phase 3). No-op until a tower is placed.
       this.navMeshBuilder?.syncTowers(this.towerManager!.towers);
+      this.navDistanceField?.ensureUpToDate(true);
       this.lastPathVersion = this.grid!.pathVersion;
     }
     const onEnemyKill = (enemy: Enemy): void => {
@@ -397,11 +399,15 @@ export class GameEngine {
 
     this.enemyManager.preStep(dt);
     this.crowdManager?.update(dt, this.enemyManager.enemies);
+    this.forceFieldSystem.apply(dt, this.enemyManager.enemies);
+    // Homing projectiles set kinematic velocities before the physics step.
+    this.projectileManager?.prePhysics(dt);
     this.physicsWorld!.step();
+    // Contact drain → base/tower attack flags + projectile hit queue.
+    const projectileHits = this.contactProcessor?.applyToEnemies(this.enemyManager.enemies) ?? [];
     this.enemyManager.postStep(dt, onEnemyKill, onEnemyBeginAttackBase);
-
-    // Projectiles resolve hits against current (post-step) enemy positions.
-    this.projectileManager?.update(dt);
+    // Projectiles read body positions and resolve hits (contacts + cast fallback).
+    this.projectileManager?.postPhysics(dt, projectileHits);
 
     this.towerManager.update(dt, this.enemyManager);
 
@@ -974,6 +980,10 @@ export class GameEngine {
     this.crowdManager = null;
     this.navMeshBuilder?.destroy();
     this.navMeshBuilder = null;
+    this.forceFieldSystem.clear();
+    this.contactProcessor?.clear();
+    this.contactProcessor = null;
+    this.navDistanceField = null;
     if (this.physicsWorld) {
       this.physicsWorld.dispose();
       this.physicsWorld = null;

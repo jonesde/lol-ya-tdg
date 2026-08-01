@@ -23,12 +23,11 @@ export class NavMeshBuilder {
   private tileCache: TileCache | null = null;
   private buildSuccess = false;
   private buildError: string | undefined;
+  // Persistent query reused by findPath (avoid construct/destroy per call).
+  private navMeshQuery: NavMeshQuery | null = null;
   // Tracks the full obstacle object each occupied tower tile currently holds,
-  // keyed by `"tileX,tileY"`. The raw `ObstacleRef` in this build is itself an
-  // object, so removal must pass the WHOLE obstacle (not `.ref`) to
-  // `tileCache.removeObstacle` — passing `.ref` makes the wrapper read `.ref` off
-  // that object, yielding undefined and a failed raw removal. Drives the
-  // syncTowers diff when towers are placed, sold, or ghosted.
+  // keyed by `"tileX,tileY"`. Removal must pass the WHOLE obstacle to
+  // `tileCache.removeObstacle`.
   private obstacleRefs = new Map<string, Obstacle>();
 
   constructor(grid: Grid) {
@@ -90,10 +89,12 @@ export class NavMeshBuilder {
     if (result.success) {
       this.navMesh = result.navMesh;
       this.tileCache = result.tileCache;
+      this.navMeshQuery = new NavMeshQuery(result.navMesh);
       this.buildSuccess = true;
     } else {
       this.navMesh = null;
       this.tileCache = null;
+      this.navMeshQuery = null;
       this.buildSuccess = false;
       this.buildError = result.error;
     }
@@ -119,6 +120,8 @@ export class NavMeshBuilder {
   // JavaScript GC automatically, so the engine must call this on dispose (and any
   // throwaway builder must free itself) to avoid leaking WASM memory.
   destroy(): void {
+    this.navMeshQuery?.destroy();
+    this.navMeshQuery = null;
     this.navMesh?.destroy();
     this.tileCache?.destroy();
     this.navMesh = null;
@@ -137,23 +140,29 @@ export class NavMeshBuilder {
     goalWorld: WorldPoint,
     goalDistanceTolerance: number = this.grid.tileSize,
   ): WorldPoint[] {
-    if (!this.navMesh) return [];
-    const query = new NavMeshQuery(this.navMesh);
-    try {
-      const halfExtents: Vector3 = { x: this.grid.tileSize, y: this.grid.tileSize, z: this.grid.tileSize };
-      const result = query.computePath(toRecast(startWorld), toRecast(goalWorld), { halfExtents });
-      if (!result.success || result.path.length === 0) return [];
-      const path = result.path.map(fromRecast);
-      // computePath clamps the goal to the start poly when start and goal lie in
-      // disconnected navmesh islands, yielding a degenerate path that never reaches
-      // the goal. Treat that as "no path" so callers get an empty result.
-      const lastPoint = path[path.length - 1]!;
-      const goalDistance = Math.hypot(lastPoint.x - goalWorld.x, lastPoint.y - goalWorld.y);
-      if (goalDistance > goalDistanceTolerance) return [];
-      return path;
-    } finally {
-      query.destroy();
-    }
+    if (!this.navMeshQuery) return [];
+    const halfExtents: Vector3 = { x: this.grid.tileSize, y: this.grid.tileSize, z: this.grid.tileSize };
+    const result = this.navMeshQuery.computePath(toRecast(startWorld), toRecast(goalWorld), { halfExtents });
+    if (!result.success || result.path.length === 0) return [];
+    const path = result.path.map(fromRecast);
+    // computePath clamps the goal to the start poly when start and goal lie in
+    // disconnected navmesh islands; treat that as "no path".
+    const lastPoint = path[path.length - 1]!;
+    const goalDistance = Math.hypot(lastPoint.x - goalWorld.x, lastPoint.y - goalWorld.y);
+    if (goalDistance > goalDistanceTolerance) return [];
+    return path;
+  }
+
+  isReachable(startWorld: WorldPoint, goalWorld: WorldPoint): boolean {
+    return this.findPath(startWorld, goalWorld).length > 0;
+  }
+
+  nearestWalkableWorld(point: WorldPoint): WorldPoint | null {
+    if (!this.navMeshQuery) return null;
+    const halfExtents: Vector3 = { x: this.grid.tileSize, y: this.grid.tileSize, z: this.grid.tileSize };
+    const result = this.navMeshQuery.findNearestPoly(toRecast(point), { halfExtents });
+    if (!result.success) return null;
+    return fromRecast(result.nearestPoint);
   }
 
   // Flattened walkable-corridor triangle mesh in game coordinates: `positions`

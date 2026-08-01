@@ -1,4 +1,4 @@
-import type { SpawnStateSnapshot } from "@/sim/SimulationSnapshot.js";
+import type { NavFieldSnapshotData, SpawnStateSnapshot } from "@/sim/SimulationSnapshot.js";
 import type { CommanderSnapshotSlice } from "./protocol.js";
 
 export interface ObservationEnemy {
@@ -8,6 +8,10 @@ export interface ObservationEnemy {
   level: number;
   hp: number;
   maxHp: number;
+  routingMode?: string;
+  attackingBase?: boolean;
+  blockedByTowerTile?: { x: number; y: number } | null;
+  distanceToBase?: number;
 }
 
 export interface ObservationTower {
@@ -26,13 +30,20 @@ export interface ObservationWave {
   active: boolean;
 }
 
+export interface ObservationNav {
+  pathVersion: number;
+  distanceToBase: number[][];
+  spawnReachable: boolean[];
+}
+
 // The abstracted semantic view the brain consumes. Field names are intentionally
-// stable for a future LLM commander (see ArchitecturePlan §4.3).
+// stable for LLM commanders.
 export interface CommanderObservation {
   map: number[][] | undefined;
   enemies: ObservationEnemy[];
   towers: ObservationTower[];
   wave: ObservationWave;
+  nav?: ObservationNav;
 }
 
 function worldToTile(worldCoordinate: number, tileSize: number): number {
@@ -40,18 +51,30 @@ function worldToTile(worldCoordinate: number, tileSize: number): number {
 }
 
 // Pure projection from a throttled snapshot slice into the brain's semantic view.
-// Enemy world x/y → tile via meta.tileSize; tower health/maxHealth are renamed to
-// hp/maxHp (the brain reads hp/maxHp); pendingEnemyCount is summed across spawnStates.
 export function buildObservation(slice: CommanderSnapshotSlice): CommanderObservation {
   const tileSize = slice.meta.tileSize ?? 36;
-  const enemies: ObservationEnemy[] = slice.enemies.map((enemy) => ({
-    id: enemy.id,
-    tileX: worldToTile(enemy.x, tileSize),
-    tileY: worldToTile(enemy.y, tileSize),
-    level: enemy.level,
-    hp: enemy.hp,
-    maxHp: enemy.maxHp,
-  }));
+  const navField: NavFieldSnapshotData | undefined = slice.nav;
+  const enemies: ObservationEnemy[] = slice.enemies.map((enemy) => {
+    const tileX = worldToTile(enemy.x, tileSize);
+    const tileY = worldToTile(enemy.y, tileSize);
+    const distanceToBase =
+      enemy.distanceToBase ?? navField?.distanceToBase[tileY]?.[tileX] ?? -1;
+    const observationEnemy: ObservationEnemy = {
+      id: enemy.id,
+      tileX,
+      tileY,
+      level: enemy.level,
+      hp: enemy.hp,
+      maxHp: enemy.maxHp,
+      distanceToBase,
+    };
+    if (enemy.routingMode !== undefined) observationEnemy.routingMode = enemy.routingMode;
+    if (enemy.attackingBase !== undefined) observationEnemy.attackingBase = enemy.attackingBase;
+    if (enemy.blockedByTowerTile !== undefined) {
+      observationEnemy.blockedByTowerTile = enemy.blockedByTowerTile;
+    }
+    return observationEnemy;
+  });
   const towers: ObservationTower[] = slice.towers.map((tower) => ({
     tileX: tower.tileX,
     tileY: tower.tileY,
@@ -67,5 +90,18 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
     remainingScheduledSpawns: slice.meta.remainingScheduledSpawns ?? 0,
     active: slice.meta.waveActive ?? false,
   };
-  return { map: slice.gridLayout, enemies, towers, wave };
+  const observation: CommanderObservation = {
+    map: slice.gridLayout,
+    enemies,
+    towers,
+    wave,
+  };
+  if (navField) {
+    observation.nav = {
+      pathVersion: navField.pathVersion,
+      distanceToBase: navField.distanceToBase,
+      spawnReachable: navField.spawnReachable,
+    };
+  }
+  return observation;
 }

@@ -77,7 +77,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
     expect(reached).toBe(true);
   });
 
-  it("knockback pushes the body backward and zeroes its velocity", () => {
+  it("knockback impulse pushes the body backward and enters ballistic mode", () => {
     // Advance a bit so the enemy is moving toward the base, then record distance.
     drive(enemy, 200);
     const startDist = Math.hypot(enemy.centerX - baseCenterOf(grid).x, enemy.centerY - baseCenterOf(grid).y);
@@ -87,15 +87,14 @@ describe("Enemy ON branches (body set) driven manually", () => {
     const before = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
 
     enemy.applyKnockback(2 * grid.tileSize);
+    expect(enemy.ballisticTimer).toBeGreaterThan(0);
+    // During ballistic, crowd must not overwrite linvel.
     crowdManager.update(FIXED_DT, [enemy]);
     physicsWorld.step();
     enemy.postPhysics(FIXED_DT, null);
 
     const after = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
     expect(after).toBeGreaterThan(before);
-
-    const linvel = enemy.body.linvel();
-    expect(Math.hypot(linvel.x, linvel.y)).toBeLessThan(1e-3);
   });
 
   it("preserves moveAngle at low speed (no garbage overwrite)", () => {

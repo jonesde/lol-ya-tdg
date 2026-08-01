@@ -1,30 +1,48 @@
 import type RAPIER from "@dimforge/rapier2d-compat";
+import { EventQueue, ActiveEvents } from "@dimforge/rapier2d-compat";
 import { FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import { corridorWallInsetWorld } from "@/sim/navmesh/navmeshConfig.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
+import type { ColliderTag } from "./ColliderUserData.js";
+import type { ContactProcessor } from "./ContactProcessor.js";
 import { getRapier } from "./rapierContext.js";
 
-// Wraps one Rapier2d world that owns enemy motion (dynamic circle bodies driven
-// by velocity) plus the static containment/world geometry: a base collider, fixed
-// tower colliders, and a closed boundary of thin wall segments around the
-// walkable corridor (path ∪ base ∪ spawn tiles). Physics is always on, so building
-// it (and loading the Rapier WASM) is gated behind getRapier() resolving — see
-// rapierContext.ts.
+// Collision groups: membership << 16 | filter.
+// Enemies: group 1, filter everything except other enemies when enemyEnemyCollisions is false.
+// Projectiles: group 2, filter only enemies (group 1).
+// Static world (base/towers/walls): default (all groups).
+const ENEMY_GROUP = 0x0001;
+const PROJECTILE_GROUP = 0x0002;
+const ALL_GROUPS = 0xffff;
+
+export interface ProjectileBodyOptions {
+  projectileId: number;
+  x: number;
+  y: number;
+  radius: number;
+  velocityX: number;
+  velocityY: number;
+  // Sensor projectiles fire contact events without solid resolve (pierce).
+  isSensor?: boolean;
+  restitution?: number;
+  collidesWithWalls?: boolean;
+}
+
+// Wraps one Rapier2d world: enemy motion, static geometry, projectile bodies,
+// contact events, impulses, and mass/CCD. Always on after getRapier() resolves.
 export class PhysicsWorld {
   private grid: Grid;
   private world: RAPIER.World;
-  // Static geometry is tracked by its rigid body; removing the body also removes
-  // its attached collider, which avoids Rapier's panicking `removeCollider`.
+  private eventQueue: EventQueue;
   private baseBody: RAPIER.RigidBody | null = null;
   private towerBodies: RAPIER.RigidBody[] = [];
   private corridorBodies: RAPIER.RigidBody[] = [];
   private enemyByHandle: Map<number, Enemy> = new Map();
-  // Whether enemy bodies collide with each other. Default true (OFF path, no
-  // change). Under RECAST_NAV the DetourCrowd owns enemy-enemy avoidance, so this
-  // is flipped to false to avoid two solvers fighting (enemies still collide with
-  // towers/base/walls via Rapier's default groups).
+  private projectileBodies: Map<number, RAPIER.RigidBody> = new Map();
+  private contactProcessor: ContactProcessor | null = null;
+  // When false, DetourCrowd owns enemy-enemy avoidance (GameEngine sets this).
   enemyEnemyCollisions = true;
 
   constructor(grid: Grid) {
@@ -32,30 +50,32 @@ export class PhysicsWorld {
     this.grid = grid;
     this.world = new RAPIER.World({ x: 0, y: 0 });
     this.world.timestep = FIXED_DT;
+    this.eventQueue = new EventQueue(true);
     this.buildBase();
     this.rebuildCorridor();
   }
 
-  // True when `tile` is part of the walkable corridor: a path tile, the base
-  // tile, or a spawn tile. Used to decide where to emit containment walls.
+  setContactProcessor(contactProcessor: ContactProcessor | null): void {
+    this.contactProcessor = contactProcessor;
+  }
+
   private isWalkable(x: number, y: number): boolean {
     return this.grid.isPath(x, y) || this.grid.isBase(x, y) || this.grid.isSpawn(x, y);
   }
 
-  // One fixed cuboid covering the 3x3 base, so enemies pile against it instead
-  // of passing through.
   buildBase(): void {
     const RAPIER = getRapier();
     this.dropBase();
     const baseCenter = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
     const half = 1.5 * this.grid.tileSize;
-    this.baseBody = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(baseCenter.x, baseCenter.y));
-    this.world.createCollider(RAPIER.ColliderDesc.cuboid(half, half), this.baseBody);
+    const bodyDesc = RAPIER.RigidBodyDesc.fixed()
+      .setTranslation(baseCenter.x, baseCenter.y)
+      .setUserData({ kind: "base" } satisfies ColliderTag);
+    this.baseBody = this.world.createRigidBody(bodyDesc);
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(half, half).setActiveEvents(ActiveEvents.COLLISION_EVENTS);
+    this.world.createCollider(colliderDesc, this.baseBody);
   }
 
-  // Rebuild fixed tower colliders from the current TowerManager. Ghost towers
-  // are skipped (they do not block). A full rebuild (drop + recreate) is keyed
-  // off grid.pathVersion bumps by the caller.
   rebuildTowers(towerManager: TowerManager): void {
     const RAPIER = getRapier();
     this.dropBodies(this.towerBodies);
@@ -64,16 +84,21 @@ export class PhysicsWorld {
       const centerX = tower.x ?? this.grid.tileToWorld(tower.tileX, tower.tileY).x;
       const centerY = tower.y ?? this.grid.tileToWorld(tower.tileX, tower.tileY).y;
       const half = this.grid.tileSize / 2;
-      const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY));
-      this.world.createCollider(RAPIER.ColliderDesc.cuboid(half, half), body);
+      const tag: ColliderTag = {
+        kind: "tower",
+        towerId: tower.id,
+        tileX: tower.tileX,
+        tileY: tower.tileY,
+      };
+      const body = this.world.createRigidBody(
+        RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setUserData(tag),
+      );
+      const colliderDesc = RAPIER.ColliderDesc.cuboid(half, half).setActiveEvents(ActiveEvents.COLLISION_EVENTS);
+      this.world.createCollider(colliderDesc, body);
       this.towerBodies.push(body);
     }
   }
 
-  // Emit a closed boundary of thin fixed wall segments around every walkable
-  // tile: for each walkable tile, every orthogonal neighbor that is out of bounds
-  // or not walkable gets a wall along the shared edge. This keeps free rigid
-  // bodies on the corridor instead of drifting into terrain.
   rebuildCorridor(): void {
     const RAPIER = getRapier();
     this.dropBodies(this.corridorBodies);
@@ -94,13 +119,6 @@ export class PhysicsWorld {
       }
     }
 
-    // Convex-corner detection. A tile-corner (i, j) is a convex wall vertex poking
-    // into the corridor when exactly one of its four flanking tiles is terrain and
-    // that terrain tile's two walkable neighbours flank it (the inside of a bend).
-    // We round these vertices so enemy circles stop catching on them (the inside-
-    // corner reroute). `convexCorners` marks any corner to be shortened on the
-    // straight walls; `convexDirs` records which two axis directions the walls run
-    // from the vertex (into the corridor) so the chamfer can replace the sharp point.
     const convexCorners = new Set<string>();
     const convexDirs = new Map<string, { sx: number; sy: number }>();
     const cornerKey = (i: number, j: number): string => `${i},${j}`;
@@ -135,13 +153,13 @@ export class PhysicsWorld {
 
     const inset = corridorWallInsetWorld(tileSize);
     const chamferHalfThickness = halfThickness;
-
     const neighbors = [
       { dx: 1, dy: 0 },
       { dx: -1, dy: 0 },
       { dx: 0, dy: 1 },
       { dx: 0, dy: -1 },
     ];
+    const corridorTag: ColliderTag = { kind: "corridor" };
 
     const addWallSegment = (x1: number, y1: number, x2: number, y2: number): void => {
       const centerX = (x1 + x2) / 2;
@@ -149,7 +167,9 @@ export class PhysicsWorld {
       const horizontal = y1 === y2;
       const halfX = horizontal ? Math.abs(x2 - x1) / 2 : chamferHalfThickness;
       const halfY = horizontal ? chamferHalfThickness : Math.abs(y2 - y1) / 2;
-      const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY));
+      const body = this.world.createRigidBody(
+        RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setUserData(corridorTag),
+      );
       this.world.createCollider(RAPIER.ColliderDesc.cuboid(halfX, halfY), body);
       this.corridorBodies.push(body);
     };
@@ -160,10 +180,6 @@ export class PhysicsWorld {
         const ny = tile.y + neighbor.dy;
         if (this.isWalkable(nx, ny)) continue;
 
-        // The shared edge runs between `tile` and the non-walkable `neighbor`. Its
-        // two endpoints are tile corners; if a corner is a convex wall vertex we pull
-        // that endpoint back by `inset` so the chamfer diagonal can replace the sharp
-        // point (widening the turn without opening a gap into terrain).
         let x1: number;
         let y1: number;
         let x2: number;
@@ -210,9 +226,6 @@ export class PhysicsWorld {
       }
     }
 
-    // Close each convex corner with a diagonal chamfer wall. The straight walls were
-    // shortened back by `inset`, so the endpoints (A, B) meet this diagonal; the sharp
-    // convex vertex is replaced by a rounded pocket the enemy can follow.
     for (const [key, dir] of convexDirs) {
       const parts = key.split(",");
       const i = Number(parts[0]);
@@ -228,39 +241,50 @@ export class PhysicsWorld {
       const length = Math.hypot(bxX - axX, bxY - axY);
       const angle = Math.atan2(bxY - axY, bxX - axX);
       const body = this.world.createRigidBody(
-        RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setRotation(angle),
+        RAPIER.RigidBodyDesc.fixed()
+          .setTranslation(centerX, centerY)
+          .setRotation(angle)
+          .setUserData(corridorTag),
       );
       this.world.createCollider(RAPIER.ColliderDesc.cuboid(length / 2, chamferHalfThickness), body);
       this.corridorBodies.push(body);
     }
   }
 
-  // Create a dynamic circle body for an enemy and assign it to enemy.body.
+  // Density scales with radius so tanks resist push more than runners.
+  private enemyDensity(enemy: Enemy): number {
+    const radiusFactor = Math.max(0.05, enemy.radius / (this.grid.tileSize * 0.14));
+    // Default Rapier ball density is 1.0; scale around that.
+    return Math.max(0.25, radiusFactor * radiusFactor);
+  }
+
   addEnemy(enemy: Enemy): void {
     const RAPIER = getRapier();
+    const enableCcd = enemy.speed >= 2.0;
+    const tag: ColliderTag = { kind: "enemy", enemyId: enemy.id };
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(enemy.x, enemy.y)
       .lockRotations()
-      .setLinearDamping(0.9);
+      .setLinearDamping(0.9)
+      .setCcdEnabled(enableCcd)
+      .setUserData(tag);
     const body = this.world.createRigidBody(bodyDesc);
-    const colliderDesc = RAPIER.ColliderDesc.ball(enemy.radius).setRestitution(0);
-    // When enemy-enemy collisions are disabled (RECAST_NAV), put enemies in group
-    // 1 and exclude group 1 from their collision filter. Membership/filter are the
-    // high/low 16 bits of the group: (group << 16) | filter. Towers/base/walls keep
-    // Rapier's default groups, so enemies still collide with them.
-    if (!this.enemyEnemyCollisions) colliderDesc.setCollisionGroups((0x0001 << 16) | 0xfffe);
+    const colliderDesc = RAPIER.ColliderDesc.ball(enemy.radius).setRestitution(0).setDensity(this.enemyDensity(enemy));
+    // ActiveEvents set after create so default solid collision path matches pre-plan behavior.
+    colliderDesc.setActiveEvents(ActiveEvents.COLLISION_EVENTS);
+    if (!this.enemyEnemyCollisions) {
+      // Membership enemy group; filter all except enemy group.
+      colliderDesc.setCollisionGroups((ENEMY_GROUP << 16) | (ALL_GROUPS & ~ENEMY_GROUP));
+    }
     this.world.createCollider(colliderDesc, body);
     enemy.body = body;
     this.enemyByHandle.set(body.handle, enemy);
   }
 
-  // Toggle enemy-enemy collisions (see `enemyEnemyCollisions`). Only takes effect
-  // for enemies added after the call; existing bodies are left as-is.
   setEnemyEnemyCollisions(enabled: boolean): void {
     this.enemyEnemyCollisions = enabled;
   }
 
-  // Remove the enemy's rigid body (and its collider) from the world.
   removeEnemy(enemy: Enemy): void {
     if (enemy.body) {
       this.enemyByHandle.delete(enemy.body.handle);
@@ -269,13 +293,64 @@ export class PhysicsWorld {
     }
   }
 
-  // Returns true only for colliders whose parent rigid body is a live enemy.
+  applyImpulse(enemy: Enemy, impulseX: number, impulseY: number): void {
+    if (!enemy.body) return;
+    enemy.body.applyImpulse({ x: impulseX, y: impulseY }, true);
+  }
+
+  addProjectileBody(options: ProjectileBodyOptions): RAPIER.RigidBody {
+    const RAPIER = getRapier();
+    this.removeProjectileBody(options.projectileId);
+    const tag: ColliderTag = { kind: "projectile", projectileId: options.projectileId };
+    // Kinematic velocity-based: we set linvel each tick for homing; solid or sensor.
+    const bodyDesc = RAPIER.RigidBodyDesc.kinematicVelocityBased()
+      .setTranslation(options.x, options.y)
+      .lockRotations()
+      .setLinvel(options.velocityX, options.velocityY)
+      .setCcdEnabled(true)
+      .setUserData(tag);
+    const body = this.world.createRigidBody(bodyDesc);
+    const colliderDesc = RAPIER.ColliderDesc.ball(options.radius)
+      .setRestitution(options.restitution ?? 0)
+      .setActiveEvents(ActiveEvents.COLLISION_EVENTS);
+    if (options.isSensor) colliderDesc.setSensor(true);
+    if (options.collidesWithWalls) {
+      // Hit everything including walls.
+      colliderDesc.setCollisionGroups((PROJECTILE_GROUP << 16) | ALL_GROUPS);
+    } else {
+      // Only collide with enemies (group 1).
+      colliderDesc.setCollisionGroups((PROJECTILE_GROUP << 16) | ENEMY_GROUP);
+    }
+    this.world.createCollider(colliderDesc, body);
+    this.projectileBodies.set(options.projectileId, body);
+    return body;
+  }
+
+  setProjectileVelocity(projectileId: number, velocityX: number, velocityY: number): void {
+    const body = this.projectileBodies.get(projectileId);
+    if (!body) return;
+    body.setLinvel({ x: velocityX, y: velocityY }, true);
+  }
+
+  getProjectilePosition(projectileId: number): { x: number; y: number } | null {
+    const body = this.projectileBodies.get(projectileId);
+    if (!body) return null;
+    const translation = body.translation();
+    return { x: translation.x, y: translation.y };
+  }
+
+  removeProjectileBody(projectileId: number): void {
+    const body = this.projectileBodies.get(projectileId);
+    if (!body) return;
+    this.world.removeRigidBody(body);
+    this.projectileBodies.delete(projectileId);
+  }
+
   private isEnemyCollider = (collider: RAPIER.Collider): boolean => {
     const parent = collider.parent();
     return parent !== null && this.enemyByHandle.has(parent.handle);
   };
 
-  // Resolves a collider back to its Enemy, skipping removed enemies.
   private enemyFromCollider(collider: RAPIER.Collider): Enemy | null {
     const parent = collider.parent();
     if (!parent) return null;
@@ -283,9 +358,6 @@ export class PhysicsWorld {
     return enemy && !enemy.removed ? enemy : null;
   }
 
-  // Proximity query replacing the deleted spatial hash. Returns enemies whose
-  // CENTER is within `range` of (x, y) — matches the legacy getEnemiesInRange
-  // center-distance filter exactly.
   queryEnemiesInRange(x: number, y: number, range: number): Enemy[] {
     const RAPIER = getRapier();
     const result: Enemy[] = [];
@@ -336,11 +408,6 @@ export class PhysicsWorld {
     );
   }
 
-  // Swept-shape cast against enemy colliders only. Returns the first enemy hit
-  // along (dirX, dirY) from (originX, originY) within `maxDistance`, plus its
-  // collider (needed to exclude it on a subsequent pierce pass). `excluded`
-  // skips previously-hit colliders: either a single collider or a Set of them.
-  // Returns null if nothing is hit.
   castShapeFirstEnemy(
     originX: number,
     originY: number,
@@ -377,11 +444,6 @@ export class PhysicsWorld {
     return { enemy, collider: hit.collider };
   }
 
-  // Multi-hit variant for piercing: repeatedly casts from the SAME origin,
-  // accumulating every hit collider in an exclusion set so the next pass returns
-  // the next enemy along the ray (closest-first). Calling `cb(enemy)` for each
-  // hit; `cb` returns false to stop early. Stops after `maxHits` hits or when
-  // nothing more is hit.
   castShapePierce(
     originX: number,
     originY: number,
@@ -413,10 +475,18 @@ export class PhysicsWorld {
   }
 
   step(): void {
-    this.world.step();
+    this.world.step(this.eventQueue);
+    if (this.contactProcessor) {
+      this.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+        const collider1 = this.world.getCollider(handle1);
+        const collider2 = this.world.getCollider(handle2);
+        const body1 = collider1?.parent() ?? null;
+        const body2 = collider2?.parent() ?? null;
+        this.contactProcessor!.handleCollision(body1, body2, started);
+      });
+    }
   }
 
-  // Remove a set of rigid bodies (and their attached colliders) from the world.
   private dropBodies(bodies: RAPIER.RigidBody[]): void {
     for (const body of bodies) {
       this.world.removeRigidBody(body);
@@ -431,13 +501,17 @@ export class PhysicsWorld {
     }
   }
 
-  // Free the entire world in one call. Rapier's `removeCollider`/`removeRigidBody`
-  // can panic on already-detached handles, so we rely on `world.free()` to reclaim
-  // everything and just drop our references. Guarded so dispose is idempotent.
   dispose(): void {
     this.baseBody = null;
     this.towerBodies = [];
     this.corridorBodies = [];
+    this.projectileBodies.clear();
+    this.enemyByHandle.clear();
+    this.contactProcessor = null;
+    if (this.eventQueue) {
+      this.eventQueue.free();
+      this.eventQueue = null as unknown as EventQueue;
+    }
     if (this.world) {
       this.world.free();
       this.world = null as unknown as RAPIER.World;
