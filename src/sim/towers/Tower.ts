@@ -82,7 +82,7 @@ interface EnemyManagerRef {
     id: number;
     applySlow(amount: number, duration: number): void;
     applyStun?(duration: number): void;
-    takeDamage(amount: number, armorPiercing?: boolean): void;
+    takeDamage(amount: number, armorPiercing?: boolean): number | undefined;
   }[];
   getEnemiesInRange(
     x: number,
@@ -97,7 +97,7 @@ interface EnemyManagerRef {
     id: number;
     applySlow(amount: number, duration: number): void;
     applyStun?(duration: number): void;
-    takeDamage(amount: number, armorPiercing?: boolean): void;
+    takeDamage(amount: number, armorPiercing?: boolean): number | undefined;
   }[];
   forEachEnemyInRange(
     x: number,
@@ -112,7 +112,7 @@ interface EnemyManagerRef {
       id: number;
       applySlow(amount: number, duration: number): void;
       applyStun?(duration: number): void;
-      takeDamage(amount: number, armorPiercing?: boolean): void;
+      takeDamage(amount: number, armorPiercing?: boolean): number | undefined;
     }) => void,
   ): void;
   getEnemyById(id: number): { id: number; removed: boolean; x: number; y: number; hp: number } | null;
