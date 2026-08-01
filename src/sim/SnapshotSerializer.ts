@@ -172,9 +172,7 @@ function snapshotEnemy(e: Enemy, engine?: GameEngine): EnemySnapshot {
     attackAnimation: e.attackAnimation,
     routingMode: e.routingMode,
     attackingBase: e.attackingBase,
-    blockedByTowerTile: e.blockedByTower
-      ? { x: e.blockedByTower.tileX, y: e.blockedByTower.tileY }
-      : null,
+    blockedByTowerTile: e.blockedByTower ? { x: e.blockedByTower.tileX, y: e.blockedByTower.tileY } : null,
     distanceToBase,
   };
 }

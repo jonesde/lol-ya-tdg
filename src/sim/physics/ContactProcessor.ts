@@ -1,7 +1,7 @@
 import type RAPIER from "@dimforge/rapier2d-compat";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { Tower } from "@/sim/towers/Tower.js";
-import { isColliderTag, type ColliderTag } from "./ColliderUserData.js";
+import { type ColliderTag, isColliderTag } from "./ColliderUserData.js";
 
 export interface ProjectileHitEvent {
   projectileId: number;
@@ -41,11 +41,7 @@ export class ContactProcessor {
   }
 
   // Process one collision event pair. `started` true = begin contact.
-  handleCollision(
-    body1: RAPIER.RigidBody | null,
-    body2: RAPIER.RigidBody | null,
-    started: boolean,
-  ): void {
+  handleCollision(body1: RAPIER.RigidBody | null, body2: RAPIER.RigidBody | null, started: boolean): void {
     const tag1 = tagFromBody(body1);
     const tag2 = tagFromBody(body2);
     if (!tag1 || !tag2) return;

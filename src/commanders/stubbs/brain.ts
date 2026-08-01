@@ -60,11 +60,7 @@ function computeTowerSignature(liveTowers: ObservationTower[]): string {
 }
 
 // Distance from nav field (tower-aware). Falls back to -1 when nav missing.
-function distanceAt(
-  distanceToBase: number[][] | undefined,
-  tileX: number,
-  tileY: number,
-): number {
+function distanceAt(distanceToBase: number[][] | undefined, tileX: number, tileY: number): number {
   if (!distanceToBase) return -1;
   return distanceToBase[tileY]?.[tileX] ?? -1;
 }

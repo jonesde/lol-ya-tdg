@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CommanderMemory } from "@/commanders/brain.js";
-import type { CommanderObservation, ObservationEnemy, ObservationNav, ObservationTower } from "@/commanders/observation.js";
+import type {
+  CommanderObservation,
+  ObservationEnemy,
+  ObservationNav,
+  ObservationTower,
+} from "@/commanders/observation.js";
 import { createStubbsBrain } from "@/commanders/stubbs/brain.js";
 import type { Command } from "@/sim/Command.js";
 
@@ -55,11 +60,7 @@ function buildOpenDistanceField(): number[][] {
   return distances;
 }
 
-const openNav: ObservationNav = {
-  pathVersion: 0,
-  distanceToBase: buildOpenDistanceField(),
-  spawnReachable: [true],
-};
+const openNav: ObservationNav = { pathVersion: 0, distanceToBase: buildOpenDistanceField(), spawnReachable: [true] };
 
 function freshMemory(): CommanderMemory {
   return {
@@ -150,13 +151,7 @@ describe("StubbsBrain", () => {
       map: gridLayout,
       enemies: [enemy(1, 1, 3)],
       towers: [tower(5, 3, 100)],
-      wave: {
-        currentWave: 1,
-        pendingEnemyCount: 0,
-        spawnStates: [],
-        remainingScheduledSpawns: 0,
-        active: true,
-      },
+      wave: { currentWave: 1, pendingEnemyCount: 0, spawnStates: [], remainingScheduledSpawns: 0, active: true },
     };
     expect(brain.decide(bare, memory)).toHaveLength(0);
   });

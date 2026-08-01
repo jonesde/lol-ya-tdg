@@ -493,7 +493,12 @@ export class Enemy {
 
     if (this.stunTimer > 0) {
       this.motionLock = "park";
-    } else if (this.motionLock === "park" && !this.attackingBase && this.routingMode !== "hold" && this.routingMode !== "siege") {
+    } else if (
+      this.motionLock === "park" &&
+      !this.attackingBase &&
+      this.routingMode !== "hold" &&
+      this.routingMode !== "siege"
+    ) {
       this.motionLock = "none";
     }
 

@@ -57,8 +57,7 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
   const enemies: ObservationEnemy[] = slice.enemies.map((enemy) => {
     const tileX = worldToTile(enemy.x, tileSize);
     const tileY = worldToTile(enemy.y, tileSize);
-    const distanceToBase =
-      enemy.distanceToBase ?? navField?.distanceToBase[tileY]?.[tileX] ?? -1;
+    const distanceToBase = enemy.distanceToBase ?? navField?.distanceToBase[tileY]?.[tileX] ?? -1;
     const observationEnemy: ObservationEnemy = {
       id: enemy.id,
       tileX,
@@ -90,12 +89,7 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
     remainingScheduledSpawns: slice.meta.remainingScheduledSpawns ?? 0,
     active: slice.meta.waveActive ?? false,
   };
-  const observation: CommanderObservation = {
-    map: slice.gridLayout,
-    enemies,
-    towers,
-    wave,
-  };
+  const observation: CommanderObservation = { map: slice.gridLayout, enemies, towers, wave };
   if (navField) {
     observation.nav = {
       pathVersion: navField.pathVersion,

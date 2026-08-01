@@ -1,5 +1,5 @@
 import type RAPIER from "@dimforge/rapier2d-compat";
-import { EventQueue, ActiveEvents } from "@dimforge/rapier2d-compat";
+import { ActiveEvents, EventQueue } from "@dimforge/rapier2d-compat";
 import { FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { Grid } from "@/sim/grid/Grid.js";
@@ -84,12 +84,7 @@ export class PhysicsWorld {
       const centerX = tower.x ?? this.grid.tileToWorld(tower.tileX, tower.tileY).x;
       const centerY = tower.y ?? this.grid.tileToWorld(tower.tileX, tower.tileY).y;
       const half = this.grid.tileSize / 2;
-      const tag: ColliderTag = {
-        kind: "tower",
-        towerId: tower.id,
-        tileX: tower.tileX,
-        tileY: tower.tileY,
-      };
+      const tag: ColliderTag = { kind: "tower", towerId: tower.id, tileX: tower.tileX, tileY: tower.tileY };
       const body = this.world.createRigidBody(
         RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setUserData(tag),
       );
@@ -241,10 +236,7 @@ export class PhysicsWorld {
       const length = Math.hypot(bxX - axX, bxY - axY);
       const angle = Math.atan2(bxY - axY, bxX - axX);
       const body = this.world.createRigidBody(
-        RAPIER.RigidBodyDesc.fixed()
-          .setTranslation(centerX, centerY)
-          .setRotation(angle)
-          .setUserData(corridorTag),
+        RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setRotation(angle).setUserData(corridorTag),
       );
       this.world.createCollider(RAPIER.ColliderDesc.cuboid(length / 2, chamferHalfThickness), body);
       this.corridorBodies.push(body);

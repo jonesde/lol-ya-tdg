@@ -83,11 +83,7 @@ export class NavDistanceField {
         }
       }
       this.spawnReachable.push(reachable);
-      this.pathMetrics.push({
-        spawnIndex,
-        pathLengthWorld,
-        reachable,
-      });
+      this.pathMetrics.push({ spawnIndex, pathLengthWorld, reachable });
       this.spawnPaths.push(tilePath);
     }
   }

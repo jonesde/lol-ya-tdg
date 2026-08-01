@@ -78,11 +78,7 @@ export class ForceFieldSystem {
     }
   }
 
-  private sampleFieldAt(
-    field: ForceField,
-    pointX: number,
-    pointY: number,
-  ): { forceX: number; forceY: number } | null {
+  private sampleFieldAt(field: ForceField, pointX: number, pointY: number): { forceX: number; forceY: number } | null {
     const deltaX = pointX - field.origin.x;
     const deltaY = pointY - field.origin.y;
     const distance = Math.hypot(deltaX, deltaY);
@@ -102,9 +98,6 @@ export class ForceFieldSystem {
     if (distance < 1e-6) return null;
     const unitX = deltaX / distance;
     const unitY = deltaY / distance;
-    return {
-      forceX: unitX * field.strength * falloff,
-      forceY: unitY * field.strength * falloff,
-    };
+    return { forceX: unitX * field.strength * falloff, forceY: unitY * field.strength * falloff };
   }
 }

@@ -1,6 +1,6 @@
 import { Crowd, type NavMesh } from "recast-navigation";
-import type { Enemy } from "@/sim/enemies/Enemy.js";
 import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
+import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
 import { toRecast } from "./coords.js";
 
@@ -92,10 +92,7 @@ export class CrowdManager {
       if (!enemy.agent || !enemy.body) continue;
       const profile = getCrowdAgentProfile(enemy.type);
       const maxSpeed = enemy.speed * enemy.slowFactor * this.tileSize;
-      enemy.agent.updateParameters({
-        maxSpeed,
-        maxAcceleration: maxSpeed * profile.maxAccelFactor,
-      });
+      enemy.agent.updateParameters({ maxSpeed, maxAcceleration: maxSpeed * profile.maxAccelFactor });
 
       // Tick ballistic window.
       if (enemy.ballisticTimer > 0) {

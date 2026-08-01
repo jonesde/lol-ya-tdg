@@ -126,12 +126,7 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
       return routeGroupCommand;
     }
     if (parsed.type === "llm:siegeTower") {
-      return {
-        commandId: 0,
-        type: "llm:siegeTower",
-        enemyIds: parsed.enemyIds,
-        towerTile: parsed.towerTile,
-      };
+      return { commandId: 0, type: "llm:siegeTower", enemyIds: parsed.enemyIds, towerTile: parsed.towerTile };
     }
     return { commandId: 0, type: "llm:setTargeting", enemyIds: parsed.enemyIds, mode: parsed.mode };
   }

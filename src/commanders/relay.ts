@@ -1,7 +1,7 @@
 import { dispatchCommand } from "@/sim/commandBus.js";
+import type { NavFieldSnapshotData } from "@/sim/SimulationSnapshot.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useUiStore } from "@/stores/ui.js";
-import type { NavFieldSnapshotData } from "@/sim/SimulationSnapshot.js";
 import type { LlmCommanderConfig } from "./llm/types.js";
 import type {
   CommanderKind,
