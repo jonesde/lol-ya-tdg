@@ -233,12 +233,15 @@ export class WaveManager {
 
     this._waveGameTime += dt;
 
-    // Timer expiry: force next wave without clearing (enemies accumulate)
+    // Timer expiry: force next wave without clearing (enemies accumulate).
+    // Still award clear rewards for the wave being left (milestones, best-wave, map unlock).
     if (this._waveGameTime >= PRE_EMPTIVE_WAVE_TIMER) {
       if (this.currentWave >= VICTORY_WAVE) {
         this.betweenWaves = true;
         return;
       }
+      const waveLeaving = this.currentWave;
+      if (onWaveCleared) onWaveCleared(waveLeaving);
       this.saveActiveSpawns();
       this.transitionActiveSpawnsToTransition();
       this.startNextWave();

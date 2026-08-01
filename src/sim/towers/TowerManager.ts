@@ -197,6 +197,7 @@ export class TowerManager {
     }
     if (tower.totalInvested < 0) tower.totalInvested = 0;
     tower._statsCache = null;
+    tower.recomputeMaxHealth();
     this.particles.spawn(tower.x, tower.y, "#ffd060", 10, { speed: 50, life: 0.4 });
     return removedCost;
   }

@@ -50,6 +50,7 @@ let awaitingAck = false;
 // fallback. This avoids a persist-store write on every persist mutation.
 let lastFlushWave = 0;
 let lastFlushMilestoneKeys = 0;
+let lastFlushBossesKilled = 0;
 let lastFlushTime = 0;
 
 const TARGET_FRAME_MS = 1000 / 60; // 16.67ms
@@ -110,12 +111,16 @@ function tick(): void {
   }
 
   // Fixed-timestep accumulator. timeScale comes from runState, which input
-  // commands may have updated.
+  // commands may have updated. Step budget scales with timeScale so 8×/16× do
+  // not permanently discard sim time under steady load; hard-capped to avoid
+  // spiral-of-death freezes.
   try {
-    const scaledDt = rawDt * (engine.runState.state === GameState.PAUSED ? 0 : engine.runState.timeScale);
+    const timeScale = engine.runState.state === GameState.PAUSED ? 0 : engine.runState.timeScale;
+    const scaledDt = rawDt * timeScale;
     engine.lastScaledDt = scaledDt;
     accumulator += scaledDt;
-    accumulator = Math.min(accumulator, FIXED_DT * MAX_STEPS_PER_FRAME);
+    const maxSteps = Math.min(64, Math.ceil(MAX_STEPS_PER_FRAME * Math.max(1, timeScale)));
+    accumulator = Math.min(accumulator, FIXED_DT * maxSteps);
     while (accumulator >= FIXED_DT) {
       engine.update(FIXED_DT);
       accumulator -= FIXED_DT;
@@ -159,9 +164,10 @@ function tick(): void {
         // Running (no command, not baseline) but main hasn't acked the last
         // snapshot → drop build+post. awaitingAck stays true; next tick re-checks.
         // Persist-flush is skipped too (still fires on forced posts / 5s fallback / dispose).
-        // Drain the particle spawn buffer so dropped ticks don't accumulate requests that
-        // would all burst onto the screen on the next posted snapshot.
+        // Drain particle + lightning/stun buffers so dropped ticks don't accumulate
+        // effects that would all burst onto the screen on the next posted snapshot.
         engine.particleSpawner?.consumeSpawns?.();
+        engine.projectileManager?.consumeRenderVisualEffects?.();
       } else {
         const snapshot = buildSnapshot(engine, lastAppliedCommandId);
         postMessage({ type: "snapshot", snapshot });
@@ -174,18 +180,21 @@ function tick(): void {
         // Phase 9 persist batching: flush to the host only on significant events so
         // we do not hit the persist store on every dirty mutation. Reads live
         // runState directly (the snapshot may not exist when idle). Triggers: wave
-        // increased, a new milestone claim appeared, or a 5s fallback elapsed while dirty.
+        // increased, a new milestone claim appeared, boss kill gem award, or a 5s
+        // fallback elapsed while dirty.
         const milestoneKeyCount = Object.keys(engine.runState.milestoneRewardsClaimed).length;
         const waveChanged = engine.runState.currentWave !== lastFlushWave;
         const milestoneGained = milestoneKeyCount > lastFlushMilestoneKeys;
+        const bossesKilledChanged = engine.runState.bossesKilledThisRun !== lastFlushBossesKilled;
         const fallbackElapsed = now - lastFlushTime >= PERSIST_FLUSH_FALLBACK_MS;
-        if (engine.persistDirty && (waveChanged || milestoneGained || fallbackElapsed)) {
+        if (engine.persistDirty && (waveChanged || milestoneGained || bossesKilledChanged || fallbackElapsed)) {
           host.schedulePersistSave(buildPersistSlice(engine));
           engine.persistDirty = false;
           lastFlushTime = now;
         }
         lastFlushWave = engine.runState.currentWave;
         lastFlushMilestoneKeys = milestoneKeyCount;
+        lastFlushBossesKilled = engine.runState.bossesKilledThisRun;
       }
     }
   } catch (err) {
@@ -241,17 +250,23 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
   const msg = event.data;
   switch (msg.type) {
     case "init": {
+      // Harden re-entry before any await so stale loop/engine/commands from a
+      // prior run are cleared synchronously. Commands posted after this message
+      // (during WASM init) remain queued for the new engine's first tick.
+      stopLoop();
+      if (engine) {
+        engine.dispose();
+        engine = null;
+      }
+      commandQueue.length = 0;
+      awaitingAck = false;
+      lastAppliedCommandId = 0;
       // Cached async init of the Rapier WASM module (plans/rapier2d.md Phase 0).
       // Required before any getRapier().
       await initPhysics();
       // Cached async init of the recast-navigation WASM module (plans/recast.md
       // Phase 0). Required before any getRecast() / NavMeshBuilder / CrowdManager.
       await initNavMesh();
-      // Harden re-entry: a terminal run may leave the loop stopped while a new
-      // `init` arrives on the same worker. stopLoop() first guarantees a clean
-      // loop state (clears any pending timeout) before we build the new engine
-      // and startLoop() below.
-      stopLoop();
       // Construct the engine with plain state and the worker host bindings.
       // The engine no longer takes Pinia stores — Phase 1 made runState/persistState
       // authoritative. We pass them in directly.
@@ -266,6 +281,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       // Reset persist-flush tracking for the new run.
       lastFlushWave = 0;
       lastFlushMilestoneKeys = 0;
+      lastFlushBossesKilled = 0;
       lastFlushTime = performance.now();
       // For random maps, loadMap uses mapIndex -1; branch to loadRandomMap so
       // getMap(-1) is never hit. Normal maps use loadMap(mapIndex).
@@ -307,7 +323,36 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
     }
     case "dispose": {
       stopLoop();
+      // Drain queued commands (e.g. action:endRun) before teardown so quit can
+      // finalize gems/history even when dispose races the next tick.
+      while (commandQueue.length > 0 && engine) {
+        const command = commandQueue.shift()!;
+        if (command.commandId !== undefined) {
+          lastAppliedCommandId = command.commandId;
+        }
+        try {
+          applyCommand(engine, command);
+        } catch (err) {
+          const errorMessage = `Command ${command.type} failed: ${(err as Error).message}`;
+          const errorStack = (err as Error).stack;
+          postMessage(
+            errorStack
+              ? { type: "workerError", message: errorMessage, stack: errorStack }
+              : { type: "workerError", message: errorMessage },
+          );
+        }
+      }
+      commandQueue.length = 0;
+      awaitingAck = false;
       if (engine) {
+        // Safety net: bare navigation away without action:endRun still awards
+        // wave-completion gems / history / endScreenData (guarded by gameEnded).
+        if (!engine.gameEnded) {
+          engine.endGame(false);
+        }
+        if (engine.runState.endScreenData) {
+          host.notifyUi({ type: "endGame", payload: engine.runState.endScreenData });
+        }
         // Flush any dirty persist state before termination.
         if (engine.persistDirty) {
           host.schedulePersistSave(buildPersistSlice(engine));

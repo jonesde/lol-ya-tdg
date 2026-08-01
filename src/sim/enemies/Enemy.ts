@@ -7,6 +7,7 @@ import {
   ENEMY_LEVEL_HP_MULT,
   ENEMY_TYPES,
   ENEMY_WAVE_DAMAGE_MULT,
+  MAX_BURN_STACKS,
   MIN_SLOW_FACTOR,
 } from "@/sim/ConstantsEnemy.js";
 import { toRecast } from "@/sim/navmesh/coords.js";
@@ -63,6 +64,8 @@ interface GridRef {
   tileToWorld(tx: number, ty: number): { x: number; y: number };
   getBase(): { x: number; y: number };
   isBase(x: number, y: number): boolean;
+  isPath(x: number, y: number): boolean;
+  isSpawn(x: number, y: number): boolean;
   isTerrain(x: number, y: number): boolean;
   inBounds(x: number, y: number): boolean;
   getBaseEdgeSegments(): Array<{ x1: number; y1: number; x2: number; y2: number }>;
@@ -268,10 +271,26 @@ export class Enemy {
   }
 
   applyBurn(dps: number, duration: number) {
-    // Each burn is tracked independently and stacks until its own timer expires,
-    // so a short high-DPS burn cannot extend a weaker long-duration burn (and
-    // multiple burns apply their full combined DPS).
-    this.burnStack.push({ dps, timer: duration });
+    // Same/similar DPS refreshes duration; otherwise stack up to MAX_BURN_STACKS,
+    // replacing the lowest-DPS entry when full so weak ticks cannot crowd out strong ones.
+    const similarEntry = this.burnStack.find((entry) => Math.abs(entry.dps - dps) < 1e-6);
+    if (similarEntry) {
+      similarEntry.timer = Math.max(similarEntry.timer, duration);
+      return;
+    }
+    if (this.burnStack.length < MAX_BURN_STACKS) {
+      this.burnStack.push({ dps, timer: duration });
+      return;
+    }
+    let lowestIndex = 0;
+    for (let stackIndex = 1; stackIndex < this.burnStack.length; stackIndex++) {
+      if (this.burnStack[stackIndex]!.dps < this.burnStack[lowestIndex]!.dps) {
+        lowestIndex = stackIndex;
+      }
+    }
+    if (dps >= this.burnStack[lowestIndex]!.dps) {
+      this.burnStack[lowestIndex] = { dps, timer: duration };
+    }
   }
 
   // Knockback shoves the enemy backward along its travel direction (away from the
@@ -295,17 +314,34 @@ export class Enemy {
   }
 
   // Computes the world-space point an enemy is knocked back to: stepped backward
-  // along `moveAngle` (its current travel heading) and clamped to the map bounds.
-  // Pure (operates on locals) so applyKnockback can reposition without mutating
-  // moveAngle.
+  // along `moveAngle` (its current travel heading), clamped to the map bounds, then
+  // stepped back along the knock vector until the landing tile is walkable
+  // (path|spawn|base) or the amount is exhausted (stay put).
   private computeKnockbackTarget(amount: number): { x: number; y: number } {
     const stepX = -Math.cos(this.moveAngle) * amount;
     const stepY = -Math.sin(this.moveAngle) * amount;
-    const worldWidth = this.grid.width * this.grid.tileSize;
-    const worldHeight = this.grid.height * this.grid.tileSize;
-    const targetX = Math.max(0, Math.min(worldWidth, this.centerX + stepX));
-    const targetY = Math.max(0, Math.min(worldHeight, this.centerY + stepY));
-    return { x: targetX, y: targetY };
+    const tileSize = this.grid.tileSize;
+    const worldWidth = this.grid.width * tileSize;
+    const worldHeight = this.grid.height * tileSize;
+    const originX = this.centerX;
+    const originY = this.centerY;
+    const fullTargetX = Math.max(0, Math.min(worldWidth, originX + stepX));
+    const fullTargetY = Math.max(0, Math.min(worldHeight, originY + stepY));
+    const knockX = fullTargetX - originX;
+    const knockY = fullTargetY - originY;
+    const stepCount = 8;
+    for (let stepIndex = stepCount; stepIndex >= 0; stepIndex--) {
+      const fraction = stepIndex / stepCount;
+      const candidateX = originX + knockX * fraction;
+      const candidateY = originY + knockY * fraction;
+      const tileX = Math.floor(candidateX / tileSize);
+      const tileY = Math.floor(candidateY / tileSize);
+      if (!this.grid.inBounds(tileX, tileY)) continue;
+      if (this.grid.isPath(tileX, tileY) || this.grid.isBase(tileX, tileY) || this.grid.isSpawn(tileX, tileY)) {
+        return { x: candidateX, y: candidateY };
+      }
+    }
+    return { x: originX, y: originY };
   }
 
   applyMarkTarget(mult: number, duration: number) {
@@ -329,6 +365,7 @@ export class Enemy {
       dmg *= 1 + this.markTargetMult;
     }
     this.hp -= dmg;
+    if (this.hp < 0) this.hp = 0;
     this.hitAnimTime = this._gameSeconds;
     if (this.hp <= 0) this.removed = true;
     return dmg;
@@ -444,7 +481,7 @@ export class Enemy {
     const baseWorld = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
     switch (this.routingMode) {
       case "hold":
-        // Park at the hold tile; CrowdManager zeroes velocity while held.
+        // Walk to the hold tile; CrowdManager zeroes velocity only after arrival.
         this.agent?.requestMoveTarget(toRecast(this.holdWorld ?? baseWorld));
         break;
       case "route":
@@ -550,6 +587,11 @@ export class Enemy {
       this.y = Math.max(0, Math.min(worldHeight, this.y));
       this.centerX = this.x;
       this.centerY = this.y;
+      if (this.body) {
+        this.body.setTranslation({ x: this.x, y: this.y }, true);
+        this.body.setLinvel({ x: 0, y: 0 }, true);
+      }
+      this.agent?.teleport(toRecast({ x: this.x, y: this.y }));
     }
 
     const linvel = this.body!.linvel();

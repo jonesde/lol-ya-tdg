@@ -64,7 +64,6 @@ import {
   UPGRADE_COST_REDUCTION_PCT,
   VICTORY_WAVE,
 } from "./Constants.js";
-import { ENEMY_TYPES } from "./ConstantsEnemy.js";
 import { GHOST_PARTICLE_COUNT, GHOST_PARTICLE_DURATION, TOWER_META } from "./ConstantsTower.js";
 
 interface WaveManagerRef {
@@ -107,7 +106,6 @@ export class GameEngine {
   projectileManager: ProjectileManager | null;
   particleSpawner: ParticleSpawner;
   waveGraphTracker: WaveGraphTracker | null = null;
-  _accumulator: number;
   totalGoldEarned: number;
   totalHealingReceived: number;
   maxBaseHealth: number;
@@ -166,8 +164,6 @@ export class GameEngine {
     this.projectileManager = null;
     this.particleSpawner = particleSpawner;
 
-    this._accumulator = 0;
-
     this.totalGoldEarned = 0;
     this.totalHealingReceived = 0;
     this.maxBaseHealth = STARTING_BASE_HEALTH;
@@ -198,6 +194,8 @@ export class GameEngine {
     this.lastPostedWaveGraphGeneration = 0;
     this.gridLayoutEnabled = true;
     this.runId += 1;
+    this.gameEnded = false;
+    this.shouldEndGame = false;
 
     this.runState = {
       state: GameState.PAUSED,
@@ -251,6 +249,12 @@ export class GameEngine {
     );
     this.projectileManager.setTowerLookup((towerId) => this.towerManager?.getTowerById(towerId) ?? null);
     this.enemyManager.setTowerManager(this.towerManager);
+    // Tear down prior physics/crowd/navmesh before rebuild (same order as dispose).
+    this.crowdManager?.destroy();
+    this.crowdManager = null;
+    this.enemyManager?.setCrowdManager(null);
+    this.navMeshBuilder?.destroy();
+    this.navMeshBuilder = null;
     this.physicsWorld?.dispose();
     this.physicsWorld = new PhysicsWorld(this.grid);
     this.enemyManager.setPhysicsWorld(this.physicsWorld);
@@ -278,6 +282,7 @@ export class GameEngine {
       towerAt: (tileX: number, tileY: number) => this.towerManager?.towerAt(tileX, tileY) ?? null,
     };
     this.projectileManager.setOnGoldReward((amount) => {
+      this.waveGraphTracker?.onGoldBounty(amount);
       this.earnGold(amount);
     });
     this.waveManager = new WaveManager(mapData, this.enemyManager);
@@ -308,6 +313,7 @@ export class GameEngine {
     }
 
     this.maxBaseHealth = this.runState.baseHealth;
+    this.runState.maxBaseHealth = this.runState.baseHealth;
 
     const sgTier = generalAddons.startingGold;
     if (sgTier !== null && sgTier !== undefined) {
@@ -374,7 +380,7 @@ export class GameEngine {
           this.onBossKilled();
         }
         if (enemy.onPathBlocked) {
-          const bounty = Math.ceil((ENEMY_TYPES[enemy.type]?.bounty || 1) * BOUNTY_BLOCKED_RATIO);
+          const bounty = Math.ceil((enemy.bounty || 1) * BOUNTY_BLOCKED_RATIO);
           this.waveGraphTracker?.onGoldBounty(bounty);
           this.earnGold(bounty);
         } else {
@@ -533,7 +539,7 @@ export class GameEngine {
   }
 
   onEnemyKill(enemy: Enemy): void {
-    const bounty = ENEMY_TYPES[enemy.type]?.bounty || 1;
+    const bounty = enemy.bounty || 1;
     this.waveGraphTracker?.onGoldBounty(bounty);
     this.earnGold(bounty);
   }
@@ -662,7 +668,6 @@ export class GameEngine {
       ty = Math.floor(worldY / tileSize);
 
     if (this.isUpgradeBtnAt(worldX, worldY)) {
-      this.runState.upgradeBtnClickAnim = 0.4;
       this.upgradeSelected();
       return;
     }
@@ -683,12 +688,8 @@ export class GameEngine {
         const discount = this.persistState.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
         const cost = Math.floor(meta.cost * discount);
         if (this.runState.gold >= cost && this.grid.canBuild(tx, ty)) {
-          // Reachability guard (RECAST_NAV): a tower that would fully wall off the
-          // base is rejected so the maze tactic can never block the corridor. The
-          // OFF path is byte-identical — this branch is never taken under the flag.
-          if (RECAST_NAV && this.navMeshBuilder && !this.navMeshBuilder.wouldRemainReachable(tx, ty)) {
-            return;
-          }
+          // Path-blocking placements are allowed: towers have HP and enemies attack
+          // them when the corridor is walled (maze / blocking-tower design).
           const tower = this.towerManager?.build(towerType, tx, ty, this.persistState, this.grid, cost);
           if (tower) {
             setGold(this.runState, this.runState.gold - cost);
@@ -810,9 +811,12 @@ export class GameEngine {
         this.persistState.gems += amount ?? 0;
         this.persistDirty = true;
         break;
-      case "setWave":
-        this.runState.currentWave = amount ?? this.runState.currentWave;
+      case "setWave": {
+        const wave = amount ?? this.runState.currentWave;
+        this.runState.currentWave = wave;
+        if (this.waveManager) this.waveManager.currentWave = wave;
         break;
+      }
       case "setTimeScale":
         this.runState.timeScale = amount ?? this.runState.timeScale;
         break;
@@ -842,14 +846,16 @@ export class GameEngine {
 
     const towerId = tower.id;
     const isRefund = this.persistState.generalAddons.sellActive === "refund";
-    // Compute the sell value exactly once here. It is threaded through to
-    // executeSellById so TowerManager.sell() never recomputes it (single source of truth).
+    // Compute sell value once for the confirm dialog. Sell executes only via
+    // action:executeSell from the main thread (creditAmount carried on the command).
     const creditAmount = isRefund ? tower.totalInvested : tower.sellValue();
-    void this.host
-      .requestConfirm({ towerId, towerType: tower.type, towerLevel: tower.level, sellValue: creditAmount, isRefund })
-      .then((confirmed) => {
-        if (confirmed) this.executeSellById(towerId, creditAmount);
-      });
+    void this.host.requestConfirm({
+      towerId,
+      towerType: tower.type,
+      towerLevel: tower.level,
+      sellValue: creditAmount,
+      isRefund,
+    });
   }
 
   executeSellById(towerId: string, precomputedCreditAmount?: number): void {
@@ -866,7 +872,6 @@ export class GameEngine {
     this.towerManager!.sell(tower, this.persistState);
     this.host.syncGridTower(tower.tileX, tower.tileY, false);
     this.runState.gold += creditedAmount;
-    this.totalGoldEarned += creditedAmount;
     this.runState.selectedTowerId = null;
     this.persistDirty = true;
   }
@@ -902,7 +907,6 @@ export class GameEngine {
     this.towerManager!.cancelBuild(tower);
     this.host.syncGridTower(tower.tileX, tower.tileY, false);
     setGold(this.runState, this.runState.gold + refund);
-    this.totalGoldEarned += refund;
     this.runState.selectedTowerId = null;
     this.persistDirty = true;
   }
@@ -920,10 +924,16 @@ export class GameEngine {
     if (tower.isGhost) return;
 
     const delta = this.towerManager!.downgradeTower(tower);
-    const isRefund = this.persistState.generalAddons?.sellActive === "refund";
-    const refund = isRefund ? delta : Math.round(delta * SELL_VALUE_RATIO);
+    const sellActive = this.persistState.generalAddons?.sellActive;
+    // Discount mode: no cash-out on downgrade (mirrors "can't sell"); still level down.
+    let refund = 0;
+    if (sellActive === "refund") {
+      refund = delta;
+    } else if (sellActive !== "discount") {
+      refund = Math.round(delta * SELL_VALUE_RATIO);
+    }
 
-    setGold(this.runState, this.runState.gold + refund);
+    if (refund > 0) setGold(this.runState, this.runState.gold + refund);
   }
 
   setTargeting(mode: string): void {

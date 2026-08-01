@@ -75,8 +75,19 @@ export function setWave(state: GameRunState, wave: number): void {
 
 export function cycleTimeScale(state: GameRunState, direction: 1 | -1): number {
   const speeds = [1, 2, 4, 8];
-  const i = speeds.indexOf(state.timeScale);
-  const next = speeds[(i + direction + speeds.length) % speeds.length]!;
+  let speedIndex = speeds.indexOf(state.timeScale);
+  if (speedIndex < 0) {
+    speedIndex = 0;
+    let nearestDistance = Math.abs(speeds[0]! - state.timeScale);
+    for (let candidateIndex = 1; candidateIndex < speeds.length; candidateIndex++) {
+      const candidateDistance = Math.abs(speeds[candidateIndex]! - state.timeScale);
+      if (candidateDistance < nearestDistance) {
+        nearestDistance = candidateDistance;
+        speedIndex = candidateIndex;
+      }
+    }
+  }
+  const next = speeds[(speedIndex + direction + speeds.length) % speeds.length]!;
   state.timeScale = next;
   return next;
 }

@@ -28,7 +28,7 @@ export class NavMeshBuilder {
   // object, so removal must pass the WHOLE obstacle (not `.ref`) to
   // `tileCache.removeObstacle` — passing `.ref` makes the wrapper read `.ref` off
   // that object, yielding undefined and a failed raw removal. Drives the
-  // syncTowers diff and the rollback in wouldRemainReachable.
+  // syncTowers diff when towers are placed, sold, or ghosted.
   private obstacleRefs = new Map<string, Obstacle>();
 
   constructor(grid: Grid) {
@@ -61,7 +61,7 @@ export class NavMeshBuilder {
       walkableRadius,
       walkableHeight: 2,
       walkableClimb: 1,
-      maxObstacles: 256,
+      maxObstacles: 1024,
       tileSize: 8,
     };
 
@@ -139,17 +139,21 @@ export class NavMeshBuilder {
   ): WorldPoint[] {
     if (!this.navMesh) return [];
     const query = new NavMeshQuery(this.navMesh);
-    const halfExtents: Vector3 = { x: this.grid.tileSize, y: this.grid.tileSize, z: this.grid.tileSize };
-    const result = query.computePath(toRecast(startWorld), toRecast(goalWorld), { halfExtents });
-    if (!result.success || result.path.length === 0) return [];
-    const path = result.path.map(fromRecast);
-    // computePath clamps the goal to the start poly when start and goal lie in
-    // disconnected navmesh islands, yielding a degenerate path that never reaches
-    // the goal. Treat that as "no path" so callers get an empty result.
-    const lastPoint = path[path.length - 1]!;
-    const goalDistance = Math.hypot(lastPoint.x - goalWorld.x, lastPoint.y - goalWorld.y);
-    if (goalDistance > goalDistanceTolerance) return [];
-    return path;
+    try {
+      const halfExtents: Vector3 = { x: this.grid.tileSize, y: this.grid.tileSize, z: this.grid.tileSize };
+      const result = query.computePath(toRecast(startWorld), toRecast(goalWorld), { halfExtents });
+      if (!result.success || result.path.length === 0) return [];
+      const path = result.path.map(fromRecast);
+      // computePath clamps the goal to the start poly when start and goal lie in
+      // disconnected navmesh islands, yielding a degenerate path that never reaches
+      // the goal. Treat that as "no path" so callers get an empty result.
+      const lastPoint = path[path.length - 1]!;
+      const goalDistance = Math.hypot(lastPoint.x - goalWorld.x, lastPoint.y - goalWorld.y);
+      if (goalDistance > goalDistanceTolerance) return [];
+      return path;
+    } finally {
+      query.destroy();
+    }
   }
 
   // Flattened walkable-corridor triangle mesh in game coordinates: `positions`
@@ -184,9 +188,9 @@ export class NavMeshBuilder {
     }
   }
 
-  // Registers a tower cylinder at the given tile. Returns the obstacle ref (for
-  // later removal) or null when the tilecache is unavailable / the add failed.
-  // Radius is half a tile so the cylinder fills its tile; height is one tile.
+  // Registers a tower box obstacle matching the physics cuboid (full tile square).
+  // Returns the obstacle ref (for later removal) or null when the tilecache is
+  // unavailable / the add failed.
   addTowerObstacle(tileX: number, tileY: number): ObstacleRef | null {
     const reference = this.addTowerObstacleInternal(tileX, tileY);
     if (reference !== null) this.applyTileCacheUpdates();
@@ -195,9 +199,23 @@ export class NavMeshBuilder {
 
   private addTowerObstacleInternal(tileX: number, tileY: number): ObstacleRef | null {
     if (!this.tileCache) return null;
+    const tileSize = this.grid.tileSize;
+    const halfExtent = tileSize / 2;
     const center = toRecast(this.grid.tileToWorld(tileX, tileY));
-    const result = this.tileCache.addCylinderObstacle(center, this.grid.tileSize / 2, this.grid.tileSize);
-    if (!result.success) return null;
+    // Match PhysicsWorld tower cuboid (half = tileSize/2 on X/Z). Box center is
+    // elevated by halfExtent so the volume covers [0, tileSize] in Recast Y.
+    const boxCenter: Vector3 = { x: center.x, y: halfExtent, z: center.z };
+    const halfExtents: Vector3 = { x: halfExtent, y: halfExtent, z: halfExtent };
+    const result = this.tileCache.addBoxObstacle(boxCenter, halfExtents, 0);
+    if (!result.success) {
+      console.error(
+        "NavMeshBuilder: addBoxObstacle failed for tile",
+        tileX,
+        tileY,
+        "(maxObstacles cap or request queue full)",
+      );
+      return null;
+    }
     // Store the WHOLE obstacle object — removal passes it back to
     // `tileCache.removeObstacle`, which fails if given only `.ref` (the raw
     // ObstacleRef is itself an object in this build).
@@ -242,30 +260,5 @@ export class NavMeshBuilder {
       }
     }
     this.applyTileCacheUpdates();
-  }
-
-  // Reachability guard for a PROPOSED tower placement: returns true (allow) when
-  // spawn→base is still pathable with the tower carved in, or when there is no
-  // navmesh constraint. The check runs on a throwaway builder that replays the
-  // live obstacle set plus the proposal, so the live navmesh is never mutated:
-  // Detour's TileCache does not reliably re-stitch a corridor it has just
-  // partitioned when the probe obstacle is removed, so an in-place add→remove
-  // rollback would corrupt the live navmesh of a rejected (base-walling) build.
-  wouldRemainReachable(towerTileX: number, towerTileY: number): boolean {
-    if (!this.tileCache || !this.navMesh) return true;
-    const probe = new NavMeshBuilder(this.grid);
-    try {
-      if (!probe.isSuccess() || !probe.getNavMesh()) return true;
-      for (const key of this.obstacleRefs.keys()) {
-        const keyParts = key.split(",");
-        probe.addTowerObstacle(Number(keyParts[0]), Number(keyParts[1]));
-      }
-      probe.addTowerObstacle(towerTileX, towerTileY);
-      const spawn = this.grid.tileToWorld(this.grid.spawns[0]!.x, this.grid.spawns[0]!.y);
-      const base = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
-      return probe.findPath(spawn, base).length > 0;
-    } finally {
-      probe.destroy();
-    }
   }
 }

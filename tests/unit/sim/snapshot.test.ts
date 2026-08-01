@@ -99,7 +99,7 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(t.sellValue).toBeUndefined();
     expect(t.canUpgrade).toBeUndefined();
     expect(t.stats).toBeUndefined();
-    expect(t.placedAt).toBeGreaterThan(0);
+    expect(t.placedAt).toBe(0);
   });
 
   it("reflects engine mutations in subsequent snapshots", () => {

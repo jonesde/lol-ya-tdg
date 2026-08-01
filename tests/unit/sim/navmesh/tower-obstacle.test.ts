@@ -101,22 +101,19 @@ describe("NavMeshBuilder tower obstacles", () => {
     expect(reroutedPath.length).toBeGreaterThan(0);
   });
 
-  it("rejects a placement that would wall off the base and leaves the live navmesh untouched", () => {
+  it("a choke tower obstacle severs spawn→base on a 1-wide corridor", () => {
     const grid = new Grid(makeOneWideCorridorMap());
     const builder = new NavMeshBuilder(grid);
     expect(builder.isSuccess()).toBe(true);
 
     const { spawnWorld, baseWorld } = spawnBaseWorld(grid);
-    const baselinePath = builder.findPath(spawnWorld, baseWorld);
-    expect(baselinePath.length).toBeGreaterThan(0);
+    expect(builder.findPath(spawnWorld, baseWorld).length).toBeGreaterThan(0);
 
-    // Any interior path tile is a choke in a 1-wide corridor: placing a tower there
-    // walls off the base, so the guard must reject it.
+    // Path-blocking towers are legal gameplay; the obstacle must cut the corridor
+    // so enemies path into / attack the tower instead of walking through it.
     const choke = orderedPath(grid, 0)[3]!;
-    expect(builder.wouldRemainReachable(choke.x, choke.y)).toBe(false);
-
-    // The probe never mutates the live navmesh, so the baseline corridor survives.
-    expect(builder.findPath(spawnWorld, baseWorld).length).toBe(baselinePath.length);
+    expect(builder.addTowerObstacle(choke.x, choke.y)).not.toBeNull();
+    expect(builder.findPath(spawnWorld, baseWorld).length).toBe(0);
   });
 
   it("syncTowers diffs the obstacle set against the live tower set", () => {

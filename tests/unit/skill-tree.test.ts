@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
 import {
   canRefund,
+  countRefundableGems,
   GENERAL_ADDON_DEFS,
   getGeneralAddonValue,
   isAvailable,
@@ -11,6 +12,7 @@ import {
   isGeneralUnlocked,
   isUnlocked,
   maxLevelFor,
+  refundAllGems,
   tryRefund,
   tryUnlock,
   tryUnlockGeneral,
@@ -475,21 +477,24 @@ describe("SkillTree — General Add-ons", () => {
       expect(save.gems).toBe(1000 - cost);
     });
 
-    it("handles sellOption discount switching (free)", () => {
+    it("handles sellOption discount switching (free after both unlocked)", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "sellOption", 0);
-      // After purchasing refund, switching to discount should work (mutual exclusion)
+      const gemsAfterRefund = save.gems;
       const result = tryUnlockGeneral(save, "sellOption", 1);
       expect(result.ok).toBe(true);
       expect(save.generalAddons.sellActive).toBe("discount");
       expect(save.generalAddons.sellDiscountUnlocked).toBe(true);
-      expect(save.generalAddons.sellRefundUnlocked).toBe(false);
-      // Switching back to refund is also free (already unlocked) and works
+      expect(save.generalAddons.sellRefundUnlocked).toBe(true);
+      expect(save.gems).toBe(gemsAfterRefund - SELL_OPTION_GEM_COST);
+      // Switching back to refund is free once unlocked; both flags stay true
+      const gemsBeforeSwitch = save.gems;
       const backResult = tryUnlockGeneral(save, "sellOption", 0);
       expect(backResult.ok).toBe(true);
       expect(save.generalAddons.sellActive).toBe("refund");
       expect(save.generalAddons.sellRefundUnlocked).toBe(true);
-      expect(save.generalAddons.sellDiscountUnlocked).toBe(false);
+      expect(save.generalAddons.sellDiscountUnlocked).toBe(true);
+      expect(save.gems).toBe(gemsBeforeSwitch);
     });
 
     it("unlocks all general addon categories", () => {
@@ -547,6 +552,30 @@ describe("SkillTree — General Add-ons", () => {
       const tiers = GENERAL_ADDON_DEFS.slowHealing.tiers;
       expect(tiers.map((tier) => tier.label)).toEqual(["+20/round", "+50/round", "+100/round"]);
       expect(GENERAL_ADDON_DEFS.slowHealing.costs).toBe(GENERAL_ADDON_GEM_COSTS.slowHealing);
+    });
+  });
+
+  describe("countRefundableGems / refundAllGems", () => {
+    it("counts level costs even when a variant is unlocked", () => {
+      const save = freshSave();
+      tryUnlock(save, "basic", "level", 2);
+      tryUnlock(save, "basic", "level", 3);
+      tryUnlock(save, "basic", "variantA", 0);
+      const expected = LEVEL_COSTS[2] + LEVEL_COSTS[3] + LEVEL_COSTS[4];
+      expect(countRefundableGems(save)).toBe(expected);
+    });
+
+    it("counts and refunds purchased sell options", () => {
+      const save = freshSave();
+      tryUnlockGeneral(save, "sellOption", 0);
+      tryUnlockGeneral(save, "sellOption", 1);
+      const gemsBefore = save.gems;
+      expect(countRefundableGems(save)).toBe(SELL_OPTION_GEM_COST * 2);
+      refundAllGems(save);
+      expect(save.gems).toBe(gemsBefore + SELL_OPTION_GEM_COST * 2);
+      expect(save.generalAddons.sellRefundUnlocked).toBe(false);
+      expect(save.generalAddons.sellDiscountUnlocked).toBe(false);
+      expect(save.generalAddons.sellActive).toBeNull();
     });
   });
 });

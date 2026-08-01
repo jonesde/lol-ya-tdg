@@ -404,8 +404,7 @@ export function isGeneralAvailable(save: PersistState, key: string, index: numbe
   if (!def) return false;
   const cost = def.costs[index]!;
   if (save.gems < cost) return false;
-  // sellOption tiers are mutually exclusive modes, not a progression, so the
-  // higher tier does not require the lower tier to be unlocked first.
+  // sellOption modes are independent unlocks (not a progression ladder).
   if (index >= 1 && key !== "sellOption") {
     const prevUnlocked = isGeneralUnlocked(save, key, index - 1);
     if (!prevUnlocked) return false;
@@ -414,17 +413,11 @@ export function isGeneralAvailable(save: PersistState, key: string, index: numbe
 }
 
 export function tryUnlockGeneral(save: PersistState, key: string, index: number) {
-  if (isGeneralUnlocked(save, key, index)) return { ok: false, reason: "Already unlocked" };
   const def = GENERAL_ADDON_DEFS[key];
   if (!def) return { ok: false, reason: "Unknown add-on" };
   const cost = def.costs[index]!;
-  if (save.gems < cost) return { ok: false, reason: "Not enough gems" };
 
-  if (index >= 1 && key !== "sellOption") {
-    const prevUnlocked = isGeneralUnlocked(save, key, index - 1);
-    if (!prevUnlocked) return { ok: false, reason: "Unlock previous tier first" };
-  }
-
+  // sellOption modes stay unlocked once purchased; re-activation is free and only flips sellActive.
   if (key === "sellOption") {
     const generalAddons = save.generalAddons;
     const target = index === 0 ? "refund" : "discount";
@@ -432,18 +425,23 @@ export function tryUnlockGeneral(save: PersistState, key: string, index: number)
       return { ok: false, reason: "Already active" };
     }
     const alreadyUnlocked = index === 0 ? generalAddons.sellRefundUnlocked : generalAddons.sellDiscountUnlocked;
-    // Mutual exclusion: only the chosen mode is unlocked; the other is cleared
-    // so the toggle can be switched freely between Full Refund and Discounted.
+    if (!alreadyUnlocked && save.gems < cost) return { ok: false, reason: "Not enough gems" };
     generalAddons.sellActive = target;
     if (index === 0) {
       generalAddons.sellRefundUnlocked = true;
-      generalAddons.sellDiscountUnlocked = false;
     } else {
       generalAddons.sellDiscountUnlocked = true;
-      generalAddons.sellRefundUnlocked = false;
     }
     if (!alreadyUnlocked) save.gems -= cost;
     return { ok: true };
+  }
+
+  if (isGeneralUnlocked(save, key, index)) return { ok: false, reason: "Already unlocked" };
+  if (save.gems < cost) return { ok: false, reason: "Not enough gems" };
+
+  if (index >= 1) {
+    const prevUnlocked = isGeneralUnlocked(save, key, index - 1);
+    if (!prevUnlocked) return { ok: false, reason: "Unlock previous tier first" };
   }
 
   const current = save.generalAddons?.[key] as number | null | undefined;
@@ -496,12 +494,9 @@ export function countRefundableGems(save: PersistState): number {
   let total = 0;
   for (const towerId of Object.keys(save.unlocked)) {
     const unlocked = save.unlocked[towerId]!;
-    const anyVariantUnlocked = unlocked.variantA.some(Boolean) || unlocked.variantB.some(Boolean);
-
-    if (!anyVariantUnlocked) {
-      for (let i = unlocked.levels.length - 1; i >= 0; i--) {
-        if (unlocked.levels[i]) total += getCost("level", i);
-      }
+    // Mirror refundAllGems: variants refund first, then levels become refundable — count both.
+    for (let i = unlocked.levels.length - 1; i >= 0; i--) {
+      if (unlocked.levels[i]) total += getCost("level", i);
     }
     for (let i = unlocked.variantA.length - 1; i >= 0; i--) {
       if (unlocked.variantA[i]) total += getCost("variantA", i);
@@ -514,7 +509,12 @@ export function countRefundableGems(save: PersistState): number {
     }
   }
   for (const key of Object.keys(GENERAL_ADDON_DEFS)) {
-    if (key === "sellOption") continue;
+    if (key === "sellOption") {
+      const generalAddons = save.generalAddons;
+      if (generalAddons?.sellRefundUnlocked) total += SELL_OPTION_GEM_COST;
+      if (generalAddons?.sellDiscountUnlocked) total += SELL_OPTION_GEM_COST;
+      continue;
+    }
     const current = getGeneralAddonValue(save, key);
     if (typeof current !== "number") continue;
     const def = GENERAL_ADDON_DEFS[key];
@@ -544,8 +544,13 @@ export function refundAllGems(save: PersistState) {
   }
   for (const key of Object.keys(GENERAL_ADDON_DEFS)) {
     if (key === "sellOption") {
-      if (save.generalAddons) {
-        save.generalAddons.sellActive = null;
+      const generalAddons = save.generalAddons;
+      if (generalAddons) {
+        if (generalAddons.sellRefundUnlocked) save.gems += SELL_OPTION_GEM_COST;
+        if (generalAddons.sellDiscountUnlocked) save.gems += SELL_OPTION_GEM_COST;
+        generalAddons.sellRefundUnlocked = false;
+        generalAddons.sellDiscountUnlocked = false;
+        generalAddons.sellActive = null;
       }
       continue;
     }

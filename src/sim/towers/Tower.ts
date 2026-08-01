@@ -3,7 +3,7 @@ import type { Enemy } from "@/sim/enemies/Enemy.js";
 interface AuraTarget {
   applySlow(amount: number, duration: number): void;
   applyStun?(duration: number): void;
-  takeDamage(amount: number, armorPiercing?: boolean): void;
+  takeDamage(amount: number, armorPiercing?: boolean): number | void;
 }
 
 import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
@@ -149,6 +149,7 @@ interface ProjectileManagerRef {
     markTarget?: number;
     antiHeal?: boolean;
     pierce?: number;
+    pierceFalloff?: number;
     stunDur?: number;
     splash?: number;
   }): void;
@@ -287,7 +288,12 @@ export class Tower {
     if (enemy.applyStun) enemy.applyStun(ICE_BURST_STUN_DURATION);
   };
   private applyElectricFence?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
-    enemy.takeDamage(this.stats.fenceDamage);
+    const fenceDamage = this.stats.fenceDamage;
+    const dealtDamage = enemy.takeDamage(fenceDamage) ?? fenceDamage;
+    if (typeof dealtDamage === "number" && dealtDamage > 0) {
+      this.totalDamageDealt += dealtDamage;
+      this.waveDamage += dealtDamage;
+    }
     if (enemy.applyStun) enemy.applyStun(this.stats.fenceStun);
   };
 
@@ -693,15 +699,16 @@ export class Tower {
   }
 
   takeDamage(amount: number, attacker?: Enemy): void {
-    this.health -= amount;
-    if (this.health <= 0 && !this.isGhost) {
-      this.isGhost = true;
-      this.pendingGhostEffect = true;
-    }
-    // Thorn Wall variant: reflect a percentage of damage taken back at the attacker.
+    // Thorn reflect before ghosting so a lethal hit still reflects.
     const stats = this.stats;
     if (stats.thornReflectPct > 0 && attacker && !this.isGhost) {
       attacker.takeDamage(amount * stats.thornReflectPct);
+    }
+    this.health -= amount;
+    if (this.health < 0) this.health = 0;
+    if (this.health <= 0 && !this.isGhost) {
+      this.isGhost = true;
+      this.pendingGhostEffect = true;
     }
   }
 
@@ -733,18 +740,18 @@ export class Tower {
   }
 
   canCancel(): boolean {
-    return Date.now() - this.placedAt < CANCEL_BUILD_WINDOW_MS && this.level === 1;
+    return this._gameSeconds * 1000 < CANCEL_BUILD_WINDOW_MS && this.level === 1;
   }
 
   cancelRemainingMs(): number {
-    return Math.max(0, CANCEL_BUILD_WINDOW_MS - (Date.now() - this.placedAt));
+    return Math.max(0, CANCEL_BUILD_WINDOW_MS - this._gameSeconds * 1000);
   }
 
   selectTarget(
-    enemies: { x: number; y: number; hp: number; id: number }[],
-  ): { x: number; y: number; hp: number; id: number } | null {
+    enemies: { x: number; y: number; hp: number; maxHp?: number; id: number }[],
+  ): { x: number; y: number; hp: number; maxHp?: number; id: number } | null {
     if (enemies.length === 0) return null;
-    let target: { x: number; y: number; hp: number; id: number } | null = null;
+    let target: { x: number; y: number; hp: number; maxHp?: number; id: number } | null = null;
 
     // Under RECAST_NAV there is no grid path, so "first"/"last" targeting is
     // approximated by the enemy's straight-line distance to the base: the enemy
@@ -769,7 +776,13 @@ export class Tower {
         });
         break;
       case "strong":
-        target = enemies.reduce((prevA, prevB) => (prevA.hp > prevB.hp ? prevA : prevB));
+        // Prefer higher maxHp (tankier type), then current hp as tie-break.
+        target = enemies.reduce((prevA, prevB) => {
+          const maxHpA = prevA.maxHp ?? prevA.hp;
+          const maxHpB = prevB.maxHp ?? prevB.hp;
+          if (maxHpA !== maxHpB) return maxHpA > maxHpB ? prevA : prevB;
+          return prevA.hp > prevB.hp ? prevA : prevB;
+        });
         break;
       case "furthest":
         target = enemies.reduce((prevA, prevB) => {
@@ -888,8 +901,10 @@ export class Tower {
       return;
     }
 
-    let target: { x: number; y: number; hp: number; id: number } | null = null;
-    if (this.cachedTargetId !== null) {
+    let target: { x: number; y: number; hp: number; maxHp?: number; id: number } | null = null;
+    // Sticky cache only for closest; first/last/strong/furthest re-evaluate each tick.
+    const stickyTargeting = this.targeting === "closest";
+    if (stickyTargeting && this.cachedTargetId !== null) {
       const cached = enemyManager.getEnemyById(this.cachedTargetId);
       if (cached && !cached.removed) {
         const dx = cached.x - this.x;
@@ -988,6 +1003,7 @@ export class Tower {
       markTarget: stats.markTarget,
       antiHeal: stats.antiHeal,
       pierce: stats.pierce,
+      pierceFalloff: stats.pierceFalloff,
       stunDur: stats.stun,
       splash: stats.splash,
     });

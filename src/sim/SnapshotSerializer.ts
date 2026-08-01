@@ -207,7 +207,8 @@ function snapshotTower(t: Tower, persistState: PersistState, isSelected: boolean
     color: t.color,
     animation: t.animation,
     base: { fixedAim: t.base.fixedAim ?? false },
-    placedAt: t.placedAt,
+    // Elapsed sim ms since place (_gameSeconds); TowerPanel cancel window uses this.
+    placedAt: Math.round(t._gameSeconds * 1000),
   };
 
   if (!isSelected) return base;

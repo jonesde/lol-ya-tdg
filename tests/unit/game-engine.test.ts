@@ -351,7 +351,7 @@ describe("GameEngine", () => {
     it("sellSelected shows confirm dialog", () => {
       const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       // Outside the cancel window so the confirm/sell path is exercised.
-      tower.placedAt = Date.now() - (CANCEL_BUILD_WINDOW_MS + 1000);
+      tower._gameSeconds = (CANCEL_BUILD_WINDOW_MS + 1000) / 1000;
       engine.runState.selectedTowerId = String(tower.id);
       engine.sellSelected();
       expect(engine.towerManager?.towers).toContain(tower);
@@ -408,7 +408,7 @@ describe("GameEngine", () => {
       expect(engine.runState.gold).toBe(goldBefore);
     });
 
-    it("executeDowngrade reduces level and refunds gold (discount mode)", () => {
+    it("executeDowngrade reduces level and refunds gold (default sell mode)", () => {
       const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       const cost = engine.getUpgradeCost(tower!);
       engine.runState.gold -= cost;
@@ -432,6 +432,19 @@ describe("GameEngine", () => {
       engine.runState.selectedTowerId = String(tower.id);
       engine.executeDowngrade();
       expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
+      expect(tower.level).toBe(1);
+    });
+
+    it("executeDowngrade levels down with zero gold refund in discount mode", () => {
+      engine.persistState.generalAddons.sellActive = "discount";
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      const cost = engine.getUpgradeCost(tower!);
+      engine.runState.gold -= cost;
+      tower.doUpgrade(engine.persistState, cost);
+      const goldBefore = engine.runState.gold;
+      engine.runState.selectedTowerId = String(tower.id);
+      engine.executeDowngrade();
+      expect(engine.runState.gold).toBe(goldBefore);
       expect(tower.level).toBe(1);
     });
 

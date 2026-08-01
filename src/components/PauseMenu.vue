@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { BUILTIN_STUBBS, BUILTIN_STUBBY } from "@/commanders/index.js";
 import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
+import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -33,9 +34,9 @@ function endRun() {
     confirmLabel: "End Run",
     cancelLabel: "Cancel",
     onConfirm: () => {
-      // The run is ended by navigating away; GameScreen's onUnmounted disposes
-      // the worker. (The old engine.endGame(false) is gone in the worker model —
-      // see Phase 8. A dedicated end-run command can be added in Phase 9.)
+      // Finalize gems/history/endScreen via the worker before leaving /game.
+      // dispose also safety-nets endGame if this races teardown.
+      dispatchCommand({ commandId: 0, type: "action:endRun" });
       router.push("/game-over");
     },
   });

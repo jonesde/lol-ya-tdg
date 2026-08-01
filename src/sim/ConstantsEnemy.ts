@@ -55,6 +55,8 @@ export const ENEMY_WAVE_DAMAGE_MULT = 0.2;
 export const BOSS_STUN_REDUCTION = 0.3;
 // minimum speed factor, prevents infinite slow stacking: Math.max(MIN_SLOW_FACTOR, slowFactor) (Enemy.js)
 export const MIN_SLOW_FACTOR = 0.1;
+// max concurrent burn stacks on one enemy; additional hits refresh similar DPS or replace lowest (Enemy.js)
+export const MAX_BURN_STACKS = 5;
 
 // ===== Wave Generation =====
 

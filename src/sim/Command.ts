@@ -30,7 +30,8 @@ export type Command =
   | { commandId: number; type: "action:cycleSpeed"; direction: 1 | -1 }
   | { commandId: number; type: "action:upgradeSelected" }
   | { commandId: number; type: "action:sellSelected" } // triggers confirm via host
-  | { commandId: number; type: "action:executeSell"; towerId: string } // post-confirm
+  | { commandId: number; type: "action:executeSell"; towerId: string; creditAmount?: number } // post-confirm
+  | { commandId: number; type: "action:endRun" } // quit / end-run finalize (non-victory)
   | { commandId: number; type: "action:downgradeSelected" }
   | { commandId: number; type: "action:specialize"; variant: "A" | "B" }
   | { commandId: number; type: "action:cancelSelected" }

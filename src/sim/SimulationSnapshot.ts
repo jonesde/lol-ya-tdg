@@ -193,7 +193,7 @@ export interface TowerSnapshot {
   animation: MapThemeAnimation | null;
   // Cheap per-tower fields (always present).
   base: { fixedAim: boolean };
-  placedAt: number; // build timestamp (ms); TowerPanel derives cancel window locally
+  placedAt: number; // elapsed sim ms since place; TowerPanel derives cancel window locally
   // Derived UI-decision fields — COMPUTED ONLY for the selected tower (see
   // SnapshotSerializer.snapshotTower). They are optional here because
   // non-selected towers omit them to avoid per-tower recompute every tick.

@@ -38,7 +38,12 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
       void engine.sellSelected();
       return true;
     case "action:executeSell":
-      engine.executeSellById(command.towerId);
+      engine.executeSellById(command.towerId, command.creditAmount);
+      return true;
+    case "action:endRun":
+      if (!engine.gameEnded) {
+        engine.endGame(false);
+      }
       return true;
     case "action:downgradeSelected":
       engine.downgradeSelected();

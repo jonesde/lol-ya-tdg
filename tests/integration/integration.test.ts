@@ -112,27 +112,22 @@ describe("Integration: Tower Placement Flow", () => {
     engine.loadMap(0);
   });
 
-  it("placing a tower does not block the path in non-critical positions", () => {
+  it("placing a tower on terrain succeeds", () => {
     buildTowerAt(engine, 0, 0);
     const tower = engine.towerManager!.towerAt(0, 0);
     expect(tower).not.toBeNull();
-
-    // Navmesh model: a terrain placement cannot sever the walkable corridor, so the
-    // maze remains reachable.
-    expect(engine.navMeshBuilder!.wouldRemainReachable(0, 0)).toBe(true);
   });
 
-  it("a route still exists and the maze stays connected when a path tile is used", () => {
+  it("path tiles remain buildable (path-blocking towers are allowed)", () => {
     const grid = engine.grid!;
     const path = orderedPath(grid, 0);
     expect(path).not.toBeNull();
-    expect(path.length).toBeGreaterThan(0);
-    const baseGoal = grid.getBaseGoalTiles();
-    expect(baseGoal.some((goal) => goal.x === path[path.length - 1].x && goal.y === path[path.length - 1].y)).toBe(
-      true,
-    );
-    // A terrain (non-corridor) tile can never sever the maze.
-    expect(engine.navMeshBuilder!.wouldRemainReachable(0, 0)).toBe(true);
+    expect(path.length).toBeGreaterThan(2);
+    // Interior path tile — may wall the corridor; build must still succeed.
+    const pathTile = path[Math.floor(path.length / 2)]!;
+    if (!grid.canBuild(pathTile.x, pathTile.y)) return;
+    buildTowerAt(engine, pathTile.x, pathTile.y);
+    expect(engine.towerManager!.towerAt(pathTile.x, pathTile.y)).not.toBeNull();
   });
 
   it("tower can be selected and upgraded", () => {

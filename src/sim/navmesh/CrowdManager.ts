@@ -62,15 +62,29 @@ export class CrowdManager {
   }
 
   // Advances the crowd one fixed step, then writes each agent's desired velocity
-  // into its Rapier body. Stun/hold/attackingBase force zero velocity so the agent
-  // parks while Rapier still resolves tower/base/wall contacts.
+  // into its Rapier body. Stun/attackingBase force zero velocity immediately; hold
+  // zeroes only once arrived at the hold target so the agent can walk there first.
   update(dt: number, enemies: Enemy[]): void {
     this.crowd.update(dt);
     for (const enemy of enemies) {
       if (!enemy.agent || !enemy.body) continue;
-      if (enemy.stunTimer > 0 || enemy.routingMode === "hold" || enemy.attackingBase) {
+      const maxSpeed = enemy.speed * enemy.slowFactor * this.tileSize;
+      enemy.agent.updateParameters({ maxSpeed, maxAcceleration: maxSpeed * CROWD_MAX_ACCEL_FACTOR });
+      if (enemy.stunTimer > 0 || enemy.attackingBase) {
         enemy.body.setLinvel({ x: 0, y: 0 }, true);
         continue;
+      }
+      if (enemy.routingMode === "hold") {
+        const holdTarget = enemy.holdWorld;
+        const holdArrivalRadius = this.tileSize * 0.35;
+        const arrivedAtHold =
+          !holdTarget || Math.hypot(enemy.x - holdTarget.x, enemy.y - holdTarget.y) <= holdArrivalRadius;
+        if (arrivedAtHold) {
+          enemy.arrived = true;
+          enemy.body.setLinvel({ x: 0, y: 0 }, true);
+          continue;
+        }
+        enemy.arrived = false;
       }
       const velocity = enemy.agent.velocity();
       // Recast Y is height and stays 0; game Y lives in Recast Z.

@@ -88,6 +88,7 @@ export class SnapshotStore {
   // Captured "Previous Wave" total per tower, persisted across frames so the UI
   // reads it on every frame (not only the single wave-start reset frame).
   private previousWaveDamageByTower = new Map<string, number>();
+  private lastDamageMapsRunId: number | null = null;
 
   constructor(gameStore: GameStore) {
     this.gameStore = gameStore;
@@ -141,7 +142,16 @@ export class SnapshotStore {
   // deserialized snapshot object, so every reader (gameStore.selectedTower,
   // getLatestSnapshot()) sees it.
   private capturePreviousWaveDamage(snapshot: SimulationSnapshot): void {
+    const runId = snapshot.meta.runId ?? null;
+    if (runId !== this.lastDamageMapsRunId) {
+      this.lastWaveDamageByTower.clear();
+      this.previousWaveDamageByTower.clear();
+      this.lastDamageMapsRunId = runId;
+    }
+
+    const liveTowerIds = new Set<string>();
     for (const towerData of snapshot.towers) {
+      liveTowerIds.add(towerData.id);
       const priorWaveDamage = this.lastWaveDamageByTower.get(towerData.id);
       if (priorWaveDamage !== undefined && priorWaveDamage > 0 && towerData.waveDamage === 0) {
         // The engine just reset this tower's per-wave accumulator at wave start:
@@ -157,6 +167,13 @@ export class SnapshotStore {
       if (capturedPreviousWaveDamage !== undefined) {
         towerData.previousWaveDamage = capturedPreviousWaveDamage;
       }
+    }
+
+    for (const towerId of this.lastWaveDamageByTower.keys()) {
+      if (!liveTowerIds.has(towerId)) this.lastWaveDamageByTower.delete(towerId);
+    }
+    for (const towerId of this.previousWaveDamageByTower.keys()) {
+      if (!liveTowerIds.has(towerId)) this.previousWaveDamageByTower.delete(towerId);
     }
   }
 

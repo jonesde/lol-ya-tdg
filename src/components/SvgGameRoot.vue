@@ -335,6 +335,7 @@ function handleWorkerMessage(event: MessageEvent): void {
             commandId: nextConfirmCommandId++,
             type: "action:executeSell",
             towerId: msg.payload.towerId,
+            creditAmount: msg.payload.sellValue,
           });
         }
         worker?.postMessage({ type: "confirmResult", requestId: msg.requestId, confirmed });

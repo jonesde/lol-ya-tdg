@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { awaitDisposeWorker } from "@/router/index.js";
 import { GameState } from "@/sim/Constants.js";
+import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
 import DebugPanel from "./DebugPanel.vue";
@@ -49,6 +50,7 @@ function onPopState() {
     cancelLabel: "Stay",
     onConfirm() {
       disposed.value = true;
+      dispatchCommand({ commandId: 0, type: "action:endRun" });
       router.push("/game-over");
     },
     onCancel() {

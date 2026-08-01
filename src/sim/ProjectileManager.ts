@@ -59,6 +59,7 @@ export interface ProjectileGame {
   markTarget: number;
   antiHeal: boolean;
   burnCircuit: boolean;
+  pierceFalloff: number;
   // Fixed-aim tracking
   hitEnemyIds?: Set<number>;
   fixedAimHits?: number;
@@ -70,7 +71,7 @@ interface LightningTarget {
   x: number;
   y: number;
   removed?: boolean;
-  takeDamage(dmg: number): void;
+  takeDamage(dmg: number, armorPiercing?: boolean): number | void;
   applyStun?(duration: number): void;
   applyBurn?(dps: number, duration: number): void;
   applyKnockback?(amount: number): void;
@@ -92,7 +93,7 @@ type CastEnemy = {
   hp: number;
   maxHp: number;
   removed: boolean;
-  takeDamage(dmg: number, armorPiercing?: boolean): void;
+  takeDamage(dmg: number, armorPiercing?: boolean): number | void;
   applyBurn?(dps: number, duration: number): void;
   applySlow?(factor: number, duration: number): void;
   applyStun?(duration: number): void;
@@ -113,12 +114,13 @@ export interface EnemyManager {
     y: number;
     hp: number;
     maxHp: number;
-    takeDamage(dmg: number, armorPiercing?: boolean): void;
+    takeDamage(dmg: number, armorPiercing?: boolean): number | void;
     applyBurn?(dps: number, duration: number): void;
     applySlow?(factor: number, duration: number): void;
     applyStun?(duration: number): void;
     applyMarkTarget?(mult: number, duration: number): void;
     applyAntiHeal?(duration: number): void;
+    applyKnockback?(amount: number): void;
   }[];
   forEachEnemyInRange(
     x: number,
@@ -132,7 +134,7 @@ export interface EnemyManager {
       hp: number;
       maxHp: number;
       removed: boolean;
-      takeDamage(dmg: number, armorPiercing?: boolean): void;
+      takeDamage(dmg: number, armorPiercing?: boolean): number | void;
       applySlow?(factor: number, duration: number): void;
       applyStun?(duration: number): void;
     }) => void,
@@ -147,7 +149,7 @@ export interface EnemyManager {
     hp: number;
     maxHp: number;
     removed: boolean;
-    takeDamage(dmg: number): void;
+    takeDamage(dmg: number, armorPiercing?: boolean): number | void;
   } | null;
   castShapePierce(
     originX: number,
@@ -167,7 +169,7 @@ export interface EnemyManager {
     hp: number;
     maxHp: number;
     removed: boolean;
-    takeDamage(dmg: number): void;
+    takeDamage(dmg: number, armorPiercing?: boolean): number | void;
   }[];
 }
 
@@ -260,6 +262,7 @@ export class ProjectileManager {
     markTarget?: number;
     antiHeal?: boolean;
     pierce?: number;
+    pierceFalloff?: number;
     stunDur?: number;
     splash?: number;
   }): void {
@@ -303,6 +306,7 @@ export class ProjectileManager {
       markTarget: opts.markTarget ?? 0,
       antiHeal: opts.antiHeal ?? false,
       burnCircuit: false,
+      pierceFalloff: opts.pierceFalloff ?? 0,
       fixedAim: opts.targetId === 0,
     };
 
@@ -370,8 +374,9 @@ export class ProjectileManager {
       projectile.marksman = Math.random() < MARKSMAN_CHANCE;
     }
 
+    // Piercer: pierce through N enemies means N hits (not N-1).
     if (towerType === "sniper" && towerLevel >= 5 && variant === "B") {
-      projectile.maxHitCount = Math.max(0, (pierce ?? 1) - 1);
+      projectile.maxHitCount = pierce ?? 1;
     }
   }
 
@@ -506,18 +511,15 @@ export class ProjectileManager {
 
   private hitCircleProjectile(projectile: ProjectileGame, enemy: CastEnemy): void {
     const finalDamage = projectile.isCrit ? projectile.damage * projectile.critMultiplier : projectile.damage;
+    // pierceFalloff <= 0 means no falloff (e.g. Rail Lance sets 0); else exponential per prior hit.
+    const falloff = projectile.pierceFalloff > 0 ? projectile.pierceFalloff : 1;
+    const scaledDamage = finalDamage * falloff ** projectile.hitCount;
 
     // True Shot: 20% chance to instant-kill non-boss enemies
     if (projectile.trueShot > 0 && enemy.type !== "boss" && Math.random() < projectile.trueShot) {
       const instantKillDamage = enemy.hp + 1;
-      enemy.takeDamage(instantKillDamage, true);
-      if (projectile.towerId) {
-        const tower = this.towerLookup?.(projectile.towerId);
-        if (tower) {
-          tower.totalDamageDealt += instantKillDamage;
-          tower.waveDamage += instantKillDamage;
-        }
-      }
+      const dealtDamage = enemy.takeDamage(instantKillDamage, true) ?? instantKillDamage;
+      this.recordDamage(projectile.towerId, dealtDamage);
       if (this.particles) {
         this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, { speed: 30, life: 0.2 });
       }
@@ -530,14 +532,8 @@ export class ProjectileManager {
 
     if (projectile.marksman && enemy.type !== "boss") {
       const instantKillDamage = enemy.hp + 1;
-      enemy.takeDamage(instantKillDamage, true);
-      if (projectile.towerId) {
-        const tower = this.towerLookup?.(projectile.towerId);
-        if (tower) {
-          tower.totalDamageDealt += instantKillDamage;
-          tower.waveDamage += instantKillDamage;
-        }
-      }
+      const dealtDamage = enemy.takeDamage(instantKillDamage, true) ?? instantKillDamage;
+      this.recordDamage(projectile.towerId, dealtDamage);
       if (this.particles) {
         this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, { speed: 30, life: 0.2 });
       }
@@ -548,20 +544,18 @@ export class ProjectileManager {
       return;
     }
 
-    // Mark Target: target takes +25% damage from all sources
+    // Damage first so a marking shot does not multiply its own hit; mark after.
+    const dealtDamage = enemy.takeDamage(scaledDamage, projectile.antiAir) ?? 0;
+    this.recordDamage(projectile.towerId, dealtDamage);
+
     if (projectile.markTarget > 0 && enemy.applyMarkTarget) {
       enemy.applyMarkTarget(projectile.markTarget, MARK_TARGET_DURATION);
     }
-
-    // Anti-Air: ignore shields
-    enemy.takeDamage(finalDamage, projectile.antiAir);
 
     // Anti-Heal: disable enemy healer auras
     if (projectile.antiHeal && enemy.applyAntiHeal) {
       enemy.applyAntiHeal(ANTI_HEAL_DURATION);
     }
-
-    this.recordDamage(projectile.towerId, finalDamage);
 
     // Gold Rush: grant gold on critical hit
     if (projectile.isCrit && projectile.goldOnCrit > 0 && this.onGoldReward) {
@@ -620,22 +614,33 @@ export class ProjectileManager {
     if (projectile.splashRadius > 0 && this.particles) {
       const splashRadiusPx = projectile.splashRadius * (this.grid?.tileSize ?? 1);
       const splashEnemies = this.enemyManager.getEnemiesInRange(enemy.x, enemy.y, splashRadiusPx);
+      const tileSize = this.grid?.tileSize ?? GRID_TILE_SIZE;
       for (const splashEnemy of splashEnemies) {
-        if (splashEnemy.id !== enemy.id && (splashEnemy as { takeDamage?: unknown }).takeDamage) {
-          const splashDamage = finalDamage * SPLASH_DAMAGE_RATIO;
-          // Anti-Air: secondary splash targets must bypass shields just like the primary.
-          (splashEnemy as { takeDamage(dmg: number, armorPiercing?: boolean): void }).takeDamage(
-            splashDamage,
-            projectile.antiAir,
-          );
-          this.recordDamage(projectile.towerId, splashDamage);
-          // Stun Shell: splash damage applies stun
-          if (projectile.splashStun > 0) {
-            const splashEnemyWithStun = splashEnemy as unknown as { applyStun?: (duration: number) => void };
-            if (splashEnemyWithStun.applyStun) {
-              splashEnemyWithStun.applyStun(projectile.splashStun);
-            }
+        if (splashEnemy.id === enemy.id) continue;
+        const splashDamage = scaledDamage * SPLASH_DAMAGE_RATIO;
+        const dealtSplash = splashEnemy.takeDamage(splashDamage, projectile.antiAir) ?? 0;
+        this.recordDamage(projectile.towerId, dealtSplash);
+
+        if (projectile.markTarget > 0 && splashEnemy.applyMarkTarget) {
+          splashEnemy.applyMarkTarget(projectile.markTarget, MARK_TARGET_DURATION);
+        }
+        if (projectile.burnDps > 0 && splashEnemy.applyBurn) {
+          splashEnemy.applyBurn(projectile.burnDps, projectile.burnDuration);
+        }
+        if (projectile.slowFactor > 0 && splashEnemy.applySlow) {
+          splashEnemy.applySlow(projectile.slowFactor, projectile.slowDuration);
+        }
+        if (projectile.knockback > 0 && splashEnemy.applyKnockback) {
+          const knockAmount =
+            projectile.knockback * tileSize * Math.max(0.1, Math.min(2, KNOCKBACK_HP_DIVISOR / splashEnemy.maxHp));
+          if (knockAmount > 0) {
+            splashEnemy.applyKnockback(knockAmount);
           }
+        }
+        // Stun Shell uses splashStun; otherwise projectile stun applies to splash too.
+        const splashStunDuration = projectile.splashStun > 0 ? projectile.splashStun : projectile.stunDuration;
+        if (splashStunDuration > 0 && splashEnemy.applyStun) {
+          splashEnemy.applyStun(splashStunDuration);
         }
       }
     }
@@ -696,8 +701,8 @@ export class ProjectileManager {
     // stunned. The tower->final-target flash fires once at the end.
     const chainTargets: LightningTarget[] = [];
 
-    current.takeDamage(finalDamage);
-    this.recordDamage(opts.towerId, finalDamage);
+    const primaryDealt = current.takeDamage(finalDamage) ?? finalDamage;
+    this.recordDamage(opts.towerId, primaryDealt);
     // Gold Rush: grant gold on critical hit
     if (isCrit && (opts.goldOnCrit ?? 0) > 0 && this.onGoldReward) {
       this.onGoldReward(opts.goldOnCrit ?? 0);
@@ -715,8 +720,8 @@ export class ProjectileManager {
       if (!nextTarget) break;
 
       const chainDamage = finalDamage * CHAIN_DAMAGE_FALLOFF ** (chainsUsed + 1);
-      nextTarget.takeDamage(chainDamage);
-      this.recordDamage(opts.towerId, chainDamage);
+      const chainDealt = nextTarget.takeDamage(chainDamage) ?? chainDamage;
+      this.recordDamage(opts.towerId, chainDealt);
       chainTargets.push(nextTarget);
       chainedIds.add(nextTarget.id);
       if (this.particles) {
@@ -746,8 +751,8 @@ export class ProjectileManager {
         const pickIndex = Math.floor(Math.random() * wideEnemies.length);
         const stormTarget = wideEnemies.splice(pickIndex, 1)[0]!;
         const stormDamage = finalDamage * CHAIN_DAMAGE_FALLOFF;
-        stormTarget.takeDamage(stormDamage);
-        this.recordDamage(opts.towerId, stormDamage);
+        const stormDealt = stormTarget.takeDamage(stormDamage) ?? stormDamage;
+        this.recordDamage(opts.towerId, stormDealt);
         chainTargets.push(stormTarget);
         if (this.particles) {
           this.particles.spawn(stormTarget.x, stormTarget.y, opts.color ?? "#ffcf4d", 3, { speed: 30, life: 0.2 });
@@ -775,8 +780,8 @@ export class ProjectileManager {
       if (secondTarget) {
         const secondIsCrit = critChance > 0 && Math.random() < critChance;
         const secondDamage = finalDamage * 0.5 * (secondIsCrit ? 2 : 1);
-        secondTarget.takeDamage(secondDamage);
-        this.recordDamage(opts.towerId, secondDamage);
+        const secondDealt = secondTarget.takeDamage(secondDamage) ?? secondDamage;
+        this.recordDamage(opts.towerId, secondDealt);
         // Gold Rush: grant gold on critical hit for second bolt
         if (secondIsCrit && (opts.goldOnCrit ?? 0) > 0 && this.onGoldReward) {
           this.onGoldReward(opts.goldOnCrit ?? 0);
@@ -790,7 +795,7 @@ export class ProjectileManager {
   }
 
   private recordDamage(towerId: string | undefined, amount: number): void {
-    if (!towerId) return;
+    if (!towerId || !(amount > 0)) return;
     const tower = this.towerLookup?.(towerId);
     if (tower) {
       tower.totalDamageDealt += amount;

@@ -317,6 +317,27 @@ describe("WaveManager", () => {
       expect(waveManager.countdownActive).toBe(false);
       expect(waveManager.betweenWaves).toBe(false);
     });
+
+    it("pre-emptive advance calls onWaveCleared for the wave being left", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.startNextWave();
+      waveManager.enemyManager.spawn("minion", 1, 0, 1);
+      waveManager.queue = [];
+      let clearedWave: number | null = null;
+      let startedWave: number | null = null;
+      waveManager.update(
+        PRE_EMPTIVE_WAVE_TIMER + 1,
+        (wave) => {
+          clearedWave = wave;
+        },
+        (wave) => {
+          startedWave = wave;
+        },
+      );
+      expect(clearedWave).toBe(1);
+      expect(startedWave).toBe(2);
+      expect(waveManager.currentWave).toBe(2);
+    });
   });
 
   describe("waveComposition", () => {

@@ -71,6 +71,10 @@ export class EnemyManager {
   }
 
   clear(): void {
+    for (const enemy of this.enemies) {
+      this.crowdManager?.removeAgent(enemy);
+      this.physicsWorld?.removeEnemy(enemy);
+    }
     this.enemies = [];
     this.idToEnemy.clear();
     this.pendingQueues.clear();
