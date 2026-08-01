@@ -3,7 +3,11 @@ import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { ProjectileHitEvent } from "@/sim/physics/ContactProcessor.js";
 import type { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import type { Tower } from "@/sim/towers/Tower.js";
-import { MAX_PROJECTILE_AGE, PROJECTILE_HIT_THRESHOLD } from "./Constants.js";
+import {
+  MAX_PROJECTILE_AGE,
+  PROJECTILE_HIT_THRESHOLD,
+  PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION,
+} from "./Constants.js";
 import {
   ANTI_HEAL_DURATION,
   BOUNCE_DAMAGE_FALLOFF,
@@ -66,6 +70,9 @@ export interface ProjectileGame {
   hitEnemyIds?: Set<number>;
   fixedAimHits?: number;
   fixedAim: boolean;
+  // Last homing flight direction (unit); used to retarget along path when target dies.
+  lastDirX: number;
+  lastDirY: number;
 }
 
 interface LightningTarget {
@@ -319,6 +326,8 @@ export class ProjectileManager {
       burnCircuit: false,
       pierceFalloff: opts.pierceFalloff ?? 0,
       fixedAim: opts.targetId === 0,
+      lastDirX: 0,
+      lastDirY: 0,
     };
 
     // Roll crit only if tower has crit ability
@@ -513,16 +522,27 @@ export class ProjectileManager {
       dirX = targetDx / targetDist;
       dirY = targetDy / targetDist;
     } else {
-      const enemy = this.enemyManager.getEnemyById(projectile.targetId);
+      let enemy = this.enemyManager.getEnemyById(projectile.targetId);
       if (!enemy || enemy.removed) {
-        this.physicsWorld.setProjectileVelocity(projectile.id, 0, 0);
-        return;
+        if (!this.tryRetargetAlongPath(projectile)) {
+          this.physicsWorld.setProjectileVelocity(projectile.id, 0, 0);
+          return;
+        }
+        enemy = this.enemyManager.getEnemyById(projectile.targetId);
+        if (!enemy || enemy.removed) {
+          this.physicsWorld.setProjectileVelocity(projectile.id, 0, 0);
+          return;
+        }
       }
       const dx = enemy.x - projectile.x;
       const dy = enemy.y - projectile.y;
       const dist = Math.hypot(dx, dy) || 1;
       dirX = dx / dist;
       dirY = dy / dist;
+      projectile.targetX = enemy.x;
+      projectile.targetY = enemy.y;
+      projectile.lastDirX = dirX;
+      projectile.lastDirY = dirY;
     }
     const speed = projectile.speed;
     this.physicsWorld.setProjectileVelocity(projectile.id, dirX * speed, dirY * speed);
@@ -590,10 +610,17 @@ export class ProjectileManager {
       return;
     }
 
-    const enemy = this.enemyManager.getEnemyById(projectile.targetId);
+    let enemy = this.enemyManager.getEnemyById(projectile.targetId);
     if (!enemy || enemy.removed) {
-      this.removeProjectile(projectile, "target-lost");
-      return;
+      if (!this.tryRetargetAlongPath(projectile)) {
+        this.removeProjectile(projectile, "target-lost");
+        return;
+      }
+      enemy = this.enemyManager.getEnemyById(projectile.targetId);
+      if (!enemy || enemy.removed) {
+        this.removeProjectile(projectile, "target-lost");
+        return;
+      }
     }
 
     const dx = enemy.x - projectile.x;
@@ -610,6 +637,10 @@ export class ProjectileManager {
     const moveDist = projectile.speed * dt;
     const dirX = dist > 0 ? dx / dist : 1;
     const dirY = dist > 0 ? dy / dist : 0;
+    projectile.targetX = enemy.x;
+    projectile.targetY = enemy.y;
+    projectile.lastDirX = dirX;
+    projectile.lastDirY = dirY;
     if (projectile.hitEnemyIds === undefined) {
       projectile.hitEnemyIds = new Set<number>();
     }
@@ -640,6 +671,53 @@ export class ProjectileManager {
       projectile.x += (dx / dist) * moveDist;
       projectile.y += (dy / dist) * moveDist;
     }
+  }
+
+  // When the locked target dies/despawns, keep the projectile if another live enemy
+  // lies ahead on roughly the same flight path and switch targetId to that enemy.
+  private tryRetargetAlongPath(projectile: ProjectileGame): boolean {
+    let dirX = projectile.lastDirX;
+    let dirY = projectile.lastDirY;
+    let dirLength = Math.hypot(dirX, dirY);
+    if (dirLength < 1e-6) {
+      dirX = projectile.targetX - projectile.x;
+      dirY = projectile.targetY - projectile.y;
+      dirLength = Math.hypot(dirX, dirY);
+    }
+    if (dirLength < 1e-6) return false;
+    dirX /= dirLength;
+    dirY /= dirLength;
+
+    const tileSize = this.grid?.tileSize ?? GRID_TILE_SIZE;
+    const hitBallRadius = projectile.radius + PROJECTILE_HIT_THRESHOLD;
+    const corridorRadius = Math.max(hitBallRadius, PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION * tileSize);
+    const maxDistance = projectile.range * tileSize;
+    const hitSet = projectile.hitEnemyIds;
+    const foundTargets: CastEnemy[] = [];
+
+    this.enemyManager.castShapePierce(
+      projectile.x,
+      projectile.y,
+      dirX,
+      dirY,
+      corridorRadius,
+      maxDistance,
+      1,
+      (candidate) => {
+        if (hitSet?.has(candidate.id)) return true;
+        foundTargets.push(candidate);
+        return false;
+      },
+    );
+
+    const nextTarget = foundTargets[0];
+    if (!nextTarget) return false;
+    projectile.targetId = nextTarget.id;
+    projectile.targetX = nextTarget.x;
+    projectile.targetY = nextTarget.y;
+    projectile.lastDirX = dirX;
+    projectile.lastDirY = dirY;
+    return true;
   }
 
   // Impact on the enemy silhouette edge facing the projectile (center − radius along

@@ -205,7 +205,7 @@ describe("ProjectileManager", () => {
       expect(renderData[0]!.x).toBeLessThan(200);
     });
 
-    it("removes projectile when target is removed", () => {
+    it("removes projectile when target is removed and nothing ahead on path", () => {
       const enemy = createMockEnemy({ id: 1, x: 200, y: 200, hp: 100, maxHp: 100, removed: true });
       enemyManager = createMockEnemyManager([enemy]);
       manager = new ProjectileManager(enemyManager, particles);
@@ -219,13 +219,15 @@ describe("ProjectileManager", () => {
         towerType: "arrow",
         towerLevel: 1,
         targetId: 1,
+        targetX: 200,
+        targetY: 200,
       });
 
       manager.update(0.016);
       expect(manager.getRenderData()).toHaveLength(0);
     });
 
-    it("removes projectile when target id not found", () => {
+    it("removes projectile when target id not found and nothing ahead on path", () => {
       manager.spawn({
         x: 100,
         y: 200,
@@ -235,7 +237,109 @@ describe("ProjectileManager", () => {
         towerType: "arrow",
         towerLevel: 1,
         targetId: 999,
+        targetX: 200,
+        targetY: 200,
       });
+
+      manager.update(0.016);
+      expect(manager.getRenderData()).toHaveLength(0);
+    });
+
+    it("retargets to enemy ahead on path when locked target is removed", () => {
+      const deadTarget = createMockEnemy({ id: 1, x: 200, y: 200, hp: 0, maxHp: 100, removed: true });
+      const aheadEnemy = createMockEnemy({ id: 2, x: 250, y: 200, hp: 100, maxHp: 100 });
+      enemyManager = createMockEnemyManager([deadTarget, aheadEnemy]);
+      manager = new ProjectileManager(enemyManager, particles);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 100,
+        range: 10,
+        towerType: "arrow",
+        towerLevel: 1,
+        targetId: 1,
+        targetX: 200,
+        targetY: 200,
+      });
+
+      manager.update(0.016);
+      const renderData = manager.getRenderData();
+      expect(renderData).toHaveLength(1);
+      expect(renderData[0]!.x).toBeGreaterThan(100);
+      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
+      const proj = (manager as any).projectiles[0]!;
+      expect(proj.targetId).toBe(2);
+    });
+
+    it("removes projectile when alternate enemy is behind the flight path", () => {
+      const deadTarget = createMockEnemy({ id: 1, x: 200, y: 200, hp: 0, maxHp: 100, removed: true });
+      const behindEnemy = createMockEnemy({ id: 2, x: 50, y: 200, hp: 100, maxHp: 100 });
+      enemyManager = createMockEnemyManager([deadTarget, behindEnemy]);
+      manager = new ProjectileManager(enemyManager, particles);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 100,
+        range: 10,
+        towerType: "arrow",
+        towerLevel: 1,
+        targetId: 1,
+        targetX: 200,
+        targetY: 200,
+      });
+
+      manager.update(0.016);
+      expect(manager.getRenderData()).toHaveLength(0);
+    });
+
+    it("removes projectile when alternate enemy is far off the flight path", () => {
+      const deadTarget = createMockEnemy({ id: 1, x: 200, y: 200, hp: 0, maxHp: 100, removed: true });
+      const offPathEnemy = createMockEnemy({ id: 2, x: 200, y: 400, hp: 100, maxHp: 100 });
+      enemyManager = createMockEnemyManager([deadTarget, offPathEnemy]);
+      manager = new ProjectileManager(enemyManager, particles);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 100,
+        range: 10,
+        towerType: "arrow",
+        towerLevel: 1,
+        targetId: 1,
+        targetX: 200,
+        targetY: 200,
+      });
+
+      manager.update(0.016);
+      expect(manager.getRenderData()).toHaveLength(0);
+    });
+
+    it("skips already-hit enemies when retargeting along path", () => {
+      const deadTarget = createMockEnemy({ id: 1, x: 200, y: 200, hp: 0, maxHp: 100, removed: true });
+      const alreadyHit = createMockEnemy({ id: 2, x: 220, y: 200, hp: 100, maxHp: 100 });
+      enemyManager = createMockEnemyManager([deadTarget, alreadyHit]);
+      manager = new ProjectileManager(enemyManager, particles);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 100,
+        range: 10,
+        towerType: "arrow",
+        towerLevel: 1,
+        targetId: 1,
+        targetX: 200,
+        targetY: 200,
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: tests access private projectiles array
+      const proj = (manager as any).projectiles[0]!;
+      proj.hitEnemyIds = new Set([2]);
 
       manager.update(0.016);
       expect(manager.getRenderData()).toHaveLength(0);
