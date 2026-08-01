@@ -73,7 +73,7 @@ interface LightningTarget {
   x: number;
   y: number;
   removed?: boolean;
-  takeDamage(dmg: number, armorPiercing?: boolean): number | void;
+  takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
   applyStun?(duration: number): void;
   applyBurn?(dps: number, duration: number): void;
   applyKnockback?(amount: number): void;
@@ -95,7 +95,7 @@ type CastEnemy = {
   hp: number;
   maxHp: number;
   removed: boolean;
-  takeDamage(dmg: number, armorPiercing?: boolean): number | void;
+  takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
   applyBurn?(dps: number, duration: number): void;
   applySlow?(factor: number, duration: number): void;
   applyStun?(duration: number): void;
@@ -116,7 +116,7 @@ export interface EnemyManager {
     y: number;
     hp: number;
     maxHp: number;
-    takeDamage(dmg: number, armorPiercing?: boolean): number | void;
+    takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
     applyBurn?(dps: number, duration: number): void;
     applySlow?(factor: number, duration: number): void;
     applyStun?(duration: number): void;
@@ -136,7 +136,7 @@ export interface EnemyManager {
       hp: number;
       maxHp: number;
       removed: boolean;
-      takeDamage(dmg: number, armorPiercing?: boolean): number | void;
+      takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
       applySlow?(factor: number, duration: number): void;
       applyStun?(duration: number): void;
     }) => void,
@@ -151,7 +151,7 @@ export interface EnemyManager {
     hp: number;
     maxHp: number;
     removed: boolean;
-    takeDamage(dmg: number, armorPiercing?: boolean): number | void;
+    takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
   } | null;
   castShapePierce(
     originX: number,
@@ -171,7 +171,7 @@ export interface EnemyManager {
     hp: number;
     maxHp: number;
     removed: boolean;
-    takeDamage(dmg: number, armorPiercing?: boolean): number | void;
+    takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
   }[];
 }
 

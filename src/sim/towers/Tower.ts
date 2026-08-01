@@ -3,7 +3,7 @@ import type { Enemy } from "@/sim/enemies/Enemy.js";
 interface AuraTarget {
   applySlow(amount: number, duration: number): void;
   applyStun?(duration: number): void;
-  takeDamage(amount: number, armorPiercing?: boolean): number | void;
+  takeDamage(amount: number, armorPiercing?: boolean): number | undefined;
 }
 
 import { applyVariantOps } from "@/content/applyVariantOps.js";
