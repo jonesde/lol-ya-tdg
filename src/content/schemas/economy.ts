@@ -1,0 +1,46 @@
+import { z } from "zod";
+
+export const EconomyContentSchema = z.object({
+  startingGoldByRegion: z.tuple([z.number(), z.number(), z.number()]),
+  victoryWave: z.number(),
+  milestoneWaves: z.tuple([z.number(), z.number(), z.number()]),
+  milestoneGems: z.record(z.string(), z.number()),
+  bonusGemBase: z.number(),
+  bountyBlockedRatio: z.number(),
+  betweenWavesTimer: z.number(),
+  preEmptiveWaveTimer: z.number(),
+  difficultyMultMin: z.number(),
+  difficultyMultMax: z.number(),
+  difficultyMultTick: z.number(),
+  difficultyMultGemBase: z.number(),
+  regionGemRewards: z.tuple([z.number(), z.number(), z.number()]),
+  mapGemMultipliers: z.array(z.number()).length(36),
+  firstTimeMilestoneMult: z.number(),
+  firstFullClearMult: z.number(),
+  generalAddonGemCosts: z.object({
+    extraHealth: z.tuple([z.number(), z.number(), z.number()]),
+    startingGold: z.tuple([z.number(), z.number(), z.number()]),
+    slowHealing: z.tuple([z.number(), z.number(), z.number()]),
+    upgradeCostReduction: z.tuple([z.number(), z.number(), z.number()]),
+    terrainHeightBonus: z.tuple([z.number(), z.number(), z.number()]),
+    terrainHeightRangeBonus: z.tuple([z.number(), z.number(), z.number()]),
+    damageMilestoneBonus: z.tuple([z.number(), z.number(), z.number()]),
+  }),
+  slowHealingPerRound: z.tuple([z.number(), z.number(), z.number()]),
+  sellOptionGemCost: z.number(),
+  sellDiscountPct: z.number(),
+  terrainHeightBonusPct: z.tuple([z.number(), z.number(), z.number()]),
+  terrainHeightRangeBonus: z.tuple([z.number(), z.number(), z.number()]),
+  upgradeCostReductionPct: z.tuple([z.number(), z.number(), z.number()]),
+  startingGoldBonus: z.tuple([z.number(), z.number(), z.number()]),
+  startingHealthBonus: z.tuple([z.number(), z.number(), z.number()]),
+  startingBaseHealth: z.number(),
+  milestoneBonusPct: z.tuple([
+    z.tuple([z.number(), z.number()]),
+    z.tuple([z.number(), z.number()]),
+    z.tuple([z.number(), z.number()]),
+  ]),
+  milestoneThreshold: z.number(),
+});
+
+export type EconomyContent = z.infer<typeof EconomyContentSchema>;

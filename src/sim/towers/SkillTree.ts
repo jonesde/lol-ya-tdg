@@ -1,10 +1,12 @@
+import { getGameContent } from "@/content/gameContent.js";
 import type { TowerVisualMeta } from "@/render/themes/index.js";
 import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
 import { TowerIds } from "@/sim/ConstantsTower.js";
 import type { PersistState } from "@/sim/PersistState.js";
 
-const LEVEL_COSTS = [0, 0, 16, 32, 64, 128, 256];
-const ADDON_COSTS = [100, 300, 900];
+const skillTreeContent = getGameContent().skillTree;
+const LEVEL_COSTS = skillTreeContent.levelCosts;
+const ADDON_COSTS = skillTreeContent.addonCosts;
 
 interface SkillNode {
   tier: string;
@@ -54,83 +56,10 @@ export function populateSkillTreeTheme(defaultTowerVisuals: Record<string, Tower
   }
 }
 
-export const VARIANT_INFO: Record<string, { A: { name: string; desc: string }; B: { name: string; desc: string } }> = {
-  basic: {
-    A: { name: "Rapid Fire", desc: "Fires 3× faster with reduced damage per shot." },
-    B: { name: "Heavy Shot", desc: "Fires slower but each round deals 2.5× damage." },
-  },
-  ice: {
-    A: { name: "Permafrost", desc: "Shots deal frost AoE damage in a growing radius around each hit." },
-    B: { name: "Shatter", desc: "Doubles frost damage and cracks enemy armor." },
-  },
-  sniper: {
-    A: { name: "Marksman", desc: "20% chance to instantly eliminate non-boss enemies." },
-    B: { name: "Piercer", desc: "Bullets pierce through 3 enemies in a line." },
-  },
-  cannon: {
-    A: { name: "Fragmentation", desc: "Increases splash radius by 40% per tier." },
-    B: { name: "Napalm", desc: "Shots leave a burning patch that damages over time." },
-  },
-  lightning: {
-    A: { name: "Overload", desc: "Adds 2 chain targets per tier with +20% damage." },
-    B: { name: "Stormcall", desc: "Strikes random enemies in a wide area." },
-  },
-  railgun: {
-    A: { name: "Knockback", desc: "Physically pushes enemies back along the path." },
-    B: { name: "Rail Lance", desc: "Removes pierce falloff for consistent damage." },
-  },
-  sturdyWall: {
-    A: { name: "Thorn Wall", desc: "Reflects 30/60/100% of damage taken back at the attacker." },
-    B: { name: "Electric Fence", desc: "Zaps touching enemies for damage and briefly stuns them." },
-  },
-  shotgunTank: {
-    A: { name: "Reinforced", desc: "Greatly increases tower health (1.5x/2x/3x per tier)." },
-    B: { name: "Repulsor", desc: "Shots knock enemies back like the railgun." },
-  },
-};
+export const VARIANT_INFO: Record<string, { A: { name: string; desc: string }; B: { name: string; desc: string } }> =
+  skillTreeContent.variantInfo;
 
-const ADDON_INFO: Record<string, { name: string; desc: string }[]> = {
-  basic: [
-    { name: "Critical Hit", desc: "15% chance for a ×2 damage critical hit." },
-    { name: "Gold Rush", desc: "Each critical hit grants +1 bonus gold." },
-    { name: "Bounce Shot", desc: "Bullets bounce to 1 nearby enemy on hit." },
-  ],
-  ice: [
-    { name: "Frost Aura", desc: "Permanent slow aura on adjacent path tiles." },
-    { name: "Deep Freeze", desc: "Increases slow strength by 25%." },
-    { name: "Ice Burst", desc: "Periodic freeze burst stuns nearby enemies." },
-  ],
-  sniper: [
-    { name: "True Shot", desc: "20% chance to instant-kill non-boss enemies." },
-    { name: "Mark Target", desc: "Revealed target takes +25% damage from all sources." },
-    { name: "Long Range", desc: "Grants +2 additional range." },
-  ],
-  cannon: [
-    { name: "Wide Blast", desc: "Increases splash radius by 50%." },
-    { name: "Stun Shell", desc: "Splash damage applies a 0.3s stun effect." },
-    { name: "Anti-Air", desc: "Shots hit air units and ignore enemy shields." },
-  ],
-  lightning: [
-    { name: "Static Field", desc: "Tower emits a field that slows nearby enemies by 15%." },
-    { name: "Double Discharge", desc: "10% chance to fire a second bolt instantly." },
-    { name: "Burn Circuit", desc: "Chained enemies are burned for chain damage x 1.2 DPS over 2 seconds." },
-  ],
-  railgun: [
-    { name: "Charge Shot", desc: "Every 5th shot deals ×3 damage." },
-    { name: "Anti-Heal", desc: "Shots disable enemy healer auras for 2 seconds." },
-    { name: "Multi-Pierce", desc: "Beams pierce 2 additional enemies." },
-  ],
-  sturdyWall: [
-    { name: "Plating", desc: "Reinforced exterior plating." },
-    { name: "Bastion", desc: "Holds the line against the swarm." },
-    { name: "Rubble", desc: "Scrap metal patchwork for extra grit." },
-  ],
-  shotgunTank: [
-    { name: "Hull", desc: "Extra armor plating on the tank chassis." },
-    { name: "Loader", desc: "Faster shell loading mechanism." },
-    { name: "Spread", desc: "Wider shotgun spread pattern." },
-  ],
-};
+const ADDON_INFO: Record<string, { name: string; desc: string }[]> = skillTreeContent.addonInfo;
 
 for (const id of Object.values(TowerIds)) {
   const variantA = VARIANT_INFO[id]!.A;
@@ -290,102 +219,28 @@ export function maxLevelFor(save: PersistState, towerId: string, variant: "A" | 
   return max;
 }
 
-export const GENERAL_ADDON_CATEGORIES: Record<string, GeneralAddonCategory> = {
-  economy: { label: "Economy", addons: ["sellOption", "startingGold", "upgradeCostReduction"] },
-  health: { label: "Health", addons: ["extraHealth", "slowHealing"] },
-  damage: { label: "Damage", addons: ["terrainHeightBonus", "terrainHeightRangeBonus", "damageMilestoneBonus"] },
-};
+export const GENERAL_ADDON_CATEGORIES: Record<string, GeneralAddonCategory> = skillTreeContent.generalAddonCategories;
 
-export const GENERAL_ADDON_DEFS: Record<string, GeneralAddonDef> = {
-  extraHealth: {
-    key: "extraHealth",
-    label: "Extra Health",
-    desc: "Gain bonus health at the start of each run.",
-    tiers: [
-      { label: "+100", desc: "Start with +100 health." },
-      { label: "+300", desc: "Start with +300 health." },
-      { label: "+500", desc: "Start with +500 health." },
-    ],
-    costs: GENERAL_ADDON_GEM_COSTS.extraHealth,
-  },
-  startingGold: {
-    key: "startingGold",
-    label: "Extra Starting Gold",
-    desc: "Gain bonus gold at the start of each run.",
-    tiers: [
-      { label: "+50g", desc: "Start with +50 gold." },
-      { label: "+100g", desc: "Start with +100 gold." },
-      { label: "+200g", desc: "Start with +200 gold." },
-    ],
-    costs: GENERAL_ADDON_GEM_COSTS.startingGold,
-  },
-  slowHealing: {
-    key: "slowHealing",
-    label: "Slow Healing",
-    desc: "Restore health at the start of each round.",
-    tiers: [
-      { label: "+20/round", desc: "Regenerate 20 base health per wave." },
-      { label: "+50/round", desc: "Regenerate 50 base health per wave." },
-      { label: "+100/round", desc: "Regenerate 100 base health per wave." },
-    ],
-    costs: GENERAL_ADDON_GEM_COSTS.slowHealing,
-  },
-  sellOption: {
-    key: "sellOption",
-    label: "Sell Flexibility",
-    desc: "Choose: full refund on sell, OR 25% cheaper tower builds (but can't sell).",
-    tiers: [
-      { label: "Full Refund", desc: "Sell towers for 100% of invested gold." },
-      { label: "Discounted", desc: "Builds cost 25% less, but towers can't be sold." },
-    ],
-    costs: [SELL_OPTION_GEM_COST, SELL_OPTION_GEM_COST],
-    isSellOption: true,
-  },
-  upgradeCostReduction: {
-    key: "upgradeCostReduction",
-    label: "Cheaper Upgrades",
-    desc: "Reduce the gold cost of tower upgrades.",
-    tiers: [
-      { label: "-10%", desc: "Upgrades cost 10% less." },
-      { label: "-25%", desc: "Upgrades cost 25% less." },
-      { label: "-50%", desc: "Upgrades cost 50% less." },
-    ],
-    costs: GENERAL_ADDON_GEM_COSTS.upgradeCostReduction,
-  },
-  terrainHeightBonus: {
-    key: "terrainHeightBonus",
-    label: "Elevation Advantage",
-    desc: "Towers on higher terrain deal more damage.",
-    tiers: [
-      { label: "+5%/lvl", desc: "+5% damage per terrain height level (max +20%)." },
-      { label: "+10%/lvl", desc: "+10% damage per terrain height level (max +40%)." },
-      { label: "+20%/lvl", desc: "+20% damage per terrain height level (max +80%)." },
-    ],
-    costs: GENERAL_ADDON_GEM_COSTS.terrainHeightBonus,
-  },
-  terrainHeightRangeBonus: {
-    key: "terrainHeightRangeBonus",
-    label: "Elevation Range",
-    desc: "Towers on higher terrain gain bonus range.",
-    tiers: [
-      { label: "+0.25/lvl", desc: "+0.25 range per terrain height level (max +1)." },
-      { label: "+0.5/lvl", desc: "+0.5 range per terrain height level (max +2)." },
-      { label: "+1.0/lvl", desc: "+1.0 range per terrain height level (max +4)." },
-    ],
-    costs: GENERAL_ADDON_GEM_COSTS.terrainHeightRangeBonus,
-  },
-  damageMilestoneBonus: {
-    key: "damageMilestoneBonus",
-    label: "Damage Milestones",
-    desc: "Towers gain bonus damage & speed per 1M total damage dealt.",
-    tiers: [
-      { label: "+5%/+2%", desc: "+5% dmg, +2% speed per 1M damage." },
-      { label: "+10%/+5%", desc: "+10% dmg, +5% speed per 1M damage." },
-      { label: "+20%/+10%", desc: "+20% dmg, +10% speed per 1M damage." },
-    ],
-    costs: GENERAL_ADDON_GEM_COSTS.damageMilestoneBonus,
-  },
-};
+function resolveGeneralAddonCosts(costKey: string | undefined, isSellOption: boolean | undefined): readonly number[] {
+  if (isSellOption) return [SELL_OPTION_GEM_COST, SELL_OPTION_GEM_COST];
+  if (!costKey) return [];
+  const costs = GENERAL_ADDON_GEM_COSTS[costKey as keyof typeof GENERAL_ADDON_GEM_COSTS];
+  return costs ?? [];
+}
+
+export const GENERAL_ADDON_DEFS: Record<string, GeneralAddonDef> = Object.fromEntries(
+  Object.entries(skillTreeContent.generalAddonDefs).map(([key, def]) => [
+    key,
+    {
+      key: def.key,
+      label: def.label,
+      desc: def.desc,
+      tiers: def.tiers,
+      costs: resolveGeneralAddonCosts(def.costKey, def.isSellOption),
+      ...(def.isSellOption ? { isSellOption: true } : {}),
+    },
+  ]),
+);
 
 export function isGeneralUnlocked(save: PersistState, key: string, index: number): boolean {
   const generalAddons = save.generalAddons;

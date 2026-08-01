@@ -13,6 +13,13 @@ src/
 ├── App.vue                      # Root component: <router-view> + global ConfirmDialog
 ├── main.ts                      # Entry point: createApp, Pinia, Router, persistStore.load()
 ├── shims-vue.d.ts               # Vue module declarations (*.vue as DefineComponent)
+├── content/                     # Zod-validated game content packs (balance tables, skill copy)
+│   ├── data/                    # JSON packs: towers, enemies, economy, maps, skill-tree
+│   ├── schemas/                 # Zod schemas (game content, theme, LLM response, persist)
+│   ├── loadGameContent.ts       # Parse + freeze all packs into GameContent
+│   ├── gameContent.ts           # Singleton getGameContent()
+│   ├── applyVariantOps.ts       # Declarative tower variant stat-op interpreter
+│   └── formulas.ts              # Enemy HP mult etc. from pack coeffs
 ├── router/
 │   └── index.ts                 # Route definitions + navigation guards (dispose engine on route change)
 ├── stores/
@@ -61,9 +68,9 @@ src/
 │   ├── applyCommand.ts          # Maps a Command → GameEngine method (shared by worker and main-thread dispatcher)
 │   ├── commandBus.ts            # Module-level dispatch seam (setCommandDispatcher / dispatchCommand)
 │   ├── GameEngine.ts            # Core simulation: update(dt), state transitions, rewards (no RAF, no rendering; loop lives in WorkerEntry)
-│   ├── Constants.ts             # Shared game constants: wave config, map levels, regions, boss cadence
-│   ├── ConstantsTower.ts        # Tower constants: TowerIds, tower stats, variants, milestone/splash/crit config
-│   ├── ConstantsEnemy.ts        # Enemy constants: EnemyType union, ENEMY_TYPES metadata, status effect tuning
+│   ├── Constants.ts             # Facade: economy/maps from content packs + FIXED_DT/GameState/UI wiring
+│   ├── ConstantsTower.ts        # Facade: tower tables from src/content/data/towers.json
+│   ├── ConstantsEnemy.ts        # Facade: enemy tables from src/content/data/enemies.json
 │   ├── EnemyWalk.ts             # Base shape vertex generation and path-d string conversion
 │   ├── ProjectileManager.ts     # Game-side projectile simulation: travel, hits, splash, chain, burn, knockback
 │   ├── ParticleSystem.ts        # Game-side particle simulation: spawn, motion, life/expiry
@@ -369,7 +376,7 @@ Full-physics motion: DetourCrowd owns path follow + local avoidance; Rapier owns
 | File | Description |
 |---|---|
 | `index.html` | Entry HTML with `<div id="app">` mount point |
-| `package.json` | Dependencies: Vue 3, Pinia, Vue Router, Vite |
+| `package.json` | Dependencies: Vue 3, Pinia, Vue Router, Vite, Zod |
 | `vite.config.ts` | Vite config: Vue plugin, `@/` alias for `src/`, dev server on port 3000 |
 | `vitest.config.ts` | Vitest config: Vue plugin, `@/` alias, jsdom environment, test glob `tests/**/*.test.ts` |
 | `tsconfig.json` | TypeScript config: `strict: true`, `allowJs: false`, `noEmit: true`, `moduleResolution: bundler` |
@@ -429,9 +436,11 @@ Full-physics motion: DetourCrowd owns path follow + local avoidance; Rapier owns
 | File | Description |
 |---|---|
 | `src/sim/GameEngine.ts` | Simulation core: no rendering. Takes plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle`; runs inside the Web Worker (`src/sim/WorkerEntry.ts`) on a `setTimeout` fixed-timestep loop; produces a `SimulationSnapshot` each tick and applies `Command`s via `applyCommand`; passes visual meta to Tower/Enemy constructors |
-| `src/sim/Constants.ts` | Shared game constants: wave config, map levels, boss cadence, gem rewards; `Regions` slimmed (visual fields moved to theme) |
-| `src/sim/ConstantsTower.ts` | Tower constants: TowerIds, tower stats/cost, specialization variants, milestone/splash/crit config; visual fields (name, color, icon, animation, walking) moved to theme |
-| `src/sim/ConstantsEnemy.ts` | Enemy constants: EnemyType union, stats-only ENEMY_TYPES (baseHp, speed, bounty, radius, shield, heal, resist, etc.); visual fields moved to theme |
+| `src/sim/Constants.ts` | Facade over content packs + engine/UI wiring: wave/economy/map tables from `getGameContent()`, plus FIXED_DT, GameState, wave-graph colors |
+| `src/sim/ConstantsTower.ts` | Facade: TowerIds, TOWER_BASE/META/VARIANTS/ADDON_EFFECTS and combat scalars from `src/content/data/towers.json` |
+| `src/sim/ConstantsEnemy.ts` | Facade: ENEMY_TYPES and enemy/wave scalars from `src/content/data/enemies.json` |
+| `src/content/data/*.json` | Declarative balance/content packs (towers, enemies, economy, maps, skill-tree) validated by Zod at load |
+| `src/content/schemas/*` | Zod schemas for game content, raw map themes, LLM responses, persist save shape |
 | `src/composables/Input.ts` | Keyboard input composable: dispatches build/upgrade/sell/speed/pause intents to Pinia stores and the engine via the command seam |
 | `src/sim/EnemyWalk.ts` | Base shape vertex generation and path-d string conversion |
 | `src/sim/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback |
@@ -519,17 +528,37 @@ Full-physics motion: DetourCrowd owns path follow + local avoidance; Rapier owns
 
 Camera state (`x`, `y`, `zoom`) lives on `gameStore.camera` and is shared between the Vue UI and SVG rendering. Vue-side reactive transforms/conversions are provided by `src/composables/cameraUtils.ts` (`useCameraCTM`), while pixel-space helpers (`fitToGrid`, `screenToWorld`) live in `src/render/svg/cameraUtils.ts`. There is no longer a separate `services/` directory.
 
+## Game Content Packs (Zod)
+
+Declarative balance and copy live under `src/content/data/` as split JSON packs, validated once at load via Zod (`src/content/loadGameContent.ts` → `getGameContent()`). Call sites keep importing `@/sim/Constants*.js` facades so the sim/UI import graph stays stable.
+
+| Pack | Contents |
+|---|---|
+| `towers.json` | meta/base stats, combat tuning scalars, variants (`settings` + `statOps`), addon effects |
+| `enemies.json` | enemy type table, HP mult coeffs, wave/boss scalars |
+| `economy.json` | gems, milestones, difficulty, general-addon costs/effect arrays, starting gold/health |
+| `maps.json` | MAP_LEVELS (36), map-gen scalars |
+| `skill-tree.json` | level/addon costs, variant/addon labels, general-addon defs/categories |
+
+**Stays code (not packs):** engine loop constants (`FIXED_DT`, `MAX_ACCUM`), `GameState`, UI layout/wave-graph colors, skill unlock/refund logic, `applyVariantOps` interpreter, combat behavior in Tower/ProjectileManager.
+
+**Variant ops:** `TOWER_VARIANTS` no longer carry `apply` functions. Ops (`set`, `mul`, `mulTier`, `setTier`, `add`, `addPerTier`, `mulPowTier`) are interpreted in `src/content/applyVariantOps.ts` with `tierIdx = level - 5`.
+
+**Other Zod boundaries:** raw map themes (`RawMapThemeSchema` before normalize), LLM commander replies (`validateLlmResponse`), post-migrate persist save (`PersistStateSchema.safeParse` in `persistStore.load`).
+
+**How to change balance:** edit the relevant JSON pack; keep formulas/behavior hooks in TS. Run `npm run check`. Adding a new tower still needs theme frames + any new behavior code paths, but numbers/copy go in packs.
+
 ## Map Theme System
 
-A theme swaps the visual identity of towers, enemies, and map tiles on `/game`, while leaving all gameplay stats, effects, overlays, and non-`/game`/`/map-select` screens untouched. The current polygon-based art is the default theme (`id: "default"`).
+A theme swaps the visual identity of towers, enemies, and map tiles on `/game`, while leaving all gameplay stats, effects, overlays, and non-`/game`/`/map-select` screens untouched. The current polygon-based art is the default theme (`id: "default"`). Raw theme JSON is Zod-validated before `normalizeThemeImages`.
 
 ### How It Works
 
-1. **Theme registry** (`src/render/themes/index.ts`): `MAP_THEME_MANIFEST` lists available themes with `{id, label}`. Lazy loaders resolve theme JSON files on demand.
+1. **Theme registry** (`src/render/themes/index.ts`): `MAP_THEME_MANIFEST` lists available themes with `{id, label}`. Lazy loaders resolve theme JSON files on demand (parsed with `RawMapThemeSchema`).
 2. **Theme store** (`src/stores/mapTheme.ts`): `useMapThemeStore` holds `defaultTheme` (preloaded at app init for synchronous access by non-game screens) and `activeTheme` (resolved for the current run).
 3. **Theme JSON** (`src/render/themes/data/`): `default-map-theme.json` (default polygon art) and `the-aftermath.json` (alternate theme). Each contains tower frames (SVG `<svg>` strings), enemy walking/hit-reaction frames, per-region tile images (path + 4 terrain heights), and base 3×3 SVG art.
 4. **Symbol ID contract**: IDs stay `tower-${type}-f${i}`, `enemy-${type}-f${i}`, `enemy-${type}-hit-f${i}`. Themes swap only the *content* inside `<symbol>`s and the color/name/icon metadata. Render managers need zero changes.
-5. **Stats vs visuals split**: `TOWER_BASE`, `TOWER_VARIANTS`, `ENEMY_TYPES` numeric fields, `MAP_LEVELS`, gem multipliers — all stay in constants files. Only visual/displayed fields (name, color, icon, shape, animation frames, tile images) live in the theme JSON.
+5. **Stats vs visuals split:** gameplay numbers live in `src/content/data/` (via Constants facades). Only visual/displayed fields (name, color, icon, shape, animation frames, tile images) live in the theme JSON.
 
 ### Scope
 

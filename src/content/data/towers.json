@@ -1,0 +1,122 @@
+{
+  "ids": ["basic", "ice", "sniper", "cannon", "lightning", "railgun", "sturdyWall", "shotgunTank"],
+  "meta": {
+    "basic": { "cost": 20 },
+    "ice": { "cost": 35 },
+    "sniper": { "cost": 50 },
+    "cannon": { "cost": 60 },
+    "lightning": { "cost": 70 },
+    "railgun": { "cost": 90 },
+    "sturdyWall": { "cost": 20 },
+    "shotgunTank": { "cost": 35 }
+  },
+  "base": {
+    "basic": { "range": 3.5, "damage": 8, "fireRate": 1.2, "projSpeed": 14, "splash": 0, "health": 10 },
+    "ice": { "range": 2.8, "damage": 4, "fireRate": 1.0, "projSpeed": 12, "slowAmt": 0.45, "slowDur": 1.5, "splash": 0.25, "health": 20 },
+    "sniper": { "range": 7, "damage": 32, "fireRate": 0.45, "projSpeed": 30, "splash": 0, "stun": 0.2, "health": 25 },
+    "cannon": { "range": 3.2, "damage": 16, "fireRate": 0.55, "projSpeed": 5, "splash": 0.5, "health": 30 },
+    "lightning": { "range": 3.5, "damage": 4, "fireRate": 0.8, "projSpeed": 99, "chain": 2, "stun": 0.1, "health": 35 },
+    "railgun": { "range": 8, "damage": 14, "fireRate": 0.28, "projSpeed": 60, "fixedAim": true, "pierceFalloff": 0.5, "health": 45 },
+    "sturdyWall": { "range": 0, "damage": 0, "fireRate": 0, "projSpeed": 0, "health": 100 },
+    "shotgunTank": { "range": 1, "damage": 8, "fireRate": 1.2, "projSpeed": 14, "health": 75 }
+  },
+  "tuning": {
+    "projectileSpeedMultiplier": 0.25,
+    "levelDmgMult": 1.8,
+    "levelRateMult": 1.4,
+    "levelRangeMult": 1.1,
+    "levelSplashMult": 1.2,
+    "upgradeCostBase": 2,
+    "sellValueRatio": 0.6,
+    "cancelBuildWindowMs": 60000,
+    "iceAuraSlowMult": 0.45,
+    "iceAuraDuration": 0.3,
+    "iceAuraRange": 1.5,
+    "splashDamageRatio": 0.6,
+    "chainDamageFalloff": 0.8,
+    "chainRange": 2,
+    "napalmBurnDpsRatio": 0.2,
+    "napalmBurnDuration": 2,
+    "critChance": 0.15,
+    "goldPerCrit": 1,
+    "deepFreezeSlowMult": 1.25,
+    "iceBurstStunDuration": 0.5,
+    "iceBurstInterval": 3,
+    "iceBurstRange": 2,
+    "stunShellDuration": 0.3,
+    "staticFieldSlowAmt": 0.15,
+    "staticFieldSlowDur": 0.5,
+    "staticFieldRange": 2,
+    "doubleDischargeChance": 0.1,
+    "burnCircuitDmgMult": 1.2,
+    "burnCircuitDuration": 2,
+    "trueShotChance": 0.2,
+    "markTargetDmgPct": 0.25,
+    "markTargetDuration": 3,
+    "chargeShotMult": 3,
+    "chargeShotCount": 5,
+    "multiPierceCount": 2,
+    "bounceDamageFalloff": 0.8,
+    "antiHealDuration": 2,
+    "marksmanChance": 0.2,
+    "ghostRestoreBaseSeconds": 50,
+    "ghostRestorePerLevel": 5,
+    "ghostParticleDuration": 2,
+    "ghostParticleCount": 14,
+    "ghostOpacity": 0.5,
+    "electricFenceRangeTiles": 0.75,
+    "electricFenceInterval": 1,
+    "knockbackHpDivisor": 64,
+    "cannonFragmentSplashTiers": [1, 1.4, 1.8]
+  },
+  "variants": {
+    "basic": {
+      "A": { "name": "Rapid", "statOps": [{ "op": "mul", "field": "fireRate", "factor": 3 }, { "op": "mul", "field": "damage", "factor": 0.6 }] },
+      "B": { "name": "Heavy", "statOps": [{ "op": "mul", "field": "fireRate", "factor": 0.5 }, { "op": "mul", "field": "damage", "factor": 2.5 }] }
+    },
+    "ice": {
+      "A": { "name": "Permafrost", "statOps": [{ "op": "mulTier", "field": "splash", "tiers": [1, 1.25, 1.5] }] },
+      "B": { "name": "Shatter", "statOps": [{ "op": "mul", "field": "damage", "factor": 2 }] }
+    },
+    "sniper": {
+      "A": { "name": "Marksman", "statOps": [{ "op": "set", "field": "marksman", "value": true }] },
+      "B": { "name": "Piercer", "statOps": [{ "op": "set", "field": "pierce", "value": 3 }] }
+    },
+    "cannon": {
+      "A": { "name": "Fragment", "statOps": [{ "op": "mulTier", "field": "splash", "tiers": [1, 1.4, 1.8] }] },
+      "B": { "name": "Napalm", "statOps": [{ "op": "set", "field": "napalm", "value": true }] }
+    },
+    "lightning": {
+      "A": {
+        "name": "Overload",
+        "statOps": [{ "op": "addPerTier", "field": "chain", "perTier": 2 }, { "op": "mulPowTier", "field": "damage", "base": 1.2 }]
+      },
+      "B": { "name": "Stormcall", "statOps": [{ "op": "set", "field": "stormcall", "value": true }] }
+    },
+    "railgun": {
+      "A": { "name": "Knockback", "settings": { "knockbackBase": 0.5, "knockbackScale": 0.2 } },
+      "B": { "name": "Rail Lance", "statOps": [{ "op": "set", "field": "pierceFalloff", "value": 0 }] }
+    },
+    "sturdyWall": {
+      "A": { "name": "Thorn Wall", "statOps": [{ "op": "setTier", "field": "thornReflectPct", "tiers": [0.3, 0.6, 1.0] }] },
+      "B": {
+        "name": "Electric Fence",
+        "statOps": [{ "op": "setTier", "field": "fenceDamage", "tiers": [5, 10, 15] }, { "op": "set", "field": "fenceStun", "value": 0.5 }]
+      }
+    },
+    "shotgunTank": {
+      "A": { "name": "Reinforced", "statOps": [{ "op": "setTier", "field": "healthMult", "tiers": [1.5, 2, 3] }] },
+      "B": { "name": "Repulsor", "settings": { "knockbackBase": 0.7, "knockbackScale": 0.3 } }
+    }
+  },
+  "addonEffects": {
+    "basic": [{ "critChance": 0.15 }, { "goldOnCrit": 1 }, { "bounceShot": true }],
+    "ice": [{ "frostAura": true }, { "slowMult": 1.25 }, { "iceBurst": true }],
+    "sniper": [{ "trueShot": 0.2 }, { "markTarget": 0.25 }, { "rangeAdd": 2 }],
+    "cannon": [{ "splashMult": 1.5 }, { "splashStun": 0.3 }, { "antiAir": true }],
+    "lightning": [{ "staticField": true }, { "doubleDischarge": 0.1 }, { "burnCircuit": true }],
+    "railgun": [{ "chargeShot": true }, { "antiHeal": true }, { "pierceAdd": 2 }],
+    "sturdyWall": [{}, {}, {}],
+    "shotgunTank": [{}, {}, {}]
+  }
+}

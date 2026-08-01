@@ -452,7 +452,7 @@ export class GameEngine {
 
         const hasClaimed =
           this.runState.mapIndex >= 0 && persistHasClaimedMilestone(this.persistState, this.runState.mapIndex, m);
-        const base = MILESTONE_GEMS[m];
+        const base = MILESTONE_GEMS[m] ?? 0;
         const diffMult = getDifficultyMultiplier(this.persistState);
         const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
         const mapMult = this.runState.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[this.runState.mapIndex] || 1 : 1;

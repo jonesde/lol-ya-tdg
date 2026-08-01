@@ -6,6 +6,7 @@ interface AuraTarget {
   takeDamage(amount: number, armorPiercing?: boolean): number | void;
 }
 
+import { applyVariantOps } from "@/content/applyVariantOps.js";
 import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
 import {
   MILESTONE_BONUS_PCT,
@@ -422,8 +423,28 @@ export class Tower {
 
     if (this.level >= 5 && this.variant === "A") {
       const variantA = TOWER_VARIANTS[this.type as TowerId]?.A;
-      if (variantA?.apply) {
-        const variantAResult = variantA.apply(
+      if (variantA?.statOps?.length) {
+        ({
+          range,
+          damage,
+          fireRate,
+          splash,
+          chain,
+          stun,
+          pierce,
+          pierceFalloff,
+          slowAmt,
+          slowDur,
+          marksman,
+          napalm,
+          stormcall,
+          knockbackBase,
+          knockbackScale,
+          thornReflectPct,
+          fenceDamage,
+          fenceStun,
+          healthMult,
+        } = applyVariantOps(
           {
             range,
             damage,
@@ -445,35 +466,35 @@ export class Tower {
             fenceStun,
             healthMult,
           },
+          variantA.statOps,
           level - 5,
-        );
-        ({
-          range,
-          damage,
-          fireRate,
-          splash,
-          chain,
-          stun,
-          pierce,
-          pierceFalloff,
-          slowAmt,
-          slowDur,
-          marksman,
-          napalm,
-          stormcall,
-          knockbackBase,
-          knockbackScale,
-          thornReflectPct,
-          fenceDamage,
-          fenceStun,
-          healthMult,
-        } = variantAResult);
+        ));
       }
     }
     if (this.level >= 5 && this.variant === "B") {
       const variantB = TOWER_VARIANTS[this.type as TowerId]?.B;
-      if (variantB?.apply) {
-        const variantBResult = variantB.apply(
+      if (variantB?.statOps?.length) {
+        ({
+          range,
+          damage,
+          fireRate,
+          splash,
+          chain,
+          stun,
+          pierce,
+          pierceFalloff,
+          slowAmt,
+          slowDur,
+          marksman,
+          napalm,
+          stormcall,
+          knockbackBase,
+          knockbackScale,
+          thornReflectPct,
+          fenceDamage,
+          fenceStun,
+          healthMult,
+        } = applyVariantOps(
           {
             range,
             damage,
@@ -495,29 +516,9 @@ export class Tower {
             fenceStun,
             healthMult,
           },
+          variantB.statOps,
           level - 5,
-        );
-        ({
-          range,
-          damage,
-          fireRate,
-          splash,
-          chain,
-          stun,
-          pierce,
-          pierceFalloff,
-          slowAmt,
-          slowDur,
-          marksman,
-          napalm,
-          stormcall,
-          knockbackBase,
-          knockbackScale,
-          thornReflectPct,
-          fenceDamage,
-          fenceStun,
-          healthMult,
-        } = variantBResult);
+        ));
       }
     }
 

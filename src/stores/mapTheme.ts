@@ -21,8 +21,9 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
 
   async function preloadDefault(): Promise<void> {
     try {
+      const { RawMapThemeSchema } = await import("@/content/schemas/theme.js");
       const mod = await import("../render/themes/data/default-map-theme.json");
-      const rawData = mod.default as Record<string, unknown>;
+      const rawData = RawMapThemeSchema.parse(mod.default);
       const normalized = await normalizeThemeImages(rawData as never);
       defaultTheme.value = normalized;
       activeTheme.value = normalized;

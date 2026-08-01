@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import type { LlmCommanderConfig } from "@/commanders/llm/types.js";
+import { PersistStateSchema } from "@/content/schemas/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 
 const OLD_STORAGE_KEY = "gempath_save_v1";
@@ -252,6 +253,11 @@ export const usePersistStore = defineStore("persist", {
           try {
             const parsed = JSON.parse(rawData);
             const migrated = migrateToCurrent(parsed);
+            // Validate post-migrate shape; soft-fail leaves existing store state.
+            const validated = PersistStateSchema.safeParse(migrated);
+            if (!validated.success) {
+              throw new Error(`Save schema invalid: ${validated.error.message}`);
+            }
             this.$state = migrated;
             return;
           } catch (error) {

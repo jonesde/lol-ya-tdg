@@ -1,10 +1,6 @@
-import {
-  BETWEEN_WAVES_TIMER,
-  ENEMY_LEVEL_HP_MULT,
-  ENEMY_TYPES,
-  ENEMY_WAVE_DAMAGE_MULT,
-  PRE_EMPTIVE_WAVE_TIMER,
-} from "@/sim/Constants.js";
+import { formatEnemyLevelHpMult } from "@/content/formulas.js";
+import { getGameContent } from "@/content/gameContent.js";
+import { BETWEEN_WAVES_TIMER, ENEMY_TYPES, ENEMY_WAVE_DAMAGE_MULT, PRE_EMPTIVE_WAVE_TIMER } from "@/sim/Constants.js";
 import { TOWER_BASE, TOWER_META } from "@/sim/ConstantsTower.js";
 import type { LlmCommanderConfig } from "./types.js";
 
@@ -53,7 +49,7 @@ You command the enemy army in a tile-based tower-defense game. Your objective is
 
 ${describeEnemyTypes()}
 
-Enemy HP scales by level and wave: hp = baseHp * ${ENEMY_LEVEL_HP_MULT}(level) * (1 + ${ENEMY_WAVE_DAMAGE_MULT} * (wave - 1)).
+Enemy HP scales by level and wave: hp = baseHp * (${formatEnemyLevelHpMult(getGameContent().enemies.levelHpMult)}) * (1 + ${ENEMY_WAVE_DAMAGE_MULT} * (wave - 1)).
 
 # Tower types (base level 1 stats)
 

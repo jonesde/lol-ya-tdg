@@ -93,9 +93,12 @@ export const MAP_THEME_MANIFEST: MapThemeManifestEntry[] = [
   { id: "the-aftermath", label: "Aftermath", file: "./data/the-aftermath.json" },
 ];
 
-registerThemeLoader(DEFAULT_THEME_ID, () =>
-  import("./data/default-map-theme.json").then((mod) => mod.default as unknown as MapThemeData),
-);
-registerThemeLoader("the-aftermath", () =>
-  import("./data/the-aftermath.json").then((mod) => mod.default as unknown as MapThemeData),
-);
+async function loadRawTheme(loader: () => Promise<{ default: unknown }>): Promise<MapThemeData> {
+  const { RawMapThemeSchema } = await import("@/content/schemas/theme.js");
+  const mod = await loader();
+  // Raw theme JSON uses frames[].image; normalizeThemeImages converts to MapThemeData.
+  return RawMapThemeSchema.parse(mod.default) as unknown as MapThemeData;
+}
+
+registerThemeLoader(DEFAULT_THEME_ID, () => loadRawTheme(() => import("./data/default-map-theme.json")));
+registerThemeLoader("the-aftermath", () => loadRawTheme(() => import("./data/the-aftermath.json")));
